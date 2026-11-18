@@ -60,16 +60,18 @@
 			: null;
 	}
 
-	type SceneState = 'same' | 'changed' | 'missing';
+	type SceneState = 'same' | 'changed' | 'missing' | 'deleted';
+	const inTrash = $derived(new Set(data.inTrash));
 	function sceneState(scene: DraftScene): SceneState {
 		const live = data.live[scene.id];
-		if (live === undefined) return 'missing';
+		if (live === undefined) return inTrash.has(scene.id) ? 'deleted' : 'missing';
 		return live === scene.bodyMd ? 'same' : 'changed';
 	}
 	const STATE_LABEL: Record<SceneState, string> = {
 		same: 'Same as the working draft',
 		changed: 'Changed since',
-		missing: 'Not in the working draft'
+		missing: 'Not in the working draft',
+		deleted: 'In the deleted scenes'
 	};
 
 	const KIND_HEADINGS: Record<DraftEntityType, string> = {
@@ -249,22 +251,28 @@
 										method="POST"
 										action="?/restoreScene"
 										use:enhance={confirmEnhance(
-											state === 'missing'
+											state === 'deleted'
 												? {
-														title: 'Add this scene back?',
-														body: 'A new scene with this text is added to the working draft.',
-														confirmLabel: 'Add scene'
+														title: 'Add a copy of this scene?',
+														body: 'This scene is in "Deleted scenes" in the working draft. To bring it back with its history, restore it from there instead. Adding it here makes a separate new scene with this text.',
+														confirmLabel: 'Add a copy'
 													}
-												: {
-														title: 'Restore this scene?',
-														body: 'The scene in the working draft gets this text. The text it has now is kept in its History, so you can undo this.',
-														confirmLabel: 'Restore scene'
-													}
+												: state === 'missing'
+													? {
+															title: 'Add this scene back?',
+															body: 'A new scene with this text is added to the working draft.',
+															confirmLabel: 'Add scene'
+														}
+													: {
+															title: 'Restore this scene?',
+															body: 'The scene in the working draft gets this text. The text it has now is kept in its History, so you can undo this.',
+															confirmLabel: 'Restore scene'
+														}
 										)}
 									>
 										<input type="hidden" name="sceneId" value={scene.id} />
 										<button class="btn btn-sm btn-secondary" type="submit">
-											{state === 'missing' ? 'Add back to working draft' : 'Restore this scene'}
+											{state === 'changed' ? 'Restore this scene' : 'Add back to working draft'}
 										</button>
 									</form>
 								{/if}
