@@ -39,6 +39,7 @@ import {
 	type SurveyScene
 } from './prompts/review.ts';
 import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
+import { summaryIsCurrent } from '../summary-currency.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
@@ -258,11 +259,11 @@ export async function reviewOneScene(
 			enableTools: true,
 			messages,
 			...(categories.length === 0 ? {} : { toolBudget: FOCUSED_PASS_BUDGET }),
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	opts.meter?.record(result.model, result.usage);
 	return { notes: result.notes, ...(result.stopped ? { stopped: result.stopped } : {}) };
 }
 
@@ -322,10 +323,10 @@ async function surveyChunk(
 		userId: opts.userId,
 		...scopeIds(opts.scope),
 		role: 'reviewer' as const,
+		meter: opts.meter,
 		signal: opts.signal
 	};
 	const first = await completeDetailed(db, { ...request, messages }, deps);
-	opts.meter?.record(first.model, first.usage);
 	const parsed = parseCandidates(first.content);
 	if (parsed) return parsed;
 	const retry = await completeDetailed(
@@ -340,7 +341,6 @@ async function surveyChunk(
 		},
 		deps
 	);
-	opts.meter?.record(retry.model, retry.usage);
 	const reparsed = parseCandidates(retry.content);
 	if (reparsed) return reparsed;
 	throw new Error(
@@ -461,11 +461,11 @@ async function runConsistencyPass(
 				toolNames: CONFIRM_TOOL_NAMES,
 				toolBudget: CONFIRM_TOOL_BUDGET,
 				messages: system ? [system, task] : [task],
+				meter: opts.meter,
 				signal: opts.signal
 			},
 			deps
 		);
-		opts.meter?.record(result.model, result.usage);
 		notes += result.notes;
 		stopped ??= result.stopped;
 	}
@@ -569,7 +569,7 @@ async function staleSummaryCount(db: Database, userId: string, storyId: string):
 				summaryMd: row.summaryMd,
 				summaryGeneratedAt: row.summaryGeneratedAt,
 				changedSince: row.summaryGeneratedAt
-					? row.updatedAt.getTime() > row.summaryGeneratedAt.getTime()
+					? !summaryIsCurrent(row.summaryGeneratedAt, row.updatedAt)
 					: false
 			})
 	).length;

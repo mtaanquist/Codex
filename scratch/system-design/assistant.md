@@ -282,7 +282,11 @@ rather than guessed at or skipped in silence. The estimate itself
 (`llm/estimate.ts`) assembles the same frame and per-scene deltas the run
 would send, counts them, and scales by an agentic multiplier drawn from this
 account's own `assistant_usage` rows for the model where there are enough of
-them, or a stated static 2.5 where there are not.
+them, or a stated static 2.5 where there are not. The gateway records every
+request into the run's meter (passed on the request) as it logs its usage
+row, including an attempt that failed partway through a stream and was
+retried or given up on: the endpoint bills the tokens it had used, which the
+adapter attaches to the error.
 
 The tool-call budget is a writer-set value in `users.llm_config`, not a
 fixed number Codex chooses. The point of bring-your-own-endpoint is that the

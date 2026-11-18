@@ -515,6 +515,37 @@ describe('assistant notices link by id', () => {
 		]);
 	});
 
+	// The activity card reads a job completed with a failed output as failed, so
+	// a pass that stopped on a problem or read nothing does not show as ready.
+	it('settles a pass as failed when it stopped on a problem or could read nothing', async () => {
+		const { owner, universe } = await seedStory();
+		const stops = [
+			{ entities: 1, staged: 2, failed: 0, noModel: true },
+			{ entities: 1, staged: 2, failed: 0, disabled: true },
+			{ entities: 1, staged: 1, failed: 3, stoppedFailing: true },
+			{ entities: 0, staged: 0, failed: 2 }
+		];
+		for (const stop of stops) {
+			const { handlers, completed } = harness({ enrichUniverse: async () => stop });
+			await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+			expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+		}
+	});
+
+	it('leaves a pass that finished to settle as done', async () => {
+		const { owner, universe } = await seedStory();
+		const finished = [
+			{ entities: 3, staged: 2, failed: 1 },
+			{ entities: 0, unchanged: 2, staged: 0, failed: 1 },
+			{ entities: 2, staged: 0, failed: 0 }
+		];
+		for (const result of finished) {
+			const { handlers, completed } = harness({ enrichUniverse: async () => result });
+			await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+			expect(completed).toEqual([]);
+		}
+	});
+
 	it('says why when every entry was cut off at the reply limit', async () => {
 		const { owner, universe } = await seedStory();
 		const { handlers } = harness({

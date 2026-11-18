@@ -16,6 +16,9 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'llm-summaries-test-secret';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
+const { duplicateScene } = await import('../../src/lib/server/scene-split-merge');
+const { saveDraft, restoreDraftScene, newStoryFromDraft } =
+	await import('../../src/lib/server/story-drafts');
 
 // A stub provider that returns a distinct summary on each call, so a refresh is
 // visible as a changed value. The transport is never reached.
@@ -295,5 +298,99 @@ describe('summariseStory', () => {
 		const descent = prompts.find((p) => p.includes('"Descent"'));
 		expect(descent).toContain('My own note.');
 		expect(descent).not.toContain('Harbour');
+	});
+});
+
+// A copy of a scene whose summary was current for its text is current too, so
+// the next pass does not pay to summarise the same text again. A copy of a
+// stale summary stays stale and is refreshed.
+describe('copied summaries', () => {
+	async function editSceneA() {
+		await db
+			.update(scenes)
+			.set({ bodyMd: 'Alice met Bram, then ran.' })
+			.where(eq(scenes.id, sceneAId));
+	}
+	async function draftWithoutSceneA(): Promise<string> {
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('save failed');
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneAId));
+		return saved.id;
+	}
+	async function storyRow() {
+		const [row] = await db.select().from(stories).where(eq(stories.id, storyId));
+		return row;
+	}
+
+	it('skips a duplicated scene whose summary was current', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const result = await duplicateScene(db, ownerId, sceneAId);
+		if (!result.ok) throw new Error('duplicate failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+		const copy = await readScene(result.newSceneId);
+		expect(copy.summaryGeneratedAt).not.toBeNull();
+	});
+
+	it('refreshes a duplicated scene whose summary was stale', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await editSceneA();
+		const result = await duplicateScene(db, ownerId, sceneAId);
+		if (!result.ok) throw new Error('duplicate failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		// The original and its copy.
+		expect(again.scenes).toBe(2);
+		expect((await readScene(result.newSceneId)).summaryMd).toMatch(/^SUMMARY-/);
+	});
+
+	it('skips a scene added back from a draft whose summary was current', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const draftId = await draftWithoutSceneA();
+		const restored = await restoreDraftScene(db, storyId, draftId, sceneAId);
+		if (!restored.ok || !restored.created) throw new Error('add back failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+	});
+
+	it('refreshes a scene added back from a draft whose summary was stale', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await editSceneA();
+		const draftId = await draftWithoutSceneA();
+		const restored = await restoreDraftScene(db, storyId, draftId, sceneAId);
+		if (!restored.ok || !restored.created) throw new Error('add back failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(1);
+	});
+
+	it('skips the scenes and chapters of a new story made from a draft', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('save failed');
+		const made = await newStoryFromDraft(db, ownerId, await storyRow(), saved.id, 'Copy');
+		if (!made.ok) throw new Error('copy failed');
+		const [copy] = await db.select().from(stories).where(eq(stories.slug, made.slug));
+		const [copiedChapter] = await db
+			.select({ summaryMd: chapters.summaryMd, summaryGeneratedAt: chapters.summaryGeneratedAt })
+			.from(chapters)
+			.where(eq(chapters.storyId, copy.id));
+		// Still marked as the Assistant's, so a later change refreshes it.
+		expect(copiedChapter.summaryMd).toMatch(/^SUMMARY-/);
+		expect(copiedChapter.summaryGeneratedAt).not.toBeNull();
+		const again = await summariseStory(db, { userId: ownerId, storyId: copy.id }, deps);
+		expect(again.scenes).toBe(0);
+		expect(again.chapters).toBe(0);
+	});
+
+	it('refreshes a chapter summary in a new story when it was stale in the draft', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await db.update(chapters).set({ title: 'Descent, renamed' }).where(eq(chapters.id, chapterId));
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('save failed');
+		const made = await newStoryFromDraft(db, ownerId, await storyRow(), saved.id, 'Copy');
+		if (!made.ok) throw new Error('copy failed');
+		const [copy] = await db.select().from(stories).where(eq(stories.slug, made.slug));
+		const again = await summariseStory(db, { userId: ownerId, storyId: copy.id }, deps);
+		expect(again.scenes).toBe(0);
+		expect(again.chapters).toBe(1);
 	});
 });

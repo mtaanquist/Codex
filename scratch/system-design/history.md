@@ -1461,6 +1461,36 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 4 (#1075, #1089-#1092, 2026-11-18). Writer
+      trust first. A stream that failed partway (overload, server fault, a
+      close before the stop reason) was billed but its tokens were dropped
+      (#1075). The Claude adapter now fills usage in place as frames arrive
+      and attaches what had been billed to the error it throws; the gateway
+      logs a usage row for it and meters it before it retries or gives up,
+      and the run's total includes it. Metering moved into the gateway: the
+      meter rides on the request and `recordUsage` feeds it for every
+      request, so the agent loop's earlier rounds are metered even when a
+      later round throws. One behaviour change: a round the endpoint
+      reported no counts for now marks the cap as not applied even when other
+      rounds reported, where the old per-run sum hid it. A 0 input count on
+      message_delta (some compatible endpoints) no longer overwrites the real
+      one from message_start. Copies (duplicate scene, draft add-back, new
+      story from a draft) stamp `summary_generated_at` with the copy's own
+      `updated_at` when the source summary was current for its text, so the
+      next pass does not pay to summarise the same text again; a stale one
+      keeps its old stamp and is refreshed (#1089). Drafts now record
+      `summaryCurrent` per scene and chapter; older drafts count as stale.
+      Comparing the summarised text with the body was weighed and dropped:
+      the timestamp test is the one the summary job itself uses
+      (`summaryIsCurrent`, now shared). Draft chapters carry the stamp too,
+      so a copied chapter summary stays the Assistant's (#1090). Muting a
+      story locks the arc-bearing characters `order by id for update` before
+      clearing them, the order `markStale` takes (#1091); no test, since a
+      deadlock test would be timing-dependent. An enrich pass that stopped
+      for no model, the Assistant off, failures in a row, or read nothing is
+      settled as failed, and the enrich done label is now "Finished
+      suggesting details for the entries in X" (#1092). Filed and left open:
+      #1093-#1096; #1076 gained a note on checking running jobs before a send.
 - [x] Staging review round 3 (#1078-#1082, 2026-11-18). Writer trust
       first. The #1064 rule (adopt only a capped newest row) lost progress
       when a continuation of a capped run threw or was cancelled: its own

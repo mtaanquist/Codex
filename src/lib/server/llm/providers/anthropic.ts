@@ -1,5 +1,6 @@
 import {
 	EndpointReplyError,
+	withBilledUsage,
 	type ChatMessage,
 	type CompletionRequest,
 	type Connection,
@@ -279,6 +280,27 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	};
 }
 
+// What a stream that failed partway had been billed: the input side from
+// message_start and the output so far from message_delta, which may not have
+// arrived yet. Undefined when message_start never came.
+function partialUsage(raw: Block): TokenUsage | undefined {
+	const prompt = promptTotal(raw);
+	if (!Number.isFinite(prompt)) return undefined;
+	const completion = Number(raw.output_tokens);
+	const cached = cacheRead(raw);
+	return {
+		promptTokens: prompt,
+		completionTokens: Number.isFinite(completion) ? completion : 0,
+		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+	};
+}
+
+const INPUT_USAGE_KEYS = new Set([
+	'input_tokens',
+	'cache_creation_input_tokens',
+	'cache_read_input_tokens'
+]);
+
 // The parsed JSON of each "data:" line of a server-sent event stream. Event
 // name lines and unparseable data are skipped.
 function frameData(line: string): unknown {
@@ -395,9 +417,22 @@ const STREAM_ERROR_STATUS = new Map<unknown, number>([
 // path streams so that a long reply keeps bytes moving and the egress idle
 // timeout only fires on real silence.
 async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<BufferedMessage> {
+	const usage: Block = {};
+	try {
+		return await assembleFrames(body, usage);
+	} catch (err) {
+		throw err instanceof Error ? withBilledUsage(err, partialUsage(usage)) : err;
+	}
+}
+
+// Fills usage in place as the frames arrive, so a failure partway still knows
+// what had been billed.
+async function assembleFrames(
+	body: AsyncIterable<Uint8Array>,
+	usage: Block
+): Promise<BufferedMessage> {
 	const blocks: Block[] = [];
 	const inputJson = new Map<number, string>();
-	let usage: Block = {};
 	let stopReason: unknown;
 	for await (const json of sseFrames(body)) {
 		const frame = json as {
@@ -414,7 +449,7 @@ async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<Buffere
 		const delta = frame.delta;
 		switch (frame.type) {
 			case 'message_start':
-				usage = { ...frame.message?.usage };
+				Object.assign(usage, frame.message?.usage);
 				break;
 			case 'content_block_start':
 				if (index >= 0 && frame.content_block && typeof frame.content_block === 'object') {
@@ -448,7 +483,11 @@ async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<Buffere
 			case 'message_delta':
 				if (delta?.stop_reason) stopReason = delta.stop_reason;
 				for (const [key, value] of Object.entries(frame.usage ?? {})) {
-					if (value !== null && value !== undefined) usage[key] = value;
+					if (value === null || value === undefined) continue;
+					// Some compatible endpoints repeat the input side as 0 here; the
+					// real count from message_start stands.
+					if (INPUT_USAGE_KEYS.has(key) && Number(value) === 0 && Number(usage[key]) > 0) continue;
+					usage[key] = value;
 				}
 				break;
 			case 'message_stop':

@@ -9,6 +9,7 @@ import { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
 import { markMentionsStale } from '../scene-lifecycle.ts';
+import { summaryIsCurrent } from '../summary-currency.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
@@ -73,11 +74,11 @@ async function generate(
 			enableTools: false,
 			messages,
 			maxTokens: MAX_SUMMARY_TOKENS,
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	opts.meter?.record(result.model, result.usage);
 	return result.content.trim();
 }
 
@@ -143,7 +144,7 @@ export async function summariseStory(
 		}
 		if (blank(scene.bodyMd)) continue;
 		const changedSince = scene.summaryGeneratedAt
-			? scene.updatedAt.getTime() > scene.summaryGeneratedAt.getTime()
+			? !summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt)
 			: false;
 		if (
 			!needsSummary({
@@ -244,7 +245,7 @@ export async function summariseStory(
 		const changedSince =
 			touchedChapters.has(chapter.id) ||
 			(chapter.summaryGeneratedAt
-				? chapter.updatedAt.getTime() > chapter.summaryGeneratedAt.getTime()
+				? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
 				: false);
 		if (
 			!needsSummary({

@@ -8,6 +8,7 @@ import { markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { storyIsLive } from './universe-scope.ts';
+import { copiedSummaryStamp, summaryIsCurrent } from './summary-currency.ts';
 
 // Splitting and merging scenes. Both run in one transaction and record a
 // revision for every body they change; the caller queues the mention
@@ -185,6 +186,7 @@ export async function duplicateScene(
 	if (!source) return { ok: false, code: 'not_found', reason: 'That scene no longer exists.' };
 	const scene = source.scenes;
 
+	const stamp = new Date();
 	const newSceneId = await db.transaction(async (tx) => {
 		// Make room directly after the source scene, the same shift split uses.
 		await tx
@@ -220,8 +222,14 @@ export async function duplicateScene(
 				charactersPresent: scene.charactersPresent,
 				status: scene.status,
 				summaryMd: scene.summaryMd,
-				// Whether the Assistant wrote the summary travels with it.
-				summaryGeneratedAt: scene.summaryGeneratedAt,
+				// Whether the Assistant wrote the summary travels with it, and so
+				// does whether it was current for this text.
+				summaryGeneratedAt: copiedSummaryStamp(
+					scene.summaryGeneratedAt,
+					summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt),
+					stamp
+				),
+				updatedAt: stamp,
 				wordCount: wordCount(scene.bodyMd),
 				metadata: scene.metadata
 			})

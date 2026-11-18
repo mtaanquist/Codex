@@ -167,6 +167,21 @@ export class EndpointReplyError extends Error {
 	}
 }
 
+// A request that failed after the endpoint began generating is still billed
+// for the tokens it had used. The adapter attaches that count to the error it
+// throws, so the gateway can log and meter it before it retries or gives up.
+const BILLED = Symbol('billedUsage');
+
+export function withBilledUsage<E extends Error>(err: E, usage: TokenUsage | undefined): E {
+	if (usage) (err as E & { [BILLED]?: TokenUsage })[BILLED] = usage;
+	return err;
+}
+
+export function billedUsage(err: unknown): TokenUsage | undefined {
+	if (!(err instanceof Error)) return undefined;
+	return (err as Error & { [BILLED]?: TokenUsage })[BILLED];
+}
+
 export type HttpRequestInit = {
 	method: string;
 	headers: Record<string, string>;
