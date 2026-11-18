@@ -1493,7 +1493,31 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       change again. For #992, Mads chose "never again once rejected";
       `summaryClosed` in `entity-suggestions.ts` holds the rule, and
       `enrichEntity` uses it to stop asking the model for a summary.
-
+- [x] Enrich and arc failure notices (#988, #991, 2026-11-18). The enrich
+      pass now stops after three failed reads in a row (`MAX_FAILURES_IN_A_ROW`)
+      when entities remain, and on `AssistantDisabledError` at once, each with
+      its own notice. A cut-off reply does not count toward the run and resets
+      it, since the endpoint answered. A pass that read some entries counts
+      the failed ones in its notice. The arc job settles as failed without a
+      retry when the Assistant is off, like a cut-off; a story muted mid-write
+      raises `ArcStoryMutedError`, still retried, with its own wording.
+- [x] Claude's buffered replies stream under the hood (#967, 2026-11-18).
+      The Anthropic adapter's `respond` (every agent loop round, so every
+      Assistant review round) sent `stream: false`, so a long thinking reply
+      wrote nothing until it was done and could outlast the 10 minute egress
+      idle timeout. It now sends `stream: true` and `assembleMessage` rebuilds
+      the message a buffered call returns (blocks by index, thinking with its
+      signature, tool input from `input_json_delta`, the stop reason, usage
+      from `message_start` merged with `message_delta`), then reuses the
+      existing parsers, so the result, cut-off retry and spend accounting are
+      unchanged. The SSE line splitting moved into `sseFrames`, shared with
+      `chatStream`. An error event mid-stream throws (retried as transient,
+      like the 529 or 5xx it replaces); a stream that ends without
+      `message_stop` throws too. A 200 with a JSON body is still read as one,
+      for an Anthropic-compatible proxy that ignores `stream`. Not changed: the
+      OpenAI-compatible adapter's `respond` buffers the same way, but its
+      streams differ by server (tool-call deltas, usage frames), so it waits
+      for a sign that local reasoning models actually hit the timeout.
 - [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
       particular, answer in Markdown, which the chat showed raw apart from a
       `**bold**` regex. Chosen approach, by surface: text that is only read
