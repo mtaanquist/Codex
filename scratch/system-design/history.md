@@ -1461,6 +1461,46 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Review follow-ups on the enrich and arc marks (#1047, #1055-#1061,
+      2026-11-18). Writer trust first. `rebuildSceneMentions` marked entities
+      before stamping the scene, while saves (a title change), reorders, trash,
+      merge and the summary job lock the scene row and then mark entities, so a
+      rebuild and a save could deadlock and the killed autosave (or the
+      un-retried keepalive save on tab close) lost the edit. The rebuild now
+      stamps the scene first (`where deleted_at is null`, so a scene trashed
+      since it was read is left as the trash left it), then the story, then
+      entities: the order is scene, story, entity everywhere. A test holds the
+      scene row in one connection, starts a rebuild, then marks the entity, as
+      a save does. The summary job overwrote `summary_md` unconditionally and
+      wrote back the `updated_at` it read before the model call, so a summary
+      typed while the model ran was lost and an edit in that window had its
+      `updated_at` rolled back (so the next run did not refresh it). The write
+      is now raw SQL (no `$onUpdate`, and `updated_at` is never set) guarded
+      by `updated_at` (as text, to the microsecond) and `summary_md` as read;
+      a miss skips the scene for the next run. Chapters got the same guard.
+      Cost: marks fire on any passage change, but enrich sends at most 16
+      passages and arcs the first passage per scene without a summary, so
+      many marks led to an identical request. Two fixes were weighed: making
+      the mark consider only the passages that are sent, which would repeat
+      the selection (per-story spread, even sampling, summaries) in the save
+      path and still drift from it; and storing a hash of the exact request
+      with the watermark. The hash was chosen: one comparison, exact by
+      construction, and the marks stay simple. Additive migration
+      `assistant_enriched_input` (characters, places, lore) and
+      `arc_summary_input` (characters). The background pass skips the model
+      and just clears the mark on a match (inline enrich always calls); an arc
+      refresh does the same only when the arc is marked, returning
+      `unchanged` with its own notice, so the writer can still ask for another
+      take on a current arc. Not fixed: the "may be out of date" line still
+      shows for such a mark until the writer refreshes. Reorders now compare
+      rank among live scenes, not the stored `global_position`, so closing a
+      trash gap marks nothing. `NoModelError` (a subclass of
+      `AssistantDisabledError`, so callers that end on a refusal still do)
+      gives the arc and enrich notices their own wording; the arc notices no
+      longer name the button, which reads Write arc or Refresh arc. A generic
+      arc failure now waits for the last attempt before notifying (#1047),
+      like the muted-story case.
+
 - [x] Enrich and arc re-reads follow the passages, not `scenes.updated_at`;
       a rejected summary is never suggested again (#977, #992, 2026-11-18).
       The staleness checks compared `max(scenes.updated_at)` over mentioning
@@ -1480,8 +1520,11 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       trigger a re-read, which is the intended precision. The summary job
       marks arcs for a scene whose summary it rewrites, since arcs read
       scene summaries, and a scene rename or a reorder that moves a scene
-      marks arcs only (titles and reading order are arc content, not enrich
-      input). Review follow-ups: restoring a universe (or reviving a trashed
+      marks arcs only. Scene titles do reach enrich (each passage is labelled
+      `[story / scene title]` by `snippetLine`), and reading order picks which
+      passages are sent when there are more than 16; neither tells the model
+      anything new about the entity, so a rename or reorder is not worth a
+      paid re-read, and the next passage change sends the new labels. Review follow-ups: restoring a universe (or reviving a trashed
       standalone one) now marks like a story restore; the rebuild reads
       whether the Assistant reaches the scene inside its transaction with a
       share lock on the story and universe rows, so an unmute or restore in

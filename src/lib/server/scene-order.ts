@@ -85,8 +85,14 @@ export async function applySceneOrder(
 				values.map((value) => sql`${value}`),
 				sql`, `
 			);
-		const was = new Map(sceneRows.map((row) => [row.id, row.globalPosition]));
-		const moved = ids.filter((id, i) => was.get(id) !== globalPositions[i]);
+		// Rank among live scenes, not the stored number: renumbering closes the
+		// gap a trashed scene left without changing the reading order.
+		const was = new Map(
+			[...sceneRows]
+				.sort((a, b) => a.globalPosition - b.globalPosition)
+				.map((row, rank) => [row.id, rank])
+		);
+		const moved = ids.filter((id, i) => was.get(id) !== i);
 		await db.transaction(async (tx) => {
 			await tx.execute(sql`
 			update scenes set

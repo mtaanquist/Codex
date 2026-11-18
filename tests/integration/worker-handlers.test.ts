@@ -35,7 +35,11 @@ import type { StoryReviewResult } from '../../src/lib/server/llm/scene-review';
 import type { Database } from '../../src/lib/server/auth';
 import { NOTIFICATION_DIGEST_QUEUE } from '../../src/lib/server/queues';
 import { createHandlers, type WorkerDeps, type WorkerServices } from '../../src/worker/handlers';
-import { AssistantDisabledError, ReplyCutOffError } from '../../src/lib/server/llm/gateway';
+import {
+	AssistantDisabledError,
+	NoModelError,
+	ReplyCutOffError
+} from '../../src/lib/server/llm/gateway';
 import { ArcStoryMutedError } from '../../src/lib/server/llm/arc-summary';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -273,28 +277,74 @@ describe('assistant notices link by id', () => {
 		expect(await titles(owner.id)).toEqual(['The Assistant wrote the arc for Bram.']);
 	});
 
-	it('tells the writer when an arc could not be written', async () => {
+	it('tells the writer when an arc could not be written, on the last attempt only', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		// Still active while the handler runs, as in pg-boss when a handler throws.
+		const { handlers } = harness(
+			{
+				summariseCharacterArc: async () => {
+					throw new Error('endpoint down');
+				}
+			},
+			{ state: 'active', startedOn: STARTED }
+		);
+		const data = { userId: owner.id, universeId: universe.id, characterId: character.id };
+
+		// Thrown so pg-boss retries, with nothing said yet.
+		await expect(handlers.assistantEnrich([job(data)])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([]);
+
+		// The job fails, so the activity card shows it did not work.
+		const last = { ...job(data), retryCount: 2 };
+		await expect(handlers.assistantEnrich([last])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not write the arc for Bram. Check the endpoint in your settings.'
+		]);
+	});
+
+	it('says so when an out-of-date arc had nothing new to read', async () => {
 		const { owner, universe } = await seedStory();
 		const [character] = await db
 			.insert(characters)
 			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
 			.returning({ id: characters.id });
 		const { handlers } = harness({
+			summariseCharacterArc: async () => ({ outcome: 'unchanged' as const })
+		});
+
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The arc for Bram is up to date. Nothing it reads has changed since it was written.'
+		]);
+	});
+
+	it('says no model is chosen when that stopped an arc, without retrying', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers, completed } = harness({
 			summariseCharacterArc: async () => {
-				throw new Error('endpoint down');
+				throw new NoModelError();
 			}
 		});
 
-		// The job fails, so the activity card shows it did not work.
-		await expect(
-			handlers.assistantEnrich([
-				job({ userId: owner.id, universeId: universe.id, characterId: character.id })
-			])
-		).rejects.toThrow('endpoint down');
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
 
 		expect(await titles(owner.id)).toEqual([
-			'The Assistant could not write the arc for Bram. Check the endpoint in your settings.'
+			"No model is chosen for the Assistant, so it did not write the arc for Bram. Pick one under Account, Assistant, Models per role, then try again from the character's entry in Plan."
 		]);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 
 	it('says why when an arc was cut off at the reply limit, without retrying', async () => {
@@ -338,7 +388,7 @@ describe('assistant notices link by id', () => {
 		]);
 
 		expect(await titles(owner.id)).toEqual([
-			'The Assistant is turned off, so it did not write the arc for Bram. Switch it back on in your settings, then select Write arc to try again.'
+			"The Assistant is turned off, so it did not write the arc for Bram. Switch it back on in your settings, then try again from the character's entry in Plan."
 		]);
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
@@ -427,6 +477,19 @@ describe('assistant notices link by id', () => {
 
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant is turned off, so it stopped reading the entries in "Mythos", with 2 suggestions left. Switch it back on in your settings, then type /enrich to carry on.'
+		]);
+	});
+
+	it('says no model is chosen when that stopped a pass', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({ entities: 1, staged: 2, failed: 0, noModel: true })
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([
+			'No model is chosen for the Assistant, so it stopped reading the entries in "Mythos", with 2 suggestions left. Pick one under Account, Assistant, Models per role, then type /enrich to carry on.'
 		]);
 	});
 

@@ -72,6 +72,15 @@ export class AssistantDisabledError extends Error {
 	}
 }
 
+// Refused like a disabled Assistant (a retry would be refused the same way),
+// but the fix is to pick a model, not to switch the Assistant on.
+export class NoModelError extends AssistantDisabledError {
+	constructor() {
+		super('No model is configured for this action.');
+		this.name = 'NoModelError';
+	}
+}
+
 // A reply stopped at its token limit. Trying again with the same limit stops in
 // the same place, so the worker reports it instead of retrying.
 export class ReplyCutOffError extends Error {
@@ -312,7 +321,7 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 	// this story not muted.
 	if (!resolved.gate.surfacesEnabled) throw new AssistantDisabledError();
 	const model = pickModel(resolved.config, req.role);
-	if (!model) throw new AssistantDisabledError('No model is configured for this action.');
+	if (!model) throw new NoModelError();
 	const policy = await egressPolicy(db);
 	// The persona system message rides at the front of every turn, so the
 	// Assistant's name and tone are consistent across surfaces. Any

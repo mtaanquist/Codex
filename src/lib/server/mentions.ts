@@ -153,7 +153,21 @@ export async function rebuildSceneMentions(
 		surroundingText: mentionSnippet(scene.bodyMd, match.position, match.length)
 	}));
 
-	await db.transaction(async (tx) => {
+	return await db.transaction(async (tx) => {
+		// The scene row first, then the story, then entities: the order saves,
+		// reorders, trash, merge and the summary job take, so none of them can
+		// deadlock with a rebuild. The watermark is the context's load time, so
+		// "indexed against the names as of then"; a later body save or flagged
+		// name change moves past it and the reconcile sweep catches it. Raw SQL
+		// so it does not trip the scene's updated_at $onUpdate, which would make
+		// every scene look perpetually stale.
+		const stamped = await tx.execute(sql`
+			update scenes set mentions_indexed_at = ${shared.loadedAt}
+			where id = ${scene.id} and deleted_at is null
+			returning id
+		`);
+		// Trashed since it was read: the trash already cleared its mentions.
+		if (stamped.rows.length === 0) return { ok: true as const, count: 0 };
 		// Whether the Assistant reads this scene. Restoring a story or universe,
 		// or unmuting a story, marks what it mentions, so a change made while it
 		// was out of reach needs no mark. The share lock waits for a restore or
@@ -176,16 +190,8 @@ export async function rebuildSceneMentions(
 			});
 		if (rows.length > 0) await tx.insert(entityMentions).values(rows);
 		if (reach?.reads) await markEntitiesStale(tx, changedTargets(previous, rows));
-		// Stamp the watermark in the same transaction. Raw SQL so it does not trip
-		// the scene's updated_at $onUpdate, which would make every scene look
-		// perpetually stale. The context's load time marks "indexed against the
-		// names as of then"; a later body save or flagged name change moves past
-		// it and the reconcile sweep catches it.
-		await tx.execute(
-			sql`update scenes set mentions_indexed_at = ${shared.loadedAt} where id = ${scene.id}`
-		);
+		return { ok: true as const, count: found.length };
 	});
-	return { ok: true, count: found.length };
 }
 
 // Records that the universe's detection targets changed (a name, alias,

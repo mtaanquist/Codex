@@ -1060,7 +1060,13 @@ calls the gateway, which proxies through the egress guard.
   `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
   entity when a reindex changes its passages, so status changes and reorders
   do not count and an alias that links older scenes does), and a job naming a character rewrites that
-  character's arc (`arc_summary_md`) instead.
+  character's arc (`arc_summary_md`) instead. Marks are coarse (any passage),
+  while enrich sends at most 16 passages and an arc the first passage of each
+  scene without a summary, so each watermark is stored with a hash of the
+  request it was written from (`assistant_enriched_input`,
+  `arc_summary_input`): a marked entity whose request hashes the same is not
+  sent again, only marked current. A current arc is still rewritten when the
+  writer asks.
 
 ### Tool use and structural actions - sequencing step 6
 

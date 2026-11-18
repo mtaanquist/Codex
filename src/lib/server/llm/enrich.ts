@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
@@ -5,6 +6,7 @@ import { errorFields, logEvent } from '../log.ts';
 import {
 	AssistantDisabledError,
 	completeDetailed,
+	NoModelError,
 	ReplyCutOffError,
 	type GatewayDeps
 } from './gateway.ts';
@@ -111,22 +113,42 @@ export function spreadAppearances<T extends { storyId: string }>(rows: T[], max:
 	return picked.sort((a, b) => a - b).map((index) => rows[index]);
 }
 
+// A fingerprint of a request's messages, stored with the watermark so a marked
+// entity or arc whose request would be the same is not sent again. Marks are
+// set for any passage change, but enrich and arcs send only some passages.
+export function requestHash(messages: ChatMessage[]): string {
+	return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
+}
+
 function snippetLine(a: PlanAppearance, withStory: boolean): string {
 	const where = [withStory ? a.storyTitle : '', a.sceneTitle ?? ''].filter(Boolean).join(' / ');
 	return where ? `[${where}] ${a.snippet}` : a.snippet;
 }
 
+type EnrichOptions = {
+	userId: string;
+	scope: EnrichScope;
+	entityId: string;
+	meter?: SpendMeter;
+	signal?: AbortSignal;
+};
+
 export async function enrichEntity(
 	db: Database,
-	opts: {
-		userId: string;
-		scope: EnrichScope;
-		entityId: string;
-		meter?: SpendMeter;
-		signal?: AbortSignal;
-	},
+	opts: EnrichOptions,
 	deps: GatewayDeps = {}
 ): Promise<EntitySuggestion[]> {
+	return (await enrichRead(db, opts, deps)).suggestions;
+}
+
+// enrichEntity, plus the hash of the request it built. With `unlessInput`, a
+// request with that hash is not sent (unchanged: true).
+async function enrichRead(
+	db: Database,
+	opts: EnrichOptions & { unlessInput?: string | null },
+	deps: GatewayDeps
+): Promise<{ suggestions: EntitySuggestion[]; input: string | null; unchanged: boolean }> {
+	const none = { suggestions: [], input: null, unchanged: false };
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
 		universeId: table.universeId,
 		name: entityNameColumn(table),
@@ -134,8 +156,8 @@ export async function enrichEntity(
 		details: table.details,
 		summaryMd: table.summaryMd
 	}));
-	if (!entity) return [];
-	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return [];
+	if (!entity) return none;
+	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return none;
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 
 	const universeWide = 'universeId' in opts.scope;
@@ -167,6 +189,10 @@ export async function enrichEntity(
 			)
 		}
 	];
+	const input = requestHash(messages);
+	if (opts.unlessInput && input === opts.unlessInput) {
+		return { suggestions: [], input, unchanged: true };
+	}
 
 	const result = await completeDetailed(
 		db,
@@ -193,13 +219,14 @@ export async function enrichEntity(
 	}
 
 	const proposals = parseEnrichResponse(result.content);
-	if (proposals.length === 0) return [];
-	return stageEntitySuggestions(db, {
+	if (proposals.length === 0) return { suggestions: [], input, unchanged: false };
+	const suggestions = await stageEntitySuggestions(db, {
 		ownerId: opts.userId,
 		kind,
 		entityId: opts.entityId,
 		proposals
 	});
+	return { suggestions, input, unchanged: false };
 }
 
 export type UniverseEnrichResult = {
@@ -214,6 +241,8 @@ export type UniverseEnrichResult = {
 	aborted?: boolean;
 	// Set when the Assistant was turned off while the pass ran.
 	disabled?: boolean;
+	// Set when the pass stopped because no model is chosen for it.
+	noModel?: boolean;
 	// Set when the pass gave up after MAX_FAILURES_IN_A_ROW failed reads.
 	stoppedFailing?: boolean;
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
@@ -292,6 +321,7 @@ export async function enrichUniverse(
 	let capped = false;
 	let aborted = false;
 	let disabled = false;
+	let noModel = false;
 	let stoppedFailing = false;
 	let failedInARow = 0;
 	let cutOff: string | undefined;
@@ -312,29 +342,45 @@ export async function enrichUniverse(
 		const table = entityTable(entity.type);
 		// As text, so the check below compares to the microsecond; a JS Date
 		// keeps only milliseconds, and marks land often.
-		const [{ before }] = await db
-			.select({ before: sql<string | null>`${table.assistantEnrichedAt}::text` })
+		const [{ before, lastInput }] = await db
+			.select({
+				before: sql<string | null>`${table.assistantEnrichedAt}::text`,
+				lastInput: table.assistantEnrichedInput
+			})
 			.from(table)
 			.where(eq(table.id, entity.id));
 		try {
-			const rows = await enrichEntity(
+			const read = await enrichRead(
 				db,
-				{ userId, scope: { universeId }, entityId: entity.id, meter, signal },
+				{
+					userId,
+					scope: { universeId },
+					entityId: entity.id,
+					meter,
+					signal,
+					unlessInput: lastInput
+				},
 				deps
 			);
 			// An unmute while the model was reading cleared the mark so the next
-			// pass reads the entity again; that stands.
+			// pass reads the entity again; that stands. A request the same as the
+			// last one only clears the mark.
 			await db
 				.update(table)
-				.set({ assistantEnrichedAt: startedAt, updatedAt: sql`${table.updatedAt}` })
+				.set({
+					assistantEnrichedAt: startedAt,
+					...(read.input ? { assistantEnrichedInput: read.input } : {}),
+					updatedAt: sql`${table.updatedAt}`
+				})
 				.where(
 					and(
 						eq(table.id, entity.id),
 						sql`${table.assistantEnrichedAt} is not distinct from ${before}::timestamptz`
 					)
 				);
+			if (read.unchanged) continue;
 			entities += 1;
-			staged += rows.length;
+			staged += read.suggestions.length;
 			failedInARow = 0;
 		} catch (err) {
 			if (signal?.aborted) {
@@ -342,6 +388,10 @@ export async function enrichUniverse(
 				break;
 			}
 			// Every later entity would be refused the same way.
+			if (err instanceof NoModelError) {
+				noModel = true;
+				break;
+			}
 			if (err instanceof AssistantDisabledError) {
 				disabled = true;
 				break;
@@ -371,6 +421,7 @@ export async function enrichUniverse(
 		...(cutOff ? { cutOff, cutOffs } : {}),
 		...(aborted ? { aborted: true } : {}),
 		...(disabled ? { disabled: true } : {}),
+		...(noModel ? { noModel: true } : {}),
 		...(stoppedFailing ? { stoppedFailing: true } : {}),
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
