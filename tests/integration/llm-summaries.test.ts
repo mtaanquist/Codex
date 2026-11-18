@@ -308,7 +308,11 @@ describe('summariseStory', () => {
 // the next pass does not pay to summarise the same text again. A copy of a
 // stale summary stays stale and is refreshed.
 describe('copied summaries', () => {
+	// updated_at has millisecond precision: an edit in the same millisecond as
+	// the summary would read as already summarised.
+	const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
 	async function editSceneA() {
+		await nextMillisecond();
 		await db
 			.update(scenes)
 			.set({ bodyMd: 'Alice met Bram, then ran.' })
@@ -433,6 +437,7 @@ describe('copied summaries', () => {
 
 	it('refreshes a chapter summary in a new story when it was stale in the draft', async () => {
 		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await nextMillisecond();
 		await db.update(chapters).set({ title: 'Descent, renamed' }).where(eq(chapters.id, chapterId));
 		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
 		if (!saved.ok) throw new Error('save failed');

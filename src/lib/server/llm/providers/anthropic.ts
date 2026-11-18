@@ -283,9 +283,10 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 
 // What has streamed so far, for billing a stream that fails partway.
 // sawDelta is set once a message_delta has reported the output count.
-// sawThinking is set once a thinking block opens: current models stream
-// thinking with its text omitted, so its billed length cannot be counted.
-// maxTokens is the request's output cap, the most an attempt can be billed.
+// sawThinking is set once a thinking block opens, thinkingChars counts its
+// streamed text: current models stream thinking with its text omitted, so
+// its billed length cannot be counted. maxTokens is the request's output
+// cap, the most an attempt can be billed.
 type StreamProgress = {
 	outputChars: number;
 	// Server tool results (web search) are billed as input, but only
@@ -293,16 +294,20 @@ type StreamProgress = {
 	resultChars: number;
 	sawDelta: boolean;
 	sawThinking: boolean;
+	thinkingChars: number;
 	maxTokens: number;
 };
 
 // The output a stream was billed for when no message_delta reported it: the
-// characters streamed, or the request's output cap once a thinking block
-// opened, since omitted thinking is billed but never seen. Over-counting only
-// stops a capped run early; under-counting would let it pass the cap.
-function estimatedOutput(progress: StreamProgress): number {
+// characters streamed. A failed attempt whose thinking streamed no text is
+// billed for thinking it never showed, so it counts as the request's output
+// cap instead. Over-counting only stops a capped run early; under-counting
+// would let it pass the cap. A finished reply's thinking is done, so the
+// characters are the estimate there.
+function estimatedOutput(progress: StreamProgress, failed: boolean): number {
 	const streamed = tokensForChars(progress.outputChars);
-	return progress.sawThinking ? Math.max(streamed, progress.maxTokens) : streamed;
+	const hidden = failed && progress.sawThinking && progress.thinkingChars === 0;
+	return hidden ? Math.max(streamed, progress.maxTokens) : streamed;
 }
 
 // What a stream that failed partway had been billed: the input side from
@@ -317,7 +322,9 @@ function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefi
 	const prompt = progress.sawDelta ? started : started + tokensForChars(progress.resultChars);
 	const reported = Number(raw.output_tokens);
 	const counted = Number.isFinite(reported) ? reported : 0;
-	const completion = progress.sawDelta ? counted : Math.max(counted, estimatedOutput(progress));
+	const completion = progress.sawDelta
+		? counted
+		: Math.max(counted, estimatedOutput(progress, true));
 	const cached = cacheRead(raw);
 	return {
 		promptTokens: prompt,
@@ -438,7 +445,9 @@ type Block = Record<string, unknown>;
 // The status a buffered call gets for the errors Anthropic sends mid-stream.
 const STREAM_ERROR_STATUS = new Map<unknown, number>([
 	['overloaded_error', 529],
-	['api_error', 500]
+	['api_error', 500],
+	['timeout_error', 504],
+	['rate_limit_error', 429]
 ]);
 
 // Rebuild, from a stream, the message a non-streaming call returns: content
@@ -457,6 +466,7 @@ async function assembleMessage(
 		resultChars: 0,
 		sawDelta: false,
 		sawThinking: false,
+		thinkingChars: 0,
 		maxTokens
 	};
 	try {
@@ -467,7 +477,7 @@ async function assembleMessage(
 			const reported = Number(usage.output_tokens);
 			usage.output_tokens = Math.max(
 				Number.isFinite(reported) ? reported : 0,
-				estimatedOutput(progress)
+				estimatedOutput(progress, false)
 			);
 		}
 		return message;
@@ -523,6 +533,7 @@ async function assembleFrames(
 					const thinking = `${delta.thinking ?? ''}`;
 					block.thinking = `${block.thinking ?? ''}${thinking}`;
 					progress.outputChars += thinking.length;
+					progress.thinkingChars += thinking.length;
 				} else if (delta.type === 'signature_delta') {
 					block.signature = `${block.signature ?? ''}${delta.signature ?? ''}`;
 				} else if (delta.type === 'input_json_delta') {

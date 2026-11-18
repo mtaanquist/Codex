@@ -856,6 +856,61 @@ describe('anthropicProvider.respond over a stream', () => {
 		});
 	});
 
+	it('estimates a failed stream whose thinking streamed text from the characters', async () => {
+		const thinking = 'y'.repeat(20);
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'thinking_delta', thinking }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: thinking.length / 4 });
+	});
+
+	it('estimates a finished thinking reply with no output count from the characters', async () => {
+		// Only a failed attempt can have unseen thinking still billed; a
+		// finished reply is never booked at the output cap.
+		const text = 'x'.repeat(8);
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({ type: 'content_block_stop', index: 0 }),
+				frame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text } }),
+				frame({ type: 'content_block_stop', index: 1 }),
+				...end('end_turn', {})
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: text.length / 4 });
+	});
+
+	it('retries the timeout and rate limit errors a stream can send', async () => {
+		for (const [type, status] of [
+			['timeout_error', 504],
+			['rate_limit_error', 429]
+		] as const) {
+			const http: HttpRequest = async () =>
+				sseResponse([start(), frame({ type: 'error', error: { type, message: 'x' } })]);
+			const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+			expect((err as Error).message).toContain(`Endpoint returned ${status}`);
+		}
+	});
+
 	it('takes an output count sent as a string', async () => {
 		const http: HttpRequest = async () =>
 			sseResponse([
