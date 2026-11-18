@@ -404,10 +404,18 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(
 		page.locator('.row-submenu').getByRole('menuitem', { name: 'Review with the Assistant...' })
 	).toBeVisible();
-	await expect(
-		page.locator('.row-submenu').getByRole('menuitem', { name: 'Suggest where to split' })
-	).toBeVisible();
-	await page.keyboard.press('Escape');
+	// "Suggest where to split" fills the composer for the writer to edit rather
+	// than sending.
+	const sentBefore = await page.locator('.msg.user').count();
+	await page
+		.locator('.row-submenu')
+		.getByRole('menuitem', { name: 'Suggest where to split' })
+		.click();
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await expect(composer).toBeFocused();
+	await expect(composer).toHaveValue(/^Suggest a natural place to split .* in two\./);
+	await expect(page.locator('.msg.user')).toHaveCount(sentBefore);
+	await composer.fill('');
 
 	// The Write panel captures where the cursor sits as a removable reference,
 	// so "continue from here" has something to continue from.
