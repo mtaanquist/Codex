@@ -383,6 +383,30 @@ describe('per-run spend cap (#549)', () => {
 		expect(second.seen).toHaveLength(2);
 	});
 
+	it('does not adopt a capped run that checked other categories', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const first = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: ['mechanics'], jobId: 'cap-7' },
+			{ provider: provider().provider }
+		);
+		expect(first.capped).toBe(true);
+
+		// The scenes the mechanics pass covered were never checked for prose.
+		await configure({ spendCapUsd: 10 });
+		const second = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: ['prose'], jobId: 'cap-8' },
+			{ provider: second.provider }
+		);
+
+		expect(second.seen).toHaveLength(3);
+		expect(result.reviewed).toBe(3);
+	});
+
 	it('says so when the model has no price, rather than skipping the cap in silence', async () => {
 		const storyId = await seedStory(2);
 		await configure({ spendCapUsd: 0.5 });

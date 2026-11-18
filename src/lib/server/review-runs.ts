@@ -1,21 +1,25 @@
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assistantReviewRuns, type ReviewRunState } from './db/schema.ts';
+import { parseCategories, type ReviewCategory } from '../review-shape.ts';
 
 // Progress storage for the background review job. The job writes its state as
 // it advances (one row per pg-boss job id), so the status endpoint can report
 // where it is and a retry of the same job after a worker restart can skip the
 // scenes already handled.
 
-// What a run was over: the mode and the target, the same key the queue uses to
-// hold one unfinished job per scope. Stored on the run state so a later job
-// over the same scope can pick up where a capped run stopped (see
-// adoptCappedRun) - the writer starts that one from the same button, so it
-// arrives with a job id the earlier run never saw.
+// What a run was over: the mode, the target and, for a copyedit, the
+// categories it checks (in canonical order; "general" is the sparing pass with
+// none). The queue holds one unfinished job per key, so a copyedit for other
+// categories is its own job rather than refused as a repeat. Stored on the run
+// state so a later job over the same scope can pick up where a capped run
+// stopped (see adoptCappedRun) - the writer starts that one from the same
+// button, so it arrives with a job id the earlier run never saw.
 export function reviewScopeKey(input: {
 	storyId?: string;
 	universeId?: string;
 	chapterId?: string;
+	categories?: ReviewCategory[];
 	mode?: 'full' | 'continuity';
 }): string {
 	const target = input.universeId
@@ -23,7 +27,9 @@ export function reviewScopeKey(input: {
 		: input.chapterId
 			? `${input.storyId}:${input.chapterId}`
 			: `${input.storyId}`;
-	return `${input.mode ?? 'full'}:${target}`;
+	if (input.mode === 'continuity') return `continuity:${target}`;
+	const categories = parseCategories(input.categories);
+	return `full:${target}:${categories.length ? categories.join('+') : 'general'}`;
 }
 
 export function emptyReviewRun(): ReviewRunState {

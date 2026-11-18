@@ -95,6 +95,26 @@ describe('assistant queue policy', () => {
 		// Another scope is its own job.
 		await jobs.queueAssistantReview({ ...input, chapterId: 'c1' });
 		expect(await unfinished(ASSISTANT_REVIEW_QUEUE)).toBe(2);
+
+		// So is a copyedit of the same story for other categories: it checks
+		// different things, and would otherwise never run.
+		const prose = await jobs.queueAssistantReview({ ...input, categories: ['prose'] });
+		expect(prose).toEqual(expect.any(String));
+		expect(prose).not.toBe('coalesced');
+		expect(await unfinished(ASSISTANT_REVIEW_QUEUE)).toBe(3);
+		await boss.deleteAllJobs(ASSISTANT_REVIEW_QUEUE);
+	});
+
+	it('keeps holding the key while a failed job waits to be retried', async () => {
+		await boss.deleteAllJobs(QUEUE);
+		const first = await boss.send(QUEUE, {}, { singletonKey: 'retry-key', retryLimit: 1 });
+		const [job] = await boss.fetch(QUEUE);
+		expect(job.id).toBe(first);
+		await boss.fail(QUEUE, job.id);
+		const { rows } = await pool.query(`select state from pgboss.job where id = $1`, [first]);
+		expect(rows[0].state).toBe('retry');
+
+		expect(await boss.send(QUEUE, {}, { singletonKey: 'retry-key' })).toBeNull();
 	});
 
 	it('coalesces a repeat summary pass of the same story into the queued one', async () => {

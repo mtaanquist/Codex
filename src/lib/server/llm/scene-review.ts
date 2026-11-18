@@ -925,7 +925,11 @@ export async function reviewStoryScenes(
 ): Promise<StoryReviewResult> {
 	const run = await openRun(db, {
 		...opts,
-		scope: reviewScopeKey({ storyId: opts.storyId, chapterId: opts.chapterId })
+		scope: reviewScopeKey({
+			storyId: opts.storyId,
+			chapterId: opts.chapterId,
+			categories: opts.categories
+		})
 	});
 	const done = new Set(run.state.completed);
 	const failures: ReviewFailure[] = [...run.state.failures];
