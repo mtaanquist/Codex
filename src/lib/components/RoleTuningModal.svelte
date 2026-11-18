@@ -6,6 +6,7 @@
 		MAX_REPLY_TOKENS,
 		MAX_TEMPERATURE,
 		TEMPERATURE_STEP,
+		claudeRoleEffort,
 		defaultMaxTokens,
 		roleMayThink,
 		type AssistantRole,
@@ -170,15 +171,15 @@
 						onchange={(event) =>
 							(effort = (event.currentTarget.value || undefined) as EffortLevel | undefined)}
 					>
-						<option value="">Endpoint default</option>
+						<option value="">Codex default ({claudeRoleEffort(role.id)})</option>
 						{#each EFFORT_LEVELS as level (level)}
 							<option value={level}>{level}</option>
 						{/each}
 					</select>
 					<p class="field-hint">
-						How hard the model works on each request. Lighter or older models may not accept every
-						level: if a request fails, set this back to the default. "xhigh" needs a recent Opus
-						model.
+						How hard the model works on each request: low is quick and cheap, high is thorough.
+						Lighter or older models may not accept every level: if a request fails, set this back to
+						the default. "xhigh" needs a recent Opus model.
 					</p>
 				</div>
 			{:else}

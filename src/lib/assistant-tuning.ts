@@ -83,6 +83,41 @@ export function defaultMaxTokens(
 	return Math.max(base, room);
 }
 
+// The effort Codex asks Claude for when a role sets none. Current Claude models
+// cannot turn thinking off, so effort is the lever: low keeps inline
+// suggestions and background work quick and cheap, the conversational roles sit
+// in the middle, and the reviewer, which has to be right about what it quotes,
+// works hardest. Left to itself the API picks a model-dependent level, which
+// ranges from medium to high.
+const CLAUDE_ROLE_EFFORT: Record<AssistantRole, EffortLevel> = {
+	continuation: 'low',
+	utility: 'low',
+	chat: 'medium',
+	coauthor: 'medium',
+	reviewer: 'high'
+};
+
+// Claude models that take an effort level. Older and smaller ones (Haiku 4.5,
+// Sonnet 4.5) reject it, and a name this does not recognise is left alone, so
+// a request never fails over a setting the writer did not choose.
+const CLAUDE_EFFORT_MODELS =
+	/^claude-((fable|mythos|opus|sonnet|haiku)-5|opus-4-[5-8]|sonnet-4-6)(\b|-)/;
+
+export function claudeRoleEffort(role: AssistantRole): EffortLevel {
+	return CLAUDE_ROLE_EFFORT[role];
+}
+
+// The effort a Claude request carries: the role's own, else the Codex default
+// where the model takes one, else none.
+export function claudeEffort(
+	role: AssistantRole,
+	model: string,
+	tuning: RoleTuning | undefined
+): EffortLevel | undefined {
+	if (tuning?.effort) return tuning.effort;
+	return CLAUDE_EFFORT_MODELS.test(model) ? CLAUDE_ROLE_EFFORT[role] : undefined;
+}
+
 // The model a role runs on: its own, else the chat model, else the provider's
 // suggestion for the role, else whatever is set. Shared so the settings page
 // labels an unpicked role with what the server will actually run.
