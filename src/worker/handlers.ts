@@ -170,7 +170,13 @@ export function createHandlers(deps: WorkerDeps) {
 					: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
-			title = `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			title = job.signal?.aborted
+				? `Writing the arc for ${character.name} was stopped before it finished.`
+				: `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			// The notice is held back while pg-boss will try again; the job is
+			// failed either way, so the activity card shows it did not work.
+			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
+			throw error;
 		}
 		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 		logEvent('info', 'assistant.arc', { characterId });

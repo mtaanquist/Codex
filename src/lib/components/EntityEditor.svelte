@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
@@ -48,6 +48,7 @@
 			summaryMd: string | null;
 			bodyMd: string;
 			details?: { label: string; value: string }[];
+			universeId?: string;
 			badgeColor?: string | null;
 			badgeAssetId?: string | null;
 		};
@@ -184,13 +185,18 @@
 		suggestions = suggestions.filter((p) => p.id !== s.id);
 	}
 
+	// Queues the arc and follows it in the activity card; once it settles, the
+	// page data reloads so the new arc shows, unless the writer has moved on to
+	// another entry in the meantime.
 	let writingArc = $state(false);
+	let mounted = true;
+	onDestroy(() => (mounted = false));
 	async function writeArc() {
-		if (writingArc || !universeRef) return;
+		if (writingArc || !entity.universeId) return;
 		writingArc = true;
 		try {
-			await startArcJob({ characterId: entity.id, universeId: universeRef, name });
-			await refreshAll();
+			await startArcJob({ characterId: entity.id, universeId: entity.universeId, name });
+			if (mounted) await refreshAll();
 		} finally {
 			writingArc = false;
 		}
@@ -625,7 +631,7 @@
 				they appear in.
 			</p>
 		{/if}
-		{#if assistantEnabled && universeRef}
+		{#if assistantEnabled && entity.universeId}
 			<div class="assist-enrich">
 				<button class="btn btn-secondary" type="button" disabled={writingArc} onclick={writeArc}>
 					{writingArc ? 'Writing...' : arc?.summaryMd ? 'Refresh arc' : 'Write arc'}

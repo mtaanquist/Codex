@@ -278,9 +278,12 @@ describe('assistant notices link by id', () => {
 			}
 		});
 
-		await handlers.assistantEnrich([
-			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
-		]);
+		// The job fails, so the activity card shows it did not work.
+		await expect(
+			handlers.assistantEnrich([
+				job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+			])
+		).rejects.toThrow('endpoint down');
 
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant could not write the arc for Bram. Check the endpoint in your settings.'

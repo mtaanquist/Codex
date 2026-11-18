@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
 import * as schema from '../../src/lib/server/db/schema';
-import { chapters, stories, universes, users } from '../../src/lib/server/db/schema';
+import { chapters, characters, stories, universes, users } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { findRunningAssistantJobs } from '../../src/lib/server/running-jobs';
@@ -71,11 +71,18 @@ afterAll(async () => {
 });
 
 describe('findRunningAssistantJobs', () => {
-	it('lists a character arc as its own kind', async () => {
-		const characterId = '00000000-0000-4000-8000-000000000001';
-		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, { userId, universeId, characterId });
+	it('lists a character arc as its own kind, named for the character', async () => {
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId, ownerId: userId, name: 'Bram' })
+			.returning({ id: characters.id });
+		const id = await boss.send(ASSISTANT_ENRICH_QUEUE, {
+			userId,
+			universeId,
+			characterId: character.id
+		});
 		const jobs = await findRunningAssistantJobs(db, userId);
-		expect(jobs).toMatchObject([{ id, kind: 'arc', universeId, title: 'Hollow Coast' }]);
+		expect(jobs).toMatchObject([{ id, kind: 'arc', universeId, title: 'Bram' }]);
 	});
 
 	it('lists an enrichment pass under its universe', async () => {
