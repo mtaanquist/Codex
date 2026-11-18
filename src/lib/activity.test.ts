@@ -42,13 +42,42 @@ describe('trackJob', () => {
 		expect(activity.items[0]).toMatchObject({ state: 'done', label: 'Done' });
 	});
 
-	it('does not follow the same job twice', async () => {
-		scriptStatus([{ state: 'running' }]);
-		void trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
-		await trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+	it('does not follow the same job twice, and a second call settles with the first', async () => {
+		scriptStatus([{ state: 'running' }, { state: 'done' }]);
+		const first = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		let secondSettled = false;
+		const second = trackJob({ jobId: 'j1', kind: 'summaries', ...labels }).then(
+			() => (secondSettled = true)
+		);
 
 		expect(trackedJobs.list).toHaveLength(1);
 		expect(activity.items).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(secondSettled).toBe(false);
+		await vi.advanceTimersByTimeAsync(3000);
+		await first;
+		await second;
+		expect(secondSettled).toBe(true);
+	});
+
+	it('does not poll while the tab is hidden, and checks as soon as it is shown', async () => {
+		const listeners = new Set<() => void>();
+		const doc = {
+			visibilityState: 'hidden',
+			addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+			removeEventListener: (_: string, fn: () => void) => listeners.delete(fn)
+		};
+		vi.stubGlobal('document', doc);
+		const fetch = scriptStatus([{ state: 'done' }]);
+		const run = trackJob({ jobId: 'j1', kind: 'review', ...labels });
+
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(fetch).not.toHaveBeenCalled();
+		doc.visibilityState = 'visible';
+		for (const fn of [...listeners]) fn();
+		await run;
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(activity.items[0]).toMatchObject({ state: 'done' });
 	});
 
 	it('keeps polling a long run instead of giving up', async () => {

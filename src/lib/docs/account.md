@@ -178,7 +178,9 @@ contacts a model on its own.
   cheap) to max (thorough and expensive). Current Claude models always think a
   little, so effort is how you keep a role quick. Left on the Codex default,
   on a current Claude model, Continuation and Background work run at low, Rubber duck and Co-author at
-  medium, and the Reviewer at high, which suits most writers. Not every model
+  medium, and the Reviewer at high, which suits most writers. On older or
+  unrecognised Claude models the list shows "Endpoint default" instead, and no
+  effort is sent unless you pick one. Not every model
   accepts every level ("xhigh" needs a recent Opus model, and small models may
   reject effort entirely); if a request starts failing after a change here, clear
   the effort for that role.
