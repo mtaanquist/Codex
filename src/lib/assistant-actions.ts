@@ -229,7 +229,9 @@ function jobLabels(
 	if (kind === 'arc') {
 		return {
 			runningLabel: `Writing the arc for ${label}...`,
-			doneLabel: `Arc for ${label} written`,
+			// The job may write the arc, find it up to date, or find it changed
+			// again while it checked; the notification says which.
+			doneLabel: `Finished with the arc for ${label}`,
 			failedLabel: `Could not write the arc for ${label}`
 		};
 	}

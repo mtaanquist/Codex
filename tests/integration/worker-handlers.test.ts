@@ -533,6 +533,19 @@ describe('assistant notices link by id', () => {
 		);
 	});
 
+	it('does not say it could not read the entries when others were unchanged', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({ entities: 0, unchanged: 2, staged: 0, failed: 1 })
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant found nothing new to suggest for the entries in "Mythos". 1 entry could not be read. Check the endpoint in your settings.'
+		]);
+	});
+
 	it('links an enrichment pass to the universe Plan by id', async () => {
 		const { owner, universe } = await seedStory();
 		const { handlers } = harness({

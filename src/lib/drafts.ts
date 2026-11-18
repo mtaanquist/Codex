@@ -17,6 +17,9 @@ export type DraftScene = {
 	title: string | null;
 	bodyMd: string;
 	summaryMd: string | null;
+	// When the Assistant wrote the summary (ISO time), null for the writer's
+	// own. Absent in drafts saved before this was recorded.
+	summaryGeneratedAt?: string | null;
 	status: string;
 	storyTime: string | null;
 	wordCount: number;

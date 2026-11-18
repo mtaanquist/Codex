@@ -612,16 +612,16 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read${left}. Check the endpoint in your settings, then type /enrich to carry on.`;
 				} else if (result.aborted) {
 					title = `The Assistant stopped reading the entries in "${name}" before it finished${left}. Type /enrich to carry on.`;
-				} else if (result.entities === 0 && result.failed > 0) {
+				} else if (result.entities === 0 && !result.unchanged && result.failed > 0) {
 					title = `The Assistant could not read the entries in "${name}". ${result.cutOff ?? 'Check the endpoint in your settings.'}`;
 				} else if (result.staged === 0) {
 					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
 				} else {
 					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
 				}
-				// The entries that failed in a pass that read others. A pass stopped
-				// for failing already says why.
-				if (result.entities > 0 && !result.stoppedFailing) {
+				// The entries that failed in a pass that read or passed over others. A
+				// pass stopped for failing already says why.
+				if ((result.entities > 0 || !!result.unchanged) && !result.stoppedFailing) {
 					const cutOffs = result.cutOffs ?? 0;
 					const others = result.failed - cutOffs;
 					if (cutOffs > 0) {

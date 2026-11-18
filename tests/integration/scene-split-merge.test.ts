@@ -158,6 +158,31 @@ describe('splitScene', () => {
 });
 
 describe('duplicateScene', () => {
+	// A copied summary keeps whether the Assistant wrote it, so the summary job
+	// still refreshes it (or still leaves the writer's own alone).
+	it('copies who wrote the summary along with it', async () => {
+		const generated = await makeScene(1, 'Generated summary.');
+		const stamp = new Date('2026-11-01T10:00:00Z');
+		await db
+			.update(scenes)
+			.set({ summaryMd: 'From the Assistant', summaryGeneratedAt: stamp })
+			.where(eq(scenes.id, generated.id));
+		const handWritten = await makeScene(2, 'Own summary.');
+		await db
+			.update(scenes)
+			.set({ summaryMd: 'From the writer' })
+			.where(eq(scenes.id, handWritten.id));
+
+		const first = await duplicateScene(db, ownerId, generated.id);
+		const second = await duplicateScene(db, ownerId, handWritten.id);
+		if (!first.ok || !second.ok) throw new Error('duplicate failed');
+		const [copy] = await db.select().from(scenes).where(eq(scenes.id, first.newSceneId));
+		expect(copy.summaryGeneratedAt?.toISOString()).toBe(stamp.toISOString());
+		const [own] = await db.select().from(scenes).where(eq(scenes.id, second.newSceneId));
+		expect(own.summaryMd).toBe('From the writer');
+		expect(own.summaryGeneratedAt).toBeNull();
+	});
+
 	it('copies the scene in full directly after the original', async () => {
 		const before = await makeScene(1, 'Stays first.');
 		const scene = await makeScene(2, 'Template body.', 'Session skeleton');

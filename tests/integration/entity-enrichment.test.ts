@@ -844,7 +844,8 @@ describe('enrichUniverse', () => {
 		// marks Bram without changing what the model would read.
 		await rewrite(ids[16], 'Bram in the last scene.');
 		expect((await enrichedAt(bram))! < STALE_MARK_BEFORE).toBe(true);
-		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(0);
+		const skipped = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(skipped).toMatchObject({ entities: 0, unchanged: 1 });
 		expect(calls).toBe(1);
 		expect((await enrichedAt(bram))! > STALE_MARK_BEFORE).toBe(true);
 

@@ -232,6 +232,9 @@ async function enrichRead(
 export type UniverseEnrichResult = {
 	// Entities the pass read, and how many suggestions it staged across them.
 	entities: number;
+	// Entities passed over because the request would have been the same as
+	// their last read.
+	unchanged?: number;
 	staged: number;
 	failed: number;
 	// Why reads failed when replies were cut off at the limit, and how many.
@@ -316,6 +319,7 @@ export async function enrichUniverse(
 		capUsd: resolved.config.spendCapUsd
 	});
 	let entities = 0;
+	let unchanged = 0;
 	let staged = 0;
 	let failed = 0;
 	let capped = false;
@@ -378,7 +382,10 @@ export async function enrichUniverse(
 						sql`${table.assistantEnrichedAt} is not distinct from ${before}::timestamptz`
 					)
 				);
-			if (read.unchanged) continue;
+			if (read.unchanged) {
+				unchanged += 1;
+				continue;
+			}
 			entities += 1;
 			staged += read.suggestions.length;
 			failedInARow = 0;
@@ -416,6 +423,7 @@ export async function enrichUniverse(
 
 	return {
 		entities,
+		...(unchanged ? { unchanged } : {}),
 		staged,
 		failed,
 		...(cutOff ? { cutOff, cutOffs } : {}),
