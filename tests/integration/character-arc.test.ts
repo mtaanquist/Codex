@@ -291,4 +291,69 @@ describe('arc staleness', () => {
 		expect(await arcIsStale(db, written)).toBe(true);
 		expect(await planArc(db, { kind: 'place', entity: written })).toBeNull();
 	});
+
+	it('goes stale when a mentioning scene is deleted', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [written] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, written)).toBe(false);
+		// Raw, so the scene's updated_at stays put and only deleted_at moves.
+		await pool.query(`update scenes set deleted_at = now() + interval '1 minute' where id = $1`, [
+			sceneId
+		]);
+		expect(await arcIsStale(db, written)).toBe(true);
+	});
+
+	it('goes stale when a story it read is deleted', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram again' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [written] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, written)).toBe(false);
+		await pool.query(`update stories set deleted_at = now() + interval '1 minute' where id = $1`, [
+			secondStoryId
+		]);
+		expect(await arcIsStale(db, written)).toBe(true);
+	});
+});
+
+describe('muting and unmuting a story', () => {
+	it('drops every arc in the universe on a mute, even one whose mention was edited away', async () => {
+		const bram = await makeCharacter();
+		const other = await makeCharacter();
+		const sceneId = await sceneMentioning(secondStoryId, bram.id, {
+			position: 1,
+			snippet: 'Bram in private'
+		});
+		await sceneMentioning(firstStoryId, other.id, { position: 1, snippet: 'Bram elsewhere' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: other.id }, deps);
+		await db.delete(entityMentions).where(eq(entityMentions.sourceId, sceneId));
+
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
+		expect((await readArc(other.id)).arcSummaryMd).toBeNull();
+	});
+
+	it('marks arcs out of date and entities for another enrich pass on an unmute', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: new Date() })
+			.where(eq(characters.id, bram.id));
+		const [before] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, before)).toBe(false);
+
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(after.arcSummaryMd).toBe(before.arcSummaryMd);
+		expect(await arcIsStale(db, after)).toBe(true);
+		expect(after.assistantEnrichedAt).toBeNull();
+	});
 });
