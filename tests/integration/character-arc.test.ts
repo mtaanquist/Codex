@@ -23,7 +23,7 @@ import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
 
-const { summariseCharacterArc, arcIsStale, planArc } =
+const { summariseCharacterArc, arcIsStale, planArc, ArcStoryMutedError } =
 	await import('../../src/lib/server/llm/arc-summary');
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
@@ -221,7 +221,7 @@ describe('summariseCharacterArc', () => {
 		duringCall = () => saveStoryLlmOverride(db, secondStoryId, { enabled: false });
 		await expect(
 			summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps)
-		).rejects.toThrow();
+		).rejects.toThrow(ArcStoryMutedError);
 		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
 	});
 

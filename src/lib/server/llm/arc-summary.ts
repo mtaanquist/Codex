@@ -109,6 +109,15 @@ export async function arcIsStale(
 	return !!lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime();
 }
 
+// A story the arc read was muted before the arc was stored. Thrown so the job
+// retries, and the retry reads without the muted story.
+export class ArcStoryMutedError extends Error {
+	constructor() {
+		super('A story was muted while the arc was being written.');
+		this.name = 'ArcStoryMutedError';
+	}
+}
+
 export type ArcResult = {
 	// written: a new arc is stored; empty: the character appears in no scene,
 	// so nothing was asked; missing: not the user's character.
@@ -189,9 +198,7 @@ export async function summariseCharacterArc(
 			.from(stories)
 			.where(inArray(stories.id, storyIds))
 			.for('share');
-		// Thrown so the job retries, and the retry reads without the muted story.
-		if (read.some((r) => !r.open))
-			throw new Error('A story was muted while the arc was being written.');
+		if (read.some((r) => !r.open)) throw new ArcStoryMutedError();
 		await tx
 			.update(characters)
 			.set({

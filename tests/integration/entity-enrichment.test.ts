@@ -593,6 +593,103 @@ describe('enrichUniverse', () => {
 		expect(calls).toBe(0);
 	});
 
+	// Not retried by the gateway, so one call is one failed read.
+	const unauthorized = 'Endpoint returned 401: unauthorized';
+
+	it('stops after three failed reads in a row', async () => {
+		for (const name of ['Alda', 'Bram', 'Cass', 'Dov', 'Esk']) {
+			await sceneMentioning(await makeCharacter({ name }), `${name} at the harbour`);
+		}
+		const failing: GatewayDeps = {
+			http: noHttp,
+			provider: {
+				...stubProvider,
+				async respond() {
+					calls += 1;
+					throw new Error(unauthorized);
+				}
+			}
+		};
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, failing);
+		expect(result).toMatchObject({ entities: 0, failed: 3, stoppedFailing: true });
+		expect(calls).toBe(3);
+	});
+
+	it('starts the count again after a read that works, or one cut off at the cap', async () => {
+		const names = ['Alda', 'Bram', 'Cass', 'Dov', 'Esk', 'Fen', 'Gil', 'Hal', 'Ivo'];
+		for (const name of names) {
+			await sceneMentioning(await makeCharacter({ name }), `${name} at the harbour`);
+		}
+		// Without the reset after Cass's cut-off, Dov would be the third failure
+		// in a row; without the one after Fen's read, Gil would be.
+		const outcomes = ['fail', 'fail', 'cut', 'fail', 'fail', 'ok', 'fail', 'fail', 'ok'];
+		const mixed: GatewayDeps = {
+			http: noHttp,
+			provider: {
+				...stubProvider,
+				async respond() {
+					const outcome = outcomes[calls];
+					calls += 1;
+					if (outcome === 'fail') throw new Error(unauthorized);
+					return {
+						content: enrichJson,
+						toolCalls: [],
+						finishReason: outcome === 'cut' ? 'length' : undefined
+					};
+				}
+			}
+		};
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, mixed);
+		expect(result).toMatchObject({ entities: 2, failed: 7, cutOffs: 1 });
+		expect(result.stoppedFailing).toBeUndefined();
+		expect(calls).toBe(9);
+	});
+
+	it('does not stop for failing when the third failure was the last entry', async () => {
+		for (const name of ['Alda', 'Bram', 'Cass']) {
+			await sceneMentioning(await makeCharacter({ name }), `${name} at the harbour`);
+		}
+		const failing: GatewayDeps = {
+			http: noHttp,
+			provider: {
+				...stubProvider,
+				async respond() {
+					throw new Error(unauthorized);
+				}
+			}
+		};
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, failing);
+		expect(result).toMatchObject({ entities: 0, failed: 3 });
+		expect(result.stoppedFailing).toBeUndefined();
+	});
+
+	it('stops when the Assistant is turned off mid-pass, leaving the rest unmarked', async () => {
+		const alda = await makeCharacter({ name: 'Alda' });
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneMentioning(alda, 'Alda at the gate');
+		await sceneMentioning(bram, 'Bram at the harbour');
+		duringCall = async () => {
+			await saveAccountLlmConfig(db, ownerId, {
+				enabled: false,
+				assistantName: '',
+				persona: 'balanced',
+				endpoint: 'https://api.example.com/v1',
+				apiKey: 'sk',
+				models: { chat: 'chat-model' },
+				toolCallBudget: 8
+			});
+		};
+		try {
+			const result = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+			expect(result).toMatchObject({ entities: 1, failed: 0, disabled: true });
+		} finally {
+			duringCall = null;
+		}
+		expect(calls).toBe(1);
+		expect(await enrichedAt(alda)).not.toBeNull();
+		expect(await enrichedAt(bram)).toBeNull();
+	});
+
 	it('does not mark an entity whose read failed, so the next pass tries again', async () => {
 		const id = await makeCharacter();
 		await sceneMentioning(id, 'Bram at the harbour');
