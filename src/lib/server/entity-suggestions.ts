@@ -85,12 +85,48 @@ async function loadEntity(
 	return row ?? null;
 }
 
+// Whether the Assistant should leave the summary alone: the entity has one, a
+// suggested one is waiting, or the writer turned one down. A rejected summary
+// is never suggested again, like a rejected alias.
+function summaryClosed(
+	summaryMd: string | null,
+	earlier: { field: SuggestionField; status: string }[]
+): boolean {
+	return (
+		!!summaryMd?.trim() ||
+		earlier.some(
+			(p) => p.field === 'summary' && (p.status === 'pending' || p.status === 'rejected')
+		)
+	);
+}
+
+// summaryClosed for an entity, so enrichment does not ask the model for a
+// summary it would only drop.
+export async function summarySuggestionClosed(
+	db: Database,
+	opts: { ownerId: string; kind: EntityKind; entityId: string; summaryMd: string | null }
+): Promise<boolean> {
+	if (opts.summaryMd?.trim()) return true;
+	const earlier = await db
+		.select({ field: entitySuggestions.field, status: entitySuggestions.status })
+		.from(entitySuggestions)
+		.where(
+			and(
+				eq(entitySuggestions.ownerId, opts.ownerId),
+				eq(entitySuggestions.entityKind, opts.kind),
+				eq(entitySuggestions.entityId, opts.entityId),
+				eq(entitySuggestions.field, 'summary')
+			)
+		);
+	return summaryClosed(opts.summaryMd, earlier);
+}
+
 // Stage proposals as pending suggestions, dropping any that duplicate what the
 // entity already has, an already-pending suggestion, or one the writer rejected:
 // an alias already listed or ever suggested before (so one the writer accepted
 // and later removed stays gone), a detail whose label exists (or that
-// exact label and value was turned down), or a summary when one is set or
-// pending. Returns the staged rows. Skips silently when the entity is not the
+// exact label and value was turned down), or a summary when summaryClosed says
+// so. Returns the staged rows. Skips silently when the entity is not the
 // user's.
 export async function stageEntitySuggestions(
 	db: Database,
@@ -130,7 +166,7 @@ export async function stageEntitySuggestions(
 	const rejectedDetails = new Set(
 		rejected.filter((p) => p.field === 'detail').map((p) => detailKey(p.label ?? '', p.value))
 	);
-	const hasSummary = !!entity.summaryMd?.trim() || pending.some((p) => p.field === 'summary');
+	const hasSummary = summaryClosed(entity.summaryMd, earlier);
 
 	const toInsert: { field: SuggestionField; label: string | null; value: string }[] = [];
 	for (const p of proposals) {
