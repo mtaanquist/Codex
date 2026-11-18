@@ -7,6 +7,7 @@ import { ownedStory } from '#lib/server/story-access';
 import { readingPageRef } from '#lib/server/publish';
 import {
 	compareWithDraft,
+	draftScenesInTrash,
 	getDraft,
 	listDrafts,
 	workingOutline,
@@ -48,13 +49,18 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const tabParam = url.searchParams.get('tab');
 	const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'story';
 
-	const [drafts, liveScenes, reading, [archive]] = await Promise.all([
+	const [drafts, liveScenes, trashed, reading, [archive]] = await Promise.all([
 		listDrafts(db, story.id),
 		// The working draft's text for each scene, to compare against and to
 		// say which scenes have changed since.
 		tab === 'story'
 			? workingOutline(db, story.id).then((outline) => outline.scenes)
 			: Promise.resolve([]),
+		// Saved scenes that sit in the deleted list, so the page can point there
+		// before offering to add a second copy.
+		tab === 'story'
+			? draftScenesInTrash(db, story.id, draft.content.scenes)
+			: Promise.resolve([] as string[]),
 		readingPageRef(db, story.id),
 		db
 			.select({ enabled: users.publicArchiveEnabled, handle: users.handle })
@@ -101,6 +107,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				: draft,
 		drafts: drafts.map((row) => ({ id: row.id, label: row.label })),
 		live: liveByDraftScene(draft.content.scenes, liveScenes),
+		inTrash: trashed,
 		mentions,
 		tab,
 		canPublish: Boolean(archive?.enabled && archive?.handle)

@@ -35,6 +35,7 @@ import type { StoryReviewResult } from '../../src/lib/server/llm/scene-review';
 import type { Database } from '../../src/lib/server/auth';
 import { NOTIFICATION_DIGEST_QUEUE } from '../../src/lib/server/queues';
 import { createHandlers, type WorkerDeps, type WorkerServices } from '../../src/worker/handlers';
+import { ReplyCutOffError } from '../../src/lib/server/llm/gateway';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 // The worker's job handlers run here without pg-boss: jobs are plain objects
@@ -66,7 +67,12 @@ type JobState = { state: 'active' | 'retry'; startedOn: Date } | null;
 
 function harness(services: Partial<WorkerServices> = {}, current: JobState = null) {
 	const sent: { queue: string; data: unknown }[] = [];
+	const completed: { id: string; data: unknown }[] = [];
 	const boss = {
+		async complete(_queue: string, id: string, data: unknown) {
+			completed.push({ id, data });
+			return null;
+		},
 		async send(queue: string, data: unknown) {
 			sent.push({ queue, data });
 			return null;
@@ -76,7 +82,7 @@ function harness(services: Partial<WorkerServices> = {}, current: JobState = nul
 		}
 	} as unknown as WorkerDeps['boss'];
 	const handlers = createHandlers({ db, boss, origin: 'https://codex.test', services });
-	return { handlers, sent };
+	return { handlers, sent, completed };
 }
 
 const STARTED = new Date('2026-01-01T00:00:00Z');
@@ -288,6 +294,48 @@ describe('assistant notices link by id', () => {
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant could not write the arc for Bram. Check the endpoint in your settings.'
 		]);
+	});
+
+	it('says why when an arc was cut off at the reply limit, without retrying', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers, completed } = harness({
+			summariseCharacterArc: async () => {
+				throw new ReplyCutOffError('The arc was cut off at the reply limit.');
+			}
+		});
+
+		// Resolves, so pg-boss does not run the same cut-off again.
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not write the arc for Bram. The arc was cut off at the reply limit.'
+		]);
+		// Settled as failed for the activity card.
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it('says why when every entry was cut off at the reply limit', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({
+				entities: 0,
+				staged: 0,
+				failed: 2,
+				cutOff: 'The suggestions were cut off at the reply limit.'
+			})
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect((await titles(owner.id))[0]).toContain(
+			'could not read the entries in "Mythos". The suggestions were cut off at the reply limit.'
+		);
 	});
 
 	it('links an enrichment pass to the universe Plan by id', async () => {

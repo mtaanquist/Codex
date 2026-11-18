@@ -10,10 +10,16 @@
 	import { libraryCrumb } from '#lib/chrome';
 	import { formatNumber } from '#lib/format';
 	import { enhance } from '#lib/enhance';
-	import { LIBRARY_VIEWS, recentStories, type LibraryView } from '#lib/dashboard';
+	import { LIBRARY_VIEWS, recentStories, relativeTime, type LibraryView } from '#lib/dashboard';
+	import { now } from '#lib/now.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// "edited 5 minutes ago", kept current while the library stays open.
+	function edited(at: string): string {
+		return relativeTime(new Date(at), new Date(now()));
+	}
 
 	// Every collection makes new things from its own header, with the same menu
 	// shape: make, then import. Picking a make row swaps in that collection's
@@ -133,7 +139,7 @@
 				<span class="story-card-meta-sep">·</span>
 				<span>{count(story.words, 'word')}</span>
 				<span class="story-card-meta-sep">·</span>
-				<span>edited {story.editedLabel}</span>
+				<span>edited {edited(story.editedAt)}</span>
 			</div>
 		</a>
 		{#if story.drafts.length > 0}
@@ -189,7 +195,7 @@
 						</td>
 						<td class="num">{formatNumber(story.words)}</td>
 						<td class="num">{formatNumber(story.chapters)}</td>
-						<td class="cell-muted">{story.editedLabel}</td>
+						<td class="cell-muted">{edited(story.editedAt)}</td>
 					</tr>
 				{/each}
 			</tbody>

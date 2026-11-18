@@ -148,8 +148,12 @@ contacts a model on its own.
   default" to go back to the length Codex asks for, which suits most setups.
   Thinking counts toward this length, so the default is much larger for a role
   that may think: any role on the Claude provider, or one with Thinking on or
-  an effort set. If a review fails because a reply was cut off, raise the
-  Reviewer's Longest reply or lower its effort.
+  an effort set. When Background work may think, its short tasks (summaries,
+  character arcs, suggested details) also get the full default, so they can use
+  more tokens. Set its Longest reply yourself to keep them smaller. If a review
+  fails because a reply was cut off, raise the Reviewer's Longest reply or lower
+  its effort. If a character arc or a pass of suggested details fails the same
+  way, do the same for Background work.
 - **Let the assistant search the web (Claude only)**: off unless you turn it on.
   With it on, Claude may look things up when it reviews your work or answers you
   in the side panel, and only in a universe you have marked as an established
@@ -177,7 +181,9 @@ contacts a model on its own.
   cheap) to max (thorough and expensive). Current Claude models always think a
   little, so effort is how you keep a role quick. Left on the Codex default,
   on a current Claude model, Continuation and Background work run at low, Rubber duck and Co-author at
-  medium, and the Reviewer at high, which suits most writers. Not every model
+  medium, and the Reviewer at high, which suits most writers. On older or
+  unrecognised Claude models the list shows "Endpoint default" instead, and no
+  effort is sent unless you pick one. Not every model
   accepts every level ("xhigh" needs a recent Opus model, and small models may
   reject effort entirely); if a request starts failing after a change here, clear
   the effort for that role.

@@ -45,7 +45,14 @@
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyMarkdown } from '#lib/markdown';
-	import { CHAT_WINDOW_TURNS, chatTitle, RECAP_CHAT_TITLE } from '#lib/assistant-chat';
+	import {
+		CHAT_MISSING,
+		CHAT_WINDOW_TURNS,
+		chatTitle,
+		newChatId,
+		RECAP_CHAT_TITLE,
+		withPrompt
+	} from '#lib/assistant-chat';
 	import { relativeShort } from '#lib/format';
 	import { now } from '#lib/now.svelte';
 	import { page } from '$app/state';
@@ -136,8 +143,9 @@
 		| { type: 'done' }
 		| { type: 'error'; message: string };
 
-	// The scope discriminant and its pieces. Fixed for the panel's life (a
-	// surface does not change scope), so plain consts off the prop.
+	// The scope discriminant and its pieces. Fixed for the panel's life (every
+	// page keys the panel on its scope id, so a new scope remounts it), so
+	// plain consts off the prop.
 	// svelte-ignore state_referenced_locally
 	const isStory = 'storyId' in scope;
 	// svelte-ignore state_referenced_locally
@@ -174,6 +182,17 @@
 	let chats = $state<ChatSummary[]>(chat?.chats ?? []);
 	// svelte-ignore state_referenced_locally
 	let chatId = $state<string | null>(chat?.chatId ?? null);
+	// The id the next new chat gets. The panel picks it, so a first message
+	// stopped before the reply starts still lands in the chat the next one
+	// goes to, rather than leaving the question in a chat of its own.
+	let nextChatId = newChatId();
+	// A send under nextChatId may have stored its turn there without the panel
+	// learning so (stopped before the reply started).
+	let nextChatMayExist = false;
+	function freshChatId() {
+		nextChatId = newChatId();
+		nextChatMayExist = false;
+	}
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
 	let input = $state('');
 	let busy = $state(false);
@@ -258,6 +277,16 @@
 		}
 	}
 
+	// The message of a refused request, or '' when its body is not JSON.
+	async function errorMessage(response: Response): Promise<string> {
+		try {
+			const body = (await response.json()) as { message?: unknown };
+			return typeof body.message === 'string' ? body.message : '';
+		} catch {
+			return '';
+		}
+	}
+
 	// A turn was stored in a chat: it moves to the top of the list, and a chat
 	// the server just created joins it under the title the server gave it.
 	function noteChatUsed(id: string, title: string) {
@@ -265,35 +294,59 @@
 		const updated = { id, title: existing?.title ?? title, updatedAt: new Date().toISOString() };
 		chats = [updated, ...chats.filter((c) => c.id !== id)];
 		chatId = id;
+		if (id === nextChatId) freshChatId();
 	}
 
 	// Stream a reply into the empty assistant message the caller has already
 	// pushed. Shared by chat (send) and recap (catchUp): both POST JSON and read
 	// the same token/done/error Server-Sent Event frames. `title` names the chat
-	// if this request starts one.
-	async function streamInto(url: string, payload: object, title: string) {
+	// if this request starts one. `storesTurnFirst` says the server stores the
+	// writer's turn before the reply (a chat message), so a chat it starts is
+	// kept whatever happens to the reply; otherwise (a recap) the server drops
+	// the new chat again unless a reply is stored, so the panel only adopts it
+	// then. Returns 'gone' when the open chat no longer exists.
+	async function streamInto(
+		url: string,
+		payload: object,
+		title: string,
+		storesTurnFirst: boolean
+	): Promise<'gone' | void> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
+		let startedIn: string | null = null;
+		let storedTitle = title;
+		const creating = chatId === null;
+		// A chat message is stored before its reply, so a stopped send leaves its
+		// turn in the chat the next send reuses.
+		if (creating && storesTurnFirst) nextChatMayExist = true;
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...payload, chatId }),
+				body: JSON.stringify({ ...payload, chatId, ...(chatId ? {} : { newChatId: nextChatId }) }),
 				signal: controller.signal
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			const storedIn = response.headers.get('x-chat-id');
-			if (response.ok && storedIn) noteChatUsed(storedIn, title);
-			if (response.status === 404 && chatId) {
+			const serverTitle = response.headers.get('x-chat-title');
+			if (serverTitle) storedTitle = decodeURIComponent(serverTitle);
+			// A chat an earlier, stopped send started already holds a turn, so it
+			// is kept whatever happens to this reply.
+			const existed = response.headers.get('x-chat-created') === '0';
+			if (response.ok && storedIn) {
+				if (storesTurnFirst || existed || chatId === storedIn) noteChatUsed(storedIn, storedTitle);
+				else startedIn = storedIn;
+			}
+			if (response.status === 404 && (await errorMessage(response)) === CHAT_MISSING) {
 				// The open chat was deleted elsewhere (another tab).
 				const gone = chatId;
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
-				appendToReply(
-					'This chat was deleted. Your message was not sent; send it again to start a new chat.'
-				);
-				return;
+				freshChatId();
+				messages = [{ role: 'assistant', content: 'This chat was deleted.' }];
+				olderSummarised = false;
+				return 'gone';
 			}
 			if (!response.ok || !response.body) {
 				appendToReply(
@@ -305,6 +358,7 @@
 			const decoder = new TextDecoder();
 			let buffer = '';
 			let streamError = '';
+			let finished = false;
 			for (;;) {
 				const { done, value } = await reader.read();
 				if (done) break;
@@ -316,9 +370,16 @@
 					else if (event.type === 'proposal') attachProposal(event.proposal);
 					else if (event.type === 'stopped') markStopped(event.reason);
 					else if (event.type === 'error') streamError = event.message;
+					else if (event.type === 'done') finished = true;
 				}
 			}
 			const reply = messages[messages.length - 1];
+			// The same test the server applies before it stores a reply.
+			const stored =
+				finished &&
+				reply?.role === 'assistant' &&
+				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
+			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
 			if (reply && reply.role === 'assistant' && reply.content === '') {
 				reply.content = streamError || 'The Assistant did not return a response.';
 			}
@@ -329,6 +390,10 @@
 		} finally {
 			busy = false;
 			pending = null;
+			// A recap that did not start its chat leaves it to be dropped by the
+			// server, so the next send must not reuse its id.
+			// A chat an earlier, stopped send stored a turn in is kept, so its id stays.
+			if (creating && !storesTurnFirst && chatId === null && !nextChatMayExist) freshChatId();
 		}
 	}
 
@@ -357,7 +422,7 @@
 		// assembled world, not the transcript.
 		const turns: Message[] = [...messages, turn];
 		messages = [...turns, { role: 'assistant', content: '' }];
-		await streamInto(
+		const outcome = await streamInto(
 			'/api/assistant/chat',
 			{
 				...scopeBody(),
@@ -366,8 +431,28 @@
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 			},
-			chatTitle(question)
+			chatTitle(question),
+			true
 		);
+		// Not sent: start afresh, and put the question (and its passage) back so
+		// it need not be typed again.
+		if (outcome === 'gone') {
+			messages = [
+				{
+					role: 'assistant',
+					content:
+						'This chat was deleted. Your message was not sent; send it again to start a new chat.'
+				}
+			];
+			if (turn.reference && !reference) reference = turn.reference;
+			if (!input.trim()) {
+				input = question;
+				if (composer) {
+					composer.value = question;
+					fit(composer);
+				}
+			}
+		}
 	}
 
 	function runSlashCommand(raw: string) {
@@ -650,7 +735,12 @@
 		// universe surface has no catch-up.
 		if (busy || switching || !('storyId' in scope)) return;
 		messages = [...messages, { role: 'assistant', content: '' }];
-		await streamInto('/api/assistant/recap', { storyId: scope.storyId, sceneId }, RECAP_CHAT_TITLE);
+		await streamInto(
+			'/api/assistant/recap',
+			{ storyId: scope.storyId, sceneId },
+			RECAP_CHAT_TITLE,
+			false
+		);
 	}
 
 	// Update summaries: a background pass that drafts and refreshes scene and
@@ -677,6 +767,7 @@
 	function newChat() {
 		if (busy || switching) return;
 		chatId = null;
+		freshChatId();
 		messages = [{ role: 'assistant', content: opening }];
 		olderSummarised = false;
 		pickerOpen = false;
@@ -713,6 +804,10 @@
 	async function deleteChat() {
 		if (deleting || busy) return;
 		if (!chatId) {
+			// A stopped first send may have stored its question; it goes too.
+			if (nextChatMayExist) {
+				void fetch(`/api/assistant/chats/${nextChatId}`, { method: 'DELETE' }).catch(() => {});
+			}
 			newChat();
 			return;
 		}
@@ -794,15 +889,38 @@
 		}
 	}
 
+	// Up and down arrows move between the search box and the chat rows, Home
+	// and End jump to the first and last row.
+	function pickerKeydown(event: KeyboardEvent) {
+		if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+		const picker = event.currentTarget as HTMLElement;
+		const rows = [...picker.querySelectorAll<HTMLButtonElement>('.chat-row')];
+		if (rows.length === 0) return;
+		const inSearch = event.target === pickerSearch;
+		if (inSearch && (event.key === 'Home' || event.key === 'End')) return;
+		const at = rows.indexOf(event.target as HTMLButtonElement);
+		let next: HTMLElement | undefined;
+		if (event.key === 'Home') next = rows[0];
+		else if (event.key === 'End') next = rows[rows.length - 1];
+		else if (event.key === 'ArrowDown') next = inSearch ? rows[0] : rows[at + 1];
+		else next = at <= 0 ? pickerSearch : rows[at - 1];
+		if (!next) return;
+		event.preventDefault();
+		next.focus();
+	}
+
 	// The textarea's value is one-way bound, so it is written here directly to
 	// be sized and to place the cursor at the end in the same tick.
+	let lastPrompt = '';
 	function prefill(text: string) {
-		input = text;
+		const value = withPrompt(input, lastPrompt, text);
+		lastPrompt = text;
+		input = value;
 		if (!composer) return;
-		composer.value = text;
+		composer.value = value;
 		fit(composer);
 		composer.focus();
-		composer.setSelectionRange(text.length, text.length);
+		composer.setSelectionRange(value.length, value.length);
 	}
 
 	function fit(el: HTMLTextAreaElement) {
@@ -865,7 +983,13 @@
 					<Icon name="caret" size={12} />
 				</button>
 				{#if pickerOpen}
-					<div class="chat-picker popover" role="dialog" aria-label="Your chats">
+					<div
+						class="chat-picker popover"
+						role="dialog"
+						aria-label="Your chats"
+						tabindex="-1"
+						onkeydown={pickerKeydown}
+					>
 						<input
 							bind:this={pickerSearch}
 							class="chat-search"

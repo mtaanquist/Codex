@@ -19,3 +19,29 @@ export const RECAP_CHAT_TITLE = 'Catch me up';
 
 // A chat as the panel's picker lists it.
 export type ChatSummary = { id: string; title: string; updatedAt: string };
+
+// The message a request gets when the chat it names is gone; the panel
+// matches it to tell a deleted chat from a story or universe that is gone.
+export const CHAT_MISSING = 'That chat does not exist.';
+
+// An id for a chat the panel is about to start. crypto.randomUUID only exists
+// on secure pages, and a self-hosted instance may be served over plain http,
+// so this falls back to building a version 4 UUID from random bytes.
+export function newChatId(): string {
+	if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+	const bytes = crypto.getRandomValues(new Uint8Array(16));
+	bytes[6] = (bytes[6] & 0x0f) | 0x40;
+	bytes[8] = (bytes[8] & 0x3f) | 0x80;
+	const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+// The composer's text after a prompt is put in it. Text the writer typed and
+// has not sent stays, with the prompt after it; an earlier prompt still at the
+// end, or a half-typed command, is replaced.
+export function withPrompt(input: string, lastPrompt: string, prompt: string): string {
+	let typed = input.trim();
+	const earlier = lastPrompt.trim();
+	if (earlier && typed.endsWith(earlier)) typed = typed.slice(0, -earlier.length).trim();
+	return typed && !typed.startsWith('/') ? `${typed}\n\n${prompt}` : prompt;
+}

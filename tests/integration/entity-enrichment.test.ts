@@ -32,6 +32,10 @@ const enrichJson =
 // how many completions it served.
 let lastPrompt = '';
 let calls = 0;
+// Set to 'length' to have the stub report a reply cut off at the cap.
+let finish: 'length' | undefined;
+// Runs while the stub is answering, to land a change mid-call.
+let duringCall: (() => Promise<void>) | null = null;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -39,7 +43,8 @@ const stubProvider: Provider = {
 	async respond(req) {
 		lastPrompt = JSON.stringify(req.messages);
 		calls += 1;
-		return { content: enrichJson, toolCalls: [] };
+		if (duringCall) await duringCall();
+		return { content: enrichJson, toolCalls: [], finishReason: finish };
 	},
 	async listModels() {
 		return [];
@@ -65,6 +70,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+	finish = undefined;
 	await pool.query(
 		'truncate table entity_suggestions, entity_mentions, revisions, characters, stories, universes, users cascade'
 	);
@@ -181,6 +187,73 @@ describe('decideEntitySuggestion', () => {
 		expect(result.ok).toBe(true);
 		expect((await readChar(id)).aliases).toContain('The Grey');
 		expect(await listPendingForEntity(db, ownerId, 'character', id)).toHaveLength(0);
+	});
+
+	it('accepting a detail keeps a detail saved while the accept waited', async () => {
+		const id = await makeCharacter({ details: [{ label: 'Age', value: '40' }] });
+		const [s] = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [{ field: 'detail', label: 'Eyes', value: 'grey' }]
+		});
+		// A save in flight: it holds the row until it commits.
+		const save = await pool.connect();
+		try {
+			await save.query('begin');
+			await save.query('update characters set details = $1 where id = $2', [
+				JSON.stringify([
+					{ label: 'Age', value: '40' },
+					{ label: 'Scar', value: 'left cheek' }
+				]),
+				id
+			]);
+			const accept = decideEntitySuggestion(db, ownerId, s.id, 'accept');
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			await save.query('commit');
+			expect((await accept).ok).toBe(true);
+		} finally {
+			save.release();
+		}
+		expect((await readChar(id)).details).toEqual([
+			{ label: 'Age', value: '40' },
+			{ label: 'Scar', value: 'left cheek' },
+			{ label: 'Eyes', value: 'grey' }
+		]);
+	});
+
+	it('accepting the same detail twice at once applies it once', async () => {
+		const id = await makeCharacter();
+		const [s] = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [{ field: 'detail', label: 'Eyes', value: 'grey' }]
+		});
+		const results = await Promise.all([
+			decideEntitySuggestion(db, ownerId, s.id, 'accept'),
+			decideEntitySuggestion(db, ownerId, s.id, 'accept')
+		]);
+		expect(results.map((r) => r.ok).sort()).toEqual([false, true]);
+		expect((await readChar(id)).details).toEqual([{ label: 'Eyes', value: 'grey' }]);
+	});
+
+	it('does not reject a suggestion that was already accepted', async () => {
+		const id = await makeCharacter();
+		const [s] = await stageEntitySuggestions(db, {
+			ownerId,
+			kind: 'character',
+			entityId: id,
+			proposals: [{ field: 'alias', value: 'The Grey' }]
+		});
+		await decideEntitySuggestion(db, ownerId, s.id, 'accept');
+		// A reject sent from a tab that still shows it pending.
+		expect((await decideEntitySuggestion(db, ownerId, s.id, 'reject')).ok).toBe(false);
+		const [row] = await db
+			.select({ status: schema.entitySuggestions.status })
+			.from(schema.entitySuggestions)
+			.where(eq(schema.entitySuggestions.id, s.id));
+		expect(row.status).toBe('accepted');
 	});
 
 	it('accepting a detail and a summary applies each to the entity', async () => {
@@ -349,6 +422,30 @@ describe('enrichUniverse', () => {
 		return scene.id;
 	}
 
+	it('keeps a mark cleared while the entity was being read', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		const sceneId = await sceneMentioning(bram, 'Bram at the harbour');
+		await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		// The prose changes, so the next pass reads Bram again; an unmute clears
+		// the mark while the model is reading.
+		await pool.query(`update scenes set updated_at = now() + interval '1 minute' where id = $1`, [
+			sceneId
+		]);
+		duringCall = async () => {
+			await pool.query(`update characters set assistant_enriched_at = null where id = $1`, [bram]);
+		};
+		try {
+			expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+		} finally {
+			duringCall = null;
+		}
+		const [row] = await db
+			.select({ at: characters.assistantEnrichedAt })
+			.from(characters)
+			.where(eq(characters.id, bram));
+		expect(row.at).toBeNull();
+	});
+
 	it('reads only mentioned entities, marks them, and skips them until their prose changes', async () => {
 		const mentioned = await makeCharacter({ name: 'Bram' });
 		const unmentioned = await makeCharacter({ name: 'Cass' });
@@ -380,6 +477,15 @@ describe('enrichUniverse', () => {
 		const third = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
 		expect(third.entities).toBe(1);
 		expect(calls).toBe(2);
+	});
+
+	it('leaves an entity unmarked when its reply is cut off at the cap', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneMentioning(bram, 'Bram at the harbour');
+		finish = 'length';
+		const result = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(result).toMatchObject({ entities: 0, staged: 0, failed: 1 });
+		expect(await enrichedAt(bram)).toBeNull();
 	});
 
 	async function enrichedAt(id: string) {

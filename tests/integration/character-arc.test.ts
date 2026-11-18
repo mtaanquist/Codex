@@ -16,6 +16,9 @@ import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { STALE_MARK_BEFORE, trashScene } from '../../src/lib/server/scene-lifecycle';
+import { mergeScenes } from '../../src/lib/server/scene-split-merge';
+import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
 
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
@@ -28,6 +31,8 @@ const { saveAccountLlmConfig, saveStoryLlmOverride } =
 let lastPrompt = '';
 let calls = 0;
 let reply = 'Bram leaves the harbour and becomes a captain.';
+// Set to 'length' to have the stub report a reply cut off at the cap.
+let finish: 'length' | undefined;
 // Runs while the model is "writing", to change things under a running job.
 let duringCall: (() => Promise<void>) | null = null;
 const stubProvider: Provider = {
@@ -38,7 +43,7 @@ const stubProvider: Provider = {
 		lastPrompt = JSON.stringify(req.messages);
 		calls += 1;
 		if (duringCall) await duringCall();
-		return { content: reply, toolCalls: [] };
+		return { content: reply, toolCalls: [], finishReason: finish };
 	},
 	async listModels() {
 		return [];
@@ -66,6 +71,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	calls = 0;
+	finish = undefined;
 	lastPrompt = '';
 	duringCall = null;
 	reply = 'Bram leaves the harbour and becomes a captain.';
@@ -219,6 +225,42 @@ describe('summariseCharacterArc', () => {
 		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
 	});
 
+	it('keeps an out-of-date mark set while the arc was being rewritten', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram at the quay' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		// An unmute or a scene delete lands while the model writes the new arc.
+		duringCall = async () => {
+			await pool.query(
+				`update characters set arc_summary_at = now() - interval '50 years' where id = $1`,
+				[bram.id]
+			);
+		};
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(after.arcSummaryAt! < STALE_MARK_BEFORE).toBe(true);
+		expect(await arcIsStale(db, after)).toBe(true);
+	});
+
+	it('keeps a second mark that lands while an out-of-date arc is refreshed', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneMentioning(firstStoryId, bram.id, {
+			position: 1,
+			snippet: 'Bram at the quay'
+		});
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await trashStory(db, ownerId, secondStoryId);
+		// Refreshing the marked arc; the story comes back while the model writes.
+		duringCall = async () => {
+			await restoreStory(db, ownerId, secondStoryId);
+		};
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, after)).toBe(true);
+		expect(sceneId).toBeTruthy();
+	});
+
 	it('asks nothing for a character no scene mentions', async () => {
 		const bram = await makeCharacter();
 		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
@@ -251,6 +293,20 @@ describe('summariseCharacterArc', () => {
 			'Bram leaves the harbour and becomes a captain.'
 		);
 	});
+
+	it('keeps the earlier arc when the reply is cut off at the cap', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		reply = 'Bram leaves the harbour and';
+		finish = 'length';
+		await expect(
+			summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps)
+		).rejects.toThrow(/cut off/);
+		expect((await readArc(bram.id)).arcSummaryMd).toBe(
+			'Bram leaves the harbour and becomes a captain.'
+		);
+	});
 });
 
 describe('arc staleness', () => {
@@ -273,5 +329,108 @@ describe('arc staleness', () => {
 			.where(eq(scenes.id, sceneId));
 		expect(await arcIsStale(db, written)).toBe(true);
 		expect(await planArc(db, { kind: 'place', entity: written })).toBeNull();
+	});
+
+	it('goes stale when a mentioning scene is deleted', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [written] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, written)).toBe(false);
+		expect(await trashScene(db, ownerId, sceneId)).toBe(true);
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, after)).toBe(true);
+	});
+
+	it('goes stale when a mentioning scene is merged into another', async () => {
+		const bram = await makeCharacter();
+		const [target] = await db
+			.insert(scenes)
+			.values({ storyId: firstStoryId, globalPosition: 1 })
+			.returning({ id: scenes.id });
+		const merged = await sceneMentioning(firstStoryId, bram.id, { position: 2, snippet: 'Bram' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const result = await mergeScenes(db, ownerId, firstStoryId, [target.id, merged]);
+		expect(result.ok).toBe(true);
+		expect((await readArc(bram.id)).arcSummaryAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+
+	it('goes stale when a story it read is deleted, and again when it is restored', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram again' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(await trashStory(db, ownerId, secondStoryId)).toBe(true);
+		const [trashed] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, trashed)).toBe(true);
+		// Rewritten without the deleted story, then the story comes back.
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [rewritten] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, rewritten)).toBe(false);
+		expect(await restoreStory(db, ownerId, secondStoryId)).toBe(true);
+		const [restored] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, restored)).toBe(true);
+		expect(restored.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+});
+
+describe('muting and unmuting a story', () => {
+	it('drops every arc in the universe on a mute, even one whose mention was edited away', async () => {
+		const bram = await makeCharacter();
+		const other = await makeCharacter();
+		const sceneId = await sceneMentioning(secondStoryId, bram.id, {
+			position: 1,
+			snippet: 'Bram in private'
+		});
+		await sceneMentioning(firstStoryId, other.id, { position: 1, snippet: 'Bram elsewhere' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: other.id }, deps);
+		await db.delete(entityMentions).where(eq(entityMentions.sourceId, sceneId));
+
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
+		expect((await readArc(other.id)).arcSummaryMd).toBeNull();
+	});
+
+	it('marks an arc written while the story was muted, even one started with none', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		// The mute cleared every arc; the story is unmuted while the arc is written.
+		duringCall = () => saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(after.arcSummaryMd).not.toBeNull();
+		expect(await arcIsStale(db, after)).toBe(true);
+	});
+
+	it('keeps arcs written after a mute when the story is muted again', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect((await readArc(bram.id)).arcSummaryMd).not.toBeNull();
+	});
+
+	it('marks arcs out of date and entities for another enrich pass on an unmute', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: new Date() })
+			.where(eq(characters.id, bram.id));
+		const [before] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(await arcIsStale(db, before)).toBe(false);
+
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
+		expect(after.arcSummaryMd).toBe(before.arcSummaryMd);
+		expect(await arcIsStale(db, after)).toBe(true);
+		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 });

@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
+import type { Database } from './auth.ts';
 import {
 	chapters,
 	entityMentions,
@@ -11,7 +11,7 @@ import {
 	sceneMarkers,
 	scenes,
 	stories
-} from './db/schema';
+} from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 
@@ -100,11 +100,50 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 			.update(scenes)
 			.set({ deletedAt: sql`now()` })
 			.where(eq(scenes.id, scene.id));
+		await markMentionsStale(tx, { sceneIds: [scene.id] });
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 	});
 	return true;
+}
+
+/** A watermark before this is a mark set by markMentionsStale, not a time an
+ * arc was written or an entity read. */
+export const STALE_MARK_BEFORE = new Date('2000-01-01T00:00:00Z');
+
+/** Marks what these scenes (or this story's scenes) mention for a fresh look:
+ * the characters' arcs show as out of date, and with `enrich` the entities are
+ * read again on the next enrich pass. The mark is the clock fifty years back:
+ * older than any scene, and different each time, so a job that started from
+ * an earlier mark still sees a new one. Call it before mention rows are
+ * deleted, since it reads them. */
+export async function markMentionsStale(
+	tx: Database,
+	source: { sceneIds: string[] } | { storyId: string },
+	opts: { enrich?: boolean } = {}
+): Promise<void> {
+	if ('sceneIds' in source && !source.sceneIds.length) return;
+	const from =
+		'sceneIds' in source
+			? sql`m.source_id in ${source.sceneIds}`
+			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
+	const mark = sql`clock_timestamp() - interval '50 years'`;
+	const mentioned = (type: string) =>
+		sql`(select m.target_id from entity_mentions m where m.source_type = 'scene' and m.target_type = ${type} and ${from})`;
+	await tx.execute(
+		sql`update characters set arc_summary_at = ${mark} where id in ${mentioned('character')}`
+	);
+	if (!opts.enrich) return;
+	await tx.execute(
+		sql`update characters set assistant_enriched_at = ${mark} where id in ${mentioned('character')}`
+	);
+	await tx.execute(
+		sql`update places set assistant_enriched_at = ${mark} where id in ${mentioned('place')}`
+	);
+	await tx.execute(
+		sql`update lore_entries set assistant_enriched_at = ${mark} where id in ${mentioned('lore_entry')}`
+	);
 }
 
 /** Brings a scene back from the trash, at the end of its chapter (or of the

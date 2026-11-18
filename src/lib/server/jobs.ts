@@ -409,7 +409,10 @@ export async function getAssistantJobState(
 		const job = await boss.getJobById(queue, id);
 		if (!job) return 'done';
 		if (job.state === 'failed' || job.state === 'cancelled') return 'failed';
-		if (job.state === 'completed') return 'done';
+		// A run that settled itself as failed (see the worker's arc handler).
+		if (job.state === 'completed') {
+			return (job.output as { failed?: boolean } | null)?.failed ? 'failed' : 'done';
+		}
 		return 'running';
 	} catch (error) {
 		logEvent('error', 'job.state_failed', { queue, jobId: id, ...errorFields(error) });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
@@ -31,6 +31,7 @@ import {
 	listDrafts,
 	newStoryFromDraft,
 	restoreDraftScene,
+	draftScenesInTrash,
 	saveDraft,
 	compareWithDraft,
 	updateDraftDetails,
@@ -340,6 +341,23 @@ describe('restoreDraftScene', () => {
 		expect(copies).toHaveLength(1);
 	});
 
+	it('restores onto a scene that was added back and then edited', async () => {
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const added = await restoreDraftScene(db, storyId, id, sceneId);
+		if (!added.ok) throw new Error('expected a restore');
+		await db.update(scenes).set({ bodyMd: 'Rewritten since.' }).where(eq(scenes.id, added.sceneId));
+		const again = await restoreDraftScene(db, storyId, id, sceneId);
+		expect(again).toEqual({ ok: true, sceneId: added.sceneId, created: false });
+		const [copy] = await db.select().from(scenes).where(eq(scenes.id, added.sceneId));
+		expect(copy.bodyMd).toBe('Halden left at dawn.');
+		const history = await db.select().from(revisions).where(eq(revisions.entityId, added.sceneId));
+		expect(history.map((row) => row.bodyMd)).toContain('Rewritten since.');
+		const live = await db.select().from(scenes).where(eq(scenes.storyId, storyId));
+		expect(live.filter((row) => row.bodyMd === 'Halden left at dawn.')).toHaveLength(1);
+	});
+
 	it('adds a scene back even when another scene has the same text', async () => {
 		const id = await save();
 		await db.delete(notes);
@@ -418,6 +436,41 @@ describe('restoreDraftScene', () => {
 		const draft = await getDraft(db, storyId, first);
 		const result = compareDrafts(draft!.content, await workingOutline(db, storyId));
 		expect(result.counts).toEqual({ same: 2, changed: 0, added: 0, removed: 0 });
+	});
+
+	it('restores onto a scene added back twice instead of making another copy', async () => {
+		const first = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const once = await restoreDraftScene(db, storyId, first, sceneId);
+		if (!once.ok) throw new Error('expected a restore');
+		const second = await save('Second draft');
+		await db.delete(scenes).where(eq(scenes.id, once.sceneId));
+		const twice = await restoreDraftScene(db, storyId, second, once.sceneId);
+		if (!twice.ok) throw new Error('expected a restore');
+		await db.update(scenes).set({ bodyMd: 'Rewritten since.' }).where(eq(scenes.id, twice.sceneId));
+		const result = await restoreDraftScene(db, storyId, first, sceneId);
+		expect(result).toEqual({ ok: true, sceneId: twice.sceneId, created: false });
+		const live = await db
+			.select()
+			.from(scenes)
+			.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
+		expect(live.filter((row) => row.bodyMd === 'Halden left at dawn.')).toHaveLength(1);
+		expect(live.some((row) => row.bodyMd === 'Rewritten since.')).toBe(false);
+	});
+
+	it('finds a saved scene in the deleted list, itself or as a copy added back', async () => {
+		const first = await save();
+		expect(await draftScenesInTrash(db, storyId, [{ id: sceneId }])).toEqual([]);
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
+		expect(await draftScenesInTrash(db, storyId, [{ id: sceneId }])).toEqual([sceneId]);
+		// Deleted for good, added back, and the copy deleted in turn.
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const copy = await restoreDraftScene(db, storyId, first, sceneId);
+		if (!copy.ok) throw new Error('expected a restore');
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, copy.sceneId));
+		expect(await draftScenesInTrash(db, storyId, [{ id: sceneId }])).toEqual([sceneId]);
 	});
 
 	it('refuses a scene that is not in the draft', async () => {
@@ -661,6 +714,14 @@ describe('exports', () => {
 			'Halden left at dawn.'
 		);
 		expect(text(byPath.get(`${base}/relationships.md`))).toContain('Halden - lives in - Saltmarsh');
+		// A notebook note keeps the scene it hangs off, by its path in the draft.
+		expect(text(byPath.get(`${base}/notebook/dawn-light.md`))).toContain(
+			'scene: "chapters/01-departure/01-dawn.md"'
+		);
+		// So does the live note, in the story's own notebook.
+		expect(text(byPath.get('universes/u/stories/the-salt-road/notebook/dawn-light.md'))).toContain(
+			'scene: "chapters/01-departure/01-dawn.md"'
+		);
 	});
 
 	it('include drafts in the story archive too', async () => {

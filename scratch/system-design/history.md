@@ -982,6 +982,36 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## November review (2026-11-18)
+
+An independent review of every November change (5f3b182..HEAD) filed #1006
+to #1017 and #987, fixed in severity order on `staging/november-review`
+(#1018 to #1030). Three staging review rounds followed, each by three fresh
+reviewers (drafts, review and export; LLM server and worker; Assistant
+client), fixed in #1033, #1035 and #1037.
+
+- Out-of-date marks: trash, merge, restore and unmute push `arc_summary_at`
+  (and, for restore and unmute, `assistant_enriched_at`) back to a mark fifty
+  years before `clock_timestamp()`, so each mark is distinct. `arcIsStale`
+  treats anything before 2000 as a mark. The arc and enrich writes are a
+  compare-and-set against the value read at the start, at millisecond
+  precision, so a mark that lands during the model call survives. A fixed
+  epoch mark was tried first; a second mark then equalled the first and was
+  overwritten.
+- Clearing review notes: notes are stamped with `clock_timestamp()` and the
+  page's cutoff is compared in SQL to the microsecond. A two-second margin was
+  tried and kept notes the writer had just seen. The cutoff goes back to the
+  start of the oldest open transaction, so a note still being saved when the
+  page loaded is kept.
+- Assistant chats: the panel holds the next chat id, reuses it after a stopped
+  first question (which the server may have stored), and rotates it after a
+  recap that did not start its chat. The server reports `x-chat-created` and
+  `x-chat-title` so the panel can adopt a chat at once.
+- Cut-off arc and enrich replies raise `ReplyCutOffError`; the worker settles
+  the job as failed for that attempt and notifies once instead of retrying.
+- Left as a design note: `surfaceMaxTokens` raises small caps on thinking
+  models, which can cost more than the cap suggests.
+
 ## Saved drafts (2026-11-16)
 
 Draft names (#824, 2026-11-17): the name field is prefilled with the next

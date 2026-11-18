@@ -5,8 +5,16 @@ import { ownedUniverse } from '../universe-access';
 import { rateLimitAssistant } from '../write-guard';
 import { readJson } from '../validation';
 import { assistantLayout } from './config';
-import { AssistantDisabledError, stream } from './gateway';
-import { appendChat, dropChatIfEmpty, resolveChat, type ChatScope } from './chat-history';
+import { AssistantDisabledError, ReplyCutOffError, stream } from './gateway';
+import {
+	appendChat,
+	dropChatIfEmpty,
+	openNewChat,
+	resolveChat,
+	type ChatScope
+} from './chat-history';
+import { CHAT_MISSING } from '#lib/assistant-chat';
+import { isUuid } from '#lib/slug';
 import type { ChatMessage, SplitProposal, StreamEvent } from './providers/types';
 
 // The shared front door and transport of the assistant endpoints, so the
@@ -59,26 +67,37 @@ export async function requireAssistantUniverse(userId: string, universeId: unkno
 // The 403/502 split every synchronous assistant endpoint makes.
 export function throwAssistantError(err: unknown, fallback: string): never {
 	if (err instanceof AssistantDisabledError) error(403, err.message);
+	if (err instanceof ReplyCutOffError) error(502, err.message);
 	error(502, fallback);
 }
 
 // The chat a turn belongs to: the writer's chat named by payload.chatId in this
 // scope, or a new one titled `title` when the payload names none (created says
-// which). A chatId that is not the writer's chat in this scope is a 404, so ids
+// which). A new chat takes the id the panel picked (newChatId) when it sent
+// one. A chatId that is not the writer's chat in this scope is a 404, so ids
 // cannot be probed.
 export async function requireChat(
 	userId: string,
 	scope: ChatScope,
 	rawChatId: unknown,
-	title: string
-): Promise<{ id: string; created: boolean }> {
+	title: string,
+	rawNewChatId?: unknown
+): Promise<{ id: string; created: boolean; title?: string }> {
 	if (rawChatId !== undefined && rawChatId !== null && typeof rawChatId !== 'string') {
 		error(400, 'chatId must be a string.');
 	}
 	const named = rawChatId || null;
+	if (!named && rawNewChatId !== undefined && rawNewChatId !== null) {
+		if (typeof rawNewChatId !== 'string' || !isUuid(rawNewChatId)) {
+			error(400, 'newChatId must be a uuid.');
+		}
+		const opened = await openNewChat(db, userId, scope, rawNewChatId, title);
+		if (!opened) error(404, CHAT_MISSING);
+		return opened;
+	}
 	const chatId = await resolveChat(db, userId, scope, named, title);
-	if (!chatId) error(404, 'That chat does not exist.');
-	return { id: chatId, created: !named };
+	if (!chatId) error(404, CHAT_MISSING);
+	return { id: chatId, created: !named, ...(named ? {} : { title }) };
 }
 
 // Streams a gateway turn back as Server-Sent Events. The reply accumulates
@@ -95,7 +114,7 @@ export function assistantSseResponse(options: {
 	// The chat the reply is stored in; sent back as x-chat-id so a panel that
 	// started a new chat learns its id. A chat this request created is dropped
 	// again if the stream stores nothing in it.
-	chat: { id: string; created: boolean };
+	chat: { id: string; created: boolean; title?: string };
 	// Conversational turns run as 'chat'; the recap runs as 'utility'. Both land
 	// in the same stored conversation.
 	role: 'chat' | 'utility';
@@ -178,6 +197,14 @@ export function assistantSseResponse(options: {
 			'cache-control': 'no-cache, no-transform',
 			connection: 'keep-alive',
 			'x-chat-id': chatId,
+			// A chat the panel had not opened yet: its stored title, and whether
+			// this request made it (else an earlier, stopped send did).
+			...(options.chat.title !== undefined
+				? {
+						'x-chat-title': encodeURIComponent(options.chat.title),
+						'x-chat-created': options.chat.created ? '1' : '0'
+					}
+				: {}),
 			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
 		}
 	});

@@ -6,7 +6,7 @@
 		MAX_REPLY_TOKENS,
 		MAX_TEMPERATURE,
 		TEMPERATURE_STEP,
-		claudeRoleEffort,
+		claudeEffort,
 		defaultMaxTokens,
 		roleMayThink,
 		type AssistantRole,
@@ -31,6 +31,7 @@
 		suggestion,
 		saved,
 		anthropic,
+		model,
 		contextWindow,
 		onClose
 	}: {
@@ -41,6 +42,9 @@
 		// Claude reads effort and ignores temperature and extra settings; every
 		// other endpoint is the other way round. Show only what will be read.
 		anthropic: boolean;
+		// The model the role runs on; Codex only sends a default effort to the
+		// Claude models that take one.
+		model: string;
 		// The chosen model's context window, when the endpoint reported one or
 		// the writer typed one: it bounds the reply-length slider.
 		contextWindow: number | undefined;
@@ -48,6 +52,10 @@
 		// not write the config or report a save that changed nothing.
 		onClose: (changed: boolean) => void;
 	} = $props();
+
+	// The effort Codex sends when none is set here, or nothing for a model
+	// that takes no default.
+	const defaultEffort = $derived(claudeEffort(role.id, model, undefined));
 
 	// A fresh modal per open, so the saved values are a starting point rather
 	// than something to keep in step.
@@ -64,9 +72,8 @@
 	// Where a slider starts when you take the value off its default. Temperature
 	// begins at the midpoint, which is also what most endpoints use.
 	const TEMPERATURE_START = 1;
-	const codexMaxTokens = $derived(
-		defaultMaxTokens(role.id, roleMayThink(anthropic, { thinking, effort }), contextWindow)
-	);
+	const mayThink = $derived(roleMayThink(anthropic, { thinking, effort }));
+	const codexMaxTokens = $derived(defaultMaxTokens(role.id, mayThink, contextWindow));
 	// Arrow keys and drags land on round numbers; the box beside them still
 	// takes any figure you type.
 	const MAX_TOKENS_STEP = 128;
@@ -171,7 +178,9 @@
 						onchange={(event) =>
 							(effort = (event.currentTarget.value || undefined) as EffortLevel | undefined)}
 					>
-						<option value="">Codex default ({claudeRoleEffort(role.id)})</option>
+						<option value="">
+							{defaultEffort ? `Codex default (${defaultEffort})` : 'Endpoint default'}
+						</option>
 						{#each EFFORT_LEVELS as level (level)}
 							<option value={level}>{level}</option>
 						{/each}
@@ -266,6 +275,11 @@
 					mid-sentence, lower it to keep them brief.
 					{#if contextWindow}
 						The slider stops at this model's context window, {formatNumber(contextWindow)} tokens.
+					{/if}
+					{#if role.id === 'utility' && maxTokens === null && mayThink}
+						Thinking counts toward this length, so short tasks such as summaries and character arcs
+						also get the full default and can use more tokens. Set your own figure to keep them
+						smaller.
 					{/if}
 				</p>
 			</div>

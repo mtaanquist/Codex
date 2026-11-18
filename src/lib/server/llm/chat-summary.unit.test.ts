@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coveredAnchor, planChatTurns, summaryBudgetTokens } from './chat-summary';
+import { clipToTokens, coveredAnchor, planChatTurns, summaryBudgetTokens } from './chat-summary';
 import { buildChatSummaryMessage } from './prompts/chat-summary';
 import type { ChatMessage } from './providers/types';
 
@@ -128,5 +128,16 @@ describe('buildChatSummaryMessage', () => {
 		const message = buildChatSummaryMessage(null, [{ role: 'user', content: 'z'.repeat(5000) }]);
 		expect(message).toContain('[...]');
 		expect(message.length).toBeLessThan(3000);
+	});
+});
+
+describe('clipToTokens', () => {
+	it('leaves text that fits', () => {
+		expect(clipToTokens('Short.', 10)).toBe('Short.');
+	});
+
+	it('cuts at a sentence end, or else a word break', () => {
+		expect(clipToTokens('One two three. Four five six seven.', 5)).toBe('One two three.');
+		expect(clipToTokens('alpha beta gamma delta epsilon', 4)).toBe('alpha beta');
 	});
 });

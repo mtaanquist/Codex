@@ -433,6 +433,27 @@ describe('deleteSuggestion (retract your own pending edit)', () => {
 			ok: false
 		});
 	});
+	it('says a suggestion removed while it was being retracted no longer exists', async () => {
+		const start = BODY.indexOf('brown fox');
+		const made = (await suggest({ start, end: start + 'brown fox'.length }, 'red vixen')) as {
+			ok: true;
+			suggestionId: string;
+		};
+		const removing = await pool.connect();
+		try {
+			await removing.query('begin');
+			await removing.query('select id from review_suggestions where id = $1 for update', [
+				made.suggestionId
+			]);
+			const retracting = deleteSuggestion(db, { reviewerId }, storyId, made.suggestionId);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			await removing.query('delete from review_suggestions where id = $1', [made.suggestionId]);
+			await removing.query('commit');
+			expect(await retracting).toEqual({ ok: false, reason: 'That suggestion does not exist.' });
+		} finally {
+			removing.release();
+		}
+	});
 });
 
 describe('lifecycle', () => {

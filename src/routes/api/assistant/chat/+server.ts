@@ -7,7 +7,7 @@ import {
 	requireAssistantUniverse,
 	requireChat
 } from '#lib/server/llm/assistant-route';
-import { chatTitle } from '#lib/assistant-chat';
+import { CHAT_MISSING, chatTitle } from '#lib/assistant-chat';
 import {
 	assembleContext,
 	buildSystemMessage,
@@ -72,6 +72,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		universeId?: unknown;
 		sceneId?: unknown;
 		chatId?: unknown;
+		newChatId?: unknown;
 		messages?: unknown;
 	}>(request, locals);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
@@ -94,7 +95,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// The newest user turn joins the stored transcript; the earlier turns are
 	// already there from their own requests.
 	const newest = turns[turns.length - 1];
-	const chat = await requireChat(userId, scope, payload.chatId, chatTitle(newest.content));
+	const chat = await requireChat(
+		userId,
+		scope,
+		payload.chatId,
+		chatTitle(newest.content),
+		payload.newChatId
+	);
 	const chatId = chat.id;
 	if (newest.role === 'user') {
 		const stored = await appendChat(db, userId, scope, chatId, {
@@ -102,7 +109,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			content: newest.content,
 			meta: newest.reference ? { reference: newest.reference } : null
 		});
-		if (!stored) error(404, 'That chat does not exist.');
+		if (!stored) error(404, CHAT_MISSING);
 	}
 
 	// The assembled world rides as a system message after the gateway's persona

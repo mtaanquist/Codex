@@ -242,7 +242,7 @@ describe('gateway gating', () => {
 		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
 		expect(captured?.tuning).toEqual({ effort: 'low' });
 		// An explicit empty map clears it.
-		await saveAccountLlmConfig(db, userId, { ...base, tuning: {} });
+		await saveAccountLlmConfig(db, userId, { ...base, provider: 'custom', tuning: {} });
 		await complete(db, { userId, role: 'chat', messages: [] }, stubDeps);
 		expect(captured?.tuning).toBeUndefined();
 	});
@@ -452,9 +452,44 @@ describe('gateway gating', () => {
 		await saveAccountLlmConfig(db, userId, { ...base, provider: 'anthropic', tuning: {} });
 		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
 		expect(captured?.maxTokens).toBe(16_384);
-		// A figure the surface asked for still wins over the default.
+		// Thinking counts toward the cap, so a surface's small figure is raised to
+		// the thinking default too.
+		await complete(db, { userId, role: 'reviewer', maxTokens: 900, messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(16_384);
+		// Without thinking, the surface's figure stands.
+		await saveAccountLlmConfig(db, userId, { ...base, provider: 'custom', tuning: {} });
 		await complete(db, { userId, role: 'reviewer', maxTokens: 900, messages: [] }, stubDeps);
 		expect(captured?.maxTokens).toBe(900);
+	});
+
+	it('reports a plain reply cut off at the cap', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		});
+		const cut: Provider = {
+			...stubProvider,
+			async respond() {
+				return { content: 'Half a', toolCalls: [], finishReason: 'length' };
+			}
+		};
+		const result = await completeDetailed(
+			db,
+			{ userId, role: 'utility', enableTools: false, messages: [] },
+			{ ...stubDeps, provider: cut }
+		);
+		expect(result.cutOff).toBe(true);
+		const whole = await completeDetailed(
+			db,
+			{ userId, role: 'utility', enableTools: false, messages: [] },
+			stubDeps
+		);
+		expect(whole.cutOff).toBe(false);
 	});
 
 	it('falls back to the chat model when a role has none set', async () => {

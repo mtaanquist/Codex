@@ -23,10 +23,12 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'review-test-secret';
 const {
 	addComment,
 	clearReviews,
+	reviewSeenCutoff,
 	createReviewInvitation,
 	createSuggestion,
 	createThread,
 	decideSuggestion,
+	deleteSuggestion,
 	ensureReviewer,
 	ensureSuggestionThread,
 	setThreadResolved
@@ -90,8 +92,8 @@ beforeEach(async () => {
 	reviewerId = reviewer!.id;
 });
 
-async function thread(story = storyId, scene = sceneId, body = 'A note.') {
-	const made = await createThread(db, {
+async function thread(story = storyId, scene = sceneId, body = 'A note.', on: Database = db) {
+	const made = await createThread(on, {
 		storyId: story,
 		sceneId: scene,
 		anchor: null,
@@ -147,20 +149,74 @@ const suggestionIds = async () =>
 		.sort();
 
 describe('clearReviews', () => {
+	it('keeps a note that was still being saved when the page was read', async () => {
+		await seed();
+		let inFlight = '';
+		let seenAt = '';
+		await db.transaction(async (tx) => {
+			inFlight = await thread(storyId, sceneId, 'Saving.', tx as unknown as Database);
+			seenAt = await reviewSeenCutoff(db);
+		});
+		await clearReviews(db, storyId, 'all', seenAt);
+		expect(await threadIds()).toContain(inFlight);
+	});
+
+	it('keeps notes and replies posted after the page was read', async () => {
+		const seeded = await seed();
+		const seenAt = await reviewSeenCutoff(db);
+		const fresh = await thread(storyId, sceneId, 'Posted since.');
+		const late = await suggestion('brown');
+		await addComment(db, {
+			storyId,
+			threadId: seeded.resolved,
+			author: { reviewerId },
+			body: 'One more thing.'
+		});
+		const [rejectedThread] = await db
+			.select({ id: reviewThreads.id })
+			.from(reviewThreads)
+			.where(eq(reviewThreads.suggestionId, seeded.rejected));
+		await addComment(db, {
+			storyId,
+			threadId: rejectedThread.id,
+			author: { reviewerId },
+			body: 'Still think so.'
+		});
+		await clearReviews(db, storyId, 'all', seenAt);
+		const [lateThread] = await db
+			.select({ id: reviewThreads.id })
+			.from(reviewThreads)
+			.where(eq(reviewThreads.suggestionId, late));
+		expect(await threadIds()).toEqual(
+			[
+				seeded.resolved,
+				rejectedThread.id,
+				fresh,
+				seeded.elsewhere,
+				...(lateThread ? [lateThread.id] : [])
+			].sort()
+		);
+		expect(await suggestionIds()).toEqual([seeded.rejected, late].sort());
+		const kept = await db.select({ body: reviewComments.bodyMd }).from(reviewComments);
+		expect(kept.map((row) => row.body)).toEqual(
+			expect.arrayContaining(['One more thing.', 'Still think so.', 'Done with this.'])
+		);
+	});
+
 	it('clears finished notes and keeps open ones', async () => {
 		const seeded = await seed();
 		const [pendingThread] = await db
 			.select({ id: reviewThreads.id })
 			.from(reviewThreads)
 			.where(eq(reviewThreads.suggestionId, seeded.pending));
-		await clearReviews(db, storyId, 'finished');
+		await clearReviews(db, storyId, 'finished', await reviewSeenCutoff(db));
 		expect(await threadIds()).toEqual([seeded.open, pendingThread.id, seeded.elsewhere].sort());
 		expect(await suggestionIds()).toEqual([seeded.pending]);
 	});
 
 	it('clears everything on the story and nothing on other stories', async () => {
 		const seeded = await seed();
-		await clearReviews(db, storyId, 'all');
+		await clearReviews(db, storyId, 'all', await reviewSeenCutoff(db));
 		expect(await threadIds()).toEqual([seeded.elsewhere]);
 		expect(await suggestionIds()).toEqual([]);
 		const comments = await db.select({ threadId: reviewComments.threadId }).from(reviewComments);
@@ -170,7 +226,7 @@ describe('clearReviews', () => {
 	it('leaves notes on scenes in the deleted list with those scenes', async () => {
 		const open = await thread();
 		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
-		await clearReviews(db, storyId, 'all');
+		await clearReviews(db, storyId, 'all', await reviewSeenCutoff(db));
 		expect(await threadIds()).toEqual([open]);
 	});
 
@@ -179,8 +235,34 @@ describe('clearReviews', () => {
 		const saved = await saveDraft(db, authorId, storyId, { label: 'First draft', note: '' });
 		if (!saved.ok) throw new Error(saved.reason);
 		const [before] = await db.select().from(storyDrafts);
-		await clearReviews(db, storyId, 'all');
+		await clearReviews(db, storyId, 'all', await reviewSeenCutoff(db));
 		const [after] = await db.select().from(storyDrafts);
 		expect(after).toEqual(before);
+	});
+});
+
+describe('deleteSuggestion', () => {
+	// clearReviews locks the suggestion, then its thread. A retraction that took
+	// them the other way round could deadlock against it.
+	it('locks the suggestion before its discussion thread', async () => {
+		const id = await suggestion('quick');
+		const discussion = await ensureSuggestionThread(db, { storyId, suggestionId: id });
+		if (!discussion.ok) throw new Error(discussion.reason);
+		const clearing = await pool.connect();
+		try {
+			await clearing.query('begin');
+			await clearing.query('select id from review_suggestions where id = $1 for update', [id]);
+			const retracting = deleteSuggestion(db, { reviewerId }, storyId, id);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			// The retraction is waiting on the suggestion, so the thread is free.
+			await clearing.query("set local lock_timeout = '1s'");
+			await clearing.query('select id from review_threads where id = $1 for update', [
+				discussion.threadId
+			]);
+			await clearing.query('commit');
+			expect(await retracting).toEqual({ ok: true });
+		} finally {
+			clearing.release();
+		}
 	});
 });

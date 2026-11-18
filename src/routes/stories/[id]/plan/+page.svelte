@@ -170,14 +170,17 @@
 				>
 					{#snippet panel(id)}
 						{#if id === 'assistant'}
-							<AssistantPanel
-								scope={{ storyId: data.story.id, storyTitle: data.story.title }}
-								name={data.assistant.name}
-								muted={data.assistant.muted}
-								suggestions={assistantSuggestions}
-								chat={data.assistantChat}
-								reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
-							/>
+							<!-- Remount on a new scope: the panel seeds its chats once. -->
+							{#key data.story.id}
+								<AssistantPanel
+									scope={{ storyId: data.story.id, storyTitle: data.story.title }}
+									name={data.assistant.name}
+									muted={data.assistant.muted}
+									suggestions={assistantSuggestions}
+									chat={data.assistantChat}
+									reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
+								/>
+							{/key}
 						{:else if id === 'history'}
 							{#if data.revisionTarget}
 								<RevisionHistory

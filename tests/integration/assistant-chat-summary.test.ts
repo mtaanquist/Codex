@@ -19,6 +19,8 @@ const { fitChatWithSummary, getChatSummary, coveredAnchor } =
 // Records what the utility role was asked and answers with a numbered summary.
 let prompts: string[] = [];
 let failing = false;
+// Set to have the stub return this summary instead of SUMMARY-n.
+let reply: string | null = null;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -26,7 +28,7 @@ const stubProvider: Provider = {
 	async respond(req) {
 		if (failing) throw new Error('endpoint down');
 		prompts.push(req.messages[req.messages.length - 1].content);
-		return { content: `SUMMARY-${prompts.length}`, toolCalls: [] };
+		return { content: reply ?? `SUMMARY-${prompts.length}`, toolCalls: [] };
 	},
 	async listModels() {
 		return [];
@@ -155,6 +157,24 @@ describe('fitChatWithSummary', () => {
 		expect(result.summarised).toBe(false);
 		expect(result.messages).toEqual(turns.slice(2));
 		expect(await getChatSummary(db, userId, chatId)).toBeNull();
+	});
+
+	it('cuts a summary longer than its share of the budget to fit', async () => {
+		reply = 'A long summary sentence. '.repeat(200);
+		try {
+			const turns = conversation(12);
+			const result = await fitChatWithSummary(
+				db,
+				{ userId, scope: { storyId }, chatId, turns, budgetTokens: 1000 },
+				deps
+			);
+			expect(result.summarised).toBe(true);
+			const stored = (await getChatSummary(db, userId, chatId))?.summary ?? '';
+			expect(stored.length).toBeLessThanOrEqual(500 * 4);
+			expect(stored.endsWith('sentence.')).toBe(true);
+		} finally {
+			reply = null;
+		}
 	});
 
 	it('keeps one summary per chat', async () => {

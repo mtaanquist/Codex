@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	chapters,
@@ -31,6 +31,7 @@ import {
 	DRAFT_NOTE_MAX,
 	compareDrafts,
 	draftOutline,
+	matchScenes,
 	type DraftContent,
 	type DraftEntity,
 	type DraftEntityType
@@ -89,6 +90,27 @@ function cleanNote(raw: string): string | null | ActionFailure {
 		};
 	}
 	return note || null;
+}
+
+// The saved scenes that sit in the deleted list: deleted themselves, or added
+// back from a draft and that copy deleted. Paired the way the live outline is.
+export async function draftScenesInTrash(
+	db: Database,
+	storyId: string,
+	saved: { id: string }[]
+): Promise<string[]> {
+	const trashed = await db
+		.select({
+			id: scenes.id,
+			origin: sql<string | null>`${scenes.metadata} ->> ${FROM_DRAFT_SCENE}`,
+			root: sql<
+				string | null
+			>`coalesce(${scenes.metadata} ->> ${FIRST_DRAFT_SCENE}, ${scenes.metadata} ->> ${FROM_DRAFT_SCENE})`
+		})
+		.from(scenes)
+		.where(and(eq(scenes.storyId, storyId), isNotNull(scenes.deletedAt)))
+		.orderBy(sql`${scenes.deletedAt} desc`);
+	return [...matchScenes(saved, trashed).values()];
 }
 
 // Everything the draft freezes, read through one connection. The caller
@@ -473,7 +495,8 @@ export async function draftUsesCover(
 
 // Puts one scene's saved text back into the working draft. The live scene's
 // current text is kept in History first, and the restored text lands as a
-// new revision on top, so the step can be undone from History. When the
+// new revision on top, so the step can be undone from History. A scene that
+// was deleted and added back gets the text on its copy the same way. When the
 // scene has since been deleted, a new scene is made with the saved title and
 // text instead (in its old chapter when that still exists); a trashed scene
 // is left where it is.
@@ -490,44 +513,51 @@ export async function restoreDraftScene(
 		return { ok: false, code: 'not_found', reason: 'That scene is not in this draft.' };
 	}
 	const label = `From the saved draft "${draft.label}"`;
+	const before = `Before restoring from "${draft.label}"`;
+	const savedBody = saved.bodyMd;
 	return await db.transaction(async (tx) => {
+		// Puts the saved text on a live scene, keeping its current text in
+		// History first.
+		async function restoreOnto(target: { id: string; bodyMd: string }) {
+			if (target.bodyMd !== savedBody) {
+				await recordRevision(tx, 'scene', target.id, target.bodyMd, 'checkpoint', {
+					label: before
+				});
+				await tx
+					.update(scenes)
+					.set({ bodyMd: savedBody, wordCount: wordCount(savedBody) })
+					.where(eq(scenes.id, target.id));
+				await remapMarkerAnchors(tx, target.id, target.bodyMd, savedBody);
+				await recordRevision(tx, 'scene', target.id, savedBody, 'restore', { label });
+			}
+			return { ok: true as const, sceneId: target.id, created: false };
+		}
+
 		const [live] = await tx
 			.select({ id: scenes.id, bodyMd: scenes.bodyMd })
 			.from(scenes)
 			.where(and(eq(scenes.id, sceneId), eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 			.for('update');
-		if (live) {
-			if (live.bodyMd !== saved.bodyMd) {
-				await recordRevision(tx, 'scene', live.id, live.bodyMd, 'checkpoint', {
-					label: `Before restoring from "${draft.label}"`
-				});
-				await tx
-					.update(scenes)
-					.set({ bodyMd: saved.bodyMd, wordCount: wordCount(saved.bodyMd) })
-					.where(eq(scenes.id, live.id));
-				await remapMarkerAnchors(tx, live.id, live.bodyMd, saved.bodyMd);
-				await recordRevision(tx, 'scene', live.id, saved.bodyMd, 'restore', { label });
-			}
-			return { ok: true as const, sceneId: live.id, created: false };
-		}
-		// Added back once already: the copy has a new id and remembers the
-		// saved scene it came from. The lock keeps a double submit from making
-		// two copies.
+		if (live) return await restoreOnto(live);
+		// Added back already: the copy has a new id and remembers the saved
+		// scene it came from (or the first one in a chain of add-backs). The
+		// copy is found the same way the draft page pairs scenes, so restoring
+		// lands on the scene the page showed as changed. The lock keeps a double
+		// submit from making two copies.
 		await tx.execute(
 			sql`select pg_advisory_xact_lock(hashtext(${`draft-restore:${storyId}:${sceneId}`}))`
 		);
-		const [copy] = await tx
-			.select({ id: scenes.id })
-			.from(scenes)
-			.where(
-				and(
-					eq(scenes.storyId, storyId),
-					isNull(scenes.deletedAt),
-					sql`${scenes.metadata} ->> ${FROM_DRAFT_SCENE} = ${sceneId}`
-				)
-			)
-			.limit(1);
-		if (copy) return { ok: true as const, sceneId: copy.id, created: false };
+		const { scenes: liveScenes } = await workingOutline(tx, storyId);
+		const pairs = matchScenes(draft.content.scenes, liveScenes);
+		const pairedId = liveScenes.find((scene) => pairs.get(scene.id) === sceneId)?.id;
+		if (pairedId) {
+			const [copy] = await tx
+				.select({ id: scenes.id, bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(and(eq(scenes.id, pairedId), isNull(scenes.deletedAt)))
+				.for('update');
+			if (copy) return await restoreOnto(copy);
+		}
 		const [chapter] = saved.chapterId
 			? await tx
 					.select({ id: chapters.id })

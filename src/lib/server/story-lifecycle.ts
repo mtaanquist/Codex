@@ -7,6 +7,7 @@ import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { stories, universes } from './db/schema.ts';
 import { untrash } from './slugs.ts';
+import { markMentionsStale } from './scene-lifecycle.ts';
 import { purgeStory } from './story-delete.ts';
 import { UNIVERSE_TRASH_DAYS } from './universe-lifecycle.ts';
 
@@ -39,10 +40,15 @@ async function ownedStoryRow(
 export async function trashStory(db: Database, userId: string, storyId: string): Promise<boolean> {
 	const story = await ownedStoryRow(db, userId, storyId);
 	if (!story) return false;
-	await db
-		.update(stories)
-		.set({ deletedAt: sql`now()` })
-		.where(eq(stories.id, story.id));
+	await db.transaction(async (tx) => {
+		await tx
+			.update(stories)
+			.set({ deletedAt: sql`now()` })
+			.where(eq(stories.id, story.id));
+		// Arcs may retell this story; its mentions stay, so a restore can mark
+		// them again.
+		await markMentionsStale(tx, { storyId: story.id });
+	});
 	return true;
 }
 
@@ -56,6 +62,9 @@ export async function restoreStory(
 	const story = await ownedStoryRow(db, userId, storyId, { deleted: true });
 	if (!story) return false;
 	await untrash(db, 'stories', story.id);
+	// Its scenes are older than arcs and enrich marks written while it was in
+	// the trash, so neither would notice it is back.
+	await markMentionsStale(db, { storyId: story.id }, { enrich: true });
 	return true;
 }
 

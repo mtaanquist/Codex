@@ -58,6 +58,17 @@ export function coveredAnchor(turns: ChatMessage[], end: number): string | null 
 	return null;
 }
 
+// Text cut to about `tokens` tokens, at the last sentence end (or else word
+// break) that fits.
+export function clipToTokens(text: string, tokens: number): string {
+	if (estimateTokens(text) <= tokens) return text;
+	const cut = text.slice(0, tokens * 4);
+	const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'));
+	if (sentence > cut.length / 2) return cut.slice(0, sentence + 1);
+	const space = cut.lastIndexOf(' ');
+	return (space > 0 ? cut.slice(0, space) : cut).trimEnd();
+}
+
 // The most a summary may take, as a share of the transcript budget.
 export function summaryBudgetTokens(budgetTokens: number): number {
 	return Math.min(1500, Math.max(500, Math.floor(budgetTokens / 4)));
@@ -180,7 +191,7 @@ export async function fitChatWithSummary(
 	let verbatim = plan.verbatim;
 	if (plan.refresh) {
 		try {
-			const refreshed = (
+			const reply = (
 				await complete(
 					db,
 					{
@@ -201,6 +212,9 @@ export async function fitChatWithSummary(
 					deps
 				)
 			).trim();
+			// A model that thinks gets a larger reply cap than the summary's share,
+			// so a longer summary is cut to its share rather than crowding out turns.
+			const refreshed = clipToTokens(reply, summaryBudgetTokens(opts.budgetTokens));
 			if (refreshed) {
 				summary = refreshed;
 				await saveChatSummary(db, opts.userId, opts.scope, opts.chatId, {

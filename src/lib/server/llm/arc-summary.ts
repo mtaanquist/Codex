@@ -2,9 +2,10 @@ import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
-import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { dbNow } from './enrich.ts';
+import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 
 // Character arc summaries: what happens to a character across the universe's
 // stories, cached on the character with a watermark (arc_summary_at) and
@@ -77,13 +78,17 @@ async function arcScenes(
 }
 
 // Whether a cached arc is out of date: a scene that mentions the character
-// changed after the arc was written. An arc never written is not stale (there
-// is nothing to refresh, only to write).
+// changed after the arc was written. Deleting or restoring a scene or story,
+// and unmuting one, mark the arc directly (see markMentionsStale).
+// An arc never written is not stale (there is nothing to refresh, only to
+// write). A watermark before STALE_MARK_BEFORE was set on purpose (a scene it read
+// was deleted, or a story was unmuted) and always counts as stale.
 export async function arcIsStale(
 	db: Database,
 	character: { id: string; universeId: string; arcSummaryAt: Date | null }
 ): Promise<boolean> {
 	if (!character.arcSummaryAt) return false;
+	if (character.arcSummaryAt < STALE_MARK_BEFORE) return true;
 	const [row] = await db
 		.select({ lastChanged: max(scenes.updatedAt) })
 		.from(entityMentions)
@@ -119,7 +124,12 @@ export async function summariseCharacterArc(
 ): Promise<ArcResult> {
 	const { userId, characterId, signal } = opts;
 	const [character] = await db
-		.select({ id: characters.id, name: characters.name, universeId: characters.universeId })
+		.select({
+			id: characters.id,
+			name: characters.name,
+			universeId: characters.universeId,
+			arcSummaryAt: characters.arcSummaryAt
+		})
 		.from(characters)
 		.where(
 			and(
@@ -160,6 +170,11 @@ export async function summariseCharacterArc(
 		},
 		deps
 	);
+	if (result.cutOff) {
+		throw new ReplyCutOffError(
+			'The arc was cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
+		);
+	}
 	const text = result.content.trim();
 	if (!text) throw new Error('The Assistant returned an empty arc.');
 
@@ -181,7 +196,9 @@ export async function summariseCharacterArc(
 			.update(characters)
 			.set({
 				arcSummaryMd: text,
-				arcSummaryAt: startedAt,
+				// An unmute or a scene delete while the model was writing marked the
+				// arc out of date; that mark stands.
+				arcSummaryAt: sql`case when date_trunc('milliseconds', ${characters.arcSummaryAt}) is not distinct from ${character.arcSummaryAt} then ${startedAt} else ${characters.arcSummaryAt} end`,
 				updatedAt: sql`${characters.updatedAt}`
 			})
 			.where(eq(characters.id, character.id));
@@ -208,6 +225,9 @@ export async function planArc(
 	const arcSummaryAt = entity.arcSummaryAt ?? null;
 	return {
 		summaryMd: entity.arcSummaryMd ?? null,
-		stale: await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt })
+		// A mark on an arc never written means nothing to refresh.
+		stale:
+			!!entity.arcSummaryMd &&
+			(await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt }))
 	};
 }

@@ -4,6 +4,7 @@ import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { ownedScene } from './scene-access.ts';
+import { markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { storyIsLive } from './universe-scope.ts';
@@ -326,6 +327,7 @@ export async function mergeScenes(
 			.update(scenes)
 			.set({ deletedAt: sql`now()` })
 			.where(inArray(scenes.id, restIds));
+		await markMentionsStale(tx, { sceneIds: restIds });
 		await tx
 			.delete(entityMentions)
 			.where(

@@ -6,6 +6,7 @@ import { normaliseAssistantName, normalisePersona, type Persona } from './prompt
 import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
 import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
+import { markMentionsStale } from '../scene-lifecycle.ts';
 import {
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
@@ -716,20 +717,28 @@ export async function saveStoryLlmOverride(
 	for (const key of clear) {
 		expression = sql`(${expression}) - ${key}::text`;
 	}
-	// A character arc written before the mute may retell this story, and it is
-	// sent with every other story's context; drop the arcs of the characters
-	// this story mentions, in the same transaction, so a rewrite leaves it out.
 	await db.transaction(async (tx) => {
+		const [before] = await tx
+			.select({ muted: sql<boolean>`(${stories.llmConfig} ->> 'enabled') = 'false'` })
+			.from(stories)
+			.where(eq(stories.id, storyId))
+			.for('update');
 		await tx.update(stories).set({ llmConfig: expression }).where(eq(stories.id, storyId));
-		if (patch.enabled !== false) return;
-		await tx.execute(sql`
-			update characters set arc_summary_md = null, arc_summary_at = null
-			where arc_summary_md is not null and id in (
-				select m.target_id from entity_mentions m
-				join scenes s on s.id = m.source_id
-				where m.source_type = 'scene' and m.target_type = 'character'
-					and s.story_id = ${storyId}
-			)
-		`);
+		if (patch.enabled === false && !before?.muted) {
+			// A character arc written before the mute may retell this story, and
+			// it is sent with every other story's context. Which stories an arc
+			// read is not kept, and today's mentions can differ from the ones it
+			// was written from, so every arc in the universe goes; a rewrite
+			// leaves the muted story out.
+			await tx.execute(sql`
+				update characters set arc_summary_md = null, arc_summary_at = null
+				where arc_summary_md is not null
+					and universe_id = (select universe_id from stories where id = ${storyId})
+			`);
+		} else if (patch.enabled === null && before?.muted) {
+			// Unmuted: the story's scenes are older than the arcs and the enrich
+			// pass's marks, so neither would notice them without this.
+			await markMentionsStale(tx, { storyId }, { enrich: true });
+		}
 	});
 }

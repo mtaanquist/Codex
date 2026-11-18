@@ -44,8 +44,10 @@ const {
 	assistantSseResponse,
 	requireAssistantGate,
 	requireAssistantStory,
-	requireAssistantUniverse
+	requireAssistantUniverse,
+	throwAssistantError
 } = await import('../../src/lib/server/llm/assistant-route');
+const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
 
@@ -473,6 +475,97 @@ describe('chats over the endpoints', () => {
 		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
 	});
 
+	it('starts a new chat under the id the panel picked, and reaches it again by that id', async () => {
+		const picked = '0f8fad5b-d9cb-469f-a165-70867728950e';
+		const first = await chatPost({
+			storyId,
+			newChatId: picked,
+			messages: [{ role: 'user', content: 'First.' }]
+		});
+		await first.text();
+		expect(first.headers.get('x-chat-id')).toBe(picked);
+		expect(first.headers.get('x-chat-created')).toBe('1');
+		// The panel never learned the id (stopped early), so it sends it again.
+		const again = await chatPost({
+			storyId,
+			newChatId: picked,
+			messages: [{ role: 'user', content: 'Second.' }]
+		});
+		await again.text();
+		expect(again.headers.get('x-chat-id')).toBe(picked);
+		// The chat already held the first send: its stored title comes back.
+		expect(again.headers.get('x-chat-created')).toBe('0');
+		expect(decodeURIComponent(again.headers.get('x-chat-title') ?? '')).toBe('First.');
+		expect((await listChat(db, userId, picked)).map((m) => m.content)).toEqual([
+			'First.',
+			'Answer.',
+			'Second.',
+			'Answer.'
+		]);
+	});
+
+	it("refuses a picked id that is another writer's chat, another story's, or not a uuid", async () => {
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'p@example.com', displayName: 'P', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		const [otherUniverse] = await db
+			.insert(universes)
+			.values({ ownerId: other.id, name: 'P' })
+			.returning({ id: universes.id });
+		const [otherStory] = await db
+			.insert(stories)
+			.values({ universeId: otherUniverse.id, ownerId: other.id, title: 'P' })
+			.returning({ id: stories.id });
+		await saveAccountLlmConfig(db, other.id, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		});
+		// Another writer, on their own story, naming this writer's chat.
+		await expectStatus(
+			chatPost(
+				{
+					storyId: otherStory.id,
+					newChatId: chatId,
+					messages: [{ role: 'user', content: 'x' }]
+				},
+				other.id
+			),
+			404
+		);
+		// The same writer, naming a chat that belongs to another story.
+		const [second] = await db
+			.insert(stories)
+			.values({ universeId, ownerId: userId, title: 'S2' })
+			.returning({ id: stories.id });
+		await expectStatus(
+			chatPost({
+				storyId: second.id,
+				newChatId: chatId,
+				messages: [{ role: 'user', content: 'x' }]
+			}),
+			404
+		);
+		await expectStatus(
+			chatPost({ storyId, newChatId: 'nope', messages: [{ role: 'user', content: 'x' }] }),
+			400
+		);
+		expect(await listChat(db, userId, chatId)).toHaveLength(0);
+	});
+
+	it('does not load or delete a chat whose story is in the trash', async () => {
+		await db.update(stories).set({ deletedAt: new Date() });
+		await expectStatus(onChat('GET', chatId), 404);
+		await expectStatus(onChat('DELETE', chatId), 404);
+		await db.update(stories).set({ deletedAt: null });
+		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
+	});
+
 	it('loads and deletes a chat', async () => {
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })
@@ -487,5 +580,17 @@ describe('chats over the endpoints', () => {
 		});
 		expect((await onChat('DELETE', chatId)).status).toBe(200);
 		expect(await listChats(db, userId, { storyId })).toEqual([]);
+	});
+});
+
+describe('throwAssistantError', () => {
+	it('passes a cut-off reply on with its own advice', () => {
+		try {
+			throwAssistantError(new ReplyCutOffError('Raise Longest reply.'), 'Generic.');
+		} catch (err) {
+			expect(isHttpError(err) && err.status).toBe(502);
+			expect(isHttpError(err) && err.body.message).toBe('Raise Longest reply.');
+		}
+		expect.assertions(2);
 	});
 });

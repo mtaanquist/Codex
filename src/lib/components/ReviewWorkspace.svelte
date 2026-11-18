@@ -47,6 +47,7 @@
 		threads,
 		suggestions,
 		role,
+		seenAt = '',
 		storyId = null,
 		storySlug = null,
 		book = null,
@@ -76,6 +77,9 @@
 		threads: ReviewThread[];
 		suggestions: ReviewSuggestion[];
 		role: 'author' | 'guest';
+		// When the author's page data was read; "Clear review notes" keeps
+		// anything newer.
+		seenAt?: string;
 		// The owning story; the author's editable centre autosaves against it.
 		storyId?: string | null;
 		// The story slug, for the View dropdown's links to Preview and Print.
@@ -615,14 +619,17 @@
 								</button>
 							{/if}
 							<div class="rv-assistant-wrap">
-								<AssistantPanel
-									scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
-									sceneId={selectedSceneId || null}
-									name={assistant?.name ?? 'Assistant'}
-									muted={assistant?.muted ?? false}
-									suggestions={assistantSuggestions}
-									chat={assistantChat}
-								/>
+								<!-- Remount on a new scope: the panel seeds its chats once. -->
+								{#key storyId}
+									<AssistantPanel
+										scope={{ storyId: storyId ?? '', storyTitle: book?.title ?? '' }}
+										sceneId={selectedSceneId || null}
+										name={assistant?.name ?? 'Assistant'}
+										muted={assistant?.muted ?? false}
+										suggestions={assistantSuggestions}
+										chat={assistantChat}
+									/>
+								{/key}
 							</div>
 						{:else}
 							{@render commentsPanel()}
@@ -638,6 +645,7 @@
 
 {#if clearing}
 	<ClearReviewsModal
+		{seenAt}
 		finished={finishedNotes}
 		total={totalNotes}
 		onClose={() => (clearing = false)}

@@ -7,7 +7,7 @@ import { entityCategories, universes } from '#lib/server/db/schema';
 import { uniqueSlug } from '#lib/server/slugs';
 import { isUuid } from '#lib/slug';
 import { createStoryInUniverse, standaloneUniverse } from '#lib/server/story-create';
-import { relativeTime, storyStatus } from '#lib/dashboard';
+import { storyStatus } from '#lib/dashboard';
 import { storyCoverColor } from '#lib/entity-color';
 import {
 	destroyUniverse,
@@ -98,7 +98,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 			chapters: r.chapters,
 			words: r.words,
 			editedAt: editedAt.toISOString(),
-			editedLabel: relativeTime(editedAt, new Date()),
 			drafts: drafts.get(r.id) ?? [],
 			status: storyStatus({
 				sceneCount: r.scene_count,
