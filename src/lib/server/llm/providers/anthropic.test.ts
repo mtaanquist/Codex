@@ -827,6 +827,51 @@ describe('anthropicProvider.respond over a stream', () => {
 		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: req.maxTokens });
 	});
 
+	it('adds web search results to the input of a failed stream', async () => {
+		// Search results are billed as input, but only message_delta's running
+		// totals report them; a stream that fails first estimates them.
+		const result = {
+			type: 'web_search_tool_result',
+			tool_use_id: 's1',
+			content: [
+				{
+					type: 'web_search_result',
+					url: 'http://x',
+					title: 'T',
+					encrypted_content: 'e'.repeat(400)
+				}
+			]
+		};
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({ type: 'content_block_start', index: 0, content_block: result }),
+				frame({ type: 'content_block_stop', index: 0 }),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 9 + Math.ceil(JSON.stringify(result).length / 4),
+			completionTokens: 1
+		});
+	});
+
+	it('takes an output count sent as a string', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({ type: 'content_block_stop', index: 0 }),
+				...end('end_turn', { output_tokens: '7' })
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: 7 });
+	});
+
 	it('estimates the output of a finished stream whose message_delta reports none', async () => {
 		// Some compatible endpoints end with a stop reason and no output count,
 		// leaving message_start's placeholder.

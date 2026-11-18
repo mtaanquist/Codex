@@ -1461,6 +1461,14 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 7 (#1118, 2026-11-18). Web search results are
+      billed as input but only message_delta's running totals report them,
+      so a reviewer stream that failed after searching was metered at its
+      opening prompt size. Until message_delta arrives, the size of the
+      result blocks is now estimated into the input side. An output count
+      sent as a string by a compatible endpoint is read too. The round's low
+      findings went to #1116, #1117, #1119 and #1120.
+
 - [x] Staging review round 6 (#1110, 2026-11-18). The round-5 estimate
       counted streamed thinking, but current Claude models stream thinking
       with its text omitted and bill it in full, so a stream that failed
