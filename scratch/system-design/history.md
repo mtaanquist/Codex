@@ -1442,8 +1442,10 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       and enrichment (a new `assistant` option on `entityAppearances`; the Plan
       page's "Appears in" list still shows every story), the enrichment
       candidate query, character arcs and their staleness, and the universe
-      continuity pass. An arc written before a story was muted keeps what it
-      said until it is refreshed.
+      continuity pass. Muting a story also drops the stored arcs of the
+      characters it mentions (`saveStoryLlmOverride`), since an arc written
+      before the mute may retell it; an arc rewrite that finds no scenes left
+      clears the old arc too.
 
 - [x] Character arc summaries (2026-11-18, #846). Migration 0079 adds
       `characters.arc_summary_md` and `arc_summary_at` (additive; characters

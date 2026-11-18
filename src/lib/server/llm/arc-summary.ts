@@ -129,7 +129,15 @@ export async function summariseCharacterArc(
 	// The database clock, which scene saves stamp updated_at with.
 	const startedAt = await dbNow(db);
 	const found = await arcScenes(db, character.id, character.universeId);
-	if (found.length === 0) return { outcome: 'empty' };
+	if (found.length === 0) {
+		// Nothing left to retell (scenes deleted, or only in muted stories), so an
+		// earlier arc goes too rather than lingering in the context.
+		await db
+			.update(characters)
+			.set({ arcSummaryMd: null, arcSummaryAt: null, updatedAt: sql`${characters.updatedAt}` })
+			.where(eq(characters.id, character.id));
+		return { outcome: 'empty' };
+	}
 
 	const result = await completeDetailed(
 		db,

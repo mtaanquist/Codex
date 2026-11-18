@@ -706,4 +706,18 @@ export async function saveStoryLlmOverride(
 		expression = sql`(${expression}) - ${key}::text`;
 	}
 	await db.update(stories).set({ llmConfig: expression }).where(eq(stories.id, storyId));
+	// A character arc written before the mute may retell this story, and it is
+	// sent with every other story's context; drop the arcs of the characters
+	// this story mentions so a rewrite leaves it out.
+	if (patch.enabled === false) {
+		await db.execute(sql`
+			update characters set arc_summary_md = null, arc_summary_at = null
+			where arc_summary_md is not null and id in (
+				select m.target_id from entity_mentions m
+				join scenes s on s.id = m.source_id
+				where m.source_type = 'scene' and m.target_type = 'character'
+					and s.story_id = ${storyId}
+			)
+		`);
+	}
 }

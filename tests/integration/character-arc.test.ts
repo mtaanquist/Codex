@@ -186,6 +186,24 @@ describe('summariseCharacterArc', () => {
 		expect(lastPrompt).not.toContain('The Salt Road');
 	});
 
+	it('drops an arc when its story is muted, and when nothing is left to retell', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect((await readArc(bram.id)).arcSummaryMd).not.toBeNull();
+
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
+
+		await db
+			.update(characters)
+			.set({ arcSummaryMd: 'Old arc.', arcSummaryAt: new Date() })
+			.where(eq(characters.id, bram.id));
+		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(result.outcome).toBe('empty');
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
+	});
+
 	it('asks nothing for a character no scene mentions', async () => {
 		const bram = await makeCharacter();
 		const result = await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
