@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { PROSE_FORMAT } from './format';
 import { buildContinuationMessage, continuationTail, TAIL_BUDGET_TOKENS } from './continuation';
 
 // The bounds below follow the budget rather than restating it, so recalibrating
@@ -20,15 +21,16 @@ describe('buildContinuationMessage', () => {
 	it('keeps the instruction lines unchanged when the prose is trimmed', () => {
 		const long = 'word '.repeat(40_000);
 		const lines = buildContinuationMessage(long).split('\n');
-		expect(lines.slice(0, 5)).toEqual([
+		expect(lines.slice(0, 6)).toEqual([
 			'Continue the following prose naturally from exactly where it ends.',
 			'Reply with only the continuation: no preamble, no quotation marks, and do not repeat any of the existing text.',
 			'Match the established voice and tense. Keep it to a sentence or two unless the passage clearly calls for more.',
+			PROSE_FORMAT,
 			'',
 			'---'
 		]);
-		expect(lines[5]).toMatch(/^\[\.\.\.\] /);
-		expect(lines[5].length).toBeLessThanOrEqual(TAIL_CHARS + MARKER.length);
+		expect(lines[6]).toMatch(/^\[\.\.\.\] /);
+		expect(lines[6].length).toBeLessThanOrEqual(TAIL_CHARS + MARKER.length);
 	});
 });
 

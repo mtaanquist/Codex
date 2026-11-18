@@ -5,6 +5,7 @@
 	import Icon from './Icon.svelte';
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import { formatDateTime } from '#lib/format';
+	import { renderReplyMarkdown } from '#lib/markdown';
 
 	// One reply in a card's discussion list, shared by the comment and
 	// suggestion cards. retractAction names the form action for deleting your
@@ -54,6 +55,11 @@
 				</form>
 			{/if}
 		</div>
-		<div class="rv-reply-body">{reply.body}</div>
+		{#if reply.isAssistant}
+			<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
+			<div class="rv-reply-body reply-md">{@html renderReplyMarkdown(reply.body)}</div>
+		{:else}
+			<div class="rv-reply-body">{reply.body}</div>
+		{/if}
 	</div>
 </div>

@@ -78,6 +78,25 @@ export function renderMarkdown(markdown: string, options: { xhtml?: boolean } = 
 	return (options.xhtml ? xhtmlRenderer : renderer).render(markdown);
 }
 
+// Assistant replies are model output, so they get their own renderer: raw
+// HTML stays escaped, images render as their alt text (a remote image would
+// make the browser fetch a URL the model chose, which a prompt injection could
+// use to leak story text), and links open in a new tab without a referrer.
+const replyRenderer = new MarkdownIt({ html: false, linkify: false, typographer: false });
+replyRenderer.renderer.rules.image = (tokens, index, options, env, self) =>
+	self.renderInlineAsText(tokens[index].children ?? [], options, env);
+replyRenderer.renderer.rules.link_open = (tokens, index, options, env, self) => {
+	tokens[index].attrSet('target', '_blank');
+	tokens[index].attrSet('rel', 'noopener noreferrer nofollow');
+	return self.renderToken(tokens, index, options);
+};
+const SAFE_LINK = /^(https?:|mailto:)/i;
+replyRenderer.validateLink = (url) => SAFE_LINK.test(url.trim());
+
+export function renderReplyMarkdown(markdown: string): string {
+	return replyRenderer.render(markdown);
+}
+
 // Asset references in prose look like /assets/<uuid>; exports bundle the
 // files and rewrite the links to a relative assets/ folder.
 const ASSET_REFERENCE = new RegExp(`/assets/(${UUID_BODY})`, 'g');

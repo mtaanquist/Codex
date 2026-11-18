@@ -8,6 +8,7 @@
 	import ReviewReplyForm from './ReviewReplyForm.svelte';
 	import { authorColor, roleLabel, threadAuthor, type ReviewThread } from '#lib/review-ui';
 	import { formatDateTime } from '#lib/format';
+	import { renderReplyMarkdown } from '#lib/markdown';
 
 	let {
 		thread,
@@ -112,7 +113,12 @@
 		<div class="rv-scene-wide">On the whole scene</div>
 	{/if}
 
-	<div class="rv-body">{root.body}</div>
+	{#if root.isAssistant}
+		<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
+		<div class="rv-body reply-md">{@html renderReplyMarkdown(root.body)}</div>
+	{:else}
+		<div class="rv-body">{root.body}</div>
+	{/if}
 
 	{#if replies.length > 0}
 		<div class="rv-replies">

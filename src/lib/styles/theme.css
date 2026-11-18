@@ -820,6 +820,66 @@
 	margin-bottom: 0;
 }
 
+/* Assistant replies rendered from Markdown (renderReplyMarkdown). Sized by the
+   container, so a chat bubble and a review note keep their own type. */
+.reply-md > :first-child {
+	margin-top: 0;
+}
+.reply-md > :last-child {
+	margin-bottom: 0;
+}
+.reply-md :is(p, ul, ol, blockquote, pre, table) {
+	margin: 0 0 0.7em;
+}
+.reply-md :is(ul, ol) {
+	padding-left: 1.3em;
+}
+.reply-md li + li {
+	margin-top: 0.2em;
+}
+.reply-md :is(h1, h2, h3, h4, h5, h6) {
+	font-size: 1em;
+	font-weight: 650;
+	margin: 0.9em 0 0.35em;
+}
+.reply-md blockquote {
+	padding-left: 0.8em;
+	border-left: 2px solid var(--border);
+	color: var(--text-muted);
+}
+.reply-md code {
+	font-family: var(--font-mono);
+	font-size: 0.9em;
+	background: var(--bg-inset);
+	border-radius: 3px;
+	padding: 0.05em 0.3em;
+}
+.reply-md pre {
+	background: var(--bg-inset);
+	border-radius: var(--radius);
+	padding: 8px 10px;
+	overflow-x: auto;
+}
+.reply-md pre code {
+	background: none;
+	padding: 0;
+}
+.reply-md hr {
+	border: 0;
+	border-top: 1px solid var(--border);
+	margin: 0.9em 0;
+}
+.reply-md table {
+	border-collapse: collapse;
+	display: block;
+	overflow-x: auto;
+}
+.reply-md :is(th, td) {
+	border: 1px solid var(--border);
+	padding: 3px 7px;
+	text-align: left;
+}
+
 .fields {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
