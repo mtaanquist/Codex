@@ -338,32 +338,50 @@ describe('assistant notices link by id', () => {
 		]);
 
 		expect(await titles(owner.id)).toEqual([
-			'The Assistant is turned off, so it did not write the arc for Bram. Switch it back on from your account page, then select Write arc to try again.'
+			'The Assistant is turned off, so it did not write the arc for Bram. Switch it back on in your settings, then select Write arc to try again.'
 		]);
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 
-	it('says a story was muted when that dropped the arc', async () => {
+	it('says a story was muted when that dropped the arc, on the last attempt only', async () => {
 		const { owner, universe } = await seedStory();
 		const [character] = await db
 			.insert(characters)
 			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
 			.returning({ id: characters.id });
-		const { handlers } = harness({
-			summariseCharacterArc: async () => {
-				throw new ArcStoryMutedError();
-			}
-		});
+		// The job is still active while the handler runs, as it is in pg-boss
+		// when a handler throws.
+		const { handlers } = harness(
+			{
+				summariseCharacterArc: async () => {
+					throw new ArcStoryMutedError();
+				}
+			},
+			{ state: 'active', startedOn: STARTED }
+		);
+		const data = { userId: owner.id, universeId: universe.id, characterId: character.id };
 
 		// Still thrown, so the retry writes the arc without the muted story.
-		await expect(
-			handlers.assistantEnrich([
-				job({ userId: owner.id, universeId: universe.id, characterId: character.id })
-			])
-		).rejects.toThrow(ArcStoryMutedError);
+		await expect(handlers.assistantEnrich([job(data)])).rejects.toThrow(ArcStoryMutedError);
+		expect(await titles(owner.id)).toEqual([]);
 
+		const last = { ...job(data), retryCount: 2 };
+		await expect(handlers.assistantEnrich([last])).rejects.toThrow(ArcStoryMutedError);
 		expect(await titles(owner.id)).toEqual([
 			'A story was muted while the Assistant was writing the arc for Bram, so the arc was not saved. Select Write arc to try again.'
+		]);
+	});
+
+	it('words a pass that stopped early before leaving anything', async () => {
+		const { owner, universe } = await seedStory();
+		const { handlers } = harness({
+			enrichUniverse: async () => ({ entities: 0, staged: 0, failed: 0, disabled: true })
+		});
+
+		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant is turned off, so it stopped reading the entries in "Mythos". Switch it back on in your settings, then type /enrich to carry on.'
 		]);
 	});
 
@@ -408,7 +426,7 @@ describe('assistant notices link by id', () => {
 		await handlers.assistantEnrich([job({ userId: owner.id, universeId: universe.id })]);
 
 		expect(await titles(owner.id)).toEqual([
-			'The Assistant is turned off, so it stopped reading the entries in "Mythos" with 2 suggestions left. Switch it back on from your account page, then type /enrich to carry on.'
+			'The Assistant is turned off, so it stopped reading the entries in "Mythos", with 2 suggestions left. Switch it back on in your settings, then type /enrich to carry on.'
 		]);
 	});
 

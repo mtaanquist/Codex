@@ -195,11 +195,17 @@ export function createHandlers(deps: WorkerDeps) {
 				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
 				await queueDigests(
 					await insertNotifications(db, [userId], 'assistant_enrich', {
-						title: `The Assistant is turned off, so it did not write the arc for ${character.name}. Switch it back on from your account page, then select Write arc to try again.`,
+						title: `The Assistant is turned off, so it did not write the arc for ${character.name}. Switch it back on in your settings, then select Write arc to try again.`,
 						href
 					})
 				);
 				return;
+			}
+			if (error instanceof ArcStoryMutedError && job.retryCount < job.retryLimit) {
+				// The retry reads without the muted story and usually writes the
+				// arc, so say nothing until the last attempt. notifyWriter would
+				// not hold this back: a thrown job is still active when it runs.
+				throw error;
 			}
 			if (job.signal?.aborted) {
 				title = `Writing the arc for ${character.name} was stopped before it finished.`;
@@ -208,8 +214,9 @@ export function createHandlers(deps: WorkerDeps) {
 			} else {
 				title = `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
 			}
-			// The notice is held back while pg-boss will try again; the job is
-			// failed either way, so the activity card shows it did not work.
+			// notifyWriter holds the notice back only when pg-boss has already
+			// queued the retry (an expiry or abort). The job is failed either
+			// way, so the activity card shows it did not work.
 			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 			throw error;
 		}
@@ -569,13 +576,15 @@ export function createHandlers(deps: WorkerDeps) {
 				const href = `/universes/${universeId}/plan`;
 				const name = universe.name;
 				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
+				// For a pass that stopped early: what it still left behind, if anything.
+				const left = result.staged > 0 ? `, with ${suggestions} left` : '';
 				let title: string;
 				if (result.disabled) {
-					title = `The Assistant is turned off, so it stopped reading the entries in "${name}" with ${suggestions} left. Switch it back on from your account page, then type /enrich to carry on.`;
+					title = `The Assistant is turned off, so it stopped reading the entries in "${name}"${left}. Switch it back on in your settings, then type /enrich to carry on.`;
 				} else if (result.stoppedFailing) {
-					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read, with ${suggestions} left. Check the endpoint in your settings, then type /enrich to carry on.`;
+					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read${left}. Check the endpoint in your settings, then type /enrich to carry on.`;
 				} else if (result.aborted) {
-					title = `The Assistant stopped reading the entries in "${name}" before it finished, with ${suggestions} left. Type /enrich to carry on.`;
+					title = `The Assistant stopped reading the entries in "${name}" before it finished${left}. Type /enrich to carry on.`;
 				} else if (result.entities === 0 && result.failed > 0) {
 					title = `The Assistant could not read the entries in "${name}". ${result.cutOff ?? 'Check the endpoint in your settings.'}`;
 				} else if (result.staged === 0) {
@@ -597,7 +606,7 @@ export function createHandlers(deps: WorkerDeps) {
 				}
 				if (result.capped) {
 					const spent = (result.spentUsd ?? 0).toFixed(2);
-					title = `The Assistant stopped reading the entries in "${name}" at about $${spent}, with ${suggestions} left. Raise the cap in settings or run it again to continue.`;
+					title = `The Assistant stopped reading the entries in "${name}" at about $${spent}${left}. Raise the cap in settings or run it again to continue.`;
 				}
 				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
 				await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', {

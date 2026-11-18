@@ -616,11 +616,13 @@ describe('enrichUniverse', () => {
 	});
 
 	it('starts the count again after a read that works, or one cut off at the cap', async () => {
-		for (const name of ['Alda', 'Bram', 'Cass', 'Dov', 'Esk', 'Fen', 'Gil']) {
+		const names = ['Alda', 'Bram', 'Cass', 'Dov', 'Esk', 'Fen', 'Gil', 'Hal', 'Ivo'];
+		for (const name of names) {
 			await sceneMentioning(await makeCharacter({ name }), `${name} at the harbour`);
 		}
-		// Alda and Bram fail, Cass works, Dov and Esk fail, Fen is cut off, Gil fails.
-		const outcomes = ['fail', 'fail', 'ok', 'fail', 'fail', 'cut', 'fail'];
+		// Without the reset after Cass's cut-off, Dov would be the third failure
+		// in a row; without the one after Fen's read, Gil would be.
+		const outcomes = ['fail', 'fail', 'cut', 'fail', 'fail', 'ok', 'fail', 'fail', 'ok'];
 		const mixed: GatewayDeps = {
 			http: noHttp,
 			provider: {
@@ -638,9 +640,9 @@ describe('enrichUniverse', () => {
 			}
 		};
 		const result = await enrichUniverse(db, { userId: ownerId, universeId }, mixed);
-		expect(result).toMatchObject({ entities: 1, failed: 6, cutOffs: 1 });
+		expect(result).toMatchObject({ entities: 2, failed: 7, cutOffs: 1 });
 		expect(result.stoppedFailing).toBeUndefined();
-		expect(calls).toBe(7);
+		expect(calls).toBe(9);
 	});
 
 	it('does not stop for failing when the third failure was the last entry', async () => {
