@@ -279,6 +279,18 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 
 // The parsed JSON of each "data:" line of a server-sent event stream. Event
 // name lines and unparseable data are skipped.
+function frameData(line: string): unknown {
+	line = line.replace(/\r$/, '');
+	if (!line.startsWith('data:')) return undefined;
+	const data = line.slice(5).trim();
+	if (!data) return undefined;
+	try {
+		return JSON.parse(data);
+	} catch {
+		return undefined;
+	}
+}
+
 async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unknown> {
 	const decoder = new TextDecoder();
 	let buffer = '';
@@ -286,20 +298,14 @@ async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unkno
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
 		while ((newline = buffer.indexOf('\n')) !== -1) {
-			const line = buffer.slice(0, newline).replace(/\r$/, '');
+			const json = frameData(buffer.slice(0, newline));
 			buffer = buffer.slice(newline + 1);
-			if (!line.startsWith('data:')) continue;
-			const data = line.slice(5).trim();
-			if (!data) continue;
-			let json: unknown;
-			try {
-				json = JSON.parse(data);
-			} catch {
-				continue;
-			}
-			yield json;
+			if (json !== undefined) yield json;
 		}
 	}
+	// A last frame the endpoint did not end with a newline.
+	const json = frameData(buffer + decoder.decode());
+	if (json !== undefined) yield json;
 }
 
 // Parse an Anthropic streaming response: "data: {json}" frames whose JSON
@@ -424,8 +430,10 @@ async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<Buffere
 			case 'content_block_stop': {
 				const raw = inputJson.get(index);
 				// The start frame carries an empty input; the deltas carry the real
-				// one, and a call with no arguments sends none.
-				if (block && raw !== undefined) block.input = raw ? JSON.parse(raw) : {};
+				// one, and a call with no arguments sends none. A reply cut off at
+				// the token cap can stop mid-argument: parse leniently so the message
+				// still assembles and its max_tokens stop reaches the cut-off retry.
+				if (block && raw !== undefined) block.input = parseArguments(raw);
 				inputJson.delete(index);
 				break;
 			}
