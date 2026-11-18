@@ -283,22 +283,37 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 
 // What has streamed so far, for billing a stream that fails partway.
 // sawDelta is set once a message_delta has reported the output count.
-type StreamProgress = { outputChars: number; sawDelta: boolean };
+// sawThinking is set once a thinking block opens: current models stream
+// thinking with its text omitted, so its billed length cannot be counted.
+// maxTokens is the request's output cap, the most an attempt can be billed.
+type StreamProgress = {
+	outputChars: number;
+	sawDelta: boolean;
+	sawThinking: boolean;
+	maxTokens: number;
+};
+
+// The output a stream was billed for when no message_delta reported it: the
+// characters streamed, or the request's output cap once a thinking block
+// opened, since omitted thinking is billed but never seen. Over-counting only
+// stops a capped run early; under-counting would let it pass the cap.
+function estimatedOutput(progress: StreamProgress): number {
+	const streamed = tokensForChars(progress.outputChars);
+	return progress.sawThinking ? Math.max(streamed, progress.maxTokens) : streamed;
+}
 
 // What a stream that failed partway had been billed: the input side from
 // message_start and the output so far. The real API sends message_delta once,
 // at the end, so before it arrives message_start's output count (about 1) is
-// all there is; the text, thinking and tool input streamed so far are
-// estimated instead, so a retried long reply cannot slip past the spend cap.
+// all there is; estimatedOutput stands in for it, so a retried long reply
+// cannot slip past the spend cap.
 // Undefined when message_start never came.
 function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefined {
 	const prompt = promptTotal(raw);
 	if (!Number.isFinite(prompt)) return undefined;
 	const reported = Number(raw.output_tokens);
 	const counted = Number.isFinite(reported) ? reported : 0;
-	const completion = progress.sawDelta
-		? counted
-		: Math.max(counted, tokensForChars(progress.outputChars));
+	const completion = progress.sawDelta ? counted : Math.max(counted, estimatedOutput(progress));
 	const cached = cacheRead(raw);
 	return {
 		promptTokens: prompt,
@@ -428,11 +443,29 @@ const STREAM_ERROR_STATUS = new Map<unknown, number>([
 // message_start and whose running totals arrive on message_delta. The buffered
 // path streams so that a long reply keeps bytes moving and the egress idle
 // timeout only fires on real silence.
-async function assembleMessage(body: AsyncIterable<Uint8Array>): Promise<BufferedMessage> {
+async function assembleMessage(
+	body: AsyncIterable<Uint8Array>,
+	maxTokens: number
+): Promise<BufferedMessage> {
 	const usage: Block = {};
-	const progress: StreamProgress = { outputChars: 0, sawDelta: false };
+	const progress: StreamProgress = {
+		outputChars: 0,
+		sawDelta: false,
+		sawThinking: false,
+		maxTokens
+	};
 	try {
-		return await assembleFrames(body, usage, progress);
+		const message = await assembleFrames(body, usage, progress);
+		// A compatible endpoint can finish without reporting the output count,
+		// leaving message_start's placeholder of about 1.
+		if (!progress.sawDelta) {
+			const reported = Number(usage.output_tokens);
+			usage.output_tokens = Math.max(
+				Number.isFinite(reported) ? reported : 0,
+				estimatedOutput(progress)
+			);
+		}
+		return message;
 	} catch (err) {
 		throw err instanceof Error ? withBilledUsage(err, partialUsage(usage, progress)) : err;
 	}
@@ -468,6 +501,8 @@ async function assembleFrames(
 			case 'content_block_start':
 				if (index >= 0 && frame.content_block && typeof frame.content_block === 'object') {
 					blocks[index] = { ...(frame.content_block as Block) };
+					const type = blocks[index].type;
+					if (type === 'thinking' || type === 'redacted_thinking') progress.sawThinking = true;
 				}
 				break;
 			case 'content_block_delta':
@@ -538,9 +573,9 @@ async function assembleFrames(
 // answers in one JSON body is read as one, with or without a JSON content
 // type; a broken JSON body throws SyntaxError, which the gateway does not
 // retry. Anything else (a captive portal's web page, say) is not a reply.
-async function readReply(res: HttpResponse): Promise<BufferedMessage> {
+async function readReply(res: HttpResponse, maxTokens: number): Promise<BufferedMessage> {
 	const type = (res.headers['content-type'] ?? '').toLowerCase();
-	if (type.includes('text/event-stream')) return assembleMessage(res.body);
+	if (type.includes('text/event-stream')) return assembleMessage(res.body, maxTokens);
 	const text = await res.text();
 	if (type.includes('json') || (!type && /^\s*\{/.test(text))) {
 		return JSON.parse(text) as BufferedMessage;
@@ -584,7 +619,7 @@ export const anthropicProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(await res.text())}`);
 		}
-		const json = await readReply(res);
+		const json = await readReply(res, req.maxTokens);
 		const finishReason = parseStopReason(json?.stop_reason);
 		return {
 			...parseContent(json?.content),
