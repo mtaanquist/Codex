@@ -11,6 +11,13 @@ describe('defaultMaxTokens', () => {
 		expect(defaultMaxTokens('chat', true)).toBe(16_384);
 		expect(defaultMaxTokens('reviewer', true)).toBe(16_384);
 	});
+
+	it('holds the thinking room to a quarter of a known window', () => {
+		expect(defaultMaxTokens('reviewer', true, 200_000)).toBe(16_384);
+		expect(defaultMaxTokens('reviewer', true, 32_768)).toBe(8192);
+		// Never below the plain default.
+		expect(defaultMaxTokens('reviewer', true, 8192)).toBe(4096);
+	});
 });
 
 describe('roleMayThink', () => {

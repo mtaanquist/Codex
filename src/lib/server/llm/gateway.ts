@@ -366,7 +366,8 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				roleMayThink(
 					adapterKind(resolved.config.provider) === 'anthropic',
 					resolved.config.tuning[req.role]
-				)
+				),
+				contextWindow
 			),
 		contextWindow,
 		sleep: deps.sleep ?? realSleep

@@ -64,7 +64,7 @@
 	// begins at the midpoint, which is also what most endpoints use.
 	const TEMPERATURE_START = 1;
 	const codexMaxTokens = $derived(
-		defaultMaxTokens(role.id, roleMayThink(anthropic, { thinking, effort }))
+		defaultMaxTokens(role.id, roleMayThink(anthropic, { thinking, effort }), contextWindow)
 	);
 	// Arrow keys and drags land on round numbers; the box beside them still
 	// takes any figure you type.

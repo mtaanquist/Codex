@@ -416,6 +416,12 @@ describe('gateway gating', () => {
 		});
 		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
 		expect(captured?.maxTokens).toBe(16_384);
+		// A known window holds the room to a quarter of it, so a small local
+		// model keeps space for the prompt and its tools.
+		await saveModelContext(db, userId, { 'chat-model': 32_768 });
+		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);
+		expect(captured?.maxTokens).toBe(8192);
+		await saveModelContext(db, userId, {});
 		// Claude thinks on its own, so the provider alone is enough.
 		await saveAccountLlmConfig(db, userId, { ...base, provider: 'anthropic', tuning: {} });
 		await complete(db, { userId, role: 'reviewer', messages: [] }, stubDeps);

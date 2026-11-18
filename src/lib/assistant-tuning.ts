@@ -57,8 +57,11 @@ const DEFAULT_MAX_TOKENS = 2048;
 const REVIEWER_MAX_TOKENS = 4096;
 // Thinking counts toward the reply length, and at high effort it can spend a
 // few thousand tokens before the answer starts, so a role that may think gets
-// far more room.
+// far more room. Where the model's context window is known the extra room is
+// held to a quarter of it, so a small local window is not spent on the reply
+// before the prompt is in.
 const THINKING_MAX_TOKENS = 16_384;
+const THINKING_WINDOW_SHARE = 4;
 
 // Whether a role's requests may think: Claude models think on their own unless
 // told otherwise (Off on the Claude provider changes nothing), and elsewhere
@@ -67,9 +70,17 @@ export function roleMayThink(anthropic: boolean, tuning: RoleTuning | undefined)
 	return anthropic || tuning?.thinking === true || tuning?.effort !== undefined;
 }
 
-export function defaultMaxTokens(role: AssistantRole, thinks = false): number {
+export function defaultMaxTokens(
+	role: AssistantRole,
+	thinks = false,
+	contextWindow?: number
+): number {
 	const base = role === 'reviewer' ? REVIEWER_MAX_TOKENS : DEFAULT_MAX_TOKENS;
-	return thinks ? Math.max(base, THINKING_MAX_TOKENS) : base;
+	if (!thinks) return base;
+	const room = contextWindow
+		? Math.min(THINKING_MAX_TOKENS, Math.floor(contextWindow / THINKING_WINDOW_SHARE))
+		: THINKING_MAX_TOKENS;
+	return Math.max(base, room);
 }
 
 // The model a role runs on: its own, else the chat model, else the provider's
