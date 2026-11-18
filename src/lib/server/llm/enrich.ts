@@ -169,6 +169,13 @@ export async function enrichEntity(
 		deps
 	);
 	opts.meter?.record(result.model, result.usage);
+	// Cut-off JSON parses to nothing; failing keeps the entity unmarked so the
+	// next pass reads it again.
+	if (result.cutOff) {
+		throw new Error(
+			'The suggestions were cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
+		);
+	}
 
 	const proposals = parseEnrichResponse(result.content);
 	if (proposals.length === 0) return [];
