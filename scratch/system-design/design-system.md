@@ -743,6 +743,16 @@ inline ad-hoc SVG in components.
 - Banners: `.revision-banner` for the past-revision state is the reference
   pattern for a centre-column banner.
 
+### Assistant text
+
+- Model output that is shown for reading (chat replies, Assistant review
+  notes, character arcs) renders through `renderReplyMarkdown` from
+  `#lib/markdown` inside a `.reply-md` element (`theme.css`). The class only
+  spaces and styles the rendered blocks; the container sets the type size.
+  Do not hand-roll Markdown parsing for a new surface, and do not use
+  `renderMarkdown` (the prose renderer) for model text, since it allows
+  images.
+
 ## Writing in the UI
 
 From CLAUDE.md, repeated here because every screen touches it:

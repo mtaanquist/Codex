@@ -19,6 +19,7 @@
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
+	import { renderReplyMarkdown } from '#lib/markdown';
 	import { CHAT_WINDOW_TURNS } from '#lib/assistant-chat';
 	import { commandsForScope, matchSlash, slashName, slashArgs } from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
@@ -704,22 +705,6 @@
 		fit(el);
 		input = el.value;
 	}
-
-	// Crude **bold** rendering, matching the prototype: split into bold and plain
-	// spans so the bubble shows emphasis without a full markdown pass.
-	function segments(text: string): { bold: boolean; text: string }[] {
-		return text
-			.split(/(\*\*[^*]+\*\*)/g)
-			.map((part) =>
-				part.startsWith('**') && part.endsWith('**')
-					? { bold: true, text: part.slice(2, -2) }
-					: { bold: false, text: part }
-			);
-	}
-
-	function paragraphs(text: string): string[] {
-		return text.split(/\n{2,}/);
-	}
 </script>
 
 {#if muted}
@@ -763,17 +748,12 @@
 				{:else}
 					<div class="msg assistant-msg">
 						<div class="who"><Icon name="sparkles" size={12} /> {name}</div>
-						<div class="bubble">
+						<div class="bubble reply-md">
 							{#if message.content === '' && busy && index === messages.length - 1}
 								<div class="typing"><i></i><i></i><i></i></div>
 							{:else}
-								{#each paragraphs(message.content) as para, pi (pi)}
-									<p>
-										{#each segments(para) as seg, si (si)}
-											{#if seg.bold}<strong>{seg.text}</strong>{:else}{seg.text}{/if}
-										{/each}
-									</p>
-								{/each}
+								<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
+								{@html renderReplyMarkdown(message.content)}
 							{/if}
 						</div>
 						{#if message.content && !(busy && index === messages.length - 1) && index > 0}
@@ -1047,12 +1027,6 @@
 		border: 1px solid var(--border);
 		padding: 11px 13px;
 		border-radius: 4px 13px 13px 13px;
-	}
-	.msg.assistant-msg .bubble p {
-		margin: 0 0 0.7em;
-	}
-	.msg.assistant-msg .bubble p:last-child {
-		margin: 0;
 	}
 	.typing {
 		display: inline-flex;

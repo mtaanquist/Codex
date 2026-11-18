@@ -64,7 +64,9 @@ export const TOOLS: ToolDef[] = [
 			{
 				sceneId: str('The scene id.'),
 				original: str('The exact existing text to replace (must occur once in the scene).'),
-				replacement: str('The proposed replacement text (empty string to delete the passage).')
+				replacement: str(
+					'The proposed replacement text, as manuscript prose with *asterisks* only for italics and no other Markdown (empty string to delete the passage).'
+				)
 			},
 			['sceneId', 'original', 'replacement']
 		)

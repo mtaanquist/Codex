@@ -1431,6 +1431,21 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
+      particular, answer in Markdown, which the chat showed raw apart from a
+      `**bold**` regex. Chosen approach, by surface: text that is only read
+      (chat bubble, Assistant review notes and replies, character arcs) goes
+      through `renderReplyMarkdown`, a second markdown-it instance with raw
+      HTML off, images rendered as their alt text (a remote image would let a
+      prompt injection make the browser fetch a URL carrying story text; the
+      CSP has no `img-src`), and only http(s) and mailto links, opened in a
+      new tab without a referrer. Text that becomes the writer's own gets
+      prompt guidance instead (`prompts/format.ts`): coauthor, continuation
+      and `suggest_edit` replacements ask for manuscript prose with italics
+      only; summaries and enrich values ask for plain text. People's review
+      comments still show as typed. A stripping backstop for short fields
+      was left out until guidance proves not to be enough. Insert at cursor
+      still copies the raw reply, since scene bodies are Markdown.
 - [x] Staging review fixes for Phase 9 (2026-11-18). A fresh review of the
       whole staging diff found three things. The enrich queue is now created
       with pg-boss's `exclusive` policy: under the default policy a

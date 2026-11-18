@@ -3,6 +3,7 @@
 // tools and no assembled world context in the first cut - just the preceding
 // prose the client sends - so it stays fast for an as-you-write feel.
 
+import { PROSE_FORMAT } from './format.ts';
 import { estimateTokens } from '../context/assemble.ts';
 
 // Provisional: a per-endpoint context-window setting will replace this. A short
@@ -31,6 +32,7 @@ export function buildContinuationMessage(textBefore: string): string {
 		'Continue the following prose naturally from exactly where it ends.',
 		'Reply with only the continuation: no preamble, no quotation marks, and do not repeat any of the existing text.',
 		'Match the established voice and tense. Keep it to a sentence or two unless the passage clearly calls for more.',
+		PROSE_FORMAT,
 		'',
 		'---',
 		continuationTail(textBefore)

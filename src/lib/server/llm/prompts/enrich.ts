@@ -1,3 +1,4 @@
+import { PLAIN_TEXT_FORMAT } from './format.ts';
 import type { EntityKind } from '#lib/components/EntityEditor.svelte';
 
 // The enrichment instruction: from where an entity appears in the prose, suggest
@@ -41,6 +42,7 @@ export function buildEnrichMessage(entity: EnrichEntity, appearances: string[]):
 			? '- do not propose a summary; it already has one.'
 			: '- a one or two sentence summary of who or what it is.',
 		'',
+		`In every string value: ${PLAIN_TEXT_FORMAT}`,
 		'Reply with only a JSON object, no prose around it, in this exact shape:',
 		'{"aliases": ["..."], "details": [{"label": "...", "value": "..."}], "summary": "..."}',
 		entity.hasSummary
