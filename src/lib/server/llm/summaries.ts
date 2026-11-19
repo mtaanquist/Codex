@@ -2,13 +2,18 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { errorFields, logEvent } from '../log.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
-import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import {
+	AssistantDisabledError,
+	completeDetailed,
+	NoModelError,
+	type GatewayDeps
+} from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
-import { resolveLlmConfig } from './config.ts';
-import { SpendMeter } from './spend.ts';
+import { spentFields, type SpendMeter } from './spend.ts';
+import { jobSpendMeter } from './job-spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
-import { markMentionsStale } from '../scene-lifecycle.ts';
+import { markChapterSummariesStale, markMentionsStale } from '../scene-lifecycle.ts';
 import { summaryIsCurrent } from '../summary-currency.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
@@ -17,9 +22,11 @@ import { summaryIsCurrent } from '../summary-currency.ts';
 // writer to accept: a summary is generated metadata, not authored prose, so it
 // is written directly - but it never overwrites a summary the writer wrote by
 // hand (see needsSummary), and it leaves the row's updated_at alone so a summary
-// write does not register as an edit or look stale on the next run. The write
-// only lands if the row is as it was read before the model call, so a summary
-// typed or an edit made while the model was writing is kept.
+// write does not register as an edit. The write only lands if the row is as it
+// was read before the model call, so a summary typed or an edit made while the
+// model was writing is kept. It is stamped with that same updated_at rather
+// than a clock reading, so currency (see summary-currency.ts) compares one
+// column with a copy of itself and no two clocks are ever compared.
 
 const MAX_SUMMARY_TOKENS = 200;
 
@@ -31,9 +38,20 @@ export type SummaryResult = {
 	// left for a later run, with what it had spent by then.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, not only reported ones.
+	spentEstimated?: boolean;
 	// Why a cap that was set could not be enforced. Only reported when the run
 	// metered itself; a caller that passed its own meter reads it from that.
 	capNotApplied?: string;
+	// Set when the job was stopped part-way.
+	aborted?: boolean;
+	// Summaries written but not saved because the row changed while the model
+	// was writing; the next run looks at them again.
+	changed?: number;
+	// Set when the pass stopped because no model is chosen, or the Assistant
+	// is turned off: every later call would be refused the same way.
+	noModel?: boolean;
+	disabled?: boolean;
 };
 
 function blank(value: string | null): boolean {
@@ -82,14 +100,6 @@ async function generate(
 	return result.content.trim();
 }
 
-async function storyMeter(db: Database, userId: string, storyId: string): Promise<SpendMeter> {
-	const resolved = await resolveLlmConfig(db, userId, storyId);
-	return new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
-}
-
 // Draft and refresh the summaries for a whole story's scenes, then its chapters
 // (chapter summaries draw on the scene summaries, so scenes go first). Owner
 // scoped through the story. A review passes the meter it shares across its
@@ -98,31 +108,44 @@ async function storyMeter(db: Database, userId: string, storyId: string): Promis
 // the result reports how many summaries were written and how many failed.
 export async function summariseStory(
 	db: Database,
-	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
+	opts: {
+		userId: string;
+		storyId: string;
+		meter?: SpendMeter;
+		// The queued job's id, so a retry carries on from what it already spent.
+		jobId?: string;
+		signal?: AbortSignal;
+	},
 	deps: GatewayDeps = {}
 ): Promise<SummaryResult> {
 	const { userId, storyId, signal } = opts;
 	const ownMeter = !opts.meter;
-	const meter = opts.meter ?? (await storyMeter(db, userId, storyId));
+	const meter = opts.meter ?? (await jobSpendMeter(db, { userId, storyId, jobId: opts.jobId }));
 	let written = 0;
 	let chaptersWritten = 0;
 	let failed = 0;
 	let capped = false;
-	// Chapters whose scenes changed this run, so their summary is now stale even
-	// if the chapter row itself was not edited.
-	const touchedChapters = new Set<string>();
-
+	let changed = 0;
+	let noModel = false;
+	let disabled = false;
+	// The gate refusal ends the pass; anything else is one item's failure.
+	const stopsPass = (err: unknown): boolean => {
+		if (err instanceof NoModelError) noModel = true;
+		else if (err instanceof AssistantDisabledError) disabled = true;
+		else return false;
+		return true;
+	};
 	const sceneRows = await db
 		.select({
 			id: scenes.id,
-			chapterId: scenes.chapterId,
 			title: scenes.title,
 			bodyMd: scenes.bodyMd,
 			summaryMd: scenes.summaryMd,
 			summaryGeneratedAt: scenes.summaryGeneratedAt,
 			updatedAt: scenes.updatedAt,
 			// As text, so the write below compares to the microsecond.
-			updatedAtText: sql<string>`${scenes.updatedAt}::text`
+			updatedAtText: sql<string>`${scenes.updatedAt}::text`,
+			generatedAtText: sql<string | null>`${scenes.summaryGeneratedAt}::text`
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
@@ -137,6 +160,7 @@ export async function summariseStory(
 		.orderBy(asc(scenes.globalPosition));
 
 	for (const scene of sceneRows) {
+		if (signal?.aborted) break;
 		// Between summaries is the boundary where stopping leaves nothing partial.
 		if (meter.capReached) {
 			capped = true;
@@ -171,25 +195,32 @@ export async function summariseStory(
 			const stored = await db.transaction(async (tx) => {
 				// Raw SQL so updated_at's $onUpdate does not fire. A scene edited, or
 				// given a summary, since it was read keeps what it has; the next run
-				// looks at it again. The stamp comes from the app clock, the one that
-				// sets updated_at, since the two are compared.
+				// looks at it again.
 				const { rows } = await tx.execute(sql`
-					update scenes set summary_md = ${text}, summary_generated_at = ${new Date()}
+					update scenes set summary_md = ${text}, summary_generated_at = updated_at
 					where id = ${scene.id}
 						and updated_at = ${scene.updatedAtText}::timestamptz
 						and summary_md is not distinct from ${scene.summaryMd}
+						and summary_generated_at is not distinct from ${scene.generatedAtText}::timestamptz
 						and deleted_at is null
-					returning id
+					returning chapter_id
 				`);
 				if (rows.length === 0) return false;
 				// Character arcs read scene summaries.
 				await markMentionsStale(tx, { sceneIds: [scene.id] });
+				// So does the chapter's summary. Marked here rather than remembered
+				// for the chapter pass, so a run that stops first leaves it due.
+				const sceneChapter = (rows[0] as { chapter_id: string | null }).chapter_id;
+				if (sceneChapter) await markChapterSummariesStale(tx, [sceneChapter]);
 				return true;
 			});
-			if (!stored) continue;
+			if (!stored) {
+				changed += 1;
+				continue;
+			}
 			written += 1;
-			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {
+			if (stopsPass(err)) break;
 			logEvent('error', 'summaries.scene_failed', { sceneId: scene.id, ...errorFields(err) });
 			failed += 1;
 		}
@@ -202,7 +233,8 @@ export async function summariseStory(
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
 			updatedAt: chapters.updatedAt,
-			updatedAtText: sql<string>`${chapters.updatedAt}::text`
+			updatedAtText: sql<string>`${chapters.updatedAt}::text`,
+			generatedAtText: sql<string | null>`${chapters.summaryGeneratedAt}::text`
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
@@ -235,7 +267,8 @@ export async function summariseStory(
 		}
 	}
 
-	for (const chapter of chapterRows) {
+	for (const chapter of noModel || disabled ? [] : chapterRows) {
+		if (signal?.aborted) break;
 		if (meter.capReached) {
 			capped = true;
 			break;
@@ -243,11 +276,9 @@ export async function summariseStory(
 		const summaries = summariesByChapter.get(chapter.id) ?? [];
 		if (summaries.length === 0) continue;
 
-		const changedSince =
-			touchedChapters.has(chapter.id) ||
-			(chapter.summaryGeneratedAt
-				? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
-				: false);
+		const changedSince = chapter.summaryGeneratedAt
+			? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
+			: false;
 		if (
 			!needsSummary({
 				summaryMd: chapter.summaryMd,
@@ -270,26 +301,36 @@ export async function summariseStory(
 				deps
 			);
 			if (!text) continue;
-			// As for scenes: only over the chapter as it was read.
+			// As for scenes: only over the chapter as it was read. The stamp check
+			// also catches a scene trashed or restored meanwhile (see
+			// markChapterSummariesStale).
 			const { rows } = await db.execute(sql`
-				update chapters set summary_md = ${text}, summary_generated_at = ${new Date()}
+				update chapters set summary_md = ${text}, summary_generated_at = updated_at
 				where id = ${chapter.id}
 					and updated_at = ${chapter.updatedAtText}::timestamptz
 					and summary_md is not distinct from ${chapter.summaryMd}
+					and summary_generated_at is not distinct from ${chapter.generatedAtText}::timestamptz
 				returning id
 			`);
 			if (rows.length > 0) chaptersWritten += 1;
+			else changed += 1;
 		} catch (err) {
+			if (stopsPass(err)) break;
 			logEvent('error', 'summaries.chapter_failed', { chapterId: chapter.id, ...errorFields(err) });
 			failed += 1;
 		}
 	}
 
+	if (ownMeter) await meter.flush();
 	return {
 		scenes: written,
 		chapters: chaptersWritten,
 		failed,
-		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(signal?.aborted ? { aborted: true } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {}),
+		...(changed ? { changed } : {}),
+		...(noModel ? { noModel: true } : {}),
+		...(disabled ? { disabled: true } : {}),
 		...(ownMeter && meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }

@@ -10,8 +10,8 @@ import {
 	ReplyCutOffError,
 	type GatewayDeps
 } from './gateway.ts';
-import { resolveLlmConfig } from './config.ts';
-import { SpendMeter } from './spend.ts';
+import { spentFields, type SpendMeter } from './spend.ts';
+import { jobSpendMeter } from './job-spend.ts';
 import { buildEnrichMessage } from './prompts/enrich.ts';
 import { entityAppearances, type PlanAppearance } from '../plan-data.ts';
 import {
@@ -168,28 +168,28 @@ async function enrichRead(
 		snippetLine(a, universeWide)
 	);
 
+	const fields = {
+		kind,
+		name: entity.name,
+		aliases: entity.aliases ?? [],
+		details: entity.details ?? [],
+		summaryMd: entity.summaryMd
+	};
+	const hasSummary = await summarySuggestionClosed(db, {
+		ownerId: opts.userId,
+		kind,
+		entityId: opts.entityId,
+		summaryMd: entity.summaryMd
+	});
 	const messages: ChatMessage[] = [
-		{
-			role: 'user',
-			content: buildEnrichMessage(
-				{
-					kind,
-					name: entity.name,
-					aliases: entity.aliases ?? [],
-					details: entity.details ?? [],
-					summaryMd: entity.summaryMd,
-					hasSummary: await summarySuggestionClosed(db, {
-						ownerId: opts.userId,
-						kind,
-						entityId: opts.entityId,
-						summaryMd: entity.summaryMd
-					})
-				},
-				snippets
-			)
-		}
+		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary }, snippets) }
 	];
-	const input = requestHash(messages);
+	// Hashed as if no summary were known: a read that stages a summary would
+	// otherwise change the next request, and an unchanged passage set would be
+	// sent again just to be told not to propose one.
+	const input = requestHash([
+		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
+	]);
 	if (opts.unlessInput && input === opts.unlessInput) {
 		return { suggestions: [], input, unchanged: true };
 	}
@@ -251,6 +251,8 @@ export type UniverseEnrichResult = {
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, not only reported ones.
+	spentEstimated?: boolean;
 	// Why a cap that was set could not be enforced.
 	capNotApplied?: string;
 };
@@ -309,15 +311,12 @@ export async function dbNow(db: Database): Promise<Date> {
 // endpoint keeps failing.
 export async function enrichUniverse(
 	db: Database,
-	opts: { userId: string; universeId: string; signal?: AbortSignal },
+	opts: { userId: string; universeId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<UniverseEnrichResult> {
 	const { userId, universeId, signal } = opts;
-	const resolved = await resolveLlmConfig(db, userId);
-	const meter = new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
+	// Keyed by the job, so a retry carries on from what it already spent.
+	const meter = await jobSpendMeter(db, { userId, jobId: opts.jobId });
 	let entities = 0;
 	let unchanged = 0;
 	let staged = 0;
@@ -346,13 +345,16 @@ export async function enrichUniverse(
 		const table = entityTable(entity.type);
 		// As text, so the check below compares to the microsecond; a JS Date
 		// keeps only milliseconds, and marks land often.
-		const [{ before, lastInput }] = await db
+		const [last] = await db
 			.select({
 				before: sql<string | null>`${table.assistantEnrichedAt}::text`,
 				lastInput: table.assistantEnrichedInput
 			})
 			.from(table)
 			.where(eq(table.id, entity.id));
+		// Deleted since the pass listed it: nothing left to read.
+		if (!last) continue;
+		const { before, lastInput } = last;
 		try {
 			const read = await enrichRead(
 				db,
@@ -421,6 +423,7 @@ export async function enrichUniverse(
 		}
 	}
 
+	await meter.flush();
 	return {
 		entities,
 		...(unchanged ? { unchanged } : {}),
@@ -431,7 +434,7 @@ export async function enrichUniverse(
 		...(disabled ? { disabled: true } : {}),
 		...(noModel ? { noModel: true } : {}),
 		...(stoppedFailing ? { stoppedFailing: true } : {}),
-		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }

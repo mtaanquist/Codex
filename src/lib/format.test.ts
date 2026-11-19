@@ -9,7 +9,8 @@ import {
 	formatTime,
 	narrowWeekday,
 	relativeShort,
-	dayKey
+	dayKey,
+	spentPhrase
 } from './format';
 
 // Local-time dates, so the output does not depend on the runner's timezone.
@@ -112,5 +113,13 @@ describe('compactCount', () => {
 		expect(compactCount(1000)).toBe('1.0k');
 		expect(compactCount(1234)).toBe('1.2k');
 		expect(compactCount(12000)).toBe('12.0k');
+	});
+});
+
+describe('spentPhrase', () => {
+	it('says about, and marks a figure that includes estimates', () => {
+		expect(spentPhrase(1.2)).toBe('about $1.20');
+		expect(spentPhrase(1.2, true)).toBe('about $1.20 (estimated)');
+		expect(spentPhrase(0.01234, false, 4)).toBe('about $0.0123');
 	});
 });

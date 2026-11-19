@@ -1,5 +1,5 @@
 {
-	"id": "ec670828-2530-4437-9049-f9c567562bd1",
+	"id": "3de6214c-7f06-4d92-a676-841a75ef100f",
 	"prevId": "982b001a-5420-46a2-8f39-e76bf8f252c4",
 	"version": "7",
 	"dialect": "postgresql",
@@ -521,12 +521,6 @@
 					"primaryKey": false,
 					"notNull": true,
 					"default": "''"
-				},
-				"settings": {
-					"name": "settings",
-					"type": "jsonb",
-					"primaryKey": false,
-					"notNull": false
 				},
 				"created_at": {
 					"name": "created_at",
@@ -4465,6 +4459,13 @@
 					"primaryKey": false,
 					"notNull": true,
 					"default": "now()"
+				},
+				"touched_at": {
+					"name": "touched_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": false,
+					"default": "clock_timestamp()"
 				},
 				"mentions_indexed_at": {
 					"name": "mentions_indexed_at",

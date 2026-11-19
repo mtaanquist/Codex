@@ -20,6 +20,7 @@ import {
 	reconcileMentions,
 	universeMentionContext
 } from '../../src/lib/server/mentions';
+import { purgeStory } from '../../src/lib/server/story-delete';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -279,5 +280,84 @@ describe('reconcile', () => {
 		await markUniverseMentionsChanged(db, universeId);
 		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
 		await pool.query(`update scenes set deleted_at = null where id = $1`, [sceneId]);
+	});
+});
+
+describe('a rebuild racing another write', () => {
+	const pause = () => new Promise((resolve) => setTimeout(resolve, 200));
+
+	// Runs `during` on a second connection that holds `lockSql` while a rebuild
+	// starts, then commits it, and returns what the rebuild gave back.
+	async function withHeldLock(
+		lockSql: string,
+		lockArg: string,
+		during: (client: pg.PoolClient) => Promise<void>,
+		alongside?: () => Promise<unknown>
+	) {
+		const client = await pool.connect();
+		try {
+			await client.query('begin');
+			await client.query(lockSql, [lockArg]);
+			const rebuild = rebuildSceneMentions(db, sceneId).catch((err: unknown) => err);
+			await pause();
+			const other = alongside?.().catch((err: unknown) => err);
+			if (other) await pause();
+			await during(client);
+			await client.query('commit');
+			return { rebuild: await rebuild, other: await other };
+		} finally {
+			// Dropped rather than pooled, in case a failure left it mid-transaction.
+			client.release(true);
+		}
+	}
+
+	it('indexes the text a save commits while the rebuild waits for the scene', async () => {
+		const { rebuild } = await withHeldLock(
+			'select id from scenes where id = $1 for update',
+			sceneId,
+			async (save) => {
+				await save.query(
+					`update scenes set body_md = 'Nobody here.', updated_at = now() where id = $1`,
+					[sceneId]
+				);
+			}
+		);
+		expect(rebuild).toEqual({ ok: true, count: 0 });
+		expect(await mentionRows(sceneId)).toHaveLength(0);
+	});
+
+	it('indexes a trashed scene restored while the rebuild waits for it', async () => {
+		await pool.query(`update scenes set deleted_at = now() where id = $1`, [sceneId]);
+		const { rebuild } = await withHeldLock(
+			'select id from scenes where id = $1 for update',
+			sceneId,
+			async (restore) => {
+				await restore.query(
+					`update scenes set deleted_at = null, mentions_indexed_at = null where id = $1`,
+					[sceneId]
+				);
+			}
+		);
+		expect(rebuild).toEqual({ ok: true, count: 2 });
+		expect(await mentionRows(sceneId)).toHaveLength(2);
+		expect((await listStaleMentionScenes(db)).map((s) => s.id)).not.toContain(sceneId);
+	});
+
+	it('does not deadlock with a story purge', async () => {
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+		await db.update(scenes).set({ bodyMd: 'Alice alone.' }).where(eq(scenes.id, sceneId));
+		// The held story row pauses the rebuild after it takes the scene row and
+		// before it rewrites the scene's mentions, while the purge starts.
+		const { rebuild, other } = await withHeldLock(
+			'select id from stories where id = $1 for no key update',
+			scene.storyId,
+			async () => {},
+			() => purgeStory(db, scene.storyId)
+		);
+		expect(rebuild).toEqual({ ok: true, count: 1 });
+		expect(other).toBeUndefined();
+		expect(await db.select().from(scenes).where(eq(scenes.id, sceneId))).toHaveLength(0);
+		expect(await mentionRows(sceneId)).toHaveLength(0);
 	});
 });

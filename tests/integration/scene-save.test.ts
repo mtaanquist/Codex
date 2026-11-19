@@ -173,6 +173,47 @@ describe('saveSceneBody', () => {
 		expect(result).toEqual({ ok: false, missing: true });
 	});
 
+	it('reports a trashed scene as gone instead of saving into it', async () => {
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
+		const result = await saveSceneBody(db, sceneId, save({ bodyMd: 'Late tab.' }));
+		expect(result).toEqual({ ok: false, missing: true });
+		expect((await stored()).bodyMd).toBe(START);
+		expect(await history()).toEqual([]);
+	});
+
+	it('reports a scene in a trashed story as gone', async () => {
+		await db.update(stories).set({ deletedAt: new Date() }).where(eq(stories.id, storyId));
+		try {
+			const result = await saveSceneBody(db, sceneId, save({ bodyMd: 'Late tab.' }));
+			expect(result).toEqual({ ok: false, missing: true });
+			expect((await stored()).bodyMd).toBe(START);
+		} finally {
+			await db.update(stories).set({ deletedAt: null }).where(eq(stories.id, storyId));
+		}
+	});
+
+	it('does not land a save that waited on the lock while a merge trashed the scene', async () => {
+		// The merge holds the row lock and trashes the scene; the save queued
+		// behind it must see the trash once the lock is free.
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => (release = resolve));
+		let locked!: () => void;
+		const isLocked = new Promise<void>((resolve) => (locked = resolve));
+		const merge = db.transaction(async (tx) => {
+			await tx.select().from(scenes).where(eq(scenes.id, sceneId)).for('update');
+			await tx.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneId));
+			locked();
+			await held;
+		});
+		await isLocked;
+		const saving = saveSceneBody(db, sceneId, save({ bodyMd: 'Second tab.' }));
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		release();
+		await merge;
+		expect(await saving).toEqual({ ok: false, missing: true });
+		expect((await stored()).bodyMd).toBe(START);
+	});
+
 	it('skips the check for a save without fingerprints', async () => {
 		await saveSceneBody(db, sceneId, save({ bodyMd: 'Elsewhere.' }));
 		const result = await saveSceneBody(db, sceneId, save({ bodyMd: 'Old tab.', baseHashes: null }));

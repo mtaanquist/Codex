@@ -60,7 +60,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			count(s.id) filter (where s.status = 'draft')::int as draft,
 			count(s.id) filter (where s.status = 'revised')::int as revised,
 			count(s.id) filter (where s.status = 'final')::int as final,
-			greatest(st.updated_at, max(s.updated_at)) as edited_at
+			greatest(st.updated_at, max(coalesce(s.touched_at, s.updated_at))) as edited_at
 		from stories st
 		join universes u on u.id = st.universe_id and u.deleted_at is null
 		left join scenes s on s.story_id = st.id and s.deleted_at is null

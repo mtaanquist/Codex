@@ -66,7 +66,9 @@ async function isPinnedBaseRevision(db: Database, revisionId: string): Promise<b
 // entry when that entry is a recent autosave (rolling its content and
 // timestamp forward); past the window, or when the latest entry is a
 // checkpoint, it appends a new row. Checkpoints always insert: the point of
-// one is the marker, even on unchanged text.
+// one is the marker, even on unchanged text. Rows are stamped with the time
+// of the write, not of the transaction's start, so a split or merge that
+// waited on the scene lock still sorts after the autosave it waited for.
 export async function recordRevision(
 	db: Database,
 	entityType: RevisionEntityType,
@@ -85,7 +87,8 @@ export async function recordRevision(
 			wordCount: words,
 			snapshot,
 			reason,
-			label: options.label?.trim() || null
+			label: options.label?.trim() || null,
+			createdAt: sql`clock_timestamp()`
 		});
 		return { recorded: true };
 	}
@@ -119,7 +122,7 @@ export async function recordRevision(
 		) {
 			await tx
 				.update(revisions)
-				.set({ bodyMd, wordCount: words, snapshot, createdAt: sql`now()` })
+				.set({ bodyMd, wordCount: words, snapshot, createdAt: sql`clock_timestamp()` })
 				.where(eq(revisions.id, latest.id));
 			return { recorded: true };
 		}
@@ -130,7 +133,8 @@ export async function recordRevision(
 			wordCount: words,
 			snapshot,
 			reason,
-			label: options.label?.trim() || null
+			label: options.label?.trim() || null,
+			createdAt: sql`clock_timestamp()`
 		});
 		return { recorded: true };
 	});

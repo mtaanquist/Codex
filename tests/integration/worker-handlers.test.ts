@@ -41,9 +41,12 @@ import { createHandlers, type WorkerDeps, type WorkerServices } from '../../src/
 import {
 	AssistantDisabledError,
 	NoModelError,
-	ReplyCutOffError
+	ReplyCutOffError,
+	ReplyRefusedError
 } from '../../src/lib/server/llm/gateway';
 import { ArcStoryMutedError } from '../../src/lib/server/llm/arc-summary';
+import { EndpointReplyError, stoppedByWriter } from '../../src/lib/server/llm/providers/types';
+import { ReviewRunLoadError } from '../../src/lib/server/review-runs';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 // The worker's job handlers run here without pg-boss: jobs are plain objects
@@ -71,7 +74,7 @@ afterAll(async () => {
 	await pool.end();
 });
 
-type JobState = { state: 'active' | 'retry'; startedOn: Date } | null;
+type JobState = { state: 'active' | 'retry' | 'cancelled'; startedOn: Date } | null;
 
 function harness(services: Partial<WorkerServices> = {}, current: JobState = null) {
 	const sent: { queue: string; data: unknown }[] = [];
@@ -393,6 +396,102 @@ describe('assistant notices link by id', () => {
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 
+	it("passes a writer's Stop on to the Assistant's requests as a writer stop", async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const controller = new AbortController();
+		let seen: AbortSignal | undefined;
+		const { handlers } = harness(
+			{
+				summariseCharacterArc: async (_db, opts) => {
+					seen = opts.signal;
+					controller.abort();
+					await new Promise<void>((resolve) =>
+						opts.signal?.addEventListener('abort', () => resolve())
+					);
+					return { outcome: 'written' as const };
+				}
+			},
+			{ state: 'cancelled', startedOn: STARTED }
+		);
+
+		await handlers.assistantEnrich([
+			{
+				...job({ userId: owner.id, universeId: universe.id, characterId: character.id }),
+				signal: controller.signal
+			}
+		]);
+
+		expect(seen && stoppedByWriter(seen)).toBe(true);
+	});
+
+	it('says the model declined an arc, without retrying', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers, completed } = harness({
+			summariseCharacterArc: async () => {
+				throw new ReplyRefusedError();
+			}
+		});
+
+		// Resolves on the first attempt: a retry would be declined, and billed, again.
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The model declined to write the arc for Bram, so nothing was saved.'
+		]);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it('ends an arc job without retrying when the endpoint sends something other than a reply (#1105)', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers, completed } = harness({
+			summariseCharacterArc: async () => {
+				throw new EndpointReplyError('The endpoint answered with text/html instead of a reply.');
+			}
+		});
+
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			"The Assistant could not write the arc for Bram: the endpoint did not send a reply. Check the endpoint in your settings, then try again from the character's entry in Plan."
+		]);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it('says an arc job stopped at the spend cap (#1105)', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers } = harness({
+			summariseCharacterArc: async () => ({ outcome: 'capped' as const, spentUsd: 1.25 })
+		});
+
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			"The Assistant did not write the arc for Bram: this job reached the spend cap at about $1.25. Raise the cap in settings, then try again from the character's entry in Plan."
+		]);
+	});
+
 	it('ends an arc job without retrying when the Assistant is turned off', async () => {
 		const { owner, universe } = await seedStory();
 		const [character] = await db
@@ -662,6 +761,24 @@ describe('assistant review notices', () => {
 		);
 	});
 
+	it('leaves a review that could not read its progress to a retry, and says so on the last attempt (#1113)', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			reviewStoryScenes: async () => {
+				throw new ReviewRunLoadError(new Error('connection reset'));
+			}
+		});
+		const data = { userId: owner.id, storyId: story.id };
+
+		await expect(handlers.assistantReview([job(data)])).rejects.toBeInstanceOf(ReviewRunLoadError);
+		expect(await titles(owner.id)).toEqual([]);
+
+		await handlers.assistantReview([{ ...job(data), retryCount: 2 }]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not review "Halden": Could not read the earlier progress of this review. Try again in a moment.'
+		]);
+	});
+
 	it('words a capped story continuity pass with the notes it left', async () => {
 		const { owner, story } = await seedStory();
 		const { handlers } = harness({
@@ -689,6 +806,51 @@ describe('assistant review notices', () => {
 		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant could not summarise "Halden". Check the endpoint in your settings.'
+		]);
+	});
+
+	it('says a summaries run was stopped (#1045)', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			summariseStory: async () => ({ scenes: 1, chapters: 0, failed: 1, aborted: true })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant stopped summarising "Halden" before it finished, after 1 summary.'
+		]);
+	});
+
+	it('says so when every summary changed while it was being written', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			summariseStory: async () => ({ scenes: 0, chapters: 0, failed: 0, changed: 2 })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'"Halden" changed while the Assistant was summarising it, so nothing was saved. Run it again to bring the summaries up to date.'
+		]);
+	});
+
+	it('stops a summaries run with no model chosen and settles it as failed', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers, completed } = harness({
+			summariseStory: async () => ({ scenes: 1, chapters: 0, failed: 0, noModel: true })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'No model is chosen for the Assistant, so it stopped summarising "Halden", after 1 summary. Pick one under Account, Assistant, Models per role, then run it again.'
+		]);
+		expect(completed).toHaveLength(1);
+	});
+
+	it('stops a summaries run with the Assistant turned off', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			summariseStory: async () => ({ scenes: 0, chapters: 0, failed: 0, disabled: true })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant is turned off, so it stopped summarising "Halden". Switch it back on in your settings, then run it again.'
 		]);
 	});
 

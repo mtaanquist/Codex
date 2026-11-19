@@ -1,5 +1,6 @@
 import type { PgBoss } from 'pg-boss';
 import { errorFields, logEvent } from '../lib/server/log.ts';
+import { WriterStopError } from '../lib/server/llm/providers/types.ts';
 
 type RunningJob = {
 	id: string;
@@ -31,5 +32,52 @@ export async function shouldNotifyWriter(
 		// Unknown: a possible second notice beats saying nothing at all.
 		logEvent('error', 'job.state_failed', { queue, jobId: job.id, ...errorFields(error) });
 		return true;
+	}
+}
+
+// The signal an Assistant job's requests run under. pg-boss aborts job.signal
+// the same way whether the writer selected Stop (which cancels the job), the
+// job expired, or the worker is shutting down. Only a Stop ends the job for
+// good, so only it is passed on as a writer's stop (see WriterStopError); after
+// the others the job runs again with what it spent, and the provider must keep
+// counting a cut-short reply at its output cap. pg-boss also aborts job.signal
+// when a job completes normally, so call release once the work has returned:
+// nothing reads the signal then, and the job lookup would be wasted.
+export function jobRunSignal(
+	boss: Pick<PgBoss, 'getJobById'>,
+	queue: string,
+	job: Pick<RunningJob, 'id' | 'signal'>
+): { signal: AbortSignal; release: () => void } {
+	const controller = new AbortController();
+	const pass = async () => {
+		let cancelled = false;
+		try {
+			cancelled = (await boss.getJobById(queue, job.id))?.state === 'cancelled';
+		} catch (error) {
+			logEvent('error', 'job.state_failed', { queue, jobId: job.id, ...errorFields(error) });
+		}
+		controller.abort(cancelled ? new WriterStopError() : job.signal.reason);
+	};
+	const onAbort = () => void pass();
+	if (job.signal.aborted) void pass();
+	else job.signal.addEventListener('abort', onAbort, { once: true });
+	return {
+		signal: controller.signal,
+		release: () => job.signal.removeEventListener('abort', onAbort)
+	};
+}
+
+// Runs one piece of an Assistant job's work under jobRunSignal, released when
+// the work returns or throws.
+export async function withJobRunSignal<T>(
+	boss: Pick<PgBoss, 'getJobById'>,
+	job: Pick<RunningJob, 'id' | 'signal'> & { name: string },
+	run: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+	const { signal, release } = jobRunSignal(boss, job.name, job);
+	try {
+		return await run(signal);
+	} finally {
+		release();
 	}
 }

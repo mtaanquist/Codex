@@ -117,4 +117,101 @@ describe('trackJob', () => {
 		expect(trackedJobs.list).toEqual([]);
 		expect(activity.items[0]).toMatchObject({ state: 'failed', label: 'Running' });
 	});
+
+	it('offers Stop while a job runs, and shows a stopped job as stopped (#1045)', async () => {
+		const calls: string[] = [];
+		let cancelled = false;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				calls.push(url);
+				if (url === '/api/assistant/job-stop') {
+					cancelled = true;
+					return new Response(JSON.stringify({ ok: true }), { status: 200 });
+				}
+				return new Response(JSON.stringify({ state: cancelled ? 'failed' : 'running' }), {
+					status: 200
+				});
+			})
+		);
+		const run = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(activity.items[0].stop).toBeTypeOf('function');
+
+		activity.items[0].stop?.();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls).toContain('/api/assistant/job-stop');
+		expect(activity.items[0]).toMatchObject({ state: 'running', detail: 'Stopping...' });
+		expect(activity.items[0].stop).toBeUndefined();
+
+		await vi.advanceTimersByTimeAsync(3000);
+		await run;
+		expect(activity.items[0]).toMatchObject({ state: 'done', label: 'Running: stopped' });
+	});
+
+	it('shows a job that finished while Stop was in flight as done (#1045)', async () => {
+		let answerStop: (response: Response) => void = () => {};
+		let finished = false;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				if (url === '/api/assistant/job-stop') {
+					finished = true;
+					return new Promise<Response>((resolve) => (answerStop = resolve));
+				}
+				return new Response(JSON.stringify({ state: finished ? 'done' : 'running' }), {
+					status: 200
+				});
+			})
+		);
+		const run = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		await vi.advanceTimersByTimeAsync(3000);
+		activity.items[0].stop?.();
+		// The next poll sees the job done before the stop request answers, and
+		// the stop then finds nothing left to stop.
+		await vi.advanceTimersByTimeAsync(3000);
+		answerStop(new Response('', { status: 404 }));
+		await run;
+		expect(activity.items[0]).toMatchObject({ state: 'done', label: 'Done' });
+	});
+
+	it('does not call a job stopped when it finished just before the stop reached it', async () => {
+		let calls = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) =>
+				url === '/api/assistant/job-stop'
+					? new Response(JSON.stringify({ ok: true }), { status: 200 })
+					: new Response(JSON.stringify({ state: calls++ === 0 ? 'running' : 'done' }), {
+							status: 200
+						})
+			)
+		);
+		const run = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		await vi.advanceTimersByTimeAsync(3000);
+		activity.items[0].stop?.();
+		await vi.advanceTimersByTimeAsync(3000);
+		await run;
+		expect(activity.items[0]).toMatchObject({ state: 'done', label: 'Done' });
+	});
+
+	it('offers Stop again when the stop request fails', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) =>
+				url === '/api/assistant/job-stop'
+					? new Response('', { status: 503 })
+					: new Response(JSON.stringify({ state: 'running' }), { status: 200 })
+			)
+		);
+		void trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		await vi.advanceTimersByTimeAsync(3000);
+		activity.items[0].stop?.();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(activity.items[0]).toMatchObject({
+			state: 'running',
+			detail: 'Could not stop it. Try again in a moment.'
+		});
+		expect(activity.items[0].stop).toBeTypeOf('function');
+	});
 });

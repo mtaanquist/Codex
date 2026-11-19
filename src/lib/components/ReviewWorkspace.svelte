@@ -35,7 +35,9 @@
 	import { GUEST_MODE_NOTE, LEFT_PANE_LABEL, RIGHT_PANE_LABEL } from '#lib/chrome';
 	import {
 		duplicateScene as duplicateSceneAction,
-		mergeScenes as mergeScenesAction
+		flushEditors,
+		mergeScenes as mergeScenesAction,
+		SAVE_FAILED
 	} from '#lib/scene-actions';
 	import { focusMode } from '#lib/focus-mode.svelte';
 	import { openReviewModal } from '#lib/review-modal.svelte';
@@ -358,32 +360,64 @@
 		});
 	}
 
+	// Set while a merge or duplicate saves and then replaces the open scene, as
+	// on the Write page: the editor takes no typing, since words typed then
+	// would land after the save and vanish with the remount. A count, so
+	// overlapping actions do not unpause each other early.
+	let pauseDepth = $state(0);
+	const typingPaused = $derived(pauseDepth > 0);
+	// Bumped after a merge or duplicate, so the editor remounts on the stored
+	// text instead of keeping (and later saving) what it had.
+	let editorNonce = $state(0);
+	async function pauseTypingWhile(work: () => Promise<void>) {
+		pauseDepth++;
+		try {
+			await work();
+		} finally {
+			pauseDepth--;
+		}
+	}
+	// Both actions read the stored text, so the open editor's pending save
+	// lands first; a failed save stops the action.
+	const flushEditor = () => flushEditors(editorRef ? [editorRef] : []);
+	// A new scene (a duplicate) is picked only once the refresh has loaded
+	// it: picked before, the selection falls back to another scene for a
+	// moment and the editor mounts twice. One that already exists (a merge's
+	// survivor) is picked first, so the refresh does not fall back off a
+	// scene the merge trashed.
+	async function openChangedScene(sceneId: string) {
+		if (orderedScenes.some((scene) => scene.id === sceneId)) chosenSceneId = sceneId;
+		await refreshAll();
+		chosenSceneId = sceneId;
+		editorNonce++;
+	}
+
 	// Copies a scene in full directly after itself; the new scene becomes the one
 	// under review.
 	async function duplicateScene(sceneId: string) {
 		rowMenu = null;
-		if (!storyId) return;
-		const result = await duplicateSceneAction(storyId, sceneId);
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		chosenSceneId = result.newSceneId;
-		await refreshAll();
+		if (!storyId || typingPaused) return;
+		const id = storyId;
+		await pauseTypingWhile(async () => {
+			if (!(await flushEditor())) return alert(SAVE_FAILED);
+			const result = await duplicateSceneAction(id, sceneId);
+			if (!result.ok) return alert(result.message);
+			await openChangedScene(result.newSceneId);
+		});
 	}
 
 	// Joins the picked scenes in story order; the survivor becomes the open scene.
 	async function mergeSelectedScenes() {
 		rowMenu = null;
-		if (!storyId) return;
-		const result = await mergeScenesAction(storyId, [...mergeSelection]);
-		if (!result.ok) {
-			alert(result.message);
-			return;
-		}
-		mergeSelection.clear();
-		chosenSceneId = result.targetSceneId;
-		await refreshAll();
+		if (!storyId || typingPaused) return;
+		const id = storyId;
+		await pauseTypingWhile(async () => {
+			if (!(await flushEditor())) return alert(SAVE_FAILED);
+			const result = await mergeScenesAction(id, [...mergeSelection]);
+			if (!result.ok) return alert(result.message);
+			mergeSelection.clear();
+			await openChangedScene(result.targetSceneId);
+		});
 	}
 
 	// Clicking a card jumps to its passage; clicking a mark jumps to its note.
@@ -510,7 +544,7 @@
 				<h1 class="visually-hidden">{book?.title ?? 'Review'} - Review</h1>
 			{/if}
 			{#if selectedScene}
-				{#key selectedScene.id}
+				{#key `${selectedScene.id}:${editorNonce}`}
 					{#if role === 'author' && storyId}
 						<!-- The author reads and edits the manuscript in place: accept a
 						     suggestion, then build on it. -->
@@ -535,6 +569,7 @@
 							onStartComment={startComment}
 							onStartSuggest={startSuggest}
 							onStatus={onSaveStatus}
+							paused={typingPaused}
 						/>
 					{:else}
 						<ReviewSurface

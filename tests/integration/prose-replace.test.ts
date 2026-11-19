@@ -157,4 +157,27 @@ describe('replaceProse', () => {
 		const [elsewhereAfter] = await db.select().from(scenes).where(eq(scenes.id, elsewhere));
 		expect(elsewhereAfter.bodyMd).toBe('Alice in another universe.');
 	});
+	it('replaces in a body stored with Windows line endings, keeping markers on their words', async () => {
+		const stored = 'Mara rode on.\r\nMara tired.';
+		const shown = stored.replace(/\r\n/g, '\n');
+		const [story] = await db.select().from(stories).where(eq(stories.universeId, universeId));
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 5, bodyMd: stored, wordCount: 5 })
+			.returning();
+		const start = shown.indexOf('tired');
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, anchorStart: start, anchorEnd: start + 5 })
+			.returning();
+
+		expect(await replaceProse(db, universeId, 'Mara', 'Jo')).toEqual({
+			scenes: 1,
+			occurrences: 2
+		});
+		const [after] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+		expect(after.bodyMd).toBe('Jo rode on.\nJo tired.');
+		const [moved] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
+		expect(after.bodyMd.slice(moved.anchorStart!, moved.anchorEnd!)).toBe('tired');
+	});
 });
