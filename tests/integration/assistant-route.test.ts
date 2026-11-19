@@ -644,13 +644,15 @@ describe('chats over the endpoints', () => {
 			}
 		};
 		const attachment = { kind: 'scene', id: sceneId, label: 'Scene 1' };
-		await (
-			await chatPost({
-				storyId,
-				chatId,
-				messages: [{ role: 'user', content: 'Where to cut?', attachments: [attachment] }]
-			})
-		).text();
+		// Gone since it was picked: left out, and the header says which were sent.
+		const gone = { kind: 'note', id: '11111111-1111-4111-8111-111111111111', label: 'Old' };
+		const first = await chatPost({
+			storyId,
+			chatId,
+			messages: [{ role: 'user', content: 'Where to cut?', attachments: [attachment, gone] }]
+		});
+		await first.text();
+		expect(first.headers.get('x-chat-attachments')).toBe(`scene:${sceneId}`);
 		expect(sent.at(-1)!.at(-1)).toContain('The first half ends here.');
 		expect((await listChat(db, userId, chatId))[0].meta).toEqual({ attachments: [attachment] });
 
@@ -668,6 +670,12 @@ describe('chats over the endpoints', () => {
 		).text();
 		const last = sent.at(-1)!;
 		expect(last[0]).toContain('(The writer attached scene "Scene 1" to this message.)');
+		// A message without attachments says nothing about them.
+		expect(
+			(
+				await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })
+			).headers.get('x-chat-attachments')
+		).toBeNull();
 		expect(last.join('\n')).not.toContain('The first half ends here.');
 	});
 

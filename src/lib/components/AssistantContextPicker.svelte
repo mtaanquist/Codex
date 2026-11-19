@@ -54,19 +54,24 @@
 		note: 'Notes'
 	};
 
-	// The search, refetched as the query changes (debounced), while no story is open.
+	// The search, refetched as the query changes (debounced), while no story is
+	// open. The old results go at once, so Enter cannot pick from a stale list.
 	$effect(() => {
 		if (story) return;
 		const q = query;
 		const controller = new AbortController();
+		items = [];
+		loading = true;
+		failed = false;
 		const timer = setTimeout(async () => {
-			loading = true;
 			try {
 				const response = await fetch(`/api/assistant/context?q=${encodeURIComponent(q)}`, {
 					signal: controller.signal
 				});
 				if (!response.ok) throw new Error('failed');
-				items = ((await response.json()) as { items: Item[] }).items;
+				const found = ((await response.json()) as { items: Item[] }).items;
+				if (controller.signal.aborted) return;
+				items = found;
 				failed = false;
 			} catch {
 				if (controller.signal.aborted) return;
@@ -91,7 +96,9 @@
 		fetch(`/api/assistant/context?storyId=${storyId}${modelParam}`, { signal: controller.signal })
 			.then(async (response) => {
 				if (!response.ok) throw new Error('failed');
-				contents = (await response.json()) as StoryContents;
+				const found = (await response.json()) as StoryContents;
+				if (controller.signal.aborted) return;
+				contents = found;
 				failed = false;
 			})
 			.catch(() => {
@@ -246,7 +253,7 @@
 		placeholder={story ? 'Filter chapters and scenes' : 'Search scenes, characters, notes, stories'}
 		aria-label={story ? 'Filter chapters and scenes' : 'Search for context to add'}
 		role="combobox"
-		aria-expanded="true"
+		aria-expanded={rows.length > 0}
 		aria-controls={id}
 		aria-autocomplete="list"
 		aria-activedescendant={rows[selected] ? slug(rows[selected].key) : undefined}
@@ -277,7 +284,7 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="picker-empty">
+			<p class="picker-empty" role="status">
 				{#if loading}
 					Loading...
 				{:else if failed}

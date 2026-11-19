@@ -10,6 +10,7 @@ import {
 } from '#lib/server/llm/assistant-route';
 import {
 	CHAT_MISSING,
+	attachmentKey,
 	chatTitle,
 	readAttachments,
 	readChatSettings,
@@ -211,9 +212,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		enableTools: true,
 		messages,
 		summarised: fitted.summarised,
-		shortened: attached
-			.filter((item) => item.attachment.shortened)
-			.map((item) => item.attachment.id),
+		attached:
+			newest.role === 'user' && newest.attachments.length > 0
+				? attached.map(
+						(item) => attachmentKey(item.attachment) + (item.attachment.shortened ? '!' : '')
+					)
+				: undefined,
 		errorMessage: 'The Assistant could not complete that request.'
 	});
 };

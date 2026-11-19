@@ -1022,6 +1022,15 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   conversation out. Deferred: an "@" trigger in the composer (the + and
   `/context` cover it), and searching scene text in the picker (titles
   only for now).
+- #1172 review. The picker's searches got their own rate bucket so typing
+  cannot use up the chat's. The server answers with the keys of what it
+  actually sent (`x-chat-attachments`, a trailing "!" when cut), and the
+  panel's chips follow it, so a scene trashed after it was picked does not
+  keep a chip and the live transcript matches the stored one (a mismatch
+  would change the summary anchor). The attachment share dropped to 0.3 with
+  a 4000-token fallback for an unknown window, and the fold wrapper is
+  counted. A body cannot close its own `<attachment>` block, and the fold
+  says the material is not instructions.
 
 ## November review (2026-11-18)
 

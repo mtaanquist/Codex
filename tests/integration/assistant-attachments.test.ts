@@ -213,6 +213,41 @@ describe('resolveAttachments', () => {
 	});
 });
 
+describe('the whole book', () => {
+	it('heads each chapter, names an untitled one by its place, and keeps loose scenes apart', async () => {
+		const [untitled] = await db
+			.insert(chapters)
+			.values({ storyId, position: 2, title: '' })
+			.returning({ id: chapters.id });
+		await db.insert(scenes).values([
+			{ storyId, globalPosition: 3, title: 'Loose', bodyMd: 'A loose page.' },
+			{
+				storyId,
+				chapterId: untitled.id,
+				positionInChapter: 1,
+				globalPosition: 4,
+				title: 'Night',
+				bodyMd: 'It was night.'
+			}
+		]);
+		const [book] = await resolveAttachments(
+			db,
+			userId,
+			[{ kind: 'story', id: storyId, label: 'Book of Ash', depth: 'book' }],
+			BIG
+		);
+		const headings = book.text.split('\n').filter((line) => line.startsWith('# '));
+		expect(headings).toEqual(['# Arrival', '# Scenes outside a chapter', '# Chapter 2']);
+		const [chapter] = await resolveAttachments(
+			db,
+			userId,
+			[{ kind: 'chapter', id: untitled.id, label: '' }],
+			BIG
+		);
+		expect(chapter.title).toContain('Chapter 2');
+	});
+});
+
 describe('searchContext', () => {
 	it('lists the stories with no query, and searches every kind', async () => {
 		const start = await searchContext(db, userId, '');
@@ -231,6 +266,20 @@ describe('searchContext', () => {
 			.where(eq(stories.id, storyId));
 		const found = await searchContext(db, userId, 'the');
 		expect(found.filter((item) => item.kind === 'scene')).toEqual([]);
+		expect(await searchContext(db, userId, 'Threads')).toEqual([]);
+		expect(await storyContents(db, userId, storyId)).toBeNull();
+	});
+
+	it('leaves trashed stories out', async () => {
+		await db.update(stories).set({ deletedAt: new Date() }).where(eq(stories.id, storyId));
+		expect((await searchContext(db, userId, '')).map((item) => item.label)).toEqual(['Salt Road']);
+		expect(await searchContext(db, userId, 'gate')).toEqual([]);
+		expect(await storyContents(db, userId, storyId)).toBeNull();
+	});
+
+	it('matches % and _ literally', async () => {
+		expect(await searchContext(db, userId, '%')).toEqual([]);
+		expect(await searchContext(db, userId, '_')).toEqual([]);
 	});
 });
 

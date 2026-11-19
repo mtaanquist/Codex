@@ -2,7 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import { assistantLayout, pickModel, resolveLlmConfig } from '#lib/server/llm/config';
 import { searchContext, storyContents } from '#lib/server/llm/attachments';
-import { rateLimitAssistant } from '#lib/server/write-guard';
+import { rateLimitLookups } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
 
 // The composer's "Add context" picker. ?q= searches the writer's library (with
@@ -11,7 +11,7 @@ import { isUuid } from '#lib/slug';
 // else the default) where the endpoint reported a price.
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
+	rateLimitLookups(userId);
 	const layout = await assistantLayout(db, userId);
 	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this account.');
 

@@ -3,6 +3,7 @@ import {
 	CHAT_TITLE_MAX,
 	chatTitle,
 	newChatId,
+	attachmentKey,
 	attachmentLabel,
 	MAX_ATTACHMENTS,
 	readAttachments,
@@ -132,5 +133,15 @@ describe('attachmentLabel', () => {
 			'Ash (outline)'
 		);
 		expect(attachmentLabel({ kind: 'scene', id, label: '' })).toBe('Untitled');
+	});
+});
+
+describe('attachmentKey', () => {
+	it('tells a story outline from the whole book', () => {
+		const id = '11111111-1111-4111-8111-111111111111';
+		expect(attachmentKey({ kind: 'scene', id })).toBe(`scene:${id}`);
+		expect(attachmentKey({ kind: 'story', id, depth: 'book' })).not.toBe(
+			attachmentKey({ kind: 'story', id, depth: 'outline' })
+		);
 	});
 });

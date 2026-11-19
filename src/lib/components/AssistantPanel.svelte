@@ -54,6 +54,7 @@
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyMarkdown } from '#lib/markdown';
 	import {
+		attachmentKey,
 		attachmentLabel,
 		MAX_ATTACHMENTS,
 		type AttachmentKind,
@@ -371,7 +372,7 @@
 				signal: controller.signal
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
-			markShortened(response.headers.get('x-chat-shortened'));
+			applyAttached(response.headers.get('x-chat-attachments'));
 			const storedIn = response.headers.get('x-chat-id');
 			const serverTitle = response.headers.get('x-chat-title');
 			if (serverTitle) storedTitle = decodeURIComponent(serverTitle);
@@ -854,9 +855,10 @@
 	function addAttachment(attachment: ChatAttachment) {
 		contextOpen = false;
 		composer?.focus();
-		const same = (a: ChatAttachment) =>
-			a.kind === attachment.kind && a.id === attachment.id && a.depth === attachment.depth;
-		if (attachments.some(same)) return;
+		if (attachments.some((a) => attachmentKey(a) === attachmentKey(attachment))) {
+			flashActivity('done', 'Already added', `${attachmentLabel(attachment)} is already attached.`);
+			return;
+		}
 		if (attachments.length >= MAX_ATTACHMENTS) {
 			flashActivity(
 				'failed',
@@ -874,14 +876,33 @@
 			modelOpen = false;
 		}
 	}
-	// The server says which of the newest message's attachments it had to cut.
-	function markShortened(header: string | null) {
-		if (!header) return;
-		const ids = new Set(header.split(','));
+	// The server says which of the newest message's attachments it sent and
+	// which it had to cut; the chips follow, so they match what was stored.
+	function applyAttached(header: string | null) {
+		if (header === null) return;
+		const sent = new Map(
+			header
+				.split(',')
+				.filter(Boolean)
+				.map((key) => [key.replace(/!$/, ''), key.endsWith('!')])
+		);
 		const turn = messages.findLast((m) => m.role === 'user');
-		turn?.attachments?.forEach((a) => {
-			if (ids.has(a.id)) a.shortened = true;
-		});
+		if (!turn?.attachments) return;
+		const kept = turn.attachments.filter((a) => sent.has(attachmentKey(a)));
+		for (const a of kept) {
+			if (sent.get(attachmentKey(a))) a.shortened = true;
+		}
+		const dropped = turn.attachments.length - kept.length;
+		turn.attachments = kept;
+		if (dropped > 0) {
+			flashActivity(
+				'failed',
+				'Context left out',
+				dropped === 1
+					? 'One attached item is gone or hidden from the Assistant, so it was not sent.'
+					: `${dropped} attached items are gone or hidden from the Assistant, so they were not sent.`
+			);
+		}
 	}
 
 	// The model menu, from the chip in the composer.
@@ -1358,7 +1379,7 @@
 							type="button"
 							title="Add context"
 							aria-label="Add context"
-							aria-haspopup="true"
+							aria-haspopup="dialog"
 							aria-expanded={contextOpen}
 							onclick={toggleContext}
 						>
@@ -1370,7 +1391,7 @@
 							type="button"
 							title="Chat commands (/)"
 							aria-label="Chat commands"
-							aria-haspopup="true"
+							aria-haspopup="dialog"
 							aria-expanded={commandsOpen}
 							onclick={toggleCommands}
 						>

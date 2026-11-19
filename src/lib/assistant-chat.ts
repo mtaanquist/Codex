@@ -84,14 +84,16 @@ export function readAttachments(raw: unknown): ChatAttachment[] {
 		};
 		if (kind === 'story') attachment.depth = depth === 'book' ? 'book' : 'outline';
 		if (shortened === true) attachment.shortened = true;
-		if (
-			out.some((a) => a.kind === attachment.kind && a.id === id && a.depth === attachment.depth)
-		) {
-			continue;
-		}
+		if (out.some((a) => attachmentKey(a) === attachmentKey(attachment))) continue;
 		out.push(attachment);
 	}
 	return out;
+}
+
+// One attachment's identity: a story attached as outline and as whole book
+// are two attachments.
+export function attachmentKey(a: Pick<ChatAttachment, 'kind' | 'id' | 'depth'>): string {
+	return a.depth ? `${a.kind}:${a.id}:${a.depth}` : `${a.kind}:${a.id}`;
 }
 
 // A chip's text: the label, with what a story brings along.

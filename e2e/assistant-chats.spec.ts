@@ -350,7 +350,10 @@ test('context added from the picker goes with the next message', async ({ page }
 			status: 200,
 			headers: {
 				'content-type': 'text/event-stream',
-				...(first && attachments ? { 'x-chat-shortened': attachments[0].id } : {})
+				// The whole book was sent, cut to fit.
+				...(first && attachments
+					? { 'x-chat-attachments': `story:${attachments[0].id}:book!` }
+					: {})
 			},
 			body:
 				`data: ${JSON.stringify({ type: 'token', text: 'Read it.' })}\n\n` +
