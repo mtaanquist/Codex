@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { modal } from '#lib/modal';
 	import { formatNumber, spentPhrase } from '#lib/format';
+	import HelpLink from '#lib/components/HelpLink.svelte';
 	import { reviewModal, closeReviewModal } from '#lib/review-modal.svelte';
 	import {
 		reviewSceneWithAssistant,
@@ -327,7 +328,10 @@
 									progress.spentEstimated
 								)}.
 							</p>
-							<p class="rm-note">Raise the cap in settings or run the review again to continue.</p>
+							<p class="rm-note">
+								Raise the cap in settings or run the review again to continue.
+								<HelpLink topic="account" label="usage and cost" />
+							</p>
 						{:else if progress.state === 'done' || progress.phase === 'done'}
 							<p class="rm-phase">Review finished.</p>
 							<p class="rm-note">

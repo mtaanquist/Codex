@@ -85,7 +85,7 @@ contacts a model on its own.
   it if your endpoint charges per request. It also applies to reviews. With
   Fewer tools picked, the Assistant gets half this number.
 - **Spend cap per background run**: the most one background review, summary
-  update, `/enrich` pass, or character arc may spend before it stops. It checks
+  update, pass suggesting details for the entries, or character arc may spend before it stops. It checks
   between steps (a scene, an entry), so it never stops half way through one, and
   the last step can take it a little over the cap. It tells you how far it got
   and what it spent. A stopped summary update picks up where it left off when you run it
@@ -204,8 +204,9 @@ Your words are sent only to the endpoint you set here.
   from what had arrived. Those rows say "estimated", and the 30-day total says
   how many it includes. A request you stopped can cost more than its estimate.
   With other providers such a request shows "token counts not reported".
-- **Spend cap**: a request that fails partway is counted at the most it could
-  have cost, and the run's notice then says it spent "up to" the amount. If the endpoint leaves out the
+- **Spend cap**: a request that fails partway is counted from what had
+  arrived, or at its reply limit if its thinking was not shown, and the run's
+  notice marks the amount as estimated. If the endpoint leaves out the
   token counts for any request, that request cannot be priced, and the run says
   the cap could not be fully applied.
 - **Cached context**: with the Claude provider, repeated context (your world

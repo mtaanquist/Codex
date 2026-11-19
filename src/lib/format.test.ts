@@ -117,9 +117,9 @@ describe('compactCount', () => {
 });
 
 describe('spentPhrase', () => {
-	it('says about for a reported figure and up to for one with estimates', () => {
+	it('says about, and marks a figure that includes estimates', () => {
 		expect(spentPhrase(1.2)).toBe('about $1.20');
-		expect(spentPhrase(1.2, true)).toBe('up to $1.20');
+		expect(spentPhrase(1.2, true)).toBe('about $1.20 (estimated)');
 		expect(spentPhrase(0.01234, false, 4)).toBe('about $0.0123');
 	});
 });

@@ -115,9 +115,9 @@ export class SpendMeter {
 		return this.usd;
 	}
 
-	// True when spentUsd includes estimated counts (a failed attempt metered at
-	// its output cap, say), so the figure is an upper bound rather than what
-	// the endpoint reported. Notices word it as "up to".
+	// True when spentUsd includes estimated counts (a failed attempt metered
+	// from what had streamed, say) rather than only what the endpoint
+	// reported. Notices mark the figure as estimated.
 	get spentEstimated(): boolean {
 		return this.estimated;
 	}
