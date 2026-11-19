@@ -332,6 +332,7 @@
 		const controller = new AbortController();
 		pending = controller;
 		let startedIn: string | null = null;
+		let finished = false;
 		let storedTitle = title;
 		const creating = chatId === null;
 		// A chat message is stored before its reply, so a stopped send leaves its
@@ -376,7 +377,6 @@
 			const decoder = new TextDecoder();
 			let buffer = '';
 			let streamError = '';
-			let finished = false;
 			for (;;) {
 				const { done, value } = await reader.read();
 				if (done) break;
@@ -403,15 +403,23 @@
 			if (reply?.role === 'assistant' && !stored) {
 				reply.unsaved = true;
 				reply.notice = true;
-				if (reply.content === '')
+				if (reply.content.trim() === '')
 					reply.content = streamError || 'The Assistant did not return a response.';
 				else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
-			// A writer's own Stop keeps what arrived to insert, but the server
-			// stored none of it.
-			if (controller.signal.aborted) markUnsaved(false);
-			else {
+			const reply = messages[messages.length - 1];
+			if (controller.signal.aborted) {
+				// A Stop after done lands while the server stores the reply, which it
+				// still does. Before done, it keeps what arrived to insert, but the
+				// server stored none of it.
+				if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
+					if (startedIn) noteChatUsed(startedIn, storedTitle);
+				} else markUnsaved(false);
+			} else if (reply?.role === 'assistant' && reply.content.trim() !== '') {
+				markUnsaved(true);
+				reply.failed = 'The connection to the Assistant was lost.';
+			} else {
 				appendToReply('Sorry, something went wrong reaching the Assistant.');
 				markUnsaved(true);
 			}
@@ -457,7 +465,7 @@
 				...(isStory ? { sceneId } : {}),
 				// A reply that broke off was not saved, so the model does not see it either.
 				messages: turns
-					.filter((m) => !m.unsaved)
+					.filter((m) => !m.unsaved && m.content.trim() !== '')
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 			},
@@ -528,26 +536,15 @@
 				void enrichEntries();
 				break;
 			case 'help':
-				messages = [
-					...messages,
-					{
-						role: 'assistant',
-						content:
-							'Commands you can type here:\n\n' +
-							commandsForScope(!isStory)
-								.map((c) => `/${c.name} - ${c.detail}`)
-								.join('\n')
-					}
-				];
+				assistantSay(
+					'Commands you can type here:\n\n' +
+						commandsForScope(!isStory)
+							.map((c) => `/${c.name} - ${c.detail}`)
+							.join('\n')
+				);
 				break;
 			default:
-				messages = [
-					...messages,
-					{
-						role: 'assistant',
-						content: `I do not know the command "/${name}". Type /help to see the commands.`
-					}
-				];
+				assistantSay(`I do not know the command "/${name}". Type /help to see the commands.`);
 		}
 	}
 
@@ -602,7 +599,8 @@
 			if (!text?.trim()) markUnsaved(true);
 			else if (opts.rewrite) reply.rewrite = true;
 		} catch {
-			if (!controller.signal.aborted) {
+			if (controller.signal.aborted) markUnsaved(false);
+			else {
 				const reply = messages[messages.length - 1];
 				if (reply && reply.role === 'assistant') {
 					reply.content = 'Sorry, something went wrong reaching the Assistant.';

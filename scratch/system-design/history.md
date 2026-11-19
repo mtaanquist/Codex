@@ -1000,32 +1000,34 @@ migrations. The release flow in `CLAUDE.md` now refreshes the fixture.
 ## Stream transcripts (2026-11-19)
 
 Stream handling and spend metering drew a finding nearly every review round,
-each fixed with a test for that one case, so #1195 added recorded replies under
-`src/lib/server/llm/providers/transcripts/` (one `.sse` file per case, with
-`# key: value` lines for the expected outcome) and
-`transcripts.test.ts`, which replays each through the live stream (and the
-buffered reply, where it takes a stream: all Anthropic files, and OpenAI ones
-with a failed status) whole, one byte at a time and in uneven chunks, and
-replays every reply cut off at each event boundary. The rules are the same for every file: the outcome and
-text match, chunking changes nothing, only failures a resend could fix are
-retried on the buffered path, and billed usage is never below what the body reported and is marked
-estimated exactly when the output count is a guess. It found one gap: a live
-stream that dropped before its stop reason ended as a finished reply (and was
-saved to the chat as one). It now ends with an error in both adapters, as the
-Anthropic buffered path already did (OpenAI's buffered call is one JSON
-body). The chat panel keeps the partial text of such a reply on screen with a
-note that it was not saved. A reply the server did not store is left out of
-the turns the next question sends: an error, a stream that closed without
-finishing or failed to save after it finished, a writer's own Stop, and the
-panel's own hints. Errors and hints, including failed /write and /rewrite
-replies, offer no insert; a stopped reply keeps what arrived to insert. An OpenAI-style error
-frame partway through (OpenRouter sends one when its upstream drops) also ends
-in an error now, where it used to finish the reply. The first
-review also found the OpenAI stream dropping a last line sent without a
-newline (losing its text, finish reason and usage); `no-final-newline.sse`
-covers it. The spend rule only bites where the body reported counts: the
-OpenAI stream sends usage only in its last chunk and does not estimate, so a
-cut-off OpenAI stream records no spend. A new edge case is a new file.
+each fixed with a test for that one case, so #1195 added recorded replies
+under `src/lib/server/llm/providers/transcripts/` (one `.sse` file per case,
+with `# key: value` lines for the expected outcome) and `transcripts.test.ts`,
+which replays each through the live stream (and the buffered reply, where it
+takes a stream: all Anthropic files, and OpenAI ones with a failed status)
+whole, one byte at a time and in uneven chunks, and replays every reply cut
+off at each event boundary. The rules are the same for every file: the outcome
+and text match, chunking changes nothing, only failures a resend could fix are
+retried on the buffered path, and billed usage is never below what the body
+reported and is marked estimated exactly when the output count is a guess. It
+found one gap: a live stream that dropped before its stop reason ended as a
+finished reply (and was saved to the chat as one). It now ends with an error
+in both adapters, as the Anthropic buffered path already did (OpenAI's
+buffered call is one JSON body). The chat panel keeps the partial text of such
+a reply on screen with a note that it was not saved. A chat or recap reply the
+server did not store is left out of the turns the next question sends: an
+error, a stream that closed without finishing or failed to save after it
+finished, a writer's own Stop, and the panel's own hints (/write and /rewrite
+passages, which are never stored, are still sent). Errors and hints, including
+failed /write and /rewrite replies, offer no insert; a stopped reply keeps
+what arrived to insert. An OpenAI-style error frame partway through
+(OpenRouter sends one when its upstream drops) also ends in an error now,
+where it used to finish the reply. The first review also found the OpenAI
+stream dropping a last line sent without a newline (losing its text, finish
+reason and usage); `no-final-newline.sse` covers it. The spend rule only bites
+where the body reported counts: the OpenAI stream sends usage only in its last
+chunk and does not estimate, so a cut-off OpenAI stream records no spend. A
+new edge case is a new file.
 
 ## Lock order and race harness (2026-11-19)
 
