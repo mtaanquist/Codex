@@ -3,6 +3,7 @@ import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
 import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
+import { lockStoryScenes } from './row-locks.ts';
 
 export type SceneOrder = {
 	chapters: { id: string; sceneIds: string[] }[];
@@ -50,12 +51,25 @@ export async function applySceneOrder(
 	storyId: string,
 	order: SceneOrder
 ): Promise<{ ok: true } | ActionFailure> {
-	const chapterRows = await db
+	return await db.transaction(async (tx) => {
+		// Read under the lock, so a scene a split adds meanwhile makes the
+		// order stale rather than being left out of it.
+		await lockStoryScenes(tx, storyId);
+		return await applyLocked(tx, storyId, order);
+	});
+}
+
+async function applyLocked(
+	tx: Database,
+	storyId: string,
+	order: SceneOrder
+): Promise<{ ok: true } | ActionFailure> {
+	const chapterRows = await tx
 		.select({ id: chapters.id })
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId));
 	// Trashed scenes sit outside the order until restored.
-	const sceneRows = await db
+	const sceneRows = await tx
 		.select({ id: scenes.id, chapterId: scenes.chapterId, globalPosition: scenes.globalPosition })
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
@@ -139,8 +153,7 @@ export async function applySceneOrder(
 		// Only what the writer moved counts as a change; the scenes it shifted
 		// keep their touched_at.
 		const touched = [...new Set([...moved, ...rechaptered])];
-		await db.transaction(async (tx) => {
-			await tx.execute(sql`
+		await tx.execute(sql`
 			update scenes set
 				chapter_id = v.chapter_id,
 				position_in_chapter = v.position_in_chapter,
@@ -157,11 +170,10 @@ export async function applySceneOrder(
 			) as v
 			where scenes.id = v.id
 		`);
-			// Arcs retell the character's scenes in reading order. Only what a
-			// moved scene mentions can read in a new order.
-			await markMentionsStale(tx, { sceneIds: moved });
-			await markChapterSummariesStale(tx, [...chaptersChanged]);
-		});
+		// Arcs retell the character's scenes in reading order. Only what a
+		// moved scene mentions can read in a new order.
+		await markMentionsStale(tx, { sceneIds: moved });
+		await markChapterSummariesStale(tx, [...chaptersChanged]);
 	}
 	return { ok: true };
 }

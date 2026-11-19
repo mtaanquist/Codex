@@ -982,6 +982,33 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Lock order and race harness (2026-11-19)
+
+Deadlocks and positions shared by two scenes were found one pair of
+operations at a time (#1147, #1149, #1159, #1160), so #1192 added
+`tests/integration/lock-order.test.ts`. It does not guess which pairs to race.
+For every write operation and every row of a small seeded story, a holder locks
+the row first, so the operation stops there, and the rows it already holds are
+probed with `nowait` in each lock mode (the mode it waits for comes from its
+tuple lock in `pg_locks`). Two stops that each wait for a row the other holds,
+in conflicting modes, with nothing they both hold keeping them apart, are a
+deadlock. The same stops then pause one operation while each structural
+operation (split, restore, reorder, chapter create and delete, and so on) runs,
+and check that both finish without a database error and no two scenes or
+chapters share a position. The race half takes about two minutes; the stops
+dedupe by held rows. Disabling a fix brings its finding back, which is how the
+harness was checked.
+
+The rule it enforces is in `src/lib/server/row-locks.ts`: a story's scenes,
+then the story, then its chapters, then entities, each lowest id first, with
+`for no key update` on rows that are only updated so foreign-key checks pass.
+Reorder, chapter delete, scene create and both restores now lock the story's
+scenes first; purge locks the story before its chapters; chapter create locks
+the story row. #1140 (story rename against a character's first story note) did
+not reproduce: the rename's update takes no key update on the story, which a
+foreign-key check's key share does not wait for, since the slug's unique index
+is partial and so not a key.
+
 ## One clock (2026-11-19)
 
 Several review findings came from comparing a stamp written with the app

@@ -14,6 +14,7 @@ import {
 } from './db/schema.ts';
 import type { EntityType } from './entity-lookups.ts';
 import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
+import { lockStoryChapters, lockStoryScenes } from './row-locks.ts';
 import { storyIsLive } from './universe-scope.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
@@ -41,28 +42,31 @@ async function ownsStory(db: Database, userId: string, storyId: string): Promise
 }
 
 /** Appends a chapter to the story, returning its id (null when the story is
- * not the user's). The position is computed inside the insert so concurrent
- * creates cannot read the same maximum. */
+ * not the user's). */
 export async function createChapter(
 	db: Database,
 	userId: string,
 	storyId: string
 ): Promise<string | null> {
 	if (!(await ownsStory(db, userId, storyId))) return null;
-	const [chapter] = await db
-		.insert(chapters)
-		.values({
-			storyId,
-			position: sql`(select coalesce(max(${chapters.position}), 0) + 1 from ${chapters} where ${chapters.storyId} = ${storyId})`
-		})
-		.returning({ id: chapters.id });
-	return chapter.id;
+	return await db.transaction(async (tx) => {
+		// The story row, since a story with no chapters has none to lock: two
+		// creates then take turns instead of reading the same maximum.
+		await tx.execute(sql`select id from stories where id = ${storyId} for no key update`);
+		const [chapter] = await tx
+			.insert(chapters)
+			.values({
+				storyId,
+				position: sql`(select coalesce(max(${chapters.position}), 0) + 1 from ${chapters} where ${chapters.storyId} = ${storyId})`
+			})
+			.returning({ id: chapters.id });
+		return chapter.id;
+	});
 }
 
 /** Appends a scene, to a chapter when one is given (and belongs to the story)
  * or to the unfiled list otherwise. Returns the new scene id, or null when the
- * story is not the user's or the chapter is not part of it. Positions are
- * computed inside the insert so concurrent creates cannot collide. */
+ * story is not the user's or the chapter is not part of it. */
 export async function createScene(
 	db: Database,
 	userId: string,
@@ -70,25 +74,31 @@ export async function createScene(
 	chapterId: string | null = null
 ): Promise<string | null> {
 	if (!(await ownsStory(db, userId, storyId))) return null;
-	if (chapterId) {
-		const [chapter] = await db
-			.select({ id: chapters.id })
-			.from(chapters)
-			.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, storyId)));
-		if (!chapter) return null;
-	}
-	const [scene] = await db
-		.insert(scenes)
-		.values({
-			storyId,
-			chapterId,
-			positionInChapter: chapterId
-				? sql`(select coalesce(max(${scenes.positionInChapter}), 0) + 1 from ${scenes} where ${scenes.chapterId} = ${chapterId})`
-				: null,
-			globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${storyId})`
-		})
-		.returning({ id: scenes.id });
-	return scene.id;
+	return await db.transaction(async (tx) => {
+		// Before the maximum positions are read, so a split shifting scenes
+		// finishes first and the new scene does not share a position with one.
+		await lockStoryScenes(tx, storyId);
+		if (chapterId) {
+			const [chapter] = await tx
+				.select({ id: chapters.id })
+				.from(chapters)
+				.where(and(eq(chapters.id, chapterId), eq(chapters.storyId, storyId)))
+				.for('key share');
+			if (!chapter) return null;
+		}
+		const [scene] = await tx
+			.insert(scenes)
+			.values({
+				storyId,
+				chapterId,
+				positionInChapter: chapterId
+					? sql`(select coalesce(max(${scenes.positionInChapter}), 0) + 1 from ${scenes} where ${scenes.chapterId} = ${chapterId})`
+					: null,
+				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${storyId})`
+			})
+			.returning({ id: scenes.id });
+		return scene.id;
+	});
 }
 
 /** Moves a scene to the story's trash. Mention rows go at once so panels and
@@ -123,7 +133,9 @@ export async function markChapterSummariesStale(tx: Database, chapterIds: string
 	if (!chapterIds.length) return;
 	// Lowest id first, the order moveChapter and deleteChapter lock in before
 	// they renumber, so a mark over several chapters cannot deadlock with them.
-	await tx.execute(sql`select id from chapters where id in ${chapterIds} order by id for update`);
+	await tx.execute(
+		sql`select id from chapters where id in ${chapterIds} order by id for no key update`
+	);
 	await tx.execute(sql`
 		update chapters
 		set summary_generated_at = least(summary_generated_at, updated_at) - interval '1 millisecond'
@@ -233,14 +245,24 @@ export async function restoreScene(
 ): Promise<boolean> {
 	const scene = await ownedScene(db, userId, sceneId, { deleted: true });
 	if (!scene) return false;
-	await db.transaction(async (tx) => {
+	return await db.transaction(async (tx) => {
+		// Before the maximum positions are read, so a split shifting scenes
+		// finishes first and the restored scene does not share a position.
+		await lockStoryScenes(tx, scene.storyId);
+		const [current] = await tx
+			.select({ chapterId: scenes.chapterId, deletedAt: scenes.deletedAt })
+			.from(scenes)
+			.where(eq(scenes.id, scene.id));
+		if (!current?.deletedAt) return false;
 		// The chapter may have been deleted while the scene sat in the trash.
-		let chapterId = scene.chapterId;
+		// Key share keeps it from being deleted before the update lands.
+		let chapterId = current.chapterId;
 		if (chapterId) {
 			const [chapter] = await tx
 				.select({ id: chapters.id })
 				.from(chapters)
-				.where(eq(chapters.id, chapterId));
+				.where(eq(chapters.id, chapterId))
+				.for('key share');
 			if (!chapter) chapterId = null;
 		}
 		// Positions are renumbered wholesale on every reorder, so appending past
@@ -262,8 +284,8 @@ export async function restoreScene(
 			})
 			.where(eq(scenes.id, scene.id));
 		if (chapterId) await markChapterSummariesStale(tx, [chapterId]);
+		return true;
 	});
-	return true;
 }
 
 /** Deletes a trashed scene for good: markers, mentions, revisions, review
@@ -344,12 +366,6 @@ export async function renameChapter(
 	return true;
 }
 
-// Renumbering updates chapters in position order; taking every row lowest id
-// first beforehand keeps the lock order markChapterSummariesStale uses.
-async function lockStoryChapters(tx: Database, storyId: string) {
-	await tx.execute(sql`select id from chapters where story_id = ${storyId} order by id for update`);
-}
-
 // A chapter's place in the story is not part of what its Assistant summary
 // reads, so renumbering leaves updated_at alone and the summary current.
 function keepChapterUpdatedAt() {
@@ -398,6 +414,7 @@ export async function deleteChapter(
 	const chapter = await ownedChapter(db, userId, chapterId);
 	if (!chapter) return false;
 	await db.transaction(async (tx) => {
+		await lockStoryScenes(tx, chapter.storyId);
 		await tx
 			.update(scenes)
 			.set({ chapterId: null, positionInChapter: null, ...keepTimestamps() })
