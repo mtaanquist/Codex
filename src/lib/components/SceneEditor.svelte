@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { createAutosave } from '#lib/autosave';
 	import { createSceneSaver, type SceneConflict } from '#lib/scene-saver';
+	import { textHash } from '#lib/text-hash';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { Compartment, EditorState, Prec } from '@codemirror/state';
@@ -267,11 +268,17 @@
 		if (scrollEl) scrollEl.scrollTop = position.scroll;
 	}
 
-	// For splitting at the cursor: where the caret is, and a way to land the
-	// pending autosave first so the offset is against the stored text.
-	export function cursorOffset(): { offset: number; length: number } | null {
+	// For splitting at the cursor: where the caret is, the fingerprint of the
+	// text it is in (the server refuses the split if the stored text differs),
+	// and a way to land the pending autosave first.
+	export function cursorOffset(): { offset: number; length: number; baseHash: string } | null {
 		if (!view) return null;
-		return { offset: view.state.selection.main.head, length: view.state.doc.length };
+		const stored = storedText(view.state);
+		return {
+			offset: stored.mapPos(view.state.selection.main.head),
+			length: stored.text.length,
+			baseHash: textHash(stored.text)
+		};
 	}
 
 	export async function flushSave(): Promise<void> {

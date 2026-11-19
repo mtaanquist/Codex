@@ -5,6 +5,7 @@ import {
 	check,
 	customType,
 	date,
+	doublePrecision,
 	index,
 	inet,
 	integer,
@@ -301,6 +302,16 @@ export const scenes = pgTable(
 			.notNull()
 			.defaultNow()
 			.$onUpdate(() => new Date()),
+		// When anything about the scene last changed, prose or not (a status, a
+		// move, the trash). The story card's edited time and the scene a story
+		// opens on read it; updated_at stays the prose clock the Assistant
+		// compares against. clock_timestamp(), not now(), so a later statement
+		// in the same transaction (the scene a split or merge acted on, after
+		// the scenes it shifted) reads as the later change. Null on scenes last
+		// changed before the column existed: read coalesce(touched_at, updated_at).
+		touchedAt: timestamp('touched_at', { withTimezone: true })
+			.default(sql`clock_timestamp()`)
+			.$onUpdate(() => sql`clock_timestamp()`),
 		// When the mention index was last rebuilt for this scene. Null means never.
 		// The reconcile sweep re-indexes any scene whose body changed after this,
 		// or whose universe's mentions_changed_at is later, so a dropped rebuild
@@ -1424,6 +1435,11 @@ export const assistantUsage = pgTable(
 		model: text('model').notNull(),
 		promptTokens: integer('prompt_tokens'),
 		completionTokens: integer('completion_tokens'),
+		// True when the counts are Codex's own estimate (a stream that failed or
+		// was cancelled before the endpoint reported them), not the endpoint's.
+		estimated: boolean('estimated').notNull().default(false),
+		// Server-side web searches the endpoint reported, billed per search.
+		webSearchRequests: integer('web_search_requests'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [index('assistant_usage_user_idx').on(table.userId, table.createdAt)]
@@ -1482,9 +1498,17 @@ export type ReviewRunState = {
 	// what it had spent in USD. A retry of the same job resumes from here.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, so it is approximate.
+	spentEstimated?: boolean;
 	// Set when the run started from an earlier capped run's progress, so its
 	// completed list includes that run's scenes (see adoptCappedRun).
 	carriedForward?: boolean;
+	// When each scene's pass read it (ISO time), and the scenes whose pass
+	// failed. completed holds both kinds; a continuation reviews a failed scene,
+	// or one edited since its pass, again. Absent on rows saved before these
+	// were recorded.
+	reviewedAt?: Record<string, string>;
+	failedScenes?: string[];
 };
 
 // The progress of one queued review, keyed by its pg-boss job id: what the
@@ -1497,6 +1521,22 @@ export const assistantReviewRuns = pgTable('assistant_review_runs', {
 		.references(() => users.id, { onDelete: 'cascade' })
 		.notNull(),
 	state: jsonb('state').$type<ReviewRunState>().notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+// What one queued Assistant job has spent so far, keyed by its pg-boss job id,
+// so a retry of the same job (a worker that died, an expiry) carries on against
+// the ceiling instead of starting at zero. Written only when a cap is set, and
+// swept with the review run rows.
+export const assistantJobSpend = pgTable('assistant_job_spend', {
+	jobId: text('job_id').primaryKey(),
+	userId: uuid('user_id')
+		.references(() => users.id, { onDelete: 'cascade' })
+		.notNull(),
+	spentUsd: doublePrecision('spent_usd').notNull(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()
 		.defaultNow()

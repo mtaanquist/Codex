@@ -15,12 +15,12 @@ import type { ReviewCategory } from '../../src/lib/review-shape';
 
 const { accountLlmView, saveAccountLlmConfig, saveModelPricing } =
 	await import('../../src/lib/server/llm/config');
-const { reviewStoryScenes, SUMMARIES_CAPPED_MESSAGE } =
+const { reviewStoryContinuity, reviewStoryScenes, SUMMARIES_CAPPED_MESSAGE } =
 	await import('../../src/lib/server/llm/scene-review');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { CAP_NOT_APPLIED_MESSAGE } = await import('../../src/lib/server/llm/spend');
 const { estimateStoryReview } = await import('../../src/lib/server/llm/estimate');
-const { emptyReviewRun, loadReviewRun, saveReviewRun } =
+const { emptyReviewRun, loadReviewRun, ReviewRunLoadError, saveReviewRun } =
 	await import('../../src/lib/server/review-runs');
 
 let pool: pg.Pool;
@@ -34,7 +34,9 @@ const MODEL = 'review-model';
 const PROMPT_TOKENS = 1000;
 const PRICE_PER_TOKEN = 0.001;
 
-function provider(): { provider: Provider; seen: ChatMessage[][] } {
+// fail: a scene title whose pass throws. The reply is an empty JSON list, which
+// a scene pass ignores and the continuity survey reads as no candidates.
+function provider(fail?: string): { provider: Provider; seen: ChatMessage[][] } {
 	const seen: ChatMessage[][] = [];
 	return {
 		seen,
@@ -44,8 +46,11 @@ function provider(): { provider: Provider; seen: ChatMessage[][] } {
 			},
 			async respond(req) {
 				seen.push(req.messages);
+				if (fail && req.messages.some((m) => m.content.includes(`Review the scene "${fail}"`))) {
+					throw new Error(`${fail} broke`);
+				}
 				return {
-					content: 'no notes',
+					content: '[]',
 					toolCalls: [],
 					usage: { promptTokens: PROMPT_TOKENS, completionTokens: 0 }
 				};
@@ -92,7 +97,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table assistant_review_runs, assistant_usage, review_suggestions, review_comments, review_threads, scenes, chapters, stories, universes, users cascade'
+		'truncate table assistant_review_runs, assistant_job_spend, assistant_usage, review_suggestions, review_comments, review_threads, scenes, chapters, stories, universes, users cascade'
 	);
 	const [user] = await db
 		.insert(users)
@@ -832,5 +837,243 @@ describe('spend cap on the standalone summaries job (#622)', () => {
 		expect(result.scenes).toBe(2);
 		expect(result.capped).toBeUndefined();
 		expect(result.capNotApplied).toBe(CAP_NOT_APPLIED_MESSAGE);
+	});
+});
+
+const sent = (seen: ChatMessage[][]) => seen.map((m) => m.map((x) => x.content).join('\n'));
+const reviewedTitles = (seen: ChatMessage[][]) =>
+	sent(seen)
+		.map((text) => /Review the scene "([^"]+)"/.exec(text)?.[1])
+		.filter((title): title is string => Boolean(title));
+
+describe('a retried job keeps what it already spent (#1117)', () => {
+	it('a review retried under the same job id carries on against the same ceiling', async () => {
+		const storyId = await seedStory(4);
+		await priceModel();
+		await configure({ spendCapUsd: 2.5 });
+		// The first attempt reviews one scene ($1) and stops, as a worker that
+		// died would.
+		const controller = new AbortController();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'retry-1', signal: controller.signal },
+			{ provider: cancelledAfterOneScene(controller).provider }
+		);
+
+		const again = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'retry-1' },
+			{ provider: again.provider }
+		);
+		// $1 carried, then two more scenes reach the $2.50 ceiling.
+		expect(reviewedTitles(again.seen)).toEqual(['Scene 2', 'Scene 3']);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(3, 6);
+	});
+
+	it('a summaries job retried under the same id starts from its recorded spend', async () => {
+		const storyId = await seedStory(3);
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.storyId, storyId));
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await pool.query(
+			`insert into assistant_job_spend (job_id, user_id, spent_usd) values ('sum-1', $1, 1)`,
+			[userId]
+		);
+
+		const { provider: p, seen } = provider();
+		const result = await summariseStory(db, { userId, storyId, jobId: 'sum-1' }, { provider: p });
+		expect(seen).toHaveLength(1);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(2, 6);
+		const { rows } = await pool.query(
+			`select spent_usd from assistant_job_spend where job_id = 'sum-1'`
+		);
+		expect(rows[0].spent_usd).toBeCloseTo(2, 6);
+	});
+
+	it('records nothing when no cap is set', async () => {
+		const storyId = await seedStory(2);
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.storyId, storyId));
+		await priceModel();
+		await summariseStory(
+			db,
+			{ userId, storyId, jobId: 'sum-2' },
+			{ provider: provider().provider }
+		);
+		expect(await countRows('assistant_job_spend')).toBe(0);
+	});
+});
+
+describe('a cap reached on the last scene (#1103)', () => {
+	it('marks the run capped, and running it again does only the cross-scene pass', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 3 });
+		const full: ReviewCategory[] = ['mechanics', 'prose', 'lore'];
+		const first = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: full, jobId: 'last-1' },
+			{ provider: provider().provider }
+		);
+		expect(first.reviewed).toBe(3);
+		expect(first.capped).toBe(true);
+
+		await configure({ spendCapUsd: 10 });
+		const next = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: full, jobId: 'last-2' },
+			{ provider: next.provider }
+		);
+		expect(reviewedTitles(next.seen)).toEqual([]);
+		expect(next.seen.length).toBeGreaterThan(0);
+		expect(result.capped).toBeUndefined();
+		expect(result.reviewed).toBe(3);
+	});
+
+	it('is not capped when nothing is left to do', async () => {
+		const storyId = await seedStory(2);
+		await priceModel();
+		await configure({ spendCapUsd: 2 });
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, categories: ['prose'], jobId: 'last-3' },
+			{ provider: provider().provider }
+		);
+		expect(result.reviewed).toBe(2);
+		expect(result.capped).toBeUndefined();
+	});
+});
+
+describe('continuing a capped review (#1093)', () => {
+	it('reviews a scene again when it was edited after its pass', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		await reviewStoryScenes(db, { userId, storyId, jobId: 'edit-1' }, provider());
+		const [first] = await db
+			.select({ id: scenes.id })
+			.from(scenes)
+			.where(eq(scenes.storyId, storyId))
+			.orderBy(asc(scenes.globalPosition))
+			.limit(1);
+		await db.update(scenes).set({ bodyMd: 'Rewritten.' }).where(eq(scenes.id, first.id));
+
+		await configure({ spendCapUsd: 10 });
+		const next = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'edit-2' },
+			{ provider: next.provider }
+		);
+		expect(reviewedTitles(next.seen)).toEqual(['Scene 1', 'Scene 3']);
+		expect(result.reviewed).toBe(3);
+	});
+
+	it('tries a scene whose pass failed again', async () => {
+		const storyId = await seedStory(4);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const first = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'fail-1' },
+			{ provider: provider('Scene 1').provider }
+		);
+		expect(first.failed).toBe(1);
+		expect(first.capped).toBe(true);
+
+		await configure({ spendCapUsd: 10 });
+		const next = provider();
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, jobId: 'fail-2' },
+			{ provider: next.provider }
+		);
+		expect(reviewedTitles(next.seen)).toEqual(['Scene 1', 'Scene 4']);
+		expect(result.reviewed).toBe(4);
+		expect(result.failed).toBe(0);
+		expect(result.failures).toEqual([]);
+	});
+});
+
+describe('a continuity continuation (#1106)', () => {
+	it('counts only its own notes, not the capped run it continues', async () => {
+		const storyId = await seedStory(3);
+		await saveReviewRun(db, {
+			jobId: 'cont-1',
+			userId,
+			state: {
+				...emptyReviewRun(),
+				phase: 'done',
+				scope: `continuity:${storyId}`,
+				total: 3,
+				notes: 5,
+				capped: true
+			}
+		});
+		const result = await reviewStoryContinuity(
+			db,
+			{ userId, storyId, jobId: 'cont-2' },
+			{ provider: provider().provider }
+		);
+		expect(result.notes).toBe(0);
+		expect((await loadReviewRun(db, 'cont-2'))?.notes).toBe(0);
+	});
+});
+
+describe('adopting a capped run fails loudly (#1113)', () => {
+	it('fails the attempt rather than reviewing every scene again', async () => {
+		const storyId = await seedStory(3);
+		await saveReviewRun(db, {
+			jobId: 'old-key',
+			userId,
+			state: {
+				...emptyReviewRun(),
+				phase: 'done',
+				scope: `full:${storyId}`,
+				total: 3,
+				capped: true
+			}
+		});
+		const p = provider();
+		await expect(
+			reviewStoryScenes(
+				db,
+				{
+					userId,
+					storyId,
+					jobId: 'new-key',
+					legacyJobCategories: async () => {
+						throw new Error('queue unreachable');
+					}
+				},
+				{ provider: p.provider }
+			)
+		).rejects.toBeInstanceOf(ReviewRunLoadError);
+		expect(p.seen).toHaveLength(0);
+	});
+});
+
+describe('a stopped summaries job (#1045)', () => {
+	it('stops between summaries and says it was stopped', async () => {
+		const storyId = await seedStory(3);
+		await db.update(scenes).set({ summaryMd: null }).where(eq(scenes.storyId, storyId));
+		const controller = new AbortController();
+		const stub = provider();
+		const respond = stub.provider.respond.bind(stub.provider);
+		stub.provider.respond = async (...args) => {
+			const reply = await respond(...args);
+			controller.abort();
+			return reply;
+		};
+		const result = await summariseStory(
+			db,
+			{ userId, storyId, signal: controller.signal },
+			{ provider: stub.provider }
+		);
+		expect(stub.seen).toHaveLength(1);
+		expect(result.aborted).toBe(true);
 	});
 });

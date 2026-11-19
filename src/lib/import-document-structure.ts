@@ -1,4 +1,5 @@
 import type { ImportedChapter, ImportedScene } from './import-markdown';
+import { toLf } from './line-endings';
 
 // Turns a flat run of document blocks (headings and paragraphs, as a Word or
 // EPUB manuscript yields) into chapters and scenes, guessing structure from the
@@ -203,7 +204,7 @@ export function splitScenes(blocks: DocBlock[]): ImportedScene[] {
 // from any HTML-to-markdown conversion into detectStructure.
 export function markdownToBlocks(markdown: string): DocBlock[] {
 	const blocks: DocBlock[] = [];
-	const chunks = markdown.replace(/\r\n?/g, '\n').split(/\n{2,}/);
+	const chunks = toLf(markdown).split(/\n{2,}/);
 	for (const chunk of chunks) {
 		const trimmed = chunk.trim();
 		if (trimmed === '') continue;

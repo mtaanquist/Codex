@@ -5,6 +5,7 @@ import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { dbNow, requestHash } from './enrich.ts';
+import { jobSpendMeter } from './job-spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 
@@ -101,15 +102,18 @@ export type ArcResult = {
 	// be written from the same request, so it was only marked current; changed:
 	// as unchanged, but something the arc reads was marked while it was checked,
 	// so it is left out of date; empty: the character appears in no scene, so
-	// nothing was asked; missing: not the user's character.
-	outcome: 'written' | 'unchanged' | 'changed' | 'empty' | 'missing';
+	// nothing was asked; missing: not the user's character; capped: earlier
+	// attempts of this job already spent the ceiling (spentUsd), so nothing was
+	// asked.
+	outcome: 'written' | 'unchanged' | 'changed' | 'empty' | 'missing' | 'capped';
+	spentUsd?: number;
 };
 
 // Write (or rewrite) one character's arc. Owner scoped. Throws when the
 // Assistant call fails, leaving any earlier arc and its watermark in place.
 export async function summariseCharacterArc(
 	db: Database,
-	opts: { userId: string; characterId: string; signal?: AbortSignal },
+	opts: { userId: string; characterId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<ArcResult> {
 	const { userId, characterId, signal } = opts;
@@ -178,18 +182,29 @@ export async function summariseCharacterArc(
 		return { outcome: marked.length ? 'unchanged' : 'changed' };
 	}
 
-	const result = await completeDetailed(
-		db,
-		{
-			userId,
-			role: 'utility',
-			enableTools: false,
-			messages,
-			maxTokens: MAX_ARC_TOKENS,
-			signal
-		},
-		deps
-	);
+	// One request, but a job pg-boss retries sends it again: the meter carries
+	// what earlier attempts spent, and the arc counts towards the ceiling like
+	// any other background run.
+	const meter = await jobSpendMeter(db, { userId, jobId: opts.jobId });
+	if (meter.capReached) return { outcome: 'capped', spentUsd: meter.spentUsd };
+	let result: Awaited<ReturnType<typeof completeDetailed>>;
+	try {
+		result = await completeDetailed(
+			db,
+			{
+				userId,
+				role: 'utility',
+				enableTools: false,
+				messages,
+				maxTokens: MAX_ARC_TOKENS,
+				meter,
+				signal
+			},
+			deps
+		);
+	} finally {
+		await meter.flush();
+	}
 	if (result.cutOff) {
 		throw new ReplyCutOffError(
 			'The arc was cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'

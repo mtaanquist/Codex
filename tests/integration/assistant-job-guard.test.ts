@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { PgBoss, type JobWithMetadata } from 'pg-boss';
-import { shouldNotifyWriter } from '../../src/worker/job-guard';
+import { jobRunSignal, shouldNotifyWriter, withJobRunSignal } from '../../src/worker/job-guard';
+import { stoppedByWriter } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 // Against a real pg-boss, because the guard leans on how it re-queues a failed
@@ -74,5 +75,50 @@ describe('shouldNotifyWriter', () => {
 	it('notifies when pg-boss aborted the last attempt', async () => {
 		const job = await startRun(0);
 		expect(await shouldNotifyWriter(boss, QUEUE, { ...job, signal: aborted() })).toBe(true);
+	});
+});
+
+describe('jobRunSignal', () => {
+	// The run signal once the job's own signal aborts.
+	async function abortedRun(job: JobWithMetadata) {
+		const controller = new AbortController();
+		const { signal } = jobRunSignal(boss, QUEUE, { ...job, signal: controller.signal });
+		expect(signal.aborted).toBe(false);
+		controller.abort();
+		await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+		return signal;
+	}
+
+	it('passes on a Stop from the writer, which cancels the job', async () => {
+		const job = await startRun();
+		await boss.cancel(QUEUE, job.id);
+		expect(stoppedByWriter(await abortedRun(job))).toBe(true);
+	});
+
+	it('does not call an expired job a writer stop, since it runs again', async () => {
+		const job = await startRun();
+		await boss.fail(QUEUE, job.id, { message: 'job timed out' });
+		expect(stoppedByWriter(await abortedRun(job))).toBe(false);
+	});
+
+	it('does not call a worker shutdown a writer stop', async () => {
+		const job = await startRun();
+		expect(stoppedByWriter(await abortedRun(job))).toBe(false);
+	});
+
+	it('skips the job lookup once the work has returned', async () => {
+		let lookups = 0;
+		const counting = { getJobById: async () => (lookups++, null) };
+		const controller = new AbortController();
+		const job = { id: 'job-1', name: QUEUE, signal: controller.signal };
+		let runSignal: AbortSignal | undefined;
+		await withJobRunSignal(counting, job, async (signal) => {
+			runSignal = signal;
+		});
+		// pg-boss aborts the job's signal when it completes normally.
+		controller.abort();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(lookups).toBe(0);
+		expect(runSignal?.aborted).toBe(false);
 	});
 });

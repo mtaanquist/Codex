@@ -112,6 +112,52 @@ describe('applySceneOrder', () => {
 		});
 	});
 
+	it("marks both chapters' summaries out of date when a scene changes chapter", async () => {
+		await pool.query(
+			`update chapters set summary_md = 'S', summary_generated_at = updated_at where story_id = $1`,
+			[storyId]
+		);
+		// s2 moves from A to the head of B; its reading order stays the same.
+		const result = await applySceneOrder(db, storyId, {
+			chapters: [
+				{ id: chapterA, sceneIds: [s1] },
+				{ id: chapterB, sceneIds: [s2, s3] }
+			],
+			orphanSceneIds: []
+		});
+		expect(result.ok).toBe(true);
+		const rows = await db
+			.select({ generatedAt: chapters.summaryGeneratedAt, updatedAt: chapters.updatedAt })
+			.from(chapters)
+			.where(eq(chapters.storyId, storyId));
+		expect(rows).toHaveLength(2);
+		for (const row of rows) {
+			expect(row.generatedAt!.getTime()).toBeLessThan(row.updatedAt.getTime());
+		}
+	});
+
+	it('leaves chapter summaries alone when no scene changes chapter', async () => {
+		await pool.query(
+			`update chapters set summary_md = 'S', summary_generated_at = updated_at where story_id = $1`,
+			[storyId]
+		);
+		const result = await applySceneOrder(db, storyId, {
+			chapters: [
+				{ id: chapterA, sceneIds: [s2, s1] },
+				{ id: chapterB, sceneIds: [s3] }
+			],
+			orphanSceneIds: []
+		});
+		expect(result.ok).toBe(true);
+		const rows = await db
+			.select({ generatedAt: chapters.summaryGeneratedAt, updatedAt: chapters.updatedAt })
+			.from(chapters)
+			.where(eq(chapters.storyId, storyId));
+		for (const row of rows) {
+			expect(row.generatedAt!.getTime()).toBe(row.updatedAt.getTime());
+		}
+	});
+
 	it('rejects an order that drops a scene', async () => {
 		const result = await applySceneOrder(db, storyId, {
 			chapters: [

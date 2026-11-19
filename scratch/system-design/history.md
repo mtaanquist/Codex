@@ -1461,6 +1461,282 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 6 of staging/review-follow-ups: paused review
+      editor and history order (2026-11-19). While a review-centre merge or
+      duplicate had typing paused, the pause filter dropped an accepted
+      suggestion and the outside-text sync, but the saver still rebased onto
+      the stored text; a merge that then failed left the editor on the old
+      text with a matching base, and the next keystroke silently undid the
+      accept. Both dispatches carry the server's own text, so they are now
+      marked landsWhilePaused, and the saver only rebases or adopts once the
+      editor shows the text. Accept and Reject stay usable while paused.
+      saveSceneBody re-checks deleted_at and a live story under the row
+      lock, so a save queued behind a merge that trashed its scene gets the
+      404 instead of writing into the trash and showing "saved". Revision
+      rows are stamped with clock_timestamp() rather than the transaction
+      start, so a split or merge checkpoint that waited on the scene lock
+      sorts after the autosave it waited for, and a later autosave no longer
+      coalesces over the pre-split text. Merge widens the markers of a blank
+      first scene against the merged body instead of leaving them empty.
+      After a duplicate the review centre picks the new scene once the
+      refresh has loaded it, so the editor mounts once rather than briefly
+      showing another scene. The Write page's SceneEditor has no such
+      server-text path while paused (its Load newer is already refused).
+
+- [x] Staging review round 5 of staging/review-follow-ups: split and
+      merge history, CRLF anchors (2026-11-19). Split and merge recorded
+      their new text as an autosave, which rolls into the latest autosave
+      when it is under two minutes old, so typing and then splitting
+      replaced the full pre-split text in History with the head alone. They
+      now record checkpoints with a label ("Split into two scenes", "Split
+      from the scene before", "Merged N scenes"), which always insert. The
+      remaining paths that read a body stored with \r\n in stored offsets
+      now go through toLf like split and merge: remapMarkerAnchors (the
+      review save, restore, accepted suggestions, draft saves) diffs the
+      newline texts, the prose sweep replaces in and stores the newline
+      text, the TODO list slices quotes from it, and locateSplitInStory
+      searches it and returns its fingerprint. Merge now clamps the
+      target's markers to its trimmed text and widens any marker left empty
+      by the trim to one character, as split does; split marks its
+      chapter's summary out of date, as duplicate does. The lockStoryScenes
+      comment no longer claims every scene insert takes that lock (#1160).
+      The Assistant's split proposal still validates its passage against
+      the stored text; the confirm normalises both, so only proposing a
+      passage across a \r\n line break is refused.
+
+- [x] Staging review round 5 of staging/review-follow-ups: review centre
+      merge and duplicate save first (2026-11-19). The review centre sent
+      a merge or duplicate straight away, so an edit still waiting to save
+      (a debounce, or a retry after a dropped connection) was left out: the
+      merge trashed the scene it read, and the retried save then got a 404,
+      losing the words. It now follows the Write page: pause typing, land
+      the review editor's pending save, refuse with the same message if it
+      fails, then remount the editor on the stored text. The flush loop and
+      the message moved to scene-actions.ts so both pages share them;
+      ReviewEditor gained flushSave, isDirty and a paused prop to match
+      SceneEditor.
+
+- [x] Staging review round 4 of staging/review-follow-ups: merge markers
+      on CRLF scenes (2026-11-19). mergeScenes worked out where each
+      merged-in marker lands from the raw bodies, so a target stored with
+      \r\n shifted every merged-in marker by one character per line break,
+      and \r\n in a merged-in scene's leading blank space threw off the
+      trim. It now runs every body through toLf first and stores the merged
+      body with plain newlines, the same rule splitScene follows. On split,
+      a marker covering only the seam's blank space moved to the new scene
+      as an empty range, which createMarker refuses and the editor cannot
+      show; it now takes the first character of the new scene.
+
+- [x] Staging review round 3 of staging/review-follow-ups: CRLF splits
+      and split locking (2026-11-19). The Codex archive import kept \r\n
+      line breaks (and so missed front matter, whose first line read
+      `---\r`); it now reads every text file through toLf
+      (`src/lib/line-endings.ts`, shared with the document importer). A
+      body already stored with \r\n could never be split from the editor:
+      CodeMirror reads it with plain newlines, so the fingerprint never
+      matched. splitScene now also accepts the fingerprint of the newline
+      text and cuts that text, storing both halves with plain newlines;
+      an offset placed in the stored text (the Assistant's locate) maps
+      across with lfOffset. Marker anchors on such a body already count in
+      the editor's newline text, since only the editor creates them, so
+      they need no mapping. Split and duplicate now lock every scene row of
+      the story, lowest id first like mergeScenes, then re-read the scene
+      with inLiveStory: two splits in one story could hand out the same
+      global_position (an UPDATE's snapshot misses a row the other split
+      inserted), and locking in heap order could deadlock a merge. Rows of
+      trashed scenes are locked too, since the shift moves them as well. A
+      marker starting in the seam's blank space and running past the cut
+      ended up inverted in the first half; one starting at or after the end
+      of the trimmed first half now moves to the new scene with its text.
+
+- [x] Staging review round 3, spend wording and help links
+      (staging/review-follow-ups, 2026-11-19). Notices and the review modal
+      said a run with estimated counts spent "up to" an amount, but only a
+      failed attempt whose thinking was hidden is metered at its output cap;
+      others count the characters that arrived, and a finished stream with
+      no usage report is estimated the same way. spentPhrase now says
+      "about $X (estimated)", matching the account page. The account help
+      no longer says a failed request is counted at the most it could have
+      cost, and names the details pass rather than `/enrich`. The capped
+      review modal links to the account help.
+
+- [x] Staging review round 2 of staging/review-follow-ups: split,
+      duplicate and chapter marks (2026-11-19). Writer trust: splitScene
+      read the body outside its transaction and wrote the head over the
+      row with no lock, so an autosave landing in between was dropped from
+      the live scene. It now locks the scene first and cuts the text read
+      under the lock, refusing with a conflict when that text no longer
+      matches the fingerprint of the text the offset was placed in (the
+      editor sends it; the Assistant's passage path uses the text the locate
+      read). duplicateScene locks its source the same way. Duplicating a
+      scene into a chapter, and adding a draft scene back into one, now mark
+      the chapter summary stale. trashScene marks the chapter the trash
+      update returns rather than one read before the transaction. The scenes
+      a split or duplicate shifts keep touched_at as well as updated_at
+      (keepTimestamps, shared with deleteChapter).
+
+- [x] Staging review round 2, Assistant help text, paused streams and stop
+      lookup (staging/review-follow-ups, 2026-11-19). The account help said a
+      capped run "never goes over"; the cap is checked between steps and web
+      search fees are not counted, so the text now says the last step can take
+      it a little over, and names /enrich and character arcs as capped too.
+      The in-app hint is one line with a link to the help. A paused plain
+      chat stream had become an error on this branch, discarding a reply the
+      writer paid for; it now ends as done and keeps the text (resuming needs
+      the raw blocks the stream does not carry). jobRunSignal returns a
+      release, called through withJobRunSignal once the work returns, so the
+      abort pg-boss sends on normal completion no longer triggers a job lookup.
+      stopAssistantJob rejects a non-uuid id up front and compares id as a
+      uuid, so the lookup can use the primary key.
+
+- [x] Staging review round 1, jobs and billing (staging/review-follow-ups,
+      2026-11-19). A refused arc settles as failed with a "declined" notice
+      instead of being retried (and billed) by pg-boss; the review, summary,
+      continuity and enrich jobs already counted a refusal as a failed item
+      and did not throw. pg-boss aborts job.signal the same way for a Stop
+      (a cancel the heartbeat notices), an expiry and a shutdown, so the
+      worker now runs the Assistant's requests under a derived signal
+      (jobRunSignal) that checks the job's state when it aborts and passes
+      only a cancel on as a WriterStopError reason; the interactive routes
+      wrap request.signal the same way. The Claude adapter skips the
+      output-cap bound only for that reason, so an expired or shut-down
+      attempt still counts at the cap before its retry carries the spend. A
+      plain chat stream that is cut off now emits an estimated count
+      (thinking deltas included) before rethrowing, so a stopped chat is
+      logged as estimated rather than unreported. Because a stopped request
+      can be under-counted, the account page reads "about" with the
+      estimated-request count rather than "up to", and the help says so. The
+      agent loop's pause counter resets with each round, as the paused text
+      does. A job that finishes while Stop is in flight is no longer shown
+      as stopped: the card waits for the stop's answer and shows stopped
+      only when it was taken and the job did not end done.
+
+- [x] Staging review round 1 of staging/review-follow-ups: scenes and
+      summaries (2026-11-19). Writer trust: mergeScenes read the bodies
+      outside its transaction, so an autosave landing before the write was
+      replaced (only History kept it; this predates the staging branch). It
+      now locks the scenes lowest id first and reads them under the lock.
+      Migration 0084 was edited before shipping: touched_at is added
+      nullable, its clock_timestamp() default set by a second ALTER, no
+      backfill, so the scenes table is not rewritten; readers use
+      coalesce(touched_at, updated_at). A scene summary write now marks its
+      chapter summary stale in the same transaction (the in-memory
+      touchedChapters set is gone), so a pass stopped before the chapter
+      pass leaves the chapter due. A reorder bumps touched_at only for the
+      scenes movedScenes names plus any that changed chapter, a chapter
+      delete bumps none, and a scene moved to another chapter marks both
+      chapters' summaries stale. markChapterSummariesStale, moveChapter and
+      deleteChapter lock chapters order by id first. A reorder within a
+      chapter still leaves its summary as it is.
+
+- [x] Review runs, job spend and job stops (staging/review-follow-ups,
+      2026-11-19; #1117, #1105, #1103, #1045, #1046, #1093, #1106, #1108,
+      #1113). Each queued Assistant job's spend is kept in a new
+      assistant_job_spend table keyed by its pg-boss id (written only when a
+      cap is set, swept with the review runs), so a retry starts its meter
+      from what earlier attempts spent. SpendMeter takes the seed and a
+      serialised persist callback; the gateway and adapters are untouched.
+      The arc job now meters too (a retry at the ceiling asks nothing and
+      says so) and settles on EndpointReplyError instead of retrying it. A
+      cap hit on the last scene with the cross-scene pass still to run marks
+      the run capped, so a continuation runs only that pass. Adopting a
+      capped run drops failed scenes, and scenes edited since their pass
+      (per-scene reviewedAt stamps on the run state; rows saved before have
+      none and keep the old behaviour), so both are reviewed again. A
+      continuity continuation's note count starts at zero. A load or adopt
+      error now fails the attempt (ReviewRunLoadError) and the worker leaves
+      it to pg-boss to retry, telling the writer only on the last attempt.
+      A coalesced 409 shows an "Already running" card and picks up the
+      running job's card instead of a failure; the summaries 409 now says
+      edits made after the pass starts need another update. For a hung job,
+      a running card has a Stop button (POST /api/assistant/job-stop, which
+      cancels the writer's own job and frees its key; the worker aborts at
+      its next heartbeat). A shorter expiry or a no-progress check was not
+      built; Stop covers the stuck case without guessing a timeout.
+
+- [x] Staging review follow-ups: usage log and Claude adapter (#1116,
+      #1127, #1123, #1102, #1104, #1125, #1074, #1083, #1085, #1094,
+      2026-11-19). The spend meter keeps its output-cap bound for a failed
+      thinking attempt, but the usage log no longer presents it as reported:
+      `assistant_usage` gains an additive `estimated` flag (and a
+      `web_search_requests` count), the account page marks those rows and the
+      30-day total says how many it includes, and a cost or a capped run's
+      notice that includes estimates reads "up to" instead of "about". A
+      request the writer cancelled (aborted signal or AbortError) skips the
+      bound, since no further attempt follows for it to protect. Plain
+      streamed turns now write their row in a finally, so a caller that stops
+      reading at done, an error or a cancel still logs it; a streamed error
+      event carries an estimated count first. The "cap not applied" notice for
+      missing counts says "for every request" and "could not be fully
+      applied", since per-request metering still caps the rounds that did
+      report. Web search fees are counted from server_tool_use but not priced:
+      no per-search price is discoverable from the endpoint (Claude models
+      have none either, #1031), so the help article says the fee is outside
+      the cost and the cap. Adapter: SSE data lines join until the blank
+      line; a stream with no or a generic content type is sniffed; broken
+      tool input outside a max_tokens stop reaches the dispatcher as raw text
+      (a bad-call result) instead of empty arguments; refusal and pause_turn
+      get their own finish reasons. A refusal throws ReplyRefusedError (a
+      failed scene or reply), a paused buffered turn is resumed up to twice
+      by sending its blocks back, and a paused or refused plain stream ends
+      as an error. The billing explanation lives in a new "Usage and cost"
+      section of the account help article, linked from the Usage heading.
+
+- [x] Review follow-ups: mention index and stale marks (2026-11-19).
+      A mention rebuild now reads the scene body under the scene's row lock,
+      in the transaction that writes the index, so a save landing between
+      the read and the stamp can no longer leave old text stamped current,
+      and a trashed scene restored meanwhile is indexed rather than stamped
+      empty (#1073, #1128, #1112). The rebuild locks the scene before its
+      mention rows, but the story purge deleted mentions before scenes, a
+      real deadlock the two-connection test reproduced (the story itself was
+      not the problem); the purge, and Delete forever on a scene, now lock
+      the scene rows first, lowest id first (#1095). Passages are compared in
+      reading order, so swapping two paragraphs that mention a character
+      marks the arc, while text added above only shifts positions and does
+      not (#1070, #1119). A reorder marks only what the scenes outside the
+      longest run that kept its relative order mention, so moving one scene
+      to the end marks one scene's characters, not the story's (#1087). A
+      story rename marks its scenes' entities for arcs and enrich, a
+      character rename marks its arc, and a scene rename now marks enrich
+      too: passages are labelled with story and scene titles, and the
+      request hash still skips an unchanged request. This reverses the
+      earlier call that renames were not worth a paid re-read (#1069,
+      #1096). Restoring a universe no longer marks the whole universe: the
+      rebuild keeps marking while the universe is in the trash (nothing in
+      it is read until the restore), so the restore has nothing left to
+      mark; a trashed or muted story still skips marks and is marked on
+      restore or unmute (#1107). The enrich request hash leaves out whether a
+      summary is still wanted, so a read that staged a summary does not make
+      the next unchanged read a paid call; entities hashed with a summary
+      known get one re-read the next time they are marked (#1086). An entity
+      deleted while an enrich pass runs is passed over instead of failing the
+      pass (#1072).
+
+- [x] Summaries and scene-change follow-ups (#1071, #1111, #1114, #1120,
+      2026-11-19). A summary is now stamped with the updated_at it was built
+      from (the guarded write already proves the row still has it), not a
+      clock reading, so currency compares a column with a copy of itself;
+      inserts set updated_at on the database clock and saves on the app
+      clock, and either could be ahead. The title-only save moved to the app
+      clock like every other update. The guarded write also checks the old
+      stamp, so trashing, restoring or merging a scene marks its chapter's
+      summary stale (stamp moved just behind updated_at, a new value each
+      time) and a pass already writing from the old scenes does not save
+      over the mark. Moves between chapters still leave the chapter summary
+      as it is (scene-order.ts was in another lane; see #1100). The pass now
+      stops at the first no-model or turned-off refusal and the notice says
+      so, settled as failed like enrich, and a pass whose every write lost
+      to an edit says that instead of "found nothing". New
+      scenes.touched_at (clock_timestamp(), bumped by every Drizzle update
+      through $onUpdate and by the reorder for the rows it moved) drives the
+      library's edited time and the scene a story opens on, so a status
+      change, move or restore counts as editing the story while updated_at
+      stays the prose clock. clock_timestamp() so the scene a split or
+      merge acted on reads later than the scenes it shifted in the same
+      transaction. Migration 0084 adds it (see staging review round 1 for how it was
+      reworked before shipping).
+
 - [x] Staging review round 8 (#1122, 2026-11-18). The output-cap floor
       from round 6 also applied to a finished reply without an output count,
       so a compatible endpoint that omits it booked every thinking request at

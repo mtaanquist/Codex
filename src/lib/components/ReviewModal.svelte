@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { modal } from '#lib/modal';
-	import { formatNumber } from '#lib/format';
+	import { formatNumber, spentPhrase } from '#lib/format';
+	import HelpLink from '#lib/components/HelpLink.svelte';
 	import { reviewModal, closeReviewModal } from '#lib/review-modal.svelte';
 	import {
 		reviewSceneWithAssistant,
@@ -84,6 +85,7 @@
 		// The run stopped because it reached the account's spend cap.
 		capped?: boolean;
 		spentUsd?: number | null;
+		spentEstimated?: boolean;
 	};
 
 	// What the pre-flight estimate reports, and the confirm step built on it. A
@@ -339,11 +341,15 @@
 							{/if}
 						{:else if progress.capped}
 							<p class="rm-phase">
-								Stopped after {progress.reviewed ?? 0} of {progress.total ?? 0} scenes at about ${money(
-									progress.spentUsd ?? 0
+								Stopped after {progress.reviewed ?? 0} of {progress.total ?? 0} scenes at {spentPhrase(
+									progress.spentUsd ?? 0,
+									progress.spentEstimated
 								)}.
 							</p>
-							<p class="rm-note">Raise the cap in settings or run the review again to continue.</p>
+							<p class="rm-note">
+								Raise the cap in settings or run the review again to continue.
+								<HelpLink topic="account" label="usage and cost" />
+							</p>
 						{:else if progress.state === 'done' || progress.phase === 'done'}
 							<p class="rm-phase">Review finished.</p>
 							<p class="rm-note">

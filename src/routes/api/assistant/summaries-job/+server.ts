@@ -16,7 +16,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (jobId === 'coalesced') {
 		error(
 			409,
-			'A summary update for this story is already queued or running. It carries on; this request started nothing new.'
+			'A summary update for this story is already queued or running. To cover edits made after it starts, update summaries again when it finishes.'
 		);
 	}
 	if (!jobId) error(503, 'Could not start the summary pass. Try again in a moment.');

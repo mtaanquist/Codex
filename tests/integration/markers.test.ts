@@ -144,6 +144,21 @@ describe('listStoryTodos', () => {
 		]);
 		expect(todos.filter((todo) => todo.sceneId === midLine.id)).toEqual([]);
 	});
+	it('quotes the marked words in a body stored with Windows line endings', async () => {
+		// Anchors count each \r\n as one character, as the editor does.
+		const stored = 'One line.\r\nTwo lines.\r\nThree lines.';
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 10, title: 'Lines', bodyMd: stored })
+			.returning();
+		const shown = stored.replace(/\r\n/g, '\n');
+		const start = shown.indexOf('Three');
+		await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, anchorStart: start, anchorEnd: start + 5 });
+		const todos = await listStoryTodos(db, storyId);
+		expect(todos.find((todo) => todo.sceneId === scene.id)?.text).toBe('Three');
+	});
 });
 
 describe('resolve and anchors', () => {
@@ -260,6 +275,54 @@ describe('anchors follow body rewrites outside the Write editor', () => {
 	it('restoring a revision maps anchors onto the restored text', async () => {
 		const { sceneId: id, markerId } = await markedScene('She rides on');
 		const older = 'Long before: ' + TEXT;
+		await recordRevision(db, 'scene', id, older, 'checkpoint');
+		const [revision] = await db
+			.select({ id: revisions.id })
+			.from(revisions)
+			.where(and(eq(revisions.entityType, 'scene'), eq(revisions.entityId, id)))
+			.orderBy(desc(revisions.createdAt))
+			.limit(1);
+		expect(await restoreRevision(db, ownerId, revision.id, 'scene', id)).toMatchObject({
+			ok: true
+		});
+		expect(quote(older, await anchors(markerId))).toBe('She rides on');
+	});
+
+	// Bodies imported before line endings were normalised keep their \r\n,
+	// while anchors count each one as a single character, as the editor does.
+	const CRLF = 'The bridge creaks.\r\nAlice pays the toll.\r\nShe rides on.';
+	const SHOWN = CRLF.replace(/\r\n/g, '\n');
+
+	async function crlfScene(phrase: string) {
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 10, bodyMd: CRLF })
+			.returning();
+		const start = SHOWN.indexOf(phrase);
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, anchorStart: start, anchorEnd: start + phrase.length })
+			.returning();
+		return { sceneId: scene.id, markerId: marker.id };
+	}
+
+	it('a save without markers maps them through the edit on a Windows line-ending body', async () => {
+		const { sceneId: id, markerId } = await crlfScene('She rides on');
+		const edited = 'A new opening line.\n' + SHOWN;
+		const result = await saveSceneBody(db, id, {
+			title: null,
+			bodyMd: edited,
+			anchors: null,
+			baseHashes: null,
+			overwrite: false
+		});
+		expect(result.ok).toBe(true);
+		expect(quote(edited, await anchors(markerId))).toBe('She rides on');
+	});
+
+	it('restoring onto a Windows line-ending body maps anchors onto the restored text', async () => {
+		const { sceneId: id, markerId } = await crlfScene('She rides on');
+		const older = 'Long before: ' + SHOWN;
 		await recordRevision(db, 'scene', id, older, 'checkpoint');
 		const [revision] = await db
 			.select({ id: revisions.id })
