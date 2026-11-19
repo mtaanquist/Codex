@@ -100,14 +100,17 @@ export async function splitScene(
 			// An unanchored marker has nothing to move with; it stays put.
 			if (marker.anchorStart === null || marker.anchorEnd === null) continue;
 			if (marker.anchorStart >= head.length) {
-				const start = Math.max(0, marker.anchorStart - at - tailShift);
+				let start = Math.min(Math.max(0, marker.anchorStart - at - tailShift), tail.length);
+				let end = Math.min(Math.max(start, marker.anchorEnd - at - tailShift), tail.length);
+				// One that covered only the seam's blank space would come out empty,
+				// which the editor cannot show; it takes the nearest character.
+				if (end === start) {
+					if (start < tail.length) end = start + 1;
+					else start = start - 1;
+				}
 				await tx
 					.update(sceneMarkers)
-					.set({
-						sceneId: created,
-						anchorStart: Math.min(start, tail.length),
-						anchorEnd: Math.min(Math.max(start, marker.anchorEnd - at - tailShift), tail.length)
-					})
+					.set({ sceneId: created, anchorStart: start, anchorEnd: end })
 					.where(eq(sceneMarkers.id, marker.id));
 			} else if (marker.anchorEnd > head.length) {
 				await tx
@@ -364,12 +367,14 @@ export async function mergeScenes(
 			.sort((a, b) => a.globalPosition - b.globalPosition);
 		if (rows.length !== unique.length) return gone;
 
+		// Marker anchors count each \r\n as one character, as the editor
+		// does, so the bodies join, and are stored, with plain newlines.
 		const [target, ...rest] = rows;
-		let merged = target.bodyMd.replace(/\s+$/, '');
+		let merged = toLf(target.bodyMd).replace(/\s+$/, '');
 		for (const scene of rest) {
 			// Where this scene's text lands in the merged body, for its markers.
 			const base = merged === '' ? 0 : merged.length + 2;
-			const body = scene.bodyMd.replace(/\s+$/, '');
+			const body = toLf(scene.bodyMd).replace(/\s+$/, '');
 			const lead = body.length - body.replace(/^\s+/, '').length;
 			const part = body.slice(lead);
 			merged = merged === '' ? part : `${merged}\n\n${part}`;

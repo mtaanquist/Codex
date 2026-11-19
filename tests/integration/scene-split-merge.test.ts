@@ -260,6 +260,20 @@ describe('splitScene', () => {
 		expect(markers[0]).toMatchObject({ sceneId: result.newSceneId, anchorStart: 0, anchorEnd: 2 });
 	});
 
+	it('keeps a marker that covers only the seam whitespace visible', async () => {
+		const scene = await makeScene(1, 'Hello.\n\nWorld');
+		// Just the blank line between the paragraphs; the cut lands before "World".
+		await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, anchorStart: 6, anchorEnd: 8 });
+		const result = await splitScene(db, ownerId, scene.id, 8);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const markers = await db.select().from(sceneMarkers);
+		expect(markers).toHaveLength(1);
+		expect(markers[0]).toMatchObject({ sceneId: result.newSceneId, anchorStart: 0, anchorEnd: 1 });
+	});
+
 	it('gives each of two splits in one story its own place in the order', async () => {
 		const first = await makeScene(1, 'One a. One b.');
 		const second = await makeScene(2, 'Two a. Two b.');
@@ -560,6 +574,23 @@ describe('mergeScenes', () => {
 		expect(markers).toHaveLength(1);
 		// 'One.' + blank line puts b's text at offset 6.
 		expect(markers[0]).toMatchObject({ anchorStart: 10, anchorEnd: 14 });
+	});
+
+	it('lands markers on the same words when a body has Windows line endings', async () => {
+		// Bodies imported before line endings were normalised keep their \r\n;
+		// marker anchors count each one as a single character, as the editor does.
+		const a = await makeScene(1, 'One.\r\nTwo.\r\nThree.\r\n');
+		const b = await makeScene(2, '\r\n\r\nFour.\r\nFive five.');
+		// "Five" in b as the editor shows it: '\n\nFour.\nFive five.'.
+		await db.insert(sceneMarkers).values({ sceneId: b.id, ownerId, anchorStart: 8, anchorEnd: 12 });
+
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('One.\nTwo.\nThree.\n\nFour.\nFive five.');
+		const [marker] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, a.id));
+		expect(target.bodyMd.slice(marker.anchorStart!, marker.anchorEnd!)).toBe('Five');
 	});
 
 	it('moves an unanchored marker to the target with its anchors still null', async () => {
