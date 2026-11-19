@@ -41,6 +41,17 @@ export const CHAPTER_PATTERN_CAP = 5;
 export const BOOK_PATTERN_CAP = 8;
 // An apply round stages one edit per instance in one scene.
 const APPLY_TOOL_BUDGET = 32;
+// The most scenes one pattern's fixes are suggested in, in reading order, so a
+// habit that runs through a whole book does not send a request per scene of it.
+export const APPLY_SCENES_PER_PATTERN = 25;
+
+// The most fix requests the units can send: each pattern's scenes, capped.
+export function maxApplyRequests(units: PatternUnit[]): number {
+	return units.reduce((sum, unit) => {
+		const cap = unit.scope === 'book' ? BOOK_PATTERN_CAP : CHAPTER_PATTERN_CAP;
+		return sum + cap * Math.min(APPLY_SCENES_PER_PATTERN, unit.scenes.length);
+	}, 0);
+}
 
 export type PatternUnit = {
 	key: string;
@@ -415,7 +426,11 @@ async function ensureNote(
 	if (pattern.threadId) return true;
 	const order = unit.scenes.map((s) => s.id);
 	const first = [...pattern.sceneIds].sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
-	const body = patternNoteBody(pattern, noteWhere(pattern, unit));
+	const more =
+		pattern.sceneIds.length > APPLY_SCENES_PER_PATTERN
+			? `\n\nFixes are suggested in the first ${APPLY_SCENES_PER_PATTERN} of those scenes.`
+			: '';
+	const body = patternNoteBody(pattern, noteWhere(pattern, unit)) + more;
 	const created = await createThread(db, {
 		storyId,
 		sceneId: first,
@@ -428,6 +443,23 @@ async function ensureNote(
 	pattern.threadId = threadId;
 	pattern.noteBody = body;
 	return created.ok;
+}
+
+// A note the writer resolved or cleared since an earlier attempt of this run
+// gets no more fixes and is not handed to the scene reviews.
+async function dropClosedNotes(db: Database, entry: PatternUnitState): Promise<void> {
+	const ids = entry.patterns.flatMap((p) => (p.threadId ? [p.threadId] : []));
+	if (!ids.length) return;
+	const open = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(and(inArray(reviewThreads.id, ids), isNull(reviewThreads.resolvedAt)));
+	const live = new Set(open.map((row) => row.id));
+	for (const pattern of entry.patterns) {
+		if (!pattern.threadId || live.has(pattern.threadId)) continue;
+		pattern.applied = [...pattern.sceneIds];
+		delete pattern.noteBody;
+	}
 }
 
 export async function runPatternPass(
@@ -491,6 +523,7 @@ export async function runPatternPass(
 			await save();
 		}
 
+		await dropClosedNotes(db, entry);
 		const byId = new Map(unit.scenes.map((s) => [s.id, s]));
 		for (const pattern of entry.patterns) {
 			if (!pattern.threadId) {
@@ -510,7 +543,11 @@ export async function runPatternPass(
 				await save();
 				if (!pattern.threadId) continue;
 			}
-			for (const sceneId of pattern.sceneIds) {
+			const order = unit.scenes.map((s) => s.id);
+			const fixIn = [...pattern.sceneIds]
+				.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+				.slice(0, APPLY_SCENES_PER_PATTERN);
+			for (const sceneId of fixIn) {
 				if (pattern.applied.includes(sceneId)) continue;
 				opts.signal?.throwIfAborted();
 				if (opts.meter?.capReached) {

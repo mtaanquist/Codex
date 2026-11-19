@@ -67,6 +67,7 @@ export async function rereadPatternEdit(
 		userId: input.userId,
 		storyId: edit.storyId
 	});
+	// A re-read that fails can be asked for again.
 	const result = await completeDetailed(
 		db,
 		{
@@ -86,6 +87,9 @@ export async function rereadPatternEdit(
 			signal: input.signal
 		},
 		deps
-	);
+	).catch((err: unknown) => {
+		reread.delete(input.suggestionId);
+		throw err;
+	});
 	return { staged: result.notes };
 }

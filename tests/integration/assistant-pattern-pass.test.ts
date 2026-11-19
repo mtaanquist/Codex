@@ -250,6 +250,8 @@ describe('the chapter pattern pass', () => {
 			{ provider: first.provider }
 		);
 		expect(stopped.aborted).toBe(true);
+		// The note and the first scene's fix were staged before the stop.
+		expect(stopped.notes).toBeGreaterThanOrEqual(2);
 		const saved = await loadReviewRun(db, 'resume-1');
 		expect(saved?.patterns?.[0].surveyed).toBe(true);
 
@@ -352,6 +354,48 @@ describe('the chapter pattern pass', () => {
 		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
 		// The apply turn for scene 1 aimed at scene 2 and was refused.
 		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[1]]);
+	});
+
+	it('gives no more fixes to a note the writer resolved before the run went on', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			spendCapUsd: 0.5
+		});
+		await saveModelPricing(db, userId, { [MODEL]: { prompt: 0.001, completion: 0 } });
+		const first = patternProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter', jobId: 'closed-1' },
+			{ provider: first.provider }
+		);
+		await db.update(reviewThreads).set({ resolvedAt: new Date() });
+
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			spendCapUsd: 1000
+		});
+		const second = patternProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter', jobId: 'closed-2' },
+			{ provider: second.provider }
+		);
+		expect(second.seen.some(isApply)).toBe(false);
+		expect(await db.select().from(reviewSuggestions)).toHaveLength(0);
+		const reviews = second.seen.filter((m) => !isSurvey(m) && !isApply(m));
+		for (const messages of reviews) expect(asked(messages)).not.toContain('Pattern note (Sighing)');
 	});
 });
 

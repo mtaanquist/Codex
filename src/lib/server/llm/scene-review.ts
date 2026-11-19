@@ -1120,6 +1120,9 @@ export async function reviewStoryScenes(
 			await run.save();
 			const notesBefore = notes;
 			const failuresBefore = [...failures];
+			// What the pass had staged at its last save, kept for a pass that
+			// throws (a stop) so the run still reports it.
+			let saved: { notes: number; failures: ReviewFailure[] } = { notes: 0, failures: [] };
 			try {
 				const pass = await runPatternPass(
 					db,
@@ -1130,6 +1133,7 @@ export async function reviewStoryScenes(
 						budgetTokens,
 						state: run.state.patterns,
 						save: async (progress) => {
+							saved = { notes: progress.notes, failures: [...progress.failures] };
 							run.state.notes = notesBefore + progress.notes;
 							run.state.failures = [...failuresBefore, ...progress.failures];
 							await run.save();
@@ -1144,6 +1148,8 @@ export async function reviewStoryScenes(
 				if (pass.capped) capped = true;
 				scenePrior = pass.prior;
 			} catch (err) {
+				notes += saved.notes;
+				failures.push(...saved.failures);
 				if (opts.signal?.aborted) aborted = true;
 				else
 					failures.push({

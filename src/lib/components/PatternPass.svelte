@@ -172,7 +172,12 @@
 								</button>
 							{/if}
 						{/if}
-						<button class="btn btn-sm btn-ghost" type="button" onclick={() => onSkip(step!.id)}>
+						<button
+							class="btn btn-sm btn-ghost"
+							type="button"
+							disabled={busy}
+							onclick={() => onSkip(step!.id)}
+						>
 							Skip
 						</button>
 					</div>

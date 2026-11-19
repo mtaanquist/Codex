@@ -545,6 +545,7 @@ const MAX_PATTERN_EXAMPLES = 6;
 const PATTERN_DESCRIPTION_CHARS = 600;
 const PATTERN_EXAMPLE_CHARS = 200;
 const PATTERN_PLACES = 20;
+const PATTERN_NAME_CHARS = 80;
 const cut = (text: string, max: number) =>
 	text.length <= max ? text : text.slice(0, max).trimEnd() + '...';
 
@@ -552,13 +553,14 @@ function shapePatterns(parsed: unknown[]): FoundPattern[] {
 	return parsed.flatMap((entry) => {
 		if (!entry || typeof entry !== 'object') return [];
 		const { name, description, sceneIds, examples } = entry as Record<string, unknown>;
-		if (typeof name !== 'string' || !name.trim()) return [];
+		if (typeof name !== 'string' || !name.replace(/[()]/g, '').trim()) return [];
 		if (!Array.isArray(sceneIds)) return [];
 		const ids = sceneIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
 		if (!ids.length) return [];
 		return [
 			{
-				name: name.trim(),
+				// A short name with no brackets: it goes in the note's "(name)".
+				name: cut(name.replace(/[()]/g, '').trim(), PATTERN_NAME_CHARS),
 				description:
 					typeof description === 'string' ? cut(description.trim(), PATTERN_DESCRIPTION_CHARS) : '',
 				sceneIds: [...new Set(ids)],

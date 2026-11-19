@@ -677,6 +677,9 @@ export async function createSuggestion(
 		// The Assistant's pattern note this edit is an instance of. It must be a
 		// standalone thread of the same story; it may sit on another scene.
 		patternThreadId?: string;
+		// The text the range was found on, where the caller located it on its
+		// own copy of the scene: refused when the scene no longer has it there.
+		original?: string;
 	}
 ): Promise<{ ok: true; suggestionId: string } | { ok: false; reason: string }> {
 	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
@@ -708,6 +711,12 @@ export async function createSuggestion(
 	}
 	if (start < 0 || end > scene.bodyMd.length || start > end) {
 		return { ok: false, reason: 'That selection no longer matches the text.' };
+	}
+	if (input.original !== undefined && scene.bodyMd.slice(start, end) !== input.original) {
+		return {
+			ok: false,
+			reason: 'The scene changed while this was staged; find the passage again.'
+		};
 	}
 	if (scene.bodyMd.slice(start, end) === input.replacement) {
 		return { ok: false, reason: 'That suggestion changes nothing.' };
@@ -741,8 +750,15 @@ export async function createSuggestion(
 		}
 	}
 
-	const [row] = await db.transaction(async (tx) => {
+	const rows = await db.transaction(async (tx) => {
 		await sceneRevisionLock(tx, scene.id);
+		// A save between the read above and the lock moves the text under the
+		// range, so the range is pinned only to the body it was checked on.
+		const [current] = await tx
+			.select({ bodyMd: scenes.bodyMd })
+			.from(scenes)
+			.where(eq(scenes.id, scene.id));
+		if (current?.bodyMd !== scene.bodyMd) return [];
 		const baseRevisionId = await ensureBaseRevision(tx, scene.id, scene.bodyMd);
 		return await tx
 			.insert(reviewSuggestions)
@@ -758,6 +774,13 @@ export async function createSuggestion(
 			})
 			.returning({ id: reviewSuggestions.id });
 	});
+	const [row] = rows;
+	if (!row) {
+		return {
+			ok: false,
+			reason: 'The scene changed while this was staged; find the passage again.'
+		};
+	}
 	return { ok: true, suggestionId: row.id };
 }
 
