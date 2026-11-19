@@ -100,17 +100,15 @@ export async function splitScene(
 			// An unanchored marker has nothing to move with; it stays put.
 			if (marker.anchorStart === null || marker.anchorEnd === null) continue;
 			if (marker.anchorStart >= head.length) {
-				let start = Math.min(Math.max(0, marker.anchorStart - at - tailShift), tail.length);
-				let end = Math.min(Math.max(start, marker.anchorEnd - at - tailShift), tail.length);
-				// One that covered only the seam's blank space would come out empty,
-				// which the editor cannot show; it takes the nearest character.
-				if (end === start) {
-					if (start < tail.length) end = start + 1;
-					else start = start - 1;
-				}
+				const range = clampAnchors(
+					marker.anchorStart - at - tailShift,
+					marker.anchorEnd - at - tailShift,
+					0,
+					tail.length
+				);
 				await tx
 					.update(sceneMarkers)
-					.set({ sceneId: created, anchorStart: start, anchorEnd: end })
+					.set({ sceneId: created, ...range })
 					.where(eq(sceneMarkers.id, marker.id));
 			} else if (marker.anchorEnd > head.length) {
 				await tx
@@ -120,18 +118,41 @@ export async function splitScene(
 			}
 		}
 
-		await recordRevision(tx, 'scene', scene.id, head);
-		await recordRevision(tx, 'scene', created, tail);
+		// Checkpoints, so neither half coalesces into the autosave that holds
+		// the text from before the split.
+		await recordRevision(tx, 'scene', scene.id, head, 'checkpoint', {
+			label: 'Split into two scenes'
+		});
+		await recordRevision(tx, 'scene', created, tail, 'checkpoint', {
+			label: 'Split from the scene before'
+		});
+		// The chapter now holds one more scene.
+		if (scene.chapterId) await markChapterSummariesStale(tx, [scene.chapterId]);
 		return { ok: true as const, newSceneId: created };
 	});
 }
 
 const GONE = { ok: false, code: 'not_found', reason: 'That scene no longer exists.' } as const;
 
+// Clamps a marker's range into [lo, hi]. One that covered only blank space
+// trimmed away would come out empty, which the editor cannot show; it takes
+// the nearest character instead.
+function clampAnchors(start: number, end: number, lo: number, hi: number) {
+	let anchorStart = Math.min(Math.max(lo, start), hi);
+	let anchorEnd = Math.min(Math.max(anchorStart, end), hi);
+	if (anchorEnd === anchorStart) {
+		if (anchorStart < hi) anchorEnd = anchorStart + 1;
+		else if (anchorStart > lo) anchorStart = anchorStart - 1;
+	}
+	return { anchorStart, anchorEnd };
+}
+
 // Locks every scene row of the story, lowest id first like mergeScenes, then
 // reads the scene. Inserting a scene shifts the later ones, so the whole story
-// is held: two splits in one story then take turns rather than handing out the
-// same position, and the order rows are locked in cannot deadlock a merge.
+// is held: two splits or duplicates in one story then take turns rather than
+// handing out the same position, and the order rows are locked in cannot
+// deadlock a merge. Other paths that add a scene (createScene, the restores)
+// do not take this lock.
 // Returns null when the scene, or its story, is gone by then.
 async function lockStoryScenes(tx: Database, storyId: string, sceneId: string) {
 	await tx
@@ -214,9 +235,14 @@ export async function locateSplitInStory(
 ): Promise<{ ok: true; sceneId: string; offset: number; baseHash: string } | ActionFailure> {
 	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return { ok: false, code: 'not_found', reason: 'That scene no longer exists.' };
-	const here = locateSplitBefore(scene.bodyMd, before);
-	if (here.ok) return { ok: true, sceneId, offset: here.offset, baseHash: textHash(scene.bodyMd) };
-	if (scene.bodyMd.includes(before)) return { ...here, code: 'invalid' };
+	// Searched with plain newlines, as the editor shows the text, so a passage
+	// across a line break is found in a body stored with \r\n. The offset and
+	// fingerprint are of that text, which splitScene accepts.
+	const needle = toLf(before);
+	const body = toLf(scene.bodyMd);
+	const here = locateSplitBefore(body, needle);
+	if (here.ok) return { ok: true, sceneId, offset: here.offset, baseHash: textHash(body) };
+	if (body.includes(needle)) return { ...here, code: 'invalid' };
 
 	const siblings = await db
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
@@ -224,7 +250,9 @@ export async function locateSplitInStory(
 		.where(
 			and(eq(scenes.storyId, scene.storyId), isNull(scenes.deletedAt), ne(scenes.id, sceneId))
 		);
-	const holders = siblings.filter((sibling) => sibling.bodyMd.includes(before));
+	const holders = siblings
+		.map((sibling) => ({ id: sibling.id, bodyMd: toLf(sibling.bodyMd) }))
+		.filter((sibling) => sibling.bodyMd.includes(needle));
 	if (holders.length === 0) return { ...here, code: 'invalid' };
 	if (holders.length > 1) {
 		return {
@@ -234,7 +262,7 @@ export async function locateSplitInStory(
 				'That text appears in more than one scene; include more surrounding text to make it unique.'
 		};
 	}
-	const there = locateSplitBefore(holders[0].bodyMd, before);
+	const there = locateSplitBefore(holders[0].bodyMd, needle);
 	if (!there.ok) return { ...there, code: 'invalid' };
 	return {
 		ok: true,
@@ -371,6 +399,9 @@ export async function mergeScenes(
 		// does, so the bodies join, and are stored, with plain newlines.
 		const [target, ...rest] = rows;
 		let merged = toLf(target.bodyMd).replace(/\s+$/, '');
+		// The target's markers in its trimmed trailing blank space stay on its
+		// own text rather than run into the next scene's.
+		await moveAnchors(tx, target.id, target.id, 0, 0, merged.length);
 		for (const scene of rest) {
 			// Where this scene's text lands in the merged body, for its markers.
 			const base = merged === '' ? 0 : merged.length + 2;
@@ -378,14 +409,7 @@ export async function mergeScenes(
 			const lead = body.length - body.replace(/^\s+/, '').length;
 			const part = body.slice(lead);
 			merged = merged === '' ? part : `${merged}\n\n${part}`;
-			await tx
-				.update(sceneMarkers)
-				.set({
-					sceneId: target.id,
-					anchorStart: sql`least(greatest(${sceneMarkers.anchorStart} - ${lead}, 0) + ${base}, ${base + part.length})`,
-					anchorEnd: sql`least(greatest(${sceneMarkers.anchorEnd} - ${lead}, 0) + ${base}, ${base + part.length})`
-				})
-				.where(and(eq(sceneMarkers.sceneId, scene.id), isNotNull(sceneMarkers.anchorStart)));
+			await moveAnchors(tx, scene.id, target.id, base - lead, base, base + part.length);
 			// An unanchored marker has nothing to move with; it changes scene
 			// but keeps its null anchors.
 			await tx
@@ -398,7 +422,11 @@ export async function mergeScenes(
 			.update(scenes)
 			.set({ bodyMd: merged, wordCount: wordCount(merged) })
 			.where(eq(scenes.id, target.id));
-		await recordRevision(tx, 'scene', target.id, merged);
+		// A checkpoint, so it never coalesces into the autosave that holds the
+		// target's text from before the merge.
+		await recordRevision(tx, 'scene', target.id, merged, 'checkpoint', {
+			label: `Merged ${rows.length} scenes`
+		});
 
 		// To the trash, like a plain delete: the prose now lives in the
 		// target, but the original halves stay restorable. Their mention
@@ -420,4 +448,34 @@ export async function mergeScenes(
 			);
 		return { ok: true as const, targetSceneId: target.id };
 	});
+}
+
+// Moves one scene's anchored markers onto `to`, shifted by `shift` and
+// clamped to [lo, hi] of the merged body.
+async function moveAnchors(
+	tx: Database,
+	from: string,
+	to: string,
+	shift: number,
+	lo: number,
+	hi: number
+) {
+	const markers = await tx
+		.select({
+			id: sceneMarkers.id,
+			anchorStart: sceneMarkers.anchorStart,
+			anchorEnd: sceneMarkers.anchorEnd
+		})
+		.from(sceneMarkers)
+		.where(and(eq(sceneMarkers.sceneId, from), isNotNull(sceneMarkers.anchorStart)));
+	for (const marker of markers) {
+		if (marker.anchorStart === null || marker.anchorEnd === null) continue;
+		const range = clampAnchors(marker.anchorStart + shift, marker.anchorEnd + shift, lo, hi);
+		const same = range.anchorStart === marker.anchorStart && range.anchorEnd === marker.anchorEnd;
+		if (from === to && same) continue;
+		await tx
+			.update(sceneMarkers)
+			.set({ sceneId: to, ...range })
+			.where(eq(sceneMarkers.id, marker.id));
+	}
 }

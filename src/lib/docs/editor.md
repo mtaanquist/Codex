@@ -24,6 +24,8 @@ To split a scene in two, put the cursor where the break should go and press the 
 
 To merge scenes, right-click each scene in the sidebar and choose "Select for merging"; selected scenes show a coloured ring. With two or more selected, right-click any of them and choose "Merge". The scenes join in story order into the earliest one, with a blank line between them; that scene keeps its title. The others go to "Deleted scenes", so a merge can be undone by restoring them and removing the joined text.
 
+A split or merge shows in the scene's History as a checkpoint ("Split into two scenes", "Merged 3 scenes"), and the text from before it stays in History too, so you can preview or restore it.
+
 ## Duplicating a scene
 
 Right-click a scene in the sidebar and choose "Duplicate scene" to make a full copy directly after it: the same prose, status, summary, and marks, with "(copy)" added to the title. This is the simple way to keep a scene as a template. Set up a scene the way you want each one to start, then duplicate it and fill in the copy. If you write campaign sessions as scenes, a skeleton scene with your prep headings and to-do marks duplicates into a ready-made next session.
