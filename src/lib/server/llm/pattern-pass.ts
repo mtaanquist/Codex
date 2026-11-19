@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import {
+	chapters,
 	reviewComments,
 	reviewThreads,
 	type PatternUnitState,
@@ -8,6 +9,7 @@ import {
 } from '../db/schema.ts';
 import { createThread, openAssistantNote } from '../review.ts';
 import { assembleStoryFrame, buildSystemMessage } from './context/assemble.ts';
+import { estimateTokens, PERSONA_TOKENS } from './context/budgets.ts';
 import {
 	buildPatternApplyMessage,
 	buildPatternSurveyMessage,
@@ -45,7 +47,116 @@ export type PatternUnit = {
 	// For the whole book: survey chapter by chapter, carrying the patterns found
 	// so far forward, instead of in one request.
 	chapters?: PatternScene[][];
+	// Survey every scene in one request rather than in chunks of the budget
+	// (the whole book, once it is known to fit).
+	whole?: boolean;
 };
+
+// The share of the reviewer's context window the whole-book survey may fill,
+// leaving the rest for the reply.
+export const WHOLE_BOOK_SHARE = 0.8;
+
+// Whether the whole book can be surveyed in one request: it fits, it must go
+// chapter by chapter, or the window is unknown and the option is not offered.
+export type WholeBookFit = 'fits' | 'chapters' | 'unavailable';
+
+export function wholeBookFit(
+	surveyTokens: number,
+	contextWindow: number | undefined
+): WholeBookFit {
+	if (!contextWindow) return 'unavailable';
+	return surveyTokens <= contextWindow * WHOLE_BOOK_SHARE ? 'fits' : 'chapters';
+}
+
+// The book as one unit, its scenes in reading order under their chapter
+// titles. When it does not fit, the survey goes chapter by chapter.
+export function bookPatternUnit(
+	scenes: { id: string; title: string | null; bodyMd: string; chapterId: string | null }[],
+	chapterTitles: Map<string, string | null>,
+	fits: boolean
+): PatternUnit {
+	const listed = scenes.map((s) => ({
+		id: s.id,
+		title: s.title,
+		bodyMd: s.bodyMd,
+		chapterTitle: s.chapterId
+			? chapterTitles.get(s.chapterId)?.trim() || 'Untitled chapter'
+			: 'Unfiled scenes'
+	}));
+	if (fits) return { key: 'book', scope: 'book', scenes: listed, whole: true };
+	const chapters: PatternScene[][] = [];
+	scenes.forEach((scene, i) => {
+		if (i === 0 || scene.chapterId !== scenes[i - 1].chapterId) chapters.push([]);
+		chapters[chapters.length - 1].push(listed[i]);
+	});
+	return { key: 'book', scope: 'book', scenes: listed, chapters };
+}
+
+// The tokens the survey of these units sends: each request's text plus the
+// overhead every request carries (the frame and the persona).
+export function patternSurveyTokens(
+	units: PatternUnit[],
+	budgetTokens: number,
+	overheadTokens: number
+): number {
+	let total = 0;
+	for (const unit of units) {
+		const cap = unit.scope === 'book' ? BOOK_PATTERN_CAP : CHAPTER_PATTERN_CAP;
+		for (const part of unit.chapters ?? [unit.scenes]) {
+			const chunks = unit.whole ? [part] : splitPatternChunks(part, budgetTokens);
+			chunks.forEach((chunk, i) => {
+				total +=
+					overheadTokens +
+					estimateTokens(
+						buildPatternSurveyMessage(chunk, {
+							scope: unit.scope,
+							cap,
+							...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {})
+						})
+					);
+			});
+		}
+	}
+	return total;
+}
+
+// The overhead each survey request carries: the story frame the pass ships and
+// an allowance for the persona.
+export async function patternSurveyOverhead(
+	db: Database,
+	userId: string,
+	storyId: string
+): Promise<number> {
+	const frame = await assembleStoryFrame(db, { userId, storyId, includeTiers: ['frame'] });
+	return (frame ? estimateTokens(buildSystemMessage(frame).content) : 0) + PERSONA_TOKENS;
+}
+
+// The whole-book unit for this story's scenes, whether it fits the window, and
+// what the survey sends either way.
+export async function planBookPass(
+	db: Database,
+	opts: {
+		userId: string;
+		storyId: string;
+		scenes: { id: string; title: string | null; bodyMd: string; chapterId: string | null }[];
+		contextWindow: number | undefined;
+		budgetTokens: number;
+	}
+): Promise<{ unit: PatternUnit; fit: WholeBookFit; tokens: number }> {
+	const rows = await db
+		.select({ id: chapters.id, title: chapters.title })
+		.from(chapters)
+		.where(eq(chapters.storyId, opts.storyId));
+	const titles = new Map(rows.map((row) => [row.id, row.title]));
+	const overhead = await patternSurveyOverhead(db, opts.userId, opts.storyId);
+	const whole = bookPatternUnit(opts.scenes, titles, true);
+	const fit = wholeBookFit(
+		patternSurveyTokens([whole], opts.budgetTokens, overhead),
+		opts.contextWindow
+	);
+	const unit = fit === 'fits' ? whole : bookPatternUnit(opts.scenes, titles, false);
+	return { unit, fit, tokens: patternSurveyTokens([unit], opts.budgetTokens, overhead) };
+}
 
 export type PatternPassResult = {
 	notes: number;
@@ -148,7 +259,7 @@ async function surveyUnit(
 		const known: KnownPattern[] = unit.chapters
 			? mergePatterns(found).map((p) => ({ name: p.name, description: p.description }))
 			: [];
-		const chunks = splitPatternChunks(part, req.budgetTokens);
+		const chunks = unit.whole ? [part] : splitPatternChunks(part, req.budgetTokens);
 		for (const [i, chunk] of chunks.entries()) {
 			req.signal?.throwIfAborted();
 			if (req.meter?.capReached) return null;

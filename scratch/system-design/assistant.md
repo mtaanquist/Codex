@@ -1086,6 +1086,17 @@ calls the gateway, which proxies through the egress guard.
   repeats a scene. Open pattern notes are handed to the survey (not reported
   again) and to each scene review as prior notes. The estimate prices the
   survey only; the apply stage is listed as unknown.
+- [built] Whole-book pattern pass (#1137): `patterns: 'book'` on a
+  whole-story review (a chapter review asking for it runs the chapter pass,
+  `runPatternScope`). `planBookPass` lists the book in reading order under
+  chapter headings and checks the survey against 80% of the reviewer's known
+  window (`wholeBookFit`): it fits and goes in one request (up to 8
+  patterns), or it goes chapter by chapter, each survey handed the patterns
+  found so far (name and description) and merged by name. An unknown window
+  is not offered in the modal (`{ wholeBook: true }` on the review-job
+  endpoint answers the check without contacting the endpoint). Notes name
+  the chapters. A survey retry relies on the Anthropic adapter's existing
+  cache of the last user block, so no adapter change was needed.
 
 ### Background jobs - sequencing steps 4 and 7
 

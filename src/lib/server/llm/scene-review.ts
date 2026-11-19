@@ -19,7 +19,7 @@ import {
 	saveReviewRun
 } from '../review-runs.ts';
 import { needsSummary, summariseStory } from './summaries.ts';
-import { runPatternPass, type PatternUnit } from './pattern-pass.ts';
+import { planBookPass, runPatternPass, type PatternUnit } from './pattern-pass.ts';
 import {
 	assembleContext,
 	assembleSceneDelta,
@@ -40,7 +40,7 @@ import {
 	type SurveyScene
 } from './prompts/review.ts';
 import {
-	coversProse,
+	runPatternScope,
 	isFullReview,
 	type PatternScope,
 	type ReviewCategory
@@ -986,7 +986,7 @@ export async function reviewStoryScenes(
 	},
 	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
-	const patterns = coversProse(opts.categories ?? []) ? opts.patterns : undefined;
+	const patterns = runPatternScope(opts.categories ?? [], opts.patterns, opts.chapterId);
 	const scope = {
 		storyId: opts.storyId,
 		chapterId: opts.chapterId,
@@ -1079,8 +1079,25 @@ export async function reviewStoryScenes(
 	// The pattern pass runs before the scene reviews when the review covers the
 	// prose, so its notes reach each scene review as already said.
 	let scenePrior = new Map<string, PriorNote[]>();
-	if (!capped && patterns === 'chapter') {
-		const units = chapterPatternUnits(targets);
+	if (!capped && patterns) {
+		const contextWindow = modelContextWindow(resolved.config, 'reviewer');
+		const budgetTokens = surveyBudgetTokens(contextWindow);
+		const units =
+			patterns === 'chapter'
+				? chapterPatternUnits(targets)
+				: targets.length > 1
+					? [
+							(
+								await planBookPass(db, {
+									userId: opts.userId,
+									storyId: opts.storyId,
+									scenes: targets,
+									contextWindow,
+									budgetTokens
+								})
+							).unit
+						]
+					: [];
 		if (units.length) {
 			run.state.phase = 'patterns';
 			run.state.patterns ??= [];
@@ -1094,7 +1111,7 @@ export async function reviewStoryScenes(
 						userId: opts.userId,
 						storyId: opts.storyId,
 						units,
-						budgetTokens: surveyBudgetTokens(modelContextWindow(resolved.config, 'reviewer')),
+						budgetTokens,
 						state: run.state.patterns,
 						save: async (progress) => {
 							run.state.notes = notesBefore + progress.notes;

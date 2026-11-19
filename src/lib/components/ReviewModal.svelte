@@ -120,7 +120,7 @@
 	// The done phase never reaches here: the finished branch above it catches it.
 	const PHASE_LABEL: Record<string, string> = {
 		summaries: 'Updating scene summaries',
-		patterns: 'Looking for habits that repeat across each chapter',
+		patterns: 'Looking for habits that repeat in the prose',
 		scenes: 'Reading the scenes',
 		consistency: 'Comparing the scenes to each other'
 	};
@@ -180,6 +180,28 @@
 	// The pattern pass: one note per habit that repeats across a chapter, with
 	// the edits that fix it linked to the note.
 	let findPatterns = $state(false);
+	// How far the pattern pass looks on a whole-story review, and whether the
+	// whole-book reach is offered for this story (asked when the modal opens).
+	let patternReach = $state<PatternScope>('chapter');
+	let wholeBook = $state<'fits' | 'chapters' | 'unavailable'>('unavailable');
+	let wholeBookToken = 0;
+	async function checkWholeBook() {
+		const token = ++wholeBookToken;
+		wholeBook = 'unavailable';
+		try {
+			const response = await fetch('/api/assistant/review-job', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId, wholeBook: true })
+			});
+			if (!response.ok) return;
+			const body = (await response.json()) as { wholeBook?: string };
+			if (token !== wholeBookToken) return;
+			if (body.wholeBook === 'fits' || body.wholeBook === 'chapters') wholeBook = body.wholeBook;
+		} catch {
+			// Not offered when the check fails; the chapter pass still is.
+		}
+	}
 
 	// Reset the form each time the modal opens, choosing the most specific level
 	// the context offers.
@@ -192,6 +214,8 @@
 			general = true;
 			picked = { mechanics: false, prose: false, lore: false };
 			findPatterns = false;
+			patternReach = 'chapter';
+			void checkWholeBook();
 			runToken += 1;
 			progress = null;
 			estimate = null;
@@ -204,8 +228,13 @@
 	// sparing general-notes pass.
 	const categories = $derived(REVIEW_CATEGORIES.filter((c) => picked[c]));
 	const patternsOffered = $derived(level !== 'scene' && coversProse(categories));
+	const bookOffered = $derived(level === 'story' && wholeBook !== 'unavailable');
 	const patterns = $derived<PatternScope | undefined>(
-		patternsOffered && findPatterns ? 'chapter' : undefined
+		patternsOffered && findPatterns
+			? bookOffered && patternReach === 'book'
+				? 'book'
+				: 'chapter'
+			: undefined
 	);
 
 	const CATEGORY_OPTIONS: { id: ReviewCategory; label: string }[] = [
@@ -469,7 +498,9 @@
 							<label class="choice">
 								<input type="checkbox" bind:checked={findPatterns} />
 								<span>
-									Look for habits that repeat across each chapter
+									{bookOffered
+										? 'Look for habits that repeat in the prose'
+										: 'Look for habits that repeat across each chapter'}
 									<span class="choice-hint">
 										one note per habit, with the fixes linked to it.
 										<a href={resolve('/docs/[topic]', { topic: 'reviewing' })} target="_blank"
@@ -478,6 +509,34 @@
 									</span>
 								</span>
 							</label>
+							{#if findPatterns && bookOffered}
+								<div class="rm-reach">
+									<label class="choice">
+										<input
+											type="radio"
+											name="pattern-reach"
+											value="chapter"
+											bind:group={patternReach}
+										/>
+										<span>Within each chapter</span>
+									</label>
+									<label class="choice">
+										<input
+											type="radio"
+											name="pattern-reach"
+											value="book"
+											bind:group={patternReach}
+										/>
+										<span>Across the whole book</span>
+									</label>
+									{#if patternReach === 'book' && wholeBook === 'chapters'}
+										<p class="rm-note">
+											The book is too long for your model to read at once, so it is read chapter by
+											chapter. A habit that shows only faintly in each chapter may be missed.
+										</p>
+									{/if}
+								</div>
+							{/if}
 						{/if}
 					</fieldset>
 				{/if}
@@ -511,6 +570,9 @@
 {/if}
 
 <style>
+	.rm-reach {
+		margin-left: 24px;
+	}
 	/* The overlay, panel, head and footer come from the modal primitive; what is
 	   left here is the shape of the two option groups. */
 	.rm-group {

@@ -28,6 +28,7 @@ import type {
 const { saveAccountLlmConfig, saveModelPricing } = await import('../../src/lib/server/llm/config');
 const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
 const { loadReviewRun } = await import('../../src/lib/server/review-runs');
+const { estimateStoryReview, wholeBookCheck } = await import('../../src/lib/server/llm/estimate');
 
 let pool: pg.Pool;
 let db: Database;
@@ -351,5 +352,197 @@ describe('the chapter pattern pass', () => {
 		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
 		// The apply turn for scene 1 aimed at scene 2 and was refused.
 		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[1]]);
+	});
+});
+
+describe('the whole-book pattern pass', () => {
+	const isBookSurvey = (m: ChatMessage[]) => asked(m).includes('whole-book pattern pass');
+
+	// Answers a survey with one pattern over the scenes it was shown that sigh,
+	// and an apply turn with one edit, as above.
+	function bookProvider(): { provider: Provider; seen: ChatMessage[][] } {
+		const seen: ChatMessage[][] = [];
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond(req): Promise<ProviderResponse> {
+				seen.push(req.messages);
+				const text = asked(req.messages);
+				if (isBookSurvey(req.messages)) {
+					const ids = [...text.matchAll(/\(id: ([0-9a-f-]{36})\)\n([^\n]*)/g)]
+						.filter((m) => m[2].includes('sighed'))
+						.map((m) => m[1]);
+					return {
+						content: JSON.stringify(
+							ids.length
+								? [
+										{
+											name: 'Sighing',
+											description: 'Sighs everywhere.',
+											sceneIds: ids,
+											examples: []
+										}
+									]
+								: []
+						),
+						toolCalls: []
+					};
+				}
+				if (isApply(req.messages) && !req.messages.some((m) => m.role === 'tool')) {
+					const sceneId = /\(id: ([0-9a-f-]{36})\)/.exec(text)![1];
+					return {
+						content: '',
+						toolCalls: [
+							{
+								id: `e-${sceneId}`,
+								name: 'suggest_edit',
+								arguments: JSON.stringify({ sceneId, original: 'sighed', replacement: 'paused' })
+							}
+						]
+					};
+				}
+				return { content: 'no notes', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, seen };
+	}
+
+	async function addSecondChapter() {
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId, title: 'Two', position: 2 })
+			.returning({ id: chapters.id });
+		for (const [i, bodyMd] of ['Ana sighed loudly.', 'Ben sighed twice.'].entries()) {
+			const [scene] = await db
+				.insert(scenes)
+				.values({
+					storyId,
+					chapterId: chapter.id,
+					globalPosition: 10 + i,
+					title: `Two ${i + 1}`,
+					bodyMd,
+					summaryMd: 'Summary.'
+				})
+				.returning({ id: scenes.id });
+			sceneIds.push(scene.id);
+		}
+	}
+
+	async function windowOf(tokens: number) {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			modelContextManual: { [MODEL]: tokens }
+		});
+	}
+
+	async function patternNotes() {
+		return (
+			await db
+				.select({
+					sceneId: reviewThreads.sceneId,
+					body: reviewComments.bodyMd,
+					id: reviewThreads.id
+				})
+				.from(reviewThreads)
+				.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+				.where(eq(reviewComments.assistant, true))
+		).filter((n) => n.body.startsWith('Pattern note'));
+	}
+
+	it('reads a book that fits in one request and links fixes across chapters', async () => {
+		await addSecondChapter();
+		await windowOf(1_000_000);
+		const { provider, seen } = bookProvider();
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
+
+		const surveys = seen.filter(isBookSurvey);
+		expect(surveys).toHaveLength(1);
+		expect(asked(surveys[0])).toContain('## One');
+		expect(asked(surveys[0])).toContain('## Two');
+		const notes = await patternNotes();
+		expect(notes).toHaveLength(1);
+		expect(notes[0].sceneId).toBe(sceneIds[0]);
+		expect(notes[0].body).toContain('Shows up in: One, Two.');
+		const edits = await db
+			.select({ sceneId: reviewSuggestions.sceneId, link: reviewSuggestions.patternThreadId })
+			.from(reviewSuggestions);
+		expect(edits.map((e) => e.sceneId).sort()).toEqual(
+			[sceneIds[0], sceneIds[1], sceneIds[3], sceneIds[4]].sort()
+		);
+		expect(edits.every((e) => e.link === notes[0].id)).toBe(true);
+	});
+
+	it('goes chapter by chapter when the book does not fit, carrying patterns forward', async () => {
+		await addSecondChapter();
+		// Long enough that the book overruns the share, short enough that each
+		// scene's fix request still fits.
+		await pool.query(`update scenes set body_md = body_md || repeat(' And so on.', 1300)`);
+		await windowOf(20000);
+		const { provider, seen } = bookProvider();
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
+
+		const surveys = seen.filter(isBookSurvey);
+		expect(surveys.length).toBeGreaterThan(1);
+		const later = surveys.filter((m) => asked(m).includes('Two 1'));
+		expect(later.length).toBeGreaterThan(0);
+		expect(asked(later[0])).toContain('- Sighing: Sighs everywhere.');
+		const notes = await patternNotes();
+		expect(notes).toHaveLength(1);
+		expect(notes[0].body).toContain('Shows up in: One, Two.');
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		expect(edits).toHaveLength(4);
+	});
+
+	it('looks at the chapter alone when a chapter review asks for the whole book', async () => {
+		await addSecondChapter();
+		await windowOf(1_000_000);
+		const chapterId = (
+			await db
+				.select({ chapterId: scenes.chapterId })
+				.from(scenes)
+				.where(eq(scenes.id, sceneIds[0]))
+		)[0].chapterId!;
+		const { provider, seen } = bookProvider();
+		await reviewStoryScenes(db, { userId, storyId, chapterId, patterns: 'book' }, { provider });
+		expect(seen.some(isBookSurvey)).toBe(false);
+		expect(seen.some(isSurvey)).toBe(true);
+	});
+
+	it('is offered by window: fits, chapters, or not at all', async () => {
+		await windowOf(1_000_000);
+		expect(await wholeBookCheck(db, { userId, storyId })).toBe('fits');
+		await windowOf(400);
+		expect(await wholeBookCheck(db, { userId, storyId })).toBe('chapters');
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			modelContextManual: {}
+		});
+		expect(await wholeBookCheck(db, { userId, storyId })).toBe('unavailable');
+	});
+
+	it('prices the whole-book survey in the estimate and says how it reads', async () => {
+		await addSecondChapter();
+		await windowOf(1_000_000);
+		const estimate = await estimateStoryReview(db, { userId, storyId, patterns: 'book' });
+		expect(estimate.wholeBook).toBe('fits');
+		expect(estimate.lines.map((l) => l.label)).toContain(
+			'Reading the whole book for repeated habits'
+		);
 	});
 });

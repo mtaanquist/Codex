@@ -15,16 +15,17 @@ import {
 	resolveLlmConfig,
 	type ResolvedConfig
 } from './config.ts';
+import { buildSurveyMessage, splitSurveyChunks } from './prompts/review.ts';
+import { PERSONA_TOKENS } from './context/budgets.ts';
 import {
-	buildPatternSurveyMessage,
-	buildSurveyMessage,
-	splitPatternChunks,
-	splitSurveyChunks
-} from './prompts/review.ts';
-import { CHAPTER_PATTERN_CAP, type PatternUnit } from './pattern-pass.ts';
+	patternSurveyOverhead,
+	patternSurveyTokens,
+	planBookPass,
+	type WholeBookFit
+} from './pattern-pass.ts';
 import {
-	coversProse,
 	isFullReview,
+	runPatternScope,
 	type PatternScope,
 	type ReviewCategory
 } from '../../review-shape.ts';
@@ -42,7 +43,6 @@ import { storyIsLive } from '../universe-scope.ts';
 // Provisional allowances, not measured. Each per-scene request carries the
 // persona system message and, on a tool-enabled turn, the tool schemas; the task
 // message adds its instructions and any prior notes on the scene.
-const PERSONA_TOKENS = 120;
 const TOOL_SCHEMA_TOKENS = 700;
 const TASK_MESSAGE_TOKENS = 250;
 
@@ -96,6 +96,9 @@ export type ReviewEstimate = {
 	warnUsd: number;
 	capUsd?: number;
 	capEnforceable: boolean;
+	// Whether a whole-book pattern pass reads the book in one request; only on
+	// an estimate for one.
+	wholeBook?: WholeBookFit;
 };
 
 // How much bigger the actual prompt of a reviewer request has been than the
@@ -166,7 +169,7 @@ export async function estimateStoryReview(
 	// one chapter. Summaries and bodies are only what the survey listing needs,
 	// so a review that cannot reach the survey stage leaves them on the server.
 	const surveyPossible = isFullReview(categories);
-	const patterns = coversProse(categories) ? opts.patterns : undefined;
+	const patterns = runPatternScope(categories, opts.patterns, opts.chapterId);
 	const bodiesNeeded = surveyPossible || Boolean(patterns);
 	const allScenes = await db
 		.select({
@@ -264,19 +267,43 @@ export async function estimateStoryReview(
 		});
 	}
 
-	// The pattern pass: a survey of each chapter's prose this can size, then one
-	// request per pattern per scene it shows in, which nothing can know yet.
+	// The pattern pass: a survey this can size, then one request per pattern per
+	// scene it shows in, which nothing can know yet.
 	let patternTokens = 0;
-	if (patterns === 'chapter') {
-		patternTokens = await patternSurveyTokens(
-			db,
-			opts.userId,
-			opts.storyId,
-			resolved.config,
-			chapterPatternUnits(targets)
-		);
+	let wholeBook: WholeBookFit | undefined;
+	if (patterns) {
+		const contextWindow = modelContextWindow(resolved.config, 'reviewer');
+		const budgetTokens = surveyBudgetTokens(contextWindow);
+		if (patterns === 'book') {
+			const plan = await planBookPass(db, {
+				userId: opts.userId,
+				storyId: opts.storyId,
+				scenes: targets,
+				contextWindow,
+				budgetTokens
+			});
+			wholeBook = plan.fit;
+			patternTokens = plan.tokens;
+		} else {
+			const units = chapterPatternUnits(targets);
+			patternTokens = units.length
+				? patternSurveyTokens(
+						units,
+						budgetTokens,
+						await patternSurveyOverhead(db, opts.userId, opts.storyId)
+					)
+				: 0;
+		}
 		if (patternTokens > 0) {
-			lines.push({ label: 'Looking for repeated habits in each chapter', tokens: patternTokens });
+			lines.push({
+				label:
+					patterns === 'chapter'
+						? 'Looking for repeated habits in each chapter'
+						: wholeBook === 'fits'
+							? 'Reading the whole book for repeated habits'
+							: 'Looking for repeated habits, chapter by chapter',
+				tokens: patternTokens
+			});
 			lines.push({
 				label: 'Fixing the habits it finds',
 				note: 'Not known before the run: one request per habit for each scene it shows up in.'
@@ -306,7 +333,8 @@ export async function estimateStoryReview(
 			: {}),
 		warnUsd: resolved.config.spendWarnUsd ?? DEFAULT_SPEND_WARN_USD,
 		...(resolved.config.spendCapUsd ? { capUsd: resolved.config.spendCapUsd } : {}),
-		capEnforceable: Boolean(price)
+		capEnforceable: Boolean(price),
+		...(wholeBook ? { wholeBook } : {})
 	};
 }
 
@@ -347,34 +375,40 @@ async function surveyStageTokens(
 	);
 }
 
-// The pattern survey of each unit: its prose in the chunks the run would send,
-// with the frame the pass ships (the story frame alone).
-async function patternSurveyTokens(
+// Whether the review window can offer the whole-book pattern pass, and how it
+// would read the book: in one request, or chapter by chapter. A story of fewer
+// than two scenes, or a reviewer model with no known window, is not offered it.
+export async function wholeBookCheck(
 	db: Database,
-	userId: string,
-	storyId: string,
-	config: ResolvedConfig,
-	units: PatternUnit[]
-): Promise<number> {
-	if (!units.length) return 0;
-	const budgetTokens = surveyBudgetTokens(modelContextWindow(config, 'reviewer'));
-	const frame = await assembleStoryFrame(db, { userId, storyId, includeTiers: ['frame'] });
-	const frameTokens = frame ? estimateTokens(buildSystemMessage(frame).content) : 0;
-	let total = 0;
-	for (const unit of units) {
-		const chunks = splitPatternChunks(unit.scenes, budgetTokens);
-		chunks.forEach((chunk, i) => {
-			total +=
-				frameTokens +
-				PERSONA_TOKENS +
-				estimateTokens(
-					buildPatternSurveyMessage(chunk, {
-						scope: unit.scope,
-						cap: CHAPTER_PATTERN_CAP,
-						...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {})
-					})
-				);
-		});
-	}
-	return total;
+	opts: { userId: string; storyId: string }
+): Promise<WholeBookFit> {
+	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
+	const contextWindow = modelContextWindow(resolved.config, 'reviewer');
+	if (!contextWindow) return 'unavailable';
+	const rows = await db
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			chapterId: scenes.chapterId,
+			bodyMd: scenes.bodyMd
+		})
+		.from(scenes)
+		.innerJoin(stories, eq(scenes.storyId, stories.id))
+		.where(
+			and(
+				eq(scenes.storyId, opts.storyId),
+				eq(stories.ownerId, opts.userId),
+				storyIsLive(),
+				isNull(scenes.deletedAt)
+			)
+		)
+		.orderBy(asc(scenes.globalPosition));
+	if (rows.length < 2) return 'unavailable';
+	const plan = await planBookPass(db, {
+		...opts,
+		scenes: rows,
+		contextWindow,
+		budgetTokens: surveyBudgetTokens(contextWindow)
+	});
+	return plan.fit;
 }
