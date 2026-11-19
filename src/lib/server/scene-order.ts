@@ -98,7 +98,11 @@ export async function applySceneOrder(
 			update scenes set
 				chapter_id = v.chapter_id,
 				position_in_chapter = v.position_in_chapter,
-				global_position = v.global_position
+				global_position = v.global_position,
+				touched_at = case
+					when (scenes.chapter_id, scenes.position_in_chapter, scenes.global_position)
+						is distinct from (v.chapter_id, v.position_in_chapter, v.global_position)
+					then clock_timestamp() else scenes.touched_at end
 			from (
 				select
 					unnest(array[${column(ids)}]::uuid[]) as id,

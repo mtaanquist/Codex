@@ -1,5 +1,5 @@
 {
-	"id": "7fd87503-9510-4061-b51e-baa0a63ccdb3",
+	"id": "3de6214c-7f06-4d92-a676-841a75ef100f",
 	"prevId": "982b001a-5420-46a2-8f39-e76bf8f252c4",
 	"version": "7",
 	"dialect": "postgresql",
@@ -724,19 +724,6 @@
 				},
 				"completion_tokens": {
 					"name": "completion_tokens",
-					"type": "integer",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"estimated": {
-					"name": "estimated",
-					"type": "boolean",
-					"primaryKey": false,
-					"notNull": true,
-					"default": false
-				},
-				"web_search_requests": {
-					"name": "web_search_requests",
 					"type": "integer",
 					"primaryKey": false,
 					"notNull": false
@@ -4472,6 +4459,13 @@
 					"primaryKey": false,
 					"notNull": true,
 					"default": "now()"
+				},
+				"touched_at": {
+					"name": "touched_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "clock_timestamp()"
 				},
 				"mentions_indexed_at": {
 					"name": "mentions_indexed_at",
