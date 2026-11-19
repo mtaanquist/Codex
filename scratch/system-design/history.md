@@ -982,6 +982,27 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## One clock (2026-11-19)
+
+Several review findings came from comparing a stamp written with the app
+server's clock (`new Date()`) against one written by Postgres (#1120, #1139,
+#1143). #1194 made the database clock the only one for stored timestamps:
+every `updated_at` `$onUpdate` now writes `clock_timestamp()` (no migration:
+the hook is app-side, and inserts already used `defaultNow()`), the remaining
+`new Date()` writes became `now()`, copies (duplicate, add back, new story from
+a draft) stamp with `dbNow`, and the review continuation stamps `reviewedAt`
+with `dbNowText` and compares it with `updated_at` in SQL at microsecond
+precision. The reviewer email digest keeps its watermark as Postgres text for
+the same reason: a JS Date dropped the microseconds, so a reply in the same
+millisecond as the last digested one was never sent. An ESLint rule refuses
+`new Date()` in `.set`, `.values`, `sql` templates and `$onUpdate` under
+`src/lib/server`; a `new Date()` held in a variable first is not caught, so the
+rule is in `design.md` too. #1143 also said a continued review counts a redone
+scene's notes twice. It does not: a pass counts only the notes it adds, and the
+earlier ones stay open, so the count is left as it was. Stamps read back into a
+JS Date (the mention index's `loadedAt`, `dbNow`) still lose microseconds, but
+only in the safe direction: a scene can be reindexed once more, never missed.
+
 ## Stale-mark invariant test (2026-11-19)
 
 Review rounds kept finding missed or needless Assistant out-of-date marks one

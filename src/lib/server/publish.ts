@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assets, publicationAssets, publications, stories, users } from './db/schema.ts';
 import { gatherStory, type ExportScene } from './export.ts';
@@ -339,7 +339,7 @@ export async function isPublicAsset(db: Database, assetId: string): Promise<bool
 export async function takedownPublication(db: Database, publicationId: string): Promise<boolean> {
 	const updated = await db
 		.update(publications)
-		.set({ removedAt: new Date() })
+		.set({ removedAt: sql`now()` })
 		.where(and(eq(publications.id, publicationId), isNull(publications.removedAt)))
 		.returning({ id: publications.id });
 	return updated.length > 0;

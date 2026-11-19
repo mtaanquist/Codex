@@ -66,18 +66,20 @@ export async function saveSceneBody(
 		if (!bodyChanged) {
 			if (current.title !== save.title) {
 				// Mentions read only the body, so an index that was current stays
-				// current; one already behind keeps its pending rebuild. The app
-				// clock, as updated_at's $onUpdate uses for every other save, so an
-				// edit never moves updated_at back behind this one.
-				const now = new Date();
-				await tx
-					.update(scenes)
-					.set({
-						title: save.title,
-						updatedAt: now,
-						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then ${now}::timestamptz else ${scenes.mentionsIndexedAt} end`
-					})
-					.where(eq(scenes.id, sceneId));
+				// current; one already behind keeps its pending rebuild. One
+				// database-clock reading for every stamp, as $onUpdate uses for
+				// every other save (see db-clock.ts).
+				await tx.execute(sql`
+					update scenes set
+						title = ${save.title},
+						updated_at = t.at,
+						touched_at = t.at,
+						mentions_indexed_at = case
+							when scenes.mentions_indexed_at >= scenes.updated_at then t.at
+							else scenes.mentions_indexed_at end
+					from (select clock_timestamp() as at) as t
+					where scenes.id = ${sceneId}
+				`);
 			}
 			return { ok: true as const, wordCount: count, bodyChanged: false };
 		}

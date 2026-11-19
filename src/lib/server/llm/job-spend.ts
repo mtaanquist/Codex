@@ -1,4 +1,4 @@
-import { eq, lt } from 'drizzle-orm';
+import { eq, lt, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { assistantJobSpend } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
@@ -32,7 +32,7 @@ export async function jobSpendMeter(
 					.values({ jobId, userId: opts.userId, spentUsd })
 					.onConflictDoUpdate({
 						target: assistantJobSpend.jobId,
-						set: { spentUsd, updatedAt: new Date() }
+						set: { spentUsd, updatedAt: sql`clock_timestamp()` }
 					});
 			} catch (err) {
 				logEvent('error', 'job_spend.save_failed', { jobId, ...errorFields(err) });

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { assistantChatSummaries } from '../db/schema';
 import { estimateTokens } from './context/assemble';
@@ -161,7 +161,7 @@ async function saveChatSummary(
 			})
 			.onConflictDoUpdate({
 				target: assistantChatSummaries.chatId,
-				set: { ...value, updatedAt: new Date() }
+				set: { ...value, updatedAt: sql`clock_timestamp()` }
 			});
 	} catch (err) {
 		// The chat was deleted mid-request; there is nothing to summarise now.

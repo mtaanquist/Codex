@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assistantReviewRuns, scenes, type ReviewRunState } from './db/schema.ts';
 import { parseCategories, type ReviewCategory } from '../review-shape.ts';
@@ -134,13 +134,23 @@ async function editedSince(
 	const stamps = state.reviewedAt ?? {};
 	const stamped = ids.filter((id) => stamps[id]);
 	if (stamped.length === 0) return new Set();
+	// Compared in SQL at full precision: a JS Date keeps only milliseconds, so
+	// an edit in the same millisecond as the stamp would read as before it.
 	const rows = await db
-		.select({ id: scenes.id, updatedAt: scenes.updatedAt })
+		.select({ id: scenes.id })
 		.from(scenes)
-		.where(inArray(scenes.id, stamped));
-	return new Set(
-		rows.filter((row) => row.updatedAt > new Date(stamps[row.id])).map((row) => row.id)
-	);
+		.innerJoin(
+			sql`unnest(array[${sql.join(
+				stamped.map((id) => sql`${id}`),
+				sql`, `
+			)}]::uuid[], array[${sql.join(
+				stamped.map((id) => sql`${stamps[id]}`),
+				sql`, `
+			)}]::timestamptz[]) as stamp(id, at)`,
+			sql`stamp.id = ${scenes.id}`
+		)
+		.where(sql`${scenes.updatedAt} > stamp.at`);
+	return new Set(rows.map((row) => row.id));
 }
 
 async function newestRun(
@@ -234,6 +244,6 @@ export async function saveReviewRun(
 		.values({ jobId: opts.jobId, userId: opts.userId, state: opts.state })
 		.onConflictDoUpdate({
 			target: assistantReviewRuns.jobId,
-			set: { state: opts.state, updatedAt: new Date() }
+			set: { state: opts.state, updatedAt: sql`clock_timestamp()` }
 		});
 }
