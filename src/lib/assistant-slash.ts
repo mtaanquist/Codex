@@ -8,7 +8,7 @@
 // `args` marks a command that consumes the rest of the line (a brief, a name, a
 // query); choosing it from the menu leaves "/name " in the composer to type into
 // rather than running it empty.
-export type ActionGroup = 'chat' | 'write' | 'review' | 'lookup' | 'upkeep' | 'model';
+export type ActionGroup = 'context' | 'chat' | 'write' | 'review' | 'lookup' | 'upkeep' | 'model';
 
 export type SlashCommand = {
 	name: string;
@@ -21,6 +21,7 @@ export type SlashCommand = {
 
 // The menu's sections, in the order they show.
 export const ACTION_GROUPS: { id: ActionGroup; label: string }[] = [
+	{ id: 'context', label: 'Context' },
 	{ id: 'chat', label: 'Chat' },
 	{ id: 'write', label: 'Write' },
 	{ id: 'review', label: 'Review' },
@@ -31,6 +32,13 @@ export const ACTION_GROUPS: { id: ActionGroup; label: string }[] = [
 
 // Listed in ACTION_GROUPS order, so a filtered list keeps its sections together.
 export const SLASH_COMMANDS: SlashCommand[] = [
+	{
+		name: 'context',
+		label: 'Add context',
+		detail: 'Add a scene, chapter, character, note or story to your next message',
+		group: 'context',
+		scope: 'both'
+	},
 	{
 		name: 'new',
 		label: 'New chat',

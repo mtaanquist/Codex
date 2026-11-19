@@ -626,6 +626,51 @@ describe('chats over the endpoints', () => {
 		expect(models.at(-1)).toBe('chat-model');
 	});
 
+	it('sends attachments with the newest message only, and stores them with it', async () => {
+		const sent: string[][] = [];
+		const answer = async function* (): AsyncIterable<StreamEvent> {
+			yield { type: 'token', text: 'Answer.' };
+			yield { type: 'done' };
+		};
+		providerSlot.current = {
+			...streamingProvider(answer),
+			chatStream: (req) => {
+				sent.push(req.messages.filter((m) => m.role === 'user').map((m) => m.content));
+				return answer();
+			},
+			async respond(req) {
+				sent.push(req.messages.filter((m) => m.role === 'user').map((m) => m.content));
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+		const attachment = { kind: 'scene', id: sceneId, label: 'Scene 1' };
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Where to cut?', attachments: [attachment] }]
+			})
+		).text();
+		expect(sent.at(-1)!.at(-1)).toContain('The first half ends here.');
+		expect((await listChat(db, userId, chatId))[0].meta).toEqual({ attachments: [attachment] });
+
+		// The next message names the earlier attachment but does not send it again.
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [
+					{ role: 'user', content: 'Where to cut?', attachments: [attachment] },
+					{ role: 'assistant', content: 'Answer.' },
+					{ role: 'user', content: 'And then?' }
+				]
+			})
+		).text();
+		const last = sent.at(-1)!;
+		expect(last[0]).toContain('(The writer attached scene "Scene 1" to this message.)');
+		expect(last.join('\n')).not.toContain('The first half ends here.');
+	});
+
 	it('loads and deletes a chat', async () => {
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })

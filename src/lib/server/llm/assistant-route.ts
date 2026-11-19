@@ -124,6 +124,8 @@ export function assistantSseResponse(options: {
 	messages: ChatMessage[];
 	// Older turns of this conversation were summarised; the panel shows a note.
 	summarised?: boolean;
+	// Ids of the newest message's attachments that were cut to fit.
+	shortened?: string[];
 	errorMessage: string;
 }): Response {
 	const { request, userId, scope } = options;
@@ -208,7 +210,8 @@ export function assistantSseResponse(options: {
 						'x-chat-created': options.chat.created ? '1' : '0'
 					}
 				: {}),
-			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
+			...(options.summarised ? { 'x-chat-summarised': '1' } : {}),
+			...(options.shortened?.length ? { 'x-chat-shortened': options.shortened.join(',') } : {})
 		}
 	});
 }

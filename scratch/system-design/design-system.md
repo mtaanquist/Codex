@@ -479,7 +479,7 @@ primitive's own class too, but do not copy the pattern.
   and opens and closes a submenu with ArrowRight/ArrowLeft. Escape returns
   focus to the trigger, or to the editor for the editor's own menus.
 - A command list driven from a text field (the Assistant composer's command
-  menu, the command palette) is not a `role="menu"`: it is a `role="listbox"`
+  menu and context picker, the command palette) is not a `role="menu"`: it is a `role="listbox"`
   of `.menu-item` options with `.active` on the highlighted one, and the field
   keeps focus and points at it with `aria-activedescendant`. Group headings
   sit inside `role="group"` wrappers.
@@ -991,7 +991,7 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
-`ExportPanel`, `AssistantPanel`, `AssistantCommandMenu`, `AssistantModelMenu`, `CoauthorPanel`,
+`ExportPanel`, `AssistantPanel`, `AssistantCommandMenu`, `AssistantModelMenu`, `AssistantContextPicker`, `CoauthorPanel`,
 `ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `RoleTuningModal`,
 `EntityEditor`,
 `EntityCard`, `RelationshipWeb`, `SceneBoard`, `StoryBoard`.

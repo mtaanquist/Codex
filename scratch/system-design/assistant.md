@@ -355,13 +355,27 @@ The tab, from the prototype:
   the Assistant about this" sits in the row as a chip with an x. The header
   is the chat's title, a clock button for the chat list, and a new chat
   button; muting moved into the command menu.
+- Context chips (#1172): the + button (or `/context`) opens a picker that
+  searches the writer's whole library (any universe; stories the Assistant
+  is muted on are left out) for scenes, chapters, entities, notes and
+  stories. A story offers its outline and summaries, the whole book (with
+  its word count and, where the endpoint reports prices, what sending it
+  costs), or one chapter or scene. Picks ride on the next user turn as
+  `attachments` (kind, id, label; kept in the turn's meta), the server reads
+  each by id and owner (`#lib/server/llm/attachments.ts`), cuts them to
+  their own budget (40% of the window, no ceiling, small ones whole and the
+  large ones to equal shares), and folds them into the newest turn after
+  the transcript is fitted. Earlier turns only name their attachments, so a
+  book is sent once, not with every later message. A cut attachment is
+  marked shortened on the stored turn and its chip says so.
 
 The chat is sync and streaming. It is the home of:
 
 - the rubber-duck role (user-driven, no automatic context injection beyond
   what the writer references),
-- "reference in chat" (pull the current selection, scene, or an entity into
-  the conversation as context the writer then asks about),
+- "reference in chat" (pull the current selection into the conversation,
+  and scenes, chapters, entities, notes or stories through the context
+  picker, as context the writer then asks about),
 - questions about the world: relationships, entities, "what happened to
   X", grounded in the universe data (see "Grounding"),
 - tool-driven actions like "using the scene 'Session template' make one for
