@@ -5,7 +5,9 @@ import {
 	slashName,
 	slashArgs,
 	commandsForScope,
-	SLASH_COMMANDS
+	SLASH_COMMANDS,
+	matchCommands,
+	ACTION_GROUPS
 } from './assistant-slash';
 
 describe('slashQuery', () => {
@@ -31,7 +33,7 @@ describe('slashQuery', () => {
 
 describe('matchSlash', () => {
 	it('matches commands by name prefix', () => {
-		expect(matchSlash('/rev').map((c) => c.name)).toEqual(['review']);
+		expect(matchSlash('/rev').map((c) => c.name)).toEqual(['review', 'continuity-review']);
 		expect(matchSlash('/w').map((c) => c.name)).toEqual(['write', 'who']);
 	});
 
@@ -83,5 +85,23 @@ describe('slashArgs', () => {
 	it('is empty when the command has no arguments', () => {
 		expect(slashArgs('/write')).toBe('');
 		expect(slashArgs('/clear')).toBe('');
+	});
+});
+
+describe('matchCommands', () => {
+	it('matches a word of the label as well as the name', () => {
+		expect(matchCommands('hist').map((c) => c.name)).toEqual(['history']);
+		expect(matchCommands('catch').map((c) => c.name)).toEqual(['catchup']);
+		expect(matchCommands('/summ').map((c) => c.name)).toEqual(['summaries']);
+	});
+
+	it('keeps every command in its group order', () => {
+		const order = ACTION_GROUPS.map((group) => group.id);
+		const groups = matchCommands('').map((c) => order.indexOf(c.group));
+		expect(groups).toEqual([...groups].sort((a, b) => a - b));
+	});
+
+	it('lists every command for an empty query', () => {
+		expect(matchCommands('')).toEqual(SLASH_COMMANDS);
 	});
 });

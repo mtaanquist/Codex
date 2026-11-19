@@ -26,6 +26,7 @@ const {
 	listChats,
 	loadAssistantChat,
 	resolveChat,
+	setChatSettings,
 	setProposalConfirmed
 } = await import('../../src/lib/server/llm/chat-history');
 const { deleteStory } = await import('../../src/lib/server/story-delete');
@@ -148,8 +149,20 @@ describe('chat history', () => {
 			chats: [],
 			chatId: null,
 			messages: [],
-			summarised: false
+			summarised: false,
+			settings: {},
+			model: { model: '', effort: null, claude: false }
 		});
+	});
+
+	it("opens with the chat's own model choice", async () => {
+		const chatId = await newChat({ storyId });
+		await setChatSettings(db, userId, chatId, { model: 'other-model' });
+		expect((await loadAssistantChat(db, userId, { storyId })).settings).toEqual({
+			model: 'other-model'
+		});
+		await setChatSettings(db, userId, chatId, {});
+		expect((await loadAssistantChat(db, userId, { storyId })).settings).toEqual({});
 	});
 
 	it('continues only a chat of the same scope', async () => {

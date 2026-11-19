@@ -367,13 +367,20 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 		});
 	}).toPass();
 
-	// The recap and summary actions live in the menu next to the send button;
-	// the header keeps the mute link.
-	await page.getByRole('button', { name: 'More actions' }).click();
-	await expect(page.getByRole('menuitem', { name: 'Catch me up' })).toBeVisible();
-	await expect(page.getByRole('menuitem', { name: 'Update summaries' })).toBeVisible();
+	// The recap and summary actions live in the command menu, which a filter
+	// narrows and Escape closes.
+	await page.getByRole('button', { name: 'Chat commands' }).click();
+	await expect(page.getByRole('option', { name: /Catch me up/ })).toBeVisible();
+	await expect(page.getByRole('option', { name: /Update summaries/ })).toBeVisible();
+	await page.getByLabel('Filter commands').fill('catch');
+	await expect(page.getByRole('option')).toHaveCount(1);
 	await page.keyboard.press('Escape');
-	await expect(page.getByRole('menuitem', { name: 'Catch me up' })).toHaveCount(0);
+	await expect(page.getByRole('option', { name: /Catch me up/ })).toHaveCount(0);
+	// Typing "/" in the composer opens the same list.
+	const chatBox = page.getByPlaceholder('Ask about your story', { exact: false });
+	await chatBox.fill('/summ');
+	await expect(page.getByRole('option')).toHaveText([/Update summaries/]);
+	await chatBox.fill('');
 
 	// With the Assistant live, a text selection's right-click menu offers an
 	// Assistant submenu; asking about the selection puts a reference chip into
@@ -394,9 +401,9 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 		.getByRole('menuitem', { name: 'Ask the Assistant about this' })
 		.click();
 	await expect(page.locator('.sel-menu')).not.toBeVisible();
-	await expect(page.locator('.ref-chip')).toContainText('The gate stood open.');
-	await page.getByRole('button', { name: 'Remove the reference' }).click();
-	await expect(page.locator('.ref-chip')).toHaveCount(0);
+	await expect(page.locator('.context-chip')).toContainText('The gate stood open.');
+	await page.getByRole('button', { name: 'Remove the passage' }).click();
+	await expect(page.locator('.context-chip')).toHaveCount(0);
 
 	// The sidebar row menu groups its assistant actions the same way.
 	await openRowMenu(page, page.locator('.scene-row').first());
@@ -452,7 +459,8 @@ test('assistant tab: gated by the account switch and muted per story', async ({ 
 	await expect(review).toHaveCount(0);
 
 	// Muting subtracts the chat but keeps the tab as the un-mute switch.
-	await page.getByRole('button', { name: 'Mute for this story' }).click();
+	await page.getByRole('button', { name: 'Chat commands' }).click();
+	await page.getByRole('option', { name: /Mute for this story/ }).click();
 	await expect(page.locator('.assistant-muted')).toBeVisible();
 	await expect(tab).toBeVisible();
 	await page.getByRole('button', { name: 'Turn on for this story' }).click();

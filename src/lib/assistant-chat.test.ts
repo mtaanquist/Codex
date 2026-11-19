@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CHAT_TITLE_MAX, chatTitle, newChatId, withPrompt } from './assistant-chat';
+import {
+	CHAT_TITLE_MAX,
+	chatTitle,
+	newChatId,
+	readChatSettings,
+	withPrompt
+} from './assistant-chat';
 
 describe('chatTitle', () => {
 	it('collapses whitespace', () => {
@@ -58,5 +64,22 @@ describe('withPrompt', () => {
 
 	it('replaces a half-typed command', () => {
 		expect(withPrompt('/rec', '', 'B')).toBe('B');
+	});
+});
+
+describe('readChatSettings', () => {
+	it('keeps a model id and a known effort level', () => {
+		expect(readChatSettings({ model: ' claude-opus-5 ', effort: 'high' })).toEqual({
+			model: 'claude-opus-5',
+			effort: 'high'
+		});
+	});
+
+	it('drops anything else', () => {
+		expect(readChatSettings(null)).toEqual({});
+		expect(readChatSettings('x')).toEqual({});
+		expect(readChatSettings({ model: '', effort: 'extreme' })).toEqual({});
+		expect(readChatSettings({ model: 'x'.repeat(201) })).toEqual({});
+		expect(readChatSettings({ model: 42 })).toEqual({});
 	});
 });

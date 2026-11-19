@@ -478,6 +478,11 @@ primitive's own class too, but do not copy the pattern.
   and Home/End, closes on Tab after handing focus back to the trigger,
   and opens and closes a submenu with ArrowRight/ArrowLeft. Escape returns
   focus to the trigger, or to the editor for the editor's own menus.
+- A command list driven from a text field (the Assistant composer's command
+  menu, the command palette) is not a `role="menu"`: it is a `role="listbox"`
+  of `.menu-item` options with `.active` on the highlighted one, and the field
+  keeps focus and points at it with `aria-activedescendant`. Group headings
+  sit inside `role="group"` wrappers.
 - A popover that is not a list of actions (the entity badge picker's swatches
   and image buttons) is not a menu: it uses `aria-haspopup="dialog"` and
   `role="dialog"`, plain buttons, and `dismiss` only.
@@ -986,7 +991,7 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
-`ExportPanel`, `AssistantPanel`, `CoauthorPanel`,
+`ExportPanel`, `AssistantPanel`, `AssistantCommandMenu`, `AssistantModelMenu`, `CoauthorPanel`,
 `ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `RoleTuningModal`,
 `EntityEditor`,
 `EntityCard`, `RelationshipWeb`, `SceneBoard`, `StoryBoard`.

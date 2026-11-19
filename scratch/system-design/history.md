@@ -982,6 +982,34 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Assistant composer (2026-11-19)
+
+Mads asked for the Assistant panel to feel less cramped and to look more like
+Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
+(composer, command menu, model chip) and #1172 (adding context as chips), on
+`staging/assistant-composer`.
+
+- #1171. The header became the chat title plus two icon buttons (chat list,
+  new chat); the old name row, the "Mute for this story" link and the "..."
+  menu by the send button are gone, their actions moved into one command
+  menu. The command list in `#lib/assistant-slash` gained a label and a
+  group per entry so the menu, the typed `/command` matcher and `/help` read
+  one list; every menu entry is also typable (`/history`, `/delete`, `/mute`,
+  `/model` are new). The menu keeps focus in a text field and points at the
+  highlighted row with aria-activedescendant, since the composer itself is
+  the filter when "/" is typed; the button opens it with its own filter
+  field. Mads chose a per-chat model setting over a per-story one, so it is
+  stored on the chat row rather than in `stories.llm_config`; the panel sends
+  it with every message and the chat endpoint saves it when it changed, so
+  there is no separate settings endpoint. Only the chat role takes the
+  setting: `/write` (co-author) and the recap (utility) keep their own
+  models. The model list is fetched live from the endpoint when the menu
+  opens, merged with the models already set for any role so an endpoint that
+  cannot list models still offers something. The two menus are their own
+  components (`AssistantCommandMenu`, `AssistantModelMenu`); the rest of the
+  composer stayed in `AssistantPanel`, since splitting it further would only
+  move its state into props.
+
 ## November review (2026-11-18)
 
 An independent review of every November change (5f3b182..HEAD) filed #1006

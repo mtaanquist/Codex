@@ -610,6 +610,13 @@
 			"when": 1795078508442,
 			"tag": "0086_assistant-job-spend",
 			"breakpoints": true
+		},
+		{
+			"idx": 87,
+			"version": "7",
+			"when": 1795092593504,
+			"tag": "0087_chat-settings",
+			"breakpoints": true
 		}
 	]
 }

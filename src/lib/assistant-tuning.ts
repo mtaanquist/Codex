@@ -105,13 +105,17 @@ const CLAUDE_EFFORT_MODELS =
 
 // The effort a Claude request carries: the role's own, else the Codex default
 // where the model takes one, else none.
+export function modelTakesEffort(model: string): boolean {
+	return CLAUDE_EFFORT_MODELS.test(model);
+}
+
 export function claudeEffort(
 	role: AssistantRole,
 	model: string,
 	tuning: RoleTuning | undefined
 ): EffortLevel | undefined {
 	if (tuning?.effort) return tuning.effort;
-	return CLAUDE_EFFORT_MODELS.test(model) ? CLAUDE_ROLE_EFFORT[role] : undefined;
+	return modelTakesEffort(model) ? CLAUDE_ROLE_EFFORT[role] : undefined;
 }
 
 // The model a role runs on: its own, else the chat model, else the provider's

@@ -60,13 +60,13 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 
 	await gotoReady(page, `/universes/${universeId}/insights`);
 	const panel = page.locator('.assistant');
-	const picker = panel.locator('.chat-picker-btn');
+	const picker = panel.locator('.chat-title');
 	// The most recent chat opens.
 	await expect(picker).toHaveText('Who is Marra?');
 	await expect(panel.locator('.chat-scroll')).toContainText('Marra is a ferrywoman.');
 
 	// The list shows both, newest first; a search narrows it.
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	const list = page.getByRole('dialog', { name: 'Your chats' });
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?', 'About the harbour']);
 	// Arrow keys move between the search box and the rows.
@@ -93,15 +93,15 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 	await expect(panel.locator('.chat-scroll')).not.toContainText('harbour freezes');
 
 	// Deleting a chat removes it from the list, and it stays gone on a reload.
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	await list.locator('.chat-row', { hasText: 'About the harbour' }).click();
-	await panel.getByRole('button', { name: 'More actions' }).click();
-	await page.getByRole('menuitem', { name: 'Delete chat' }).click();
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await panel.getByRole('option', { name: /Delete chat/ }).click();
 	await confirmPrompt(page, 'Delete chat');
 	await expect(picker).toHaveText('New chat');
 	await page.reload();
 	await expect(picker).toHaveText('Who is Marra?');
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?']);
 });
 
@@ -159,7 +159,7 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	await expect(page.locator('.story-title')).toHaveText('Ashfall');
 	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	const panel = page.locator('.assistant');
-	const picker = panel.locator('.chat-picker-btn');
+	const picker = panel.locator('.chat-title');
 	await expect(async () => {
 		await tab.click();
 		await expect(picker).toHaveText('Ash questions', { timeout: 2000 });
@@ -171,7 +171,7 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	await expect(page.locator('.story-title')).toHaveText('Birchwood');
 	await expect(picker).toHaveText('New chat');
 	await expect(panel.locator('.chat-scroll')).not.toContainText('ash falls');
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	await expect(
 		page.getByRole('dialog', { name: 'Your chats' }).locator('.chat-row-title')
 	).toHaveCount(0);
@@ -199,7 +199,7 @@ async function freshStoryPanel(page: Page, label: string) {
 
 	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	const panel = page.locator('.assistant');
-	const picker = panel.locator('.chat-picker-btn');
+	const picker = panel.locator('.chat-title');
 	await expect(async () => {
 		await tab.click();
 		await expect(picker).toHaveText('New chat', { timeout: 2000 });
@@ -229,8 +229,8 @@ test('a failed catch-up in a new chat leaves the next question in a new chat', a
 			body: `data: ${JSON.stringify({ type: 'error', message: 'The endpoint failed.' })}\n\n`
 		});
 	});
-	await panel.getByRole('button', { name: 'More actions' }).click();
-	await page.getByRole('menuitem', { name: 'Catch me up' }).click();
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await panel.getByRole('option', { name: /Catch me up/ }).click();
 	await expect(panel.locator('.chat-scroll')).toContainText('The endpoint failed.');
 	await expect(picker).toHaveText('New chat');
 
@@ -290,4 +290,47 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 	await expect(panel.locator('.chat-scroll')).toContainText('Nobody knows.');
 	expect(ids[1]).toBe(ids[0]);
 	await expect(picker).toHaveText('Who lit the fire?');
+});
+
+// The model chip picks a model for this chat only: it rides with the chat's
+// messages, and a new chat starts on the default again.
+test('the model chip sets the model for one chat', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Model');
+	await page.route('**/api/assistant/models', (route) =>
+		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
+	);
+	const settings: unknown[] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		settings.push((route.request().postDataJSON() as { settings?: unknown }).settings);
+		await route.fulfill({
+			status: 200,
+			headers: { 'content-type': 'text/event-stream' },
+			body: `data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+
+	const chip = panel.getByRole('button', { name: /Model for this chat/ });
+	const menu = page.getByRole('menu', { name: 'Model for this chat' });
+	// The chip toggles its menu.
+	await chip.click();
+	await expect(menu).toBeVisible();
+	await chip.click();
+	await expect(menu).toHaveCount(0);
+	await chip.click();
+	await expect(menu.getByRole('menuitemradio', { name: /Default/ })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await menu.getByRole('menuitemradio', { name: 'small-model' }).click();
+	await expect(menu).toHaveCount(0);
+	await expect(chip).toContainText('small-model');
+
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('Who lit the fire?');
+	await composer.press('Enter');
+	await expect.poll(() => settings.length).toBe(1);
+	expect(settings[0]).toEqual({ model: 'small-model' });
+
+	await panel.getByRole('button', { name: 'New chat' }).click();
+	await expect(chip).not.toContainText('small-model');
 });

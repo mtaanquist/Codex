@@ -50,6 +50,7 @@ const {
 const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
+const modelsRoute = await import('../../src/routes/api/assistant/models/+server');
 
 let userId: string;
 let universeId: string;
@@ -566,6 +567,65 @@ describe('chats over the endpoints', () => {
 		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
 	});
 
+	it('runs a chat on its own model and keeps that choice with the chat', async () => {
+		const models: string[] = [];
+		providerSlot.current = {
+			...streamingProvider(async function* () {
+				yield { type: 'token', text: 'Answer.' };
+				yield { type: 'done' };
+			}),
+			chatStream: (req) => {
+				models.push(req.model);
+				return (async function* (): AsyncIterable<StreamEvent> {
+					yield { type: 'token', text: 'Answer.' };
+					yield { type: 'done' };
+				})();
+			},
+			async respond(req) {
+				models.push(req.model);
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Hi.' }],
+				settings: { model: 'other-model', effort: 'bogus' }
+			})
+		).text();
+		expect(models.at(-1)).toBe('other-model');
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
+		// A send without a setting (an older client) leaves the stored choice alone.
+		await (
+			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Again.' }] })
+		).text();
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
+		// Picking Default in the chip clears it, and the next send runs on the default.
+		const patched = await chatsRoute.PATCH({
+			params: { id: chatId },
+			request: new Request('http://localhost', {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ settings: {} })
+			}),
+			locals: { user: { id: userId } }
+		} as unknown as Parameters<typeof chatsRoute.PATCH>[0]);
+		expect(patched.status).toBe(200);
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({});
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Once more.' }],
+				settings: {}
+			})
+		).text();
+		expect(models.at(-1)).toBe('chat-model');
+	});
+
 	it('loads and deletes a chat', async () => {
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })
@@ -576,10 +636,47 @@ describe('chats over the endpoints', () => {
 				{ role: 'user', content: 'Hi.', meta: null },
 				{ role: 'assistant', content: 'Answer.', meta: null }
 			],
-			summarised: false
+			summarised: false,
+			settings: {}
 		});
 		expect((await onChat('DELETE', chatId)).status).toBe(200);
 		expect(await listChats(db, userId, { storyId })).toEqual([]);
+	});
+});
+
+describe('the model list', () => {
+	function getModels() {
+		return modelsRoute.GET({
+			locals: { user: { id: userId } }
+		} as unknown as Parameters<typeof modelsRoute.GET>[0]) as Promise<Response>;
+	}
+
+	it("lists the endpoint's models with the ones already set", async () => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {}),
+			async listModels() {
+				return [{ id: 'b-model' }, { id: 'a-model' }];
+			}
+		};
+		expect(await (await getModels()).json()).toEqual({
+			models: ['a-model', 'b-model', 'chat-model'],
+			complete: true
+		});
+	});
+
+	it('still offers the models already set when the endpoint cannot list them', async () => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {}),
+			async listModels() {
+				throw new Error('no listing');
+			}
+		};
+		expect(await (await getModels()).json()).toEqual({ models: ['chat-model'], complete: false });
+	});
+
+	it('refuses while the Assistant is off', async () => {
+		await configure(false);
+		await expectStatus(getModels(), 403);
 	});
 });
 

@@ -1,3 +1,5 @@
+import { EFFORT_LEVELS, type EffortLevel } from './assistant-tuning.ts';
+
 // How many recent turns the side panel sends with each chat request. The
 // server keeps its summary of older turns anchored inside this window, so both
 // sides read the figure from here.
@@ -16,6 +18,33 @@ export function chatTitle(text: string): string {
 
 // The title of a chat that starts with "Catch me up" rather than a question.
 export const RECAP_CHAT_TITLE = 'Catch me up';
+
+// The model and effort one chat runs on, picked from the composer's model chip.
+// Either field absent means the usual default (the story's model, else the
+// account's). Stored on the chat, so it lasts as long as the chat does.
+export type ChatModelSettings = { model?: string; effort?: EffortLevel };
+
+const MAX_MODEL_ID = 200;
+
+// Request input is untrusted: anything that is not a plausible model id or a
+// known effort level is dropped rather than refused.
+export function readChatSettings(raw: unknown): ChatModelSettings {
+	if (!raw || typeof raw !== 'object') return {};
+	const { model, effort } = raw as { model?: unknown; effort?: unknown };
+	const out: ChatModelSettings = {};
+	if (typeof model === 'string' && model.trim() && model.trim().length <= MAX_MODEL_ID) {
+		out.model = model.trim();
+	}
+	if (typeof effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(effort)) {
+		out.effort = effort as EffortLevel;
+	}
+	return out;
+}
+
+// What the model chip needs to show the default: the model the chat role runs
+// on without a chat setting, its effort where the model takes one, and whether
+// the endpoint is Claude (the only provider with effort levels).
+export type ChatModelInfo = { model: string; effort: EffortLevel | null; claude: boolean };
 
 // A chat as the panel's picker lists it.
 export type ChatSummary = { id: string; title: string; updatedAt: string };

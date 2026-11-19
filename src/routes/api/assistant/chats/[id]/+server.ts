@@ -1,13 +1,14 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
-import { deleteChat, getChat, listChat } from '#lib/server/llm/chat-history';
+import { deleteChat, getChat, listChat, setChatSettings } from '#lib/server/llm/chat-history';
+import { readJson } from '#lib/server/validation';
 import { hasChatSummary } from '#lib/server/llm/chat-summary';
-import { CHAT_MISSING } from '#lib/assistant-chat';
+import { CHAT_MISSING, readChatSettings } from '#lib/assistant-chat';
 import { ownedStory } from '#lib/server/story-access';
 import { ownedUniverse } from '#lib/server/universe-access';
 
 // One of the writer's Assistant chats: GET loads its turns when the panel
-// switches to it, DELETE removes it. Reading and deleting stored turns need no
+// switches to it, PATCH saves the model chosen for it, DELETE removes it. Reading and deleting stored turns need no
 // Assistant gate, only that the chat is the writer's own and its story or
 // universe is not in the trash, like every other Assistant route.
 
@@ -26,12 +27,20 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		listChat(db, locals.user.id, chat.id),
 		hasChatSummary(db, locals.user.id, chat.id)
 	]);
-	return Response.json({ messages, summarised });
+	return Response.json({ messages, summarised, settings: chat.settings });
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {
 	if (!locals.user) error(401, 'Sign in first.');
 	const chat = await liveChat(locals.user.id, params.id!);
 	if (!(await deleteChat(db, locals.user.id, chat.id))) error(404, CHAT_MISSING);
+	return Response.json({ ok: true });
+};
+
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) error(401, 'Sign in first.');
+	const chat = await liveChat(locals.user.id, params.id!);
+	const body = await readJson<{ settings?: unknown }>(request);
+	await setChatSettings(db, locals.user.id, chat.id, readChatSettings(body.settings));
 	return Response.json({ ok: true });
 };
