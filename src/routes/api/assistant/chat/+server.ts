@@ -22,7 +22,7 @@ import {
 	buildSystemMessage,
 	type AssembleOptions
 } from '#lib/server/llm/context/assemble';
-import { appendChat, setChatSettings, type ChatScope } from '#lib/server/llm/chat-history';
+import { appendChat, getChat, setChatSettings, type ChatScope } from '#lib/server/llm/chat-history';
 import { fitChatWithSummary } from '#lib/server/llm/chat-summary';
 import {
 	attachmentBudgetTokens,
@@ -96,7 +96,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		messages?: unknown;
 		settings?: unknown;
 	}>(request, locals);
-	const settings = readChatSettings(payload.settings);
+	let settings = readChatSettings(payload.settings);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const turns = readTurns(payload.messages);
 
@@ -125,8 +125,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.newChatId
 	);
 	const chatId = chat.id;
-	// An older client that sends no setting leaves the stored one alone.
+	// A client that sends no setting leaves the stored one alone, and runs on it.
 	if (payload.settings !== undefined) await setChatSettings(db, userId, chatId, settings);
+	else settings = (await getChat(db, userId, chatId))?.settings ?? {};
 
 	// Every budget scales with the context window of the model this chat runs on.
 	const resolved = await resolveLlmConfig(

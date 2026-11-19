@@ -450,20 +450,20 @@ export function withRoleOverride(
 ): ResolvedConfig {
 	const model = override?.model;
 	const models = model ? { ...config.models, [role]: model } : config.models;
-	// Only a Claude model that takes an effort level gets one; others reject it.
-	const effort =
+	// Only a Claude model that takes an effort level gets one; others reject it,
+	// so a model picked for the chat also drops the account's effort for it.
+	const takesEffort =
 		adapterKind(config.provider) === 'anthropic' &&
-		modelTakesEffort(resolveRoleModel(models, role, suggestedModel(config.provider, role)))
-			? override?.effort
-			: undefined;
+		modelTakesEffort(resolveRoleModel(models, role, suggestedModel(config.provider, role)));
+	const effort = takesEffort ? override?.effort : undefined;
 	if (!model && !effort) return config;
-	return {
-		...config,
-		models,
-		tuning: effort
-			? { ...config.tuning, [role]: { ...config.tuning[role], effort } }
-			: config.tuning
-	};
+	let roleTuning = config.tuning[role];
+	if (effort) roleTuning = { ...roleTuning, effort };
+	else if (!takesEffort && roleTuning?.effort) {
+		roleTuning = { ...roleTuning };
+		delete roleTuning.effort;
+	}
+	return { ...config, models, tuning: { ...config.tuning, [role]: roleTuning } };
 }
 
 // What the composer's model chip shows when a chat has no setting of its own.
@@ -472,7 +472,10 @@ export function chatModelInfo(config: ResolvedConfig): ChatModelInfo {
 	const claude = adapterKind(config.provider) === 'anthropic';
 	return {
 		model,
-		effort: claude ? (claudeEffort('chat', model, config.tuning.chat) ?? null) : null,
+		effort:
+			claude && modelTakesEffort(model)
+				? (claudeEffort('chat', model, config.tuning.chat) ?? null)
+				: null,
 		claude
 	};
 }

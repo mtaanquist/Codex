@@ -655,6 +655,11 @@
 	outline: none;
 	transition: border-color 0.12s;
 }
+/* A compact field for a search or filter at the top of a popover. */
+.input.sm {
+	padding: 6px 8px;
+	border-radius: var(--radius-sm);
+}
 /* A field for a short value (a name, a handle) stops short of the column. */
 .input.short {
 	max-width: 36ch;

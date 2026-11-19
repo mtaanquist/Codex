@@ -41,6 +41,10 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) error(401, 'Sign in first.');
 	const chat = await liveChat(locals.user.id, params.id!);
 	const body = await readJson<{ settings?: unknown }>(request);
+	// Clearing takes an explicit {}: a missing or malformed setting is refused.
+	if (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) {
+		error(400, 'Send the settings to save.');
+	}
 	await setChatSettings(db, locals.user.id, chat.id, readChatSettings(body.settings));
 	return Response.json({ ok: true });
 };

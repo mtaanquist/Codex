@@ -1,6 +1,13 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
-import { assistantLayout, pickModel, resolveLlmConfig } from '#lib/server/llm/config';
+import {
+	assistantLayout,
+	modelContextWindow,
+	pickModel,
+	resolveLlmConfig,
+	withRoleOverride
+} from '#lib/server/llm/config';
+import { attachmentBudgetTokens } from '#lib/server/llm/context/budgets';
 import { searchContext, storyContents } from '#lib/server/llm/attachments';
 import { rateLimitLookups } from '#lib/server/write-guard';
 import { isUuid } from '#lib/slug';
@@ -23,9 +30,13 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		const { config } = await resolveLlmConfig(db, userId);
 		const model = url.searchParams.get('model') || pickModel(config, 'chat');
 		const price = config.modelPricing?.[model]?.prompt;
+		// Priced on what is sent: a book over the attachment budget is cut.
+		const window = modelContextWindow(withRoleOverride(config, 'chat', { model }), 'chat');
+		const sent = Math.min(contents.tokens, attachmentBudgetTokens(window));
 		return Response.json({
 			...contents,
-			usd: price === undefined ? null : contents.tokens * price
+			cut: sent < contents.tokens,
+			usd: price === undefined ? null : sent * price
 		});
 	}
 	const query = (url.searchParams.get('q') ?? '').slice(0, 200);

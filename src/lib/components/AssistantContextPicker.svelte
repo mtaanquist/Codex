@@ -13,6 +13,8 @@
 		label: string;
 		words: number;
 		usd: number | null;
+		// Too long to send whole on this model: the end is cut.
+		cut: boolean;
 		chapters: Item[];
 		scenes: Item[];
 	};
@@ -27,13 +29,15 @@
 	let {
 		id,
 		model,
-		onAdd
+		onAdd,
+		onClose
 	}: {
 		// The listbox id, for the field's aria-controls.
 		id: string;
 		// The chat's model, so the whole book is priced on it.
 		model: string | undefined;
 		onAdd: (attachment: ChatAttachment) => void;
+		onClose: () => void;
 	} = $props();
 
 	let query = $state('');
@@ -133,7 +137,7 @@
 	}
 
 	function bookSize(c: StoryContents): string {
-		const words = `about ${formatNumber(c.words)} words`;
+		const words = `about ${formatNumber(c.words)} words${c.cut ? ', too long to send in full' : ''}`;
 		if (c.usd === null) return words;
 		const cost = c.usd < 0.01 ? 'under $0.01' : `about $${c.usd.toFixed(2)}`;
 		return `${words}, ${cost} each time it is sent`;
@@ -219,6 +223,10 @@
 			rows[selected].pick();
 		} else if (event.key === 'Backspace' && story && query === '') {
 			back();
+		} else if (event.key === 'Tab') {
+			// Tab leaves the picker, as it leaves any popover.
+			onClose();
+			return;
 		} else if (event.key === 'Escape') {
 			// The panel's dismiss handles Escape and returns focus to the trigger.
 			return;
@@ -248,9 +256,11 @@
 	{/if}
 	<input
 		bind:this={field}
-		class="picker-search"
+		class="input sm"
 		type="text"
-		placeholder={story ? 'Filter chapters and scenes' : 'Search scenes, characters, notes, stories'}
+		placeholder={story
+			? 'Filter chapters and scenes'
+			: 'Search scenes, chapters, characters, notes, stories'}
 		aria-label={story ? 'Filter chapters and scenes' : 'Search for context to add'}
 		role="combobox"
 		aria-expanded={rows.length > 0}
@@ -283,22 +293,23 @@
 					</div>
 				{/each}
 			</div>
-		{:else}
-			<p class="picker-empty" role="status">
-				{#if loading}
-					Loading...
-				{:else if failed}
-					Could not load the list. Try again in a moment.
-				{:else if story}
-					Nothing in this story matches.
-				{:else if query.trim()}
-					Nothing matches.
-				{:else}
-					Your stories will be listed here.
-				{/if}
-			</p>
 		{/each}
 	</div>
+	{#if sections.length === 0}
+		<p class="picker-empty" role="status">
+			{#if loading}
+				Loading...
+			{:else if failed}
+				Could not load the list. Try again in a moment.
+			{:else if story}
+				Nothing in this story matches.
+			{:else if query.trim()}
+				Nothing matches.
+			{:else}
+				Your stories will be listed here.
+			{/if}
+		</p>
+	{/if}
 </div>
 
 <style>
@@ -323,20 +334,6 @@
 		white-space: nowrap;
 		font-size: var(--text-sm);
 		font-weight: 600;
-	}
-	.picker-search {
-		width: 100%;
-		font: inherit;
-		font-size: var(--text-base);
-		padding: 6px 8px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-card);
-		color: var(--text);
-	}
-	.picker-search:focus {
-		outline: none;
-		border-color: var(--accent-line);
 	}
 	.picker-list {
 		overflow-y: auto;
