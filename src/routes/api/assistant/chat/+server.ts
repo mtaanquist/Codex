@@ -105,7 +105,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.newChatId
 	);
 	const chatId = chat.id;
-	await setChatSettings(db, userId, chatId, settings);
+	// An older client that sends no setting leaves the stored one alone.
+	if (payload.settings !== undefined) await setChatSettings(db, userId, chatId, settings);
 	if (newest.role === 'user') {
 		const stored = await appendChat(db, userId, scope, chatId, {
 			role: 'user',

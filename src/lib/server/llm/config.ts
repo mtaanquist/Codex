@@ -18,6 +18,7 @@ import {
 	MAX_REPLY_TOKENS,
 	MAX_TEMPERATURE,
 	claudeEffort,
+	modelTakesEffort,
 	resolveRoleModel,
 	type AssistantRole,
 	type EffortLevel,
@@ -441,18 +442,24 @@ export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
 }
 
 // A chat's own model and effort (the composer's model chip) laid over a role.
-// Effort is a Claude setting, so any other provider drops it.
+// Effort is a Claude setting, so any other provider or model drops it.
 export function withRoleOverride(
 	config: ResolvedConfig,
 	role: AssistantRole,
 	override: ChatModelSettings | undefined
 ): ResolvedConfig {
 	const model = override?.model;
-	const effort = adapterKind(config.provider) === 'anthropic' ? override?.effort : undefined;
+	const models = model ? { ...config.models, [role]: model } : config.models;
+	// Only a Claude model that takes an effort level gets one; others reject it.
+	const effort =
+		adapterKind(config.provider) === 'anthropic' &&
+		modelTakesEffort(resolveRoleModel(models, role, suggestedModel(config.provider, role)))
+			? override?.effort
+			: undefined;
 	if (!model && !effort) return config;
 	return {
 		...config,
-		models: model ? { ...config.models, [role]: model } : config.models,
+		models,
 		tuning: effort
 			? { ...config.tuning, [role]: { ...config.tuning[role], effort } }
 			: config.tuning

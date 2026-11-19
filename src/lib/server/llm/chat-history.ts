@@ -192,11 +192,15 @@ export async function loadAssistantChat(
 	settings: ChatModelSettings;
 	model: ChatModelInfo;
 }> {
-	const [chats, resolved] = await Promise.all([
+	const [chats, model] = await Promise.all([
 		listChats(db, userId, scope),
-		resolveLlmConfig(db, userId, 'storyId' in scope ? scope.storyId : undefined)
+		// The chip is a convenience: a config that cannot be read (a key that no
+		// longer decrypts) must not take the page down with it.
+		resolveLlmConfig(db, userId, 'storyId' in scope ? scope.storyId : undefined).then(
+			(resolved) => chatModelInfo(resolved.config),
+			(): ChatModelInfo => ({ model: '', effort: null, claude: false })
+		)
 	]);
-	const model = chatModelInfo(resolved.config);
 	const current = chats[0];
 	if (!current)
 		return { chats, chatId: null, messages: [], summarised: false, settings: {}, model };

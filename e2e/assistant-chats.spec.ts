@@ -310,8 +310,13 @@ test('the model chip sets the model for one chat', async ({ page }) => {
 	});
 
 	const chip = panel.getByRole('button', { name: /Model for this chat/ });
-	await chip.click();
 	const menu = page.getByRole('menu', { name: 'Model for this chat' });
+	// The chip toggles its menu.
+	await chip.click();
+	await expect(menu).toBeVisible();
+	await chip.click();
+	await expect(menu).toHaveCount(0);
+	await chip.click();
 	await expect(menu.getByRole('menuitemradio', { name: /Default/ })).toHaveAttribute(
 		'aria-checked',
 		'true'

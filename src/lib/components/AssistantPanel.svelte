@@ -429,6 +429,8 @@
 		if (!question) return;
 		// A line that starts with "/" is a command, not a message to the model.
 		if (question.startsWith('/')) {
+			// Commands wait for the reply in progress, and the line stays put.
+			if (busy || switching) return;
 			runSlashCommand(question);
 			return;
 		}
@@ -563,6 +565,9 @@
 	function chooseCommand(command: SlashCommand) {
 		commandsOpen = false;
 		commandSelected = 0;
+		// The filter field is about to go; commands that open something move
+		// focus on from here.
+		composer?.focus();
 		if (command.args) {
 			setComposer(`/${command.name} `);
 			return;
@@ -778,6 +783,7 @@
 			} else {
 				slashDismissed = input;
 			}
+			event.stopPropagation();
 		} else {
 			return false;
 		}
@@ -790,6 +796,18 @@
 			return;
 		}
 		commandKey(event);
+	}
+
+	// A chat already stored keeps the new choice straightaway; a new chat
+	// sends it with its first message.
+	function changeSettings(next: ChatModelSettings) {
+		chatSettings = next;
+		if (!chatId) return;
+		void fetch(`/api/assistant/chats/${chatId}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ settings: next })
+		}).catch(() => {});
 	}
 
 	// The model menu, from the chip in the composer.
@@ -1174,16 +1192,21 @@
 			</div>
 		{/if}
 
-		<div class="composer-wrap">
+		<!-- The dismiss area holds the menus and their triggers, so a press on a
+		     trigger toggles its menu rather than closing and reopening it. -->
+		<div
+			class="composer-wrap"
+			use:dismiss={{
+				enabled: commandsOpen || modelOpen,
+				close: () => {
+					commandsOpen = false;
+					modelOpen = false;
+				},
+				refocus: () => (commandsOpen ? commandsTrigger : modelTrigger)?.focus()
+			}}
+		>
 			{#if commandsOpen || slashOpen}
-				<div
-					class="composer-pop"
-					use:dismiss={{
-						enabled: commandsOpen,
-						close: () => (commandsOpen = false),
-						refocus: () => commandsTrigger?.focus()
-					}}
-				>
+				<div class="composer-pop">
 					<AssistantCommandMenu
 						id={commandListId}
 						commands={shownCommands}
@@ -1204,18 +1227,11 @@
 				</div>
 			{/if}
 			{#if modelOpen}
-				<div
-					class="composer-pop"
-					use:dismiss={{
-						enabled: modelOpen,
-						close: () => (modelOpen = false),
-						refocus: () => modelTrigger?.focus()
-					}}
-				>
+				<div class="composer-pop">
 					<AssistantModelMenu
 						info={modelInfo}
 						settings={chatSettings}
-						onChange={(next) => (chatSettings = next)}
+						onChange={changeSettings}
 						close={() => (modelOpen = false)}
 						refocus={() => (modelTrigger ?? composer)?.focus()}
 					/>
@@ -1242,7 +1258,7 @@
 							type="button"
 							title="Chat commands (/)"
 							aria-label="Chat commands"
-							aria-haspopup="listbox"
+							aria-haspopup="true"
 							aria-expanded={commandsOpen}
 							onclick={toggleCommands}
 						>

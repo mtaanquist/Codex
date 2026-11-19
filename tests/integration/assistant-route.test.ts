@@ -597,12 +597,33 @@ describe('chats over the endpoints', () => {
 		expect(models.at(-1)).toBe('other-model');
 		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
 
-		// Without a setting the chat goes back to the default, and so does the stored choice.
+		// A send without a setting (an older client) leaves the stored choice alone.
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Again.' }] })
 		).text();
-		expect(models.at(-1)).toBe('chat-model');
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
+		// Picking Default in the chip clears it, and the next send runs on the default.
+		const patched = await chatsRoute.PATCH({
+			params: { id: chatId },
+			request: new Request('http://localhost', {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ settings: {} })
+			}),
+			locals: { user: { id: userId } }
+		} as unknown as Parameters<typeof chatsRoute.PATCH>[0]);
+		expect(patched.status).toBe(200);
 		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({});
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Once more.' }],
+				settings: {}
+			})
+		).text();
+		expect(models.at(-1)).toBe('chat-model');
 	});
 
 	it('loads and deletes a chat', async () => {

@@ -169,6 +169,13 @@ describe('withRoleOverride', () => {
 		expect(out).toBe(config);
 	});
 
+	it('drops the effort on a Claude model that does not take one', () => {
+		const config = resolved({ provider: 'anthropic', models: { chat: 'claude-sonnet-4-5' } });
+		expect(withRoleOverride(config, 'chat', { effort: 'high' })).toBe(config);
+		const out = withRoleOverride(config, 'chat', { model: 'claude-haiku-4-5', effort: 'high' });
+		expect(out.tuning.chat?.effort).toBeUndefined();
+	});
+
 	it('leaves the config alone without a setting', () => {
 		const config = resolved();
 		expect(withRoleOverride(config, 'chat', {})).toBe(config);
