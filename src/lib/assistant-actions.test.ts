@@ -10,9 +10,9 @@ vi.mock('#lib/activity.svelte', () => ({
 	trackJob: vi.fn(async () => {})
 }));
 
-const { startBackgroundReview, resumeRunningJobs, watchRunningJobs } =
+const { startBackgroundReview, startSummariesJob, resumeRunningJobs, watchRunningJobs } =
 	await import('./assistant-actions');
-const { trackJob } = await import('#lib/activity.svelte');
+const { flashActivity, trackJob } = await import('#lib/activity.svelte');
 
 type Handled = { jobId: string | null; message?: string; reason?: string };
 
@@ -84,6 +84,50 @@ describe('startBackgroundReview job start reporting', () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0].jobId).toBeNull();
 		expect(calls[0].reason).toBe('network');
+	});
+});
+
+describe('a request that joined a job already running (#1046)', () => {
+	beforeEach(() => {
+		vi.unstubAllGlobals();
+		vi.mocked(trackJob).mockClear();
+		vi.mocked(flashActivity).mockClear();
+	});
+
+	it('shows the running job instead of a failure card', async () => {
+		const running = {
+			id: 'j9',
+			kind: 'summaries',
+			mode: 'full',
+			storyId: 's1',
+			chapterId: null,
+			universeId: null,
+			title: 'Saltglass'
+		};
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) =>
+				url === '/api/assistant/jobs'
+					? new Response(JSON.stringify({ jobs: [running] }), { status: 200 })
+					: new Response(JSON.stringify({ message: 'Already going.' }), { status: 409 })
+			)
+		);
+		await startSummariesJob('s1');
+		await vi.waitFor(() => expect(trackJob).toHaveBeenCalled());
+
+		expect(vi.mocked(flashActivity).mock.calls.map(([state]) => state)).toEqual(['done']);
+		expect(vi.mocked(flashActivity).mock.calls[0][2]).toBe('Already going.');
+		expect(vi.mocked(trackJob).mock.calls[0][0]).toMatchObject({ jobId: 'j9', kind: 'summaries' });
+	});
+
+	it('still flashes a failure for any other refusal', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(JSON.stringify({ message: 'Down.' }), { status: 503 }))
+		);
+		await startSummariesJob('s1');
+		expect(vi.mocked(flashActivity).mock.calls.map(([state]) => state)).toEqual(['failed']);
+		expect(trackJob).not.toHaveBeenCalled();
 	});
 });
 

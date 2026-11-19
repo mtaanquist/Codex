@@ -9,7 +9,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import { chapters, characters, stories, universes, users } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
-import { findRunningAssistantJobs } from '../../src/lib/server/running-jobs';
+import { findRunningAssistantJobs, stopAssistantJob } from '../../src/lib/server/running-jobs';
 import {
 	ASSISTANT_ENRICH_QUEUE,
 	ASSISTANT_QUEUE_OPTIONS,
@@ -278,5 +278,41 @@ describe('findRunningAssistantJobs', () => {
 
 		expect(await findRunningAssistantJobs(db, userId)).toEqual([]);
 		expect((await findRunningAssistantJobs(db, otherId)).map((j) => j.title)).toEqual(['Theirs']);
+	});
+});
+
+describe('stopAssistantJob (#1045)', () => {
+	it("cancels the writer's running job, which frees its scope for a new one", async () => {
+		const key = randomUUID();
+		const id = await boss.send(
+			ASSISTANT_SUMMARIES_QUEUE,
+			{ userId, storyId },
+			{ singletonKey: key }
+		);
+		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
+		expect(
+			await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId }, { singletonKey: key })
+		).toBeNull();
+
+		expect(await stopAssistantJob(db, boss, userId, id!)).toBe(true);
+		expect((await boss.getJobById(ASSISTANT_SUMMARIES_QUEUE, id!))?.state).toBe('cancelled');
+		expect(await findRunningAssistantJobs(db, userId)).toEqual([]);
+		expect(
+			await boss.send(ASSISTANT_SUMMARIES_QUEUE, { userId, storyId }, { singletonKey: key })
+		).not.toBeNull();
+	});
+
+	it("leaves another writer's job alone", async () => {
+		const id = await send(ASSISTANT_REVIEW_QUEUE, { userId, storyId, categories: [] });
+		expect(await stopAssistantJob(db, boss, otherId, id!)).toBe(false);
+		expect((await boss.getJobById(ASSISTANT_REVIEW_QUEUE, id!))?.state).toBe('created');
+	});
+
+	it('does nothing for a job that has settled, or an id that is not a job', async () => {
+		const id = await send(ASSISTANT_ENRICH_QUEUE, { userId, universeId });
+		await boss.fetch(ASSISTANT_ENRICH_QUEUE);
+		await boss.complete(ASSISTANT_ENRICH_QUEUE, id!);
+		expect(await stopAssistantJob(db, boss, userId, id!)).toBe(false);
+		expect(await stopAssistantJob(db, boss, userId, 'not-a-job')).toBe(false);
 	});
 });

@@ -10,8 +10,8 @@ import {
 	ReplyCutOffError,
 	type GatewayDeps
 } from './gateway.ts';
-import { resolveLlmConfig } from './config.ts';
-import { SpendMeter, spentFields } from './spend.ts';
+import { spentFields, type SpendMeter } from './spend.ts';
+import { jobSpendMeter } from './job-spend.ts';
 import { buildEnrichMessage } from './prompts/enrich.ts';
 import { entityAppearances, type PlanAppearance } from '../plan-data.ts';
 import {
@@ -311,15 +311,12 @@ export async function dbNow(db: Database): Promise<Date> {
 // endpoint keeps failing.
 export async function enrichUniverse(
 	db: Database,
-	opts: { userId: string; universeId: string; signal?: AbortSignal },
+	opts: { userId: string; universeId: string; jobId?: string; signal?: AbortSignal },
 	deps: GatewayDeps = {}
 ): Promise<UniverseEnrichResult> {
 	const { userId, universeId, signal } = opts;
-	const resolved = await resolveLlmConfig(db, userId);
-	const meter = new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
+	// Keyed by the job, so a retry carries on from what it already spent.
+	const meter = await jobSpendMeter(db, { userId, jobId: opts.jobId });
 	let entities = 0;
 	let unchanged = 0;
 	let staged = 0;
@@ -426,6 +423,7 @@ export async function enrichUniverse(
 		}
 	}
 
+	await meter.flush();
 	return {
 		entities,
 		...(unchanged ? { unchanged } : {}),

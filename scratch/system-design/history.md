@@ -1461,6 +1461,31 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Review runs, job spend and job stops (staging/review-follow-ups,
+      2026-11-19; #1117, #1105, #1103, #1045, #1046, #1093, #1106, #1108,
+      #1113). Each queued Assistant job's spend is kept in a new
+      assistant_job_spend table keyed by its pg-boss id (written only when a
+      cap is set, swept with the review runs), so a retry starts its meter
+      from what earlier attempts spent. SpendMeter takes the seed and a
+      serialised persist callback; the gateway and adapters are untouched.
+      The arc job now meters too (a retry at the ceiling asks nothing and
+      says so) and settles on EndpointReplyError instead of retrying it. A
+      cap hit on the last scene with the cross-scene pass still to run marks
+      the run capped, so a continuation runs only that pass. Adopting a
+      capped run drops failed scenes, and scenes edited since their pass
+      (per-scene reviewedAt stamps on the run state; rows saved before have
+      none and keep the old behaviour), so both are reviewed again. A
+      continuity continuation's note count starts at zero. A load or adopt
+      error now fails the attempt (ReviewRunLoadError) and the worker leaves
+      it to pg-boss to retry, telling the writer only on the last attempt.
+      A coalesced 409 shows an "Already running" card and picks up the
+      running job's card instead of a failure; the summaries 409 now says
+      edits made after the pass starts need another update. For a hung job,
+      a running card has a Stop button (POST /api/assistant/job-stop, which
+      cancels the writer's own job and frees its key; the worker aborts at
+      its next heartbeat). A shorter expiry or a no-progress check was not
+      built; Stop covers the stuck case without guessing a timeout.
+
 - [x] Staging review follow-ups: usage log and Claude adapter (#1116,
       #1127, #1123, #1102, #1104, #1125, #1074, #1083, #1085, #1094,
       2026-11-19). The spend meter keeps its output-cap bound for a failed

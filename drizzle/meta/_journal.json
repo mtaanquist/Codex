@@ -603,6 +603,13 @@
 			"when": 1795077061651,
 			"tag": "0085_usage-estimated-searches",
 			"breakpoints": true
+		},
+		{
+			"idx": 86,
+			"version": "7",
+			"when": 1795078508442,
+			"tag": "0086_assistant-job-spend",
+			"breakpoints": true
 		}
 	]
 }

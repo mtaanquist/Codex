@@ -54,8 +54,10 @@ import {
 	NoModelError,
 	ReplyCutOffError
 } from '../lib/server/llm/gateway.ts';
+import { EndpointReplyError } from '../lib/server/llm/providers/types.ts';
 import { ArcStoryMutedError, summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
-import { purgeReviewRuns } from '../lib/server/review-runs.ts';
+import { purgeJobSpend } from '../lib/server/llm/job-spend.ts';
+import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { storyIsLive } from '../lib/server/universe-scope.ts';
@@ -155,6 +157,19 @@ export function createHandlers(deps: WorkerDeps) {
 		await queueDigests(await insertNotifications(db, [userId], kind, payload));
 	}
 
+	// A review that could not read its earlier progress fails the attempt, so
+	// pg-boss runs it again rather than the review starting over (#1113). The
+	// last attempt reports it like any other error.
+	function retryLoadFailure(err: unknown, job: JobWithMetadata<AssistantReviewData>): void {
+		if (
+			err instanceof ReviewRunLoadError &&
+			!job.signal?.aborted &&
+			job.retryCount < job.retryLimit
+		) {
+			throw err;
+		}
+	}
+
 	// LEGACY (#1041): what a review queued before the upgrade checked, read from
 	// its job, for continuing a run it capped (see adoptCappedRun). Null when
 	// pg-boss no longer has the job, or it does not say.
@@ -181,6 +196,7 @@ export function createHandlers(deps: WorkerDeps) {
 			const result = await services.summariseCharacterArc(db, {
 				userId,
 				characterId,
+				jobId: job.id,
 				signal: job.signal
 			});
 			if (result.outcome === 'missing') {
@@ -188,23 +204,29 @@ export function createHandlers(deps: WorkerDeps) {
 				return;
 			}
 			title =
-				result.outcome === 'empty'
-					? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
-					: result.outcome === 'unchanged'
-						? `The arc for ${character.name} is up to date. Nothing it reads has changed since it was written.`
-						: result.outcome === 'changed'
-							? `Something the arc for ${character.name} reads changed while the Assistant was checking it, so the arc is still out of date. To bring it up to date, ${ARC_AGAIN}.`
-							: `The Assistant wrote the arc for ${character.name}.`;
+				result.outcome === 'capped'
+					? `The Assistant did not write the arc for ${character.name}: this job reached the spend cap at ${spentPhrase(result.spentUsd ?? 0)}. Raise the cap in settings, then ${ARC_AGAIN}.`
+					: result.outcome === 'empty'
+						? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
+						: result.outcome === 'unchanged'
+							? `The arc for ${character.name} is up to date. Nothing it reads has changed since it was written.`
+							: result.outcome === 'changed'
+								? `Something the arc for ${character.name} reads changed while the Assistant was checking it, so the arc is still out of date. To bring it up to date, ${ARC_AGAIN}.`
+								: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
-			if (error instanceof ReplyCutOffError) {
-				// A retry would stop at the same limit, so say why and end here. The
-				// job is settled as completed with a failed output, which the
-				// activity card reads as failed, and pg-boss does not run it again.
+			if (error instanceof ReplyCutOffError || error instanceof EndpointReplyError) {
+				// A retry would stop at the same limit, or get the same answer back,
+				// so say why and end here. The job is settled as completed with a
+				// failed output, which the activity card reads as failed, and
+				// pg-boss does not run it again.
 				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
 				await queueDigests(
 					await insertNotifications(db, [userId], 'assistant_enrich', {
-						title: `The Assistant could not write the arc for ${character.name}. ${error.message}`,
+						title:
+							error instanceof ReplyCutOffError
+								? `The Assistant could not write the arc for ${character.name}. ${error.message}`
+								: `The Assistant could not write the arc for ${character.name}: the endpoint did not send a reply. Check the endpoint in your settings, then ${ARC_AGAIN}.`,
 						href
 					})
 				);
@@ -404,6 +426,7 @@ export function createHandlers(deps: WorkerDeps) {
 						const problem = firstFailure(result.failures);
 						if (problem) title += ` ${problem}`;
 					} catch (err) {
+						retryLoadFailure(err, job);
 						title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
 					}
 					await notifyWriter(job.name, job, userId, 'assistant_review', {
@@ -463,6 +486,7 @@ export function createHandlers(deps: WorkerDeps) {
 						const problem = firstFailure(result.failures);
 						if (problem) title += ` ${problem}`;
 					} catch (err) {
+						retryLoadFailure(err, job);
 						title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
 					}
 					await notifyWriter(job.name, job, userId, 'assistant_review', {
@@ -507,6 +531,7 @@ export function createHandlers(deps: WorkerDeps) {
 					}
 					done = { reviewed: result.reviewed, failed: result.failed, notes: result.notes };
 				} catch (err) {
+					retryLoadFailure(err, job);
 					title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
 					done = { threw: true };
 				}
@@ -540,7 +565,12 @@ export function createHandlers(deps: WorkerDeps) {
 					});
 					continue;
 				}
-				const result = await services.summariseStory(db, { userId, storyId, signal: job.signal });
+				const result = await services.summariseStory(db, {
+					userId,
+					storyId,
+					jobId: job.id,
+					signal: job.signal
+				});
 				const written = result.scenes + result.chapters;
 				const href = `/stories/${storyId}`;
 				const after =
@@ -558,6 +588,9 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant found nothing to summarise in "${story.title}".`;
 				} else {
 					title = `The Assistant updated ${written} ${written === 1 ? 'summary' : 'summaries'} in "${story.title}".`;
+				}
+				if (result.aborted) {
+					title = `The Assistant stopped summarising "${story.title}" before it finished, after ${written} ${written === 1 ? 'summary' : 'summaries'}.`;
 				}
 				if (result.capped) {
 					title = `The Assistant stopped summarising "${story.title}" at ${spentPhrase(result.spentUsd ?? 0, result.spentEstimated)}, after ${written} ${written === 1 ? 'summary' : 'summaries'}. Raise the cap in settings or run it again to continue.`;
@@ -613,6 +646,7 @@ export function createHandlers(deps: WorkerDeps) {
 				const result = await services.enrichUniverse(db, {
 					userId,
 					universeId,
+					jobId: job.id,
 					signal: job.signal
 				});
 				const href = `/universes/${universeId}/plan`;
@@ -810,6 +844,8 @@ export function createHandlers(deps: WorkerDeps) {
 		async purgeReviewRuns() {
 			const deleted = await purgeReviewRuns(db);
 			if (deleted > 0) logEvent('info', 'purge.review_runs', { deleted });
+			const spend = await purgeJobSpend(db);
+			if (spend > 0) logEvent('info', 'purge.job_spend', { removed: spend });
 		},
 
 		async purgeSessions() {

@@ -9,8 +9,8 @@ import {
 	type GatewayDeps
 } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
-import { resolveLlmConfig } from './config.ts';
-import { SpendMeter, spentFields } from './spend.ts';
+import { spentFields, type SpendMeter } from './spend.ts';
+import { jobSpendMeter } from './job-spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
 import { markMentionsStale } from '../scene-lifecycle.ts';
@@ -43,6 +43,8 @@ export type SummaryResult = {
 	// Why a cap that was set could not be enforced. Only reported when the run
 	// metered itself; a caller that passed its own meter reads it from that.
 	capNotApplied?: string;
+	// Set when the job was stopped part-way.
+	aborted?: boolean;
 	// Summaries written but not saved because the row changed while the model
 	// was writing; the next run looks at them again.
 	changed?: number;
@@ -98,14 +100,6 @@ async function generate(
 	return result.content.trim();
 }
 
-async function storyMeter(db: Database, userId: string, storyId: string): Promise<SpendMeter> {
-	const resolved = await resolveLlmConfig(db, userId, storyId);
-	return new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
-}
-
 // Draft and refresh the summaries for a whole story's scenes, then its chapters
 // (chapter summaries draw on the scene summaries, so scenes go first). Owner
 // scoped through the story. A review passes the meter it shares across its
@@ -114,12 +108,19 @@ async function storyMeter(db: Database, userId: string, storyId: string): Promis
 // the result reports how many summaries were written and how many failed.
 export async function summariseStory(
 	db: Database,
-	opts: { userId: string; storyId: string; meter?: SpendMeter; signal?: AbortSignal },
+	opts: {
+		userId: string;
+		storyId: string;
+		meter?: SpendMeter;
+		// The queued job's id, so a retry carries on from what it already spent.
+		jobId?: string;
+		signal?: AbortSignal;
+	},
 	deps: GatewayDeps = {}
 ): Promise<SummaryResult> {
 	const { userId, storyId, signal } = opts;
 	const ownMeter = !opts.meter;
-	const meter = opts.meter ?? (await storyMeter(db, userId, storyId));
+	const meter = opts.meter ?? (await jobSpendMeter(db, { userId, storyId, jobId: opts.jobId }));
 	let written = 0;
 	let chaptersWritten = 0;
 	let failed = 0;
@@ -164,6 +165,7 @@ export async function summariseStory(
 		.orderBy(asc(scenes.globalPosition));
 
 	for (const scene of sceneRows) {
+		if (signal?.aborted) break;
 		// Between summaries is the boundary where stopping leaves nothing partial.
 		if (meter.capReached) {
 			capped = true;
@@ -268,6 +270,7 @@ export async function summariseStory(
 	}
 
 	for (const chapter of noModel || disabled ? [] : chapterRows) {
+		if (signal?.aborted) break;
 		if (meter.capReached) {
 			capped = true;
 			break;
@@ -322,10 +325,12 @@ export async function summariseStory(
 		}
 	}
 
+	if (ownMeter) await meter.flush();
 	return {
 		scenes: written,
 		chapters: chaptersWritten,
 		failed,
+		...(signal?.aborted ? { aborted: true } : {}),
 		...(capped ? { capped: true, ...spentFields(meter) } : {}),
 		...(changed ? { changed } : {}),
 		...(noModel ? { noModel: true } : {}),
