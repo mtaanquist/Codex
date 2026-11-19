@@ -1461,6 +1461,17 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 4 of staging/review-follow-ups: merge markers
+      on CRLF scenes (2026-11-19). mergeScenes worked out where each
+      merged-in marker lands from the raw bodies, so a target stored with
+      \r\n shifted every merged-in marker by one character per line break,
+      and \r\n in a merged-in scene's leading blank space threw off the
+      trim. It now runs every body through toLf first and stores the merged
+      body with plain newlines, the same rule splitScene follows. On split,
+      a marker covering only the seam's blank space moved to the new scene
+      as an empty range, which createMarker refuses and the editor cannot
+      show; it now takes the first character of the new scene.
+
 - [x] Staging review round 3 of staging/review-follow-ups: CRLF splits
       and split locking (2026-11-19). The Codex archive import kept \r\n
       line breaks (and so missed front matter, whose first line read
