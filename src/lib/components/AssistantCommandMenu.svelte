@@ -61,7 +61,7 @@
 			placeholder="Filter commands"
 			aria-label="Filter commands"
 			role="combobox"
-			aria-expanded="true"
+			aria-expanded={commands.length > 0}
 			aria-controls={id}
 			aria-autocomplete="list"
 			aria-activedescendant={commands[selected] ? `${id}-${commands[selected].name}` : undefined}
@@ -96,7 +96,7 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="command-empty">No commands match.</p>
+			<p class="command-empty" role="status">No commands match.</p>
 		{/each}
 	</div>
 </div>

@@ -1,5 +1,10 @@
 <script lang="ts" module>
-	import type { ChatModelInfo, ChatModelSettings, ChatSummary } from '#lib/assistant-chat';
+	import type {
+		ChatAttachment,
+		ChatModelInfo,
+		ChatModelSettings,
+		ChatSummary
+	} from '#lib/assistant-chat';
 	import type { SplitProposal } from './AssistantProposal.svelte';
 
 	export type StopReason = 'context' | 'budget';
@@ -8,6 +13,7 @@
 		content: string;
 		meta: {
 			reference?: { sceneId: string; text: string };
+			attachments?: ChatAttachment[];
 			proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			stopped?: StopReason;
 		} | null;
@@ -48,6 +54,10 @@
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyMarkdown } from '#lib/markdown';
 	import {
+		attachmentKey,
+		attachmentLabel,
+		MAX_ATTACHMENTS,
+		type AttachmentKind,
 		CHAT_MISSING,
 		CHAT_WINDOW_TURNS,
 		chatTitle,
@@ -71,6 +81,8 @@
 	import AssistantProposal from './AssistantProposal.svelte';
 	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
 	import AssistantModelMenu, { EFFORT_LABELS } from './AssistantModelMenu.svelte';
+	import AssistantContextPicker from './AssistantContextPicker.svelte';
+	import type { IconName } from './Icon.svelte';
 	import { dismiss } from '#lib/dismiss';
 
 	let {
@@ -136,10 +148,18 @@
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
+	const ATTACHMENT_ICONS: Record<AttachmentKind, IconName> = {
+		scene: 'scene',
+		chapter: 'chapter',
+		entity: 'user',
+		note: 'note',
+		story: 'book'
+	};
 	type Message = {
 		role: 'user' | 'assistant';
 		content: string;
 		reference?: ChatReference;
+		attachments?: ChatAttachment[];
 		proposals?: SplitProposal[];
 		// The reply was cut short; a note under it says why.
 		stopped?: StopReason;
@@ -178,6 +198,7 @@
 			role: m.role,
 			content: m.content,
 			reference: m.meta?.reference,
+			attachments: m.meta?.attachments,
 			proposals: m.meta?.proposals?.map((p) => ({ ...p })),
 			stopped: m.meta?.stopped
 		}));
@@ -351,6 +372,7 @@
 				signal: controller.signal
 			});
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
+			applyAttached(response.headers.get('x-chat-attachments'));
 			const storedIn = response.headers.get('x-chat-id');
 			const serverTitle = response.headers.get('x-chat-title');
 			if (serverTitle) storedTitle = decodeURIComponent(serverTitle);
@@ -442,6 +464,10 @@
 			turn.reference = reference;
 			reference = null;
 		}
+		if (attachments.length > 0) {
+			turn.attachments = attachments;
+			attachments = [];
+		}
 		// The turn the model answers, then an empty reply to stream into. The
 		// request carries a window of recent turns; older context lives in the
 		// assembled world, not the transcript.
@@ -452,9 +478,12 @@
 			{
 				...scopeBody(),
 				...(isStory ? { sceneId } : {}),
-				messages: turns
-					.slice(-CHAT_WINDOW_TURNS)
-					.map((m) => ({ role: m.role, content: m.content, reference: m.reference })),
+				messages: turns.slice(-CHAT_WINDOW_TURNS).map((m) => ({
+					role: m.role,
+					content: m.content,
+					reference: m.reference,
+					attachments: m.attachments
+				})),
 				settings: $state.snapshot(chatSettings)
 			},
 			chatTitle(question),
@@ -471,6 +500,7 @@
 				}
 			];
 			if (turn.reference && !reference) reference = turn.reference;
+			if (turn.attachments && attachments.length === 0) attachments = turn.attachments;
 			if (!input.trim()) {
 				input = question;
 				if (composer) {
@@ -499,6 +529,9 @@
 				break;
 			case 'model':
 				modelOpen = true;
+				break;
+			case 'context':
+				contextOpen = true;
 				break;
 			// 'clear' is the command's old name, from before chats were kept.
 			case 'new':
@@ -765,7 +798,10 @@
 		commandsOpen = !commandsOpen;
 		commandQuery = '';
 		commandSelected = 0;
-		if (commandsOpen) modelOpen = false;
+		if (commandsOpen) {
+			modelOpen = false;
+			contextOpen = false;
+		}
 	}
 	// The keys of whichever field drives the menu. True when the key was used.
 	function commandKey(event: KeyboardEvent): boolean {
@@ -808,6 +844,65 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ settings: next })
 		}).catch(() => {});
+	}
+
+	// What the next message carries as context, from the + button; chips in
+	// the composer until it is sent.
+	let attachments = $state<ChatAttachment[]>([]);
+	let contextOpen = $state(false);
+	let contextTrigger = $state<HTMLButtonElement>();
+	const contextListId = `assistant-context-${newChatId().slice(0, 8)}`;
+	function addAttachment(attachment: ChatAttachment) {
+		contextOpen = false;
+		composer?.focus();
+		if (attachments.some((a) => attachmentKey(a) === attachmentKey(attachment))) {
+			flashActivity('done', 'Already added', `${attachmentLabel(attachment)} is already attached.`);
+			return;
+		}
+		if (attachments.length >= MAX_ATTACHMENTS) {
+			flashActivity(
+				'failed',
+				'Too much context',
+				`A message can carry up to ${MAX_ATTACHMENTS} items. Remove one first.`
+			);
+			return;
+		}
+		attachments = [...attachments, attachment];
+	}
+	function toggleContext() {
+		contextOpen = !contextOpen;
+		if (contextOpen) {
+			commandsOpen = false;
+			modelOpen = false;
+		}
+	}
+	// The server says which of the newest message's attachments it sent and
+	// which it had to cut; the chips follow, so they match what was stored.
+	function applyAttached(header: string | null) {
+		if (header === null) return;
+		const sent = new Map(
+			header
+				.split(',')
+				.filter(Boolean)
+				.map((key) => [key.replace(/!$/, ''), key.endsWith('!')])
+		);
+		const turn = messages.findLast((m) => m.role === 'user');
+		if (!turn?.attachments) return;
+		const kept = turn.attachments.filter((a) => sent.has(attachmentKey(a)));
+		for (const a of kept) {
+			if (sent.get(attachmentKey(a))) a.shortened = true;
+		}
+		const dropped = turn.attachments.length - kept.length;
+		turn.attachments = kept;
+		if (dropped > 0) {
+			flashActivity(
+				'failed',
+				'Context left out',
+				dropped === 1
+					? 'One attached item is gone or hidden from the Assistant, so it was not sent.'
+					: `${dropped} attached items are gone or hidden from the Assistant, so they were not sent.`
+			);
+		}
 	}
 
 	// The model menu, from the chip in the composer.
@@ -943,6 +1038,7 @@
 			chats = chats.filter((c) => c.id !== id);
 			newChat();
 			reference = null;
+			attachments = [];
 		} finally {
 			deleting = false;
 		}
@@ -1121,7 +1217,21 @@
 			{#each messages as message, index (index)}
 				{#if message.role === 'user'}
 					<div class="msg user">
-						{#if message.reference}
+						{#if message.attachments?.length}
+							<div class="msg-attachments">
+								{#each message.attachments as attachment (`${attachment.kind}-${attachment.id}-${attachment.depth}`)}
+									<span
+										class="msg-attachment"
+										title={attachment.shortened
+											? `${attachmentLabel(attachment)}: cut to fit what the model can read at once`
+											: attachmentLabel(attachment)}
+									>
+										<Icon name={ATTACHMENT_ICONS[attachment.kind]} size={11} />
+										{attachmentLabel(attachment)}{attachment.shortened ? ' (shortened)' : ''}
+									</span>
+								{/each}
+							</div>
+						{/if}{#if message.reference}
 							<div class="msg-ref">{message.reference.text}</div>
 						{/if}{message.content}
 					</div>
@@ -1197,12 +1307,14 @@
 		<div
 			class="composer-wrap"
 			use:dismiss={{
-				enabled: commandsOpen || modelOpen,
+				enabled: commandsOpen || modelOpen || contextOpen,
 				close: () => {
 					commandsOpen = false;
 					modelOpen = false;
+					contextOpen = false;
 				},
-				refocus: () => (commandsOpen ? commandsTrigger : modelTrigger)?.focus()
+				refocus: () =>
+					(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus()
 			}}
 		>
 			{#if commandsOpen || slashOpen}
@@ -1223,6 +1335,15 @@
 									onKeydown: filterKeydown
 								}
 							: undefined}
+					/>
+				</div>
+			{/if}
+			{#if contextOpen}
+				<div class="composer-pop">
+					<AssistantContextPicker
+						id={contextListId}
+						model={chatSettings.model}
+						onAdd={addAttachment}
 					/>
 				</div>
 			{/if}
@@ -1253,12 +1374,24 @@
 				<div class="composer-row">
 					<div class="composer-tools">
 						<button
+							bind:this={contextTrigger}
+							class="icon-btn sm"
+							type="button"
+							title="Add context"
+							aria-label="Add context"
+							aria-haspopup="dialog"
+							aria-expanded={contextOpen}
+							onclick={toggleContext}
+						>
+							<Icon name="plus" size={15} />
+						</button>
+						<button
 							bind:this={commandsTrigger}
 							class="icon-btn sm"
 							type="button"
 							title="Chat commands (/)"
 							aria-label="Chat commands"
-							aria-haspopup="true"
+							aria-haspopup="dialog"
 							aria-expanded={commandsOpen}
 							onclick={toggleCommands}
 						>
@@ -1277,7 +1410,10 @@
 							aria-expanded={modelOpen}
 							onclick={() => {
 								modelOpen = !modelOpen;
-								if (modelOpen) commandsOpen = false;
+								if (modelOpen) {
+									commandsOpen = false;
+									contextOpen = false;
+								}
 							}}
 						>
 							<span class="model-chip-name">{chipModel || 'Model'}</span>
@@ -1299,6 +1435,21 @@
 								</button>
 							</span>
 						{/if}
+						{#each attachments as attachment, index (`${attachment.kind}-${attachment.id}-${attachment.depth}`)}
+							<span class="chip context-chip" title={attachmentLabel(attachment)}>
+								<Icon name={ATTACHMENT_ICONS[attachment.kind]} size={12} />
+								<span class="context-chip-label">{attachmentLabel(attachment)}</span>
+								<button
+									class="chip-x"
+									type="button"
+									title="Remove {attachmentLabel(attachment)}"
+									aria-label="Remove {attachmentLabel(attachment)}"
+									onclick={() => (attachments = attachments.filter((_, i) => i !== index))}
+								>
+									x
+								</button>
+							</span>
+						{/each}
 					</div>
 					<span class="composer-send">
 						{#if busy}
@@ -1603,6 +1754,26 @@
 	.msg-insert:disabled {
 		cursor: progress;
 		opacity: 0.6;
+	}
+	.msg-attachments {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-bottom: 6px;
+	}
+	.msg-attachment {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		max-width: 100%;
+		padding: 1px 7px;
+		border: 1px solid var(--accent-contrast);
+		border-radius: 99px;
+		font-size: var(--text-meta);
+		opacity: 0.85;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.msg-ref {
 		border-left: 2px solid var(--accent-contrast);

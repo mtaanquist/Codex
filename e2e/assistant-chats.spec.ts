@@ -179,7 +179,7 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 
 // Signs in as the Assistant account, starts a story in a fresh universe, and
 // opens the Assistant tab on a new chat.
-async function freshStoryPanel(page: Page, label: string) {
+async function freshStoryPanel(page: Page, label: string, storyTitle = 'Cinders') {
 	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('assistant-e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
@@ -193,9 +193,9 @@ async function freshStoryPanel(page: Page, label: string) {
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
 	await gotoReady(page, '/');
 	await startStoryInUniverse(page, name);
-	await page.getByLabel('New story').fill('Cinders');
+	await page.getByLabel('New story').fill(storyTitle);
 	await page.getByRole('button', { name: 'Create story' }).click();
-	await expect(page.locator('.story-title')).toHaveText('Cinders');
+	await expect(page.locator('.story-title')).toHaveText(storyTitle);
 
 	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	const panel = page.locator('.assistant');
@@ -333,4 +333,58 @@ test('the model chip sets the model for one chat', async ({ page }) => {
 
 	await panel.getByRole('button', { name: 'New chat' }).click();
 	await expect(chip).not.toContainText('small-model');
+});
+
+// Context from the + button: a story opens its own options, the pick shows as
+// a chip, goes with the next message only, and stays on that message.
+test('context added from the picker goes with the next message', async ({ page }) => {
+	const title = `Ember ${Date.now()}`;
+	const { panel } = await freshStoryPanel(page, 'Context', title);
+	const posted: { attachments?: unknown }[][] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as { messages: { attachments?: unknown }[] };
+		posted.push(body.messages);
+		const first = posted.length === 1;
+		const attachments = body.messages.at(-1)?.attachments as { id: string }[] | undefined;
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				// The whole book was sent, cut to fit.
+				...(first && attachments
+					? { 'x-chat-attachments': `story:${attachments[0].id}:book!` }
+					: {})
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'Read it.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+
+	await panel.getByRole('button', { name: 'Add context' }).click();
+	const search = page.getByLabel('Search for context to add');
+	await expect(search).toBeFocused();
+	await search.fill(title);
+	await expect(page.getByRole('option', { name: new RegExp(title) })).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('option', { name: /Outline and summaries/ })).toBeVisible();
+	await page.getByRole('option', { name: /Whole book/ }).click();
+	const chip = panel.locator('.composer .context-chip');
+	await expect(chip).toHaveText(new RegExp(`${title} \\(whole book\\)`));
+
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('What is this book about?');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.user .msg-attachment')).toHaveText(
+		`${title} (whole book) (shortened)`
+	);
+	await expect(chip).toHaveCount(0);
+	expect(posted[0].at(-1)?.attachments).toEqual([
+		expect.objectContaining({ kind: 'story', depth: 'book', label: title })
+	]);
+
+	await composer.fill('And the ending?');
+	await composer.press('Enter');
+	await expect.poll(() => posted.length).toBe(2);
+	expect(posted[1].at(-1)?.attachments).toBeUndefined();
 });

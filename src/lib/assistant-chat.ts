@@ -1,4 +1,5 @@
 import { EFFORT_LEVELS, type EffortLevel } from './assistant-tuning.ts';
+import { isUuid } from './slug.ts';
 
 // How many recent turns the side panel sends with each chat request. The
 // server keeps its summary of older turns anchored inside this window, so both
@@ -45,6 +46,62 @@ export function readChatSettings(raw: unknown): ChatModelSettings {
 // on without a chat setting, its effort where the model takes one, and whether
 // the endpoint is Claude (the only provider with effort levels).
 export type ChatModelInfo = { model: string; effort: EffortLevel | null; claude: boolean };
+
+// Something the writer added to a message as context, shown as a chip in the
+// composer and over the sent message. The server reads the content itself by
+// id (and checks it is the writer's); the label is only for display. A story
+// goes in as its outline and summaries, or as the whole book.
+export const ATTACHMENT_KINDS = ['scene', 'chapter', 'entity', 'note', 'story'] as const;
+export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
+export type StoryDepth = 'outline' | 'book';
+export type ChatAttachment = {
+	kind: AttachmentKind;
+	id: string;
+	label: string;
+	depth?: StoryDepth;
+	// Set by the server when the content did not fit and was cut.
+	shortened?: boolean;
+};
+
+export const MAX_ATTACHMENTS = 8;
+const MAX_ATTACHMENT_LABEL = 120;
+
+// Request input is untrusted: malformed entries are dropped, duplicates
+// collapse, and the list is capped.
+export function readAttachments(raw: unknown): ChatAttachment[] {
+	if (!Array.isArray(raw)) return [];
+	const out: ChatAttachment[] = [];
+	for (const item of raw) {
+		if (out.length >= MAX_ATTACHMENTS) break;
+		if (!item || typeof item !== 'object') continue;
+		const { kind, id, label, depth, shortened } = item as Record<string, unknown>;
+		if (!(ATTACHMENT_KINDS as readonly unknown[]).includes(kind)) continue;
+		if (typeof id !== 'string' || !isUuid(id)) continue;
+		const attachment: ChatAttachment = {
+			kind: kind as AttachmentKind,
+			id,
+			label: typeof label === 'string' ? label.trim().slice(0, MAX_ATTACHMENT_LABEL) : ''
+		};
+		if (kind === 'story') attachment.depth = depth === 'book' ? 'book' : 'outline';
+		if (shortened === true) attachment.shortened = true;
+		if (out.some((a) => attachmentKey(a) === attachmentKey(attachment))) continue;
+		out.push(attachment);
+	}
+	return out;
+}
+
+// One attachment's identity: a story attached as outline and as whole book
+// are two attachments.
+export function attachmentKey(a: Pick<ChatAttachment, 'kind' | 'id' | 'depth'>): string {
+	return a.depth ? `${a.kind}:${a.id}:${a.depth}` : `${a.kind}:${a.id}`;
+}
+
+// A chip's text: the label, with what a story brings along.
+export function attachmentLabel(attachment: ChatAttachment): string {
+	const label = attachment.label || 'Untitled';
+	if (attachment.kind !== 'story') return label;
+	return `${label} (${attachment.depth === 'book' ? 'whole book' : 'outline'})`;
+}
 
 // A chat as the panel's picker lists it.
 export type ChatSummary = { id: string; title: string; updatedAt: string };

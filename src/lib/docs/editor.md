@@ -112,6 +112,8 @@ When you have set up the Assistant on your account page, an Assistant panel appe
 
 To ask about a particular passage, select it in the editor, right-click, and choose Assistant, then "Ask the Assistant about this". The passage appears under the chat box as a small quote; type your question and send, or select the x on the quote to drop it.
 
+To give the Assistant something to read with your next message, select the + under the chat box (or type `/context`) and search for a scene, chapter, character, place, lore entry, note or story. Anything in your library works, including stories in other universes. When you pick a story, choose what to send: its outline and summaries, the whole book, or one of its chapters or scenes. The whole book shows its length first, and its price when your endpoint reports prices. Each pick shows as a chip under the chat box; select its x to remove it. The chips go with your next message only and then show on that message. If something is too long for the model to read at once, it is cut to fit and its chip on the message says "shortened". Stories you have muted the Assistant on are not offered.
+
 When a reply contains something you want in the manuscript, select "Insert at cursor" under it to drop the reply's text into the open scene where your cursor is. The action only shows while a single scene is open in the editor. Replies can use formatting such as bold text, lists and headings. Inserting a reply copies its text as written, formatting marks included, so check the inserted text and remove any marks you do not want in the scene.
 
 The Assistant can also suggest where to split a long scene: ask it in the chat, or right-click the scene in the sidebar and choose Assistant, then "Suggest where to split". This puts a request in the chat box for you to change if you like, for example to ask for three scenes instead of two; press Enter to send it. Its suggestion appears in the conversation as a card quoting the text the new scene would start with, alongside its reasoning. Nothing happens until you select "Split here" on the card. A confirmed card shows the split as done and offers "Revert", which merges the two scenes back into one. If the Assistant proposes several splits for one scene, confirm them in any order; each cut lands at its quoted text even after the earlier ones move it into a new scene.
@@ -122,7 +124,7 @@ To answer, the Assistant looks things up in your work: each scene it reads, char
 
 In a long conversation, the Assistant reads your recent messages in full and the older ones as a short summary, which it writes using the model you picked for Background work. A note at the top of the conversation tells you when that has started. The summary keeps what you decided and asked for, but not the exact wording, so repeat a detail if the Assistant seems to have lost it, or start a new chat. If the summary cannot be written, for example because your endpoint is unreachable, the oldest messages are left out instead.
 
-The row under the chat box holds the command menu (the button with a slash), the model the chat runs on, and the passage you are asking about, if any. Select the slash button to see everything the Assistant can do here, grouped by kind; type to narrow the list, then press Enter or click a command to run it. Typing a slash at the start of the chat box opens the same list. Some commands take the rest of the line as input, so type what you want after the command:
+The row under the chat box holds the + for adding context, the command menu (the button with a slash), the model the chat runs on, and anything you have added to the next message. Select the slash button to see everything the Assistant can do here, grouped by kind; type to narrow the list, then press Enter or click a command to run it. Typing a slash at the start of the chat box opens the same list. Some commands take the rest of the line as input, so type what you want after the command:
 
 - `/write <brief>` drafts a passage from your brief, the same as the Write button, and shows it for you to insert.
 - `/rewrite <how>` rewrites the passage you have selected in the scene to your instruction; a "Replace selection" button swaps it in.
@@ -134,6 +136,7 @@ The row under the chat box holds the command menu (the button with a slash), the
 - `/catchup` writes a recap of the story so far.
 - `/summaries` refreshes scene and chapter summaries.
 - `/enrich` suggests aliases, quick details, and summaries for every character, place, and lore entry in the universe that appears in your scenes. It runs in the background and notifies you when it is done; the suggestions wait on each entry's page in Plan for you to accept or reject. Run it again later and it only reads entries whose passages in your scenes have changed since, and skips an entry when the passages it would send are the same as last time.
+- `/context` adds a scene, chapter, character, note or story to your next message.
 - `/new` starts a new chat. The current one stays in your list.
 - `/history` opens the list of your chats.
 - `/delete` deletes this chat, after asking.
@@ -141,7 +144,7 @@ The row under the chat box holds the command menu (the button with a slash), the
 - `/model` picks the model for this chat.
 - `/help` lists these commands.
 
-On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/continuity-review`, `/enrich`, `/who`, `/find`, `/new`, `/history`, `/delete`, `/model`, and `/help`. Its chats are separate from the chats in each story.
+On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/context`, `/continuity-review`, `/enrich`, `/who`, `/find`, `/new`, `/history`, `/delete`, `/model`, and `/help`. Its chats are separate from the chats in each story.
 
 To choose which model answers in this chat, select the model name under the chat box. Pick one from the list your endpoint offers, or "Default" to use the model set for the story or on your account page. On Claude models you can also set the effort: higher effort gives more considered answers but takes longer and costs more. The choice belongs to this chat only; a new chat starts on the default again.
 

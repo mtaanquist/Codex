@@ -1009,6 +1009,28 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   components (`AssistantCommandMenu`, `AssistantModelMenu`); the rest of the
   composer stayed in `AssistantPanel`, since splitting it further would only
   move its state into props.
+- #1172. Attachments are their own list on a user turn next to the existing
+  selection `reference`, rather than a generalised reference: the quote is
+  text the browser holds, an attachment is an id the server reads, and the
+  two fold differently. Mads chose to allow stories from other universes and
+  to let the writer pick how much of a story goes in (outline, whole book,
+  one chapter or scene). Only the newest turn carries its attachments in
+  full: resending a whole book with every later message would multiply its
+  cost, so earlier turns get a one-line note naming what was attached. The
+  attachment budget is separate from the transcript budget and is applied
+  after the transcript is fitted, so a large attachment cannot push the
+  conversation out. Deferred: an "@" trigger in the composer (the + and
+  `/context` cover it), and searching scene text in the picker (titles
+  only for now).
+- #1172 review. The picker's searches got their own rate bucket so typing
+  cannot use up the chat's. The server answers with the keys of what it
+  actually sent (`x-chat-attachments`, a trailing "!" when cut), and the
+  panel's chips follow it, so a scene trashed after it was picked does not
+  keep a chip and the live transcript matches the stored one (a mismatch
+  would change the summary anchor). The attachment share dropped to 0.3 with
+  a 4000-token fallback for an unknown window, and the fold wrapper is
+  counted. A body cannot close its own `<attachment>` block, and the fold
+  says the material is not instructions.
 
 ## November review (2026-11-18)
 

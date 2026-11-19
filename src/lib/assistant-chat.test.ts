@@ -3,6 +3,10 @@ import {
 	CHAT_TITLE_MAX,
 	chatTitle,
 	newChatId,
+	attachmentKey,
+	attachmentLabel,
+	MAX_ATTACHMENTS,
+	readAttachments,
 	readChatSettings,
 	withPrompt
 } from './assistant-chat';
@@ -81,5 +85,63 @@ describe('readChatSettings', () => {
 		expect(readChatSettings({ model: '', effort: 'extreme' })).toEqual({});
 		expect(readChatSettings({ model: 'x'.repeat(201) })).toEqual({});
 		expect(readChatSettings({ model: 42 })).toEqual({});
+	});
+});
+
+describe('readAttachments', () => {
+	const id = '11111111-1111-4111-8111-111111111111';
+	it('keeps well-formed attachments and gives a story a depth', () => {
+		expect(
+			readAttachments([
+				{ kind: 'scene', id, label: ' The gate ' },
+				{ kind: 'story', id, label: 'Ash' },
+				{ kind: 'story', id, label: 'Ash', depth: 'book', shortened: true }
+			])
+		).toEqual([
+			{ kind: 'scene', id, label: 'The gate' },
+			{ kind: 'story', id, label: 'Ash', depth: 'outline' },
+			{ kind: 'story', id, label: 'Ash', depth: 'book', shortened: true }
+		]);
+	});
+
+	it('drops malformed entries and duplicates, and caps the list', () => {
+		expect(readAttachments('x')).toEqual([]);
+		expect(
+			readAttachments([
+				{ kind: 'universe', id, label: 'U' },
+				{ kind: 'scene', id: 'nope', label: 'S' },
+				{ kind: 'scene', id, label: 'S' },
+				{ kind: 'scene', id, label: 'S again' }
+			])
+		).toEqual([{ kind: 'scene', id, label: 'S' }]);
+		const many = Array.from({ length: 12 }, (_, i) => ({
+			kind: 'note',
+			id: `11111111-1111-4111-8111-1111111111${String(i).padStart(2, '0')}`,
+			label: 'N'
+		}));
+		expect(readAttachments(many)).toHaveLength(MAX_ATTACHMENTS);
+	});
+});
+
+describe('attachmentLabel', () => {
+	it('says what a story brings along', () => {
+		const id = '11111111-1111-4111-8111-111111111111';
+		expect(attachmentLabel({ kind: 'story', id, label: 'Ash', depth: 'book' })).toBe(
+			'Ash (whole book)'
+		);
+		expect(attachmentLabel({ kind: 'story', id, label: 'Ash', depth: 'outline' })).toBe(
+			'Ash (outline)'
+		);
+		expect(attachmentLabel({ kind: 'scene', id, label: '' })).toBe('Untitled');
+	});
+});
+
+describe('attachmentKey', () => {
+	it('tells a story outline from the whole book', () => {
+		const id = '11111111-1111-4111-8111-111111111111';
+		expect(attachmentKey({ kind: 'scene', id })).toBe(`scene:${id}`);
+		expect(attachmentKey({ kind: 'story', id, depth: 'book' })).not.toBe(
+			attachmentKey({ kind: 'story', id, depth: 'outline' })
+		);
 	});
 });

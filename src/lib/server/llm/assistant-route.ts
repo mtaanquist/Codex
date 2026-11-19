@@ -135,6 +135,10 @@ export function assistantSseResponse(options: {
 	messages: ChatMessage[];
 	// Older turns of this conversation were summarised; the panel shows a note.
 	summarised?: boolean;
+	// The newest message's attachments as sent, when it had any: their keys,
+	// with a trailing "!" on each one cut to fit. Ones left out (gone, trashed,
+	// muted) are missing, so the panel's chips can match what was stored.
+	attached?: string[];
 	errorMessage: string;
 }): Response {
 	const { request, userId, scope } = options;
@@ -219,7 +223,8 @@ export function assistantSseResponse(options: {
 						'x-chat-created': options.chat.created ? '1' : '0'
 					}
 				: {}),
-			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
+			...(options.summarised ? { 'x-chat-summarised': '1' } : {}),
+			...(options.attached ? { 'x-chat-attachments': options.attached.join(',') } : {})
 		}
 	});
 }
