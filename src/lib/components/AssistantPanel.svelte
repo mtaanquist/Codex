@@ -431,7 +431,9 @@
 			{
 				...scopeBody(),
 				...(isStory ? { sceneId } : {}),
+				// A reply that broke off was not saved, so the model does not see it either.
 				messages: turns
+					.filter((m) => !m.failed)
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 			},
@@ -1060,7 +1062,7 @@
 								{@html renderReplyMarkdown(message.content)}
 							{/if}
 						</div>
-						{#if message.content && !(busy && index === messages.length - 1) && index > 0}
+						{#if message.content && !message.failed && !(busy && index === messages.length - 1) && index > 0}
 							{#if message.rewrite && onReplaceSelection}
 								<button
 									class="msg-insert"
@@ -1085,8 +1087,7 @@
 						{/if}
 						{#if message.failed}
 							<p class="stopped-note">
-								This reply broke off before it finished, so it was not saved. {message.failed} Send your
-								message again to get a full reply.
+								This reply did not finish, so it was not saved. {message.failed}
 							</p>
 						{/if}
 						{#if message.stopped === 'budget'}

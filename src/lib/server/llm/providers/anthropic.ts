@@ -434,7 +434,7 @@ async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unkno
 // that ends in an error event, without an output total, or cut off (the writer
 // stopped it, the connection dropped) still emits what it was billed,
 // estimated from the text and thinking streamed.
-const CLOSED_EARLY = 'The endpoint closed the stream before the reply finished.';
+const CLOSED_EARLY = 'The connection closed before the reply finished.';
 
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
 	let promptTokens: number | undefined;

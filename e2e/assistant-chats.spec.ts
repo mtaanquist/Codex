@@ -293,22 +293,34 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 });
 
 // A reply that breaks off partway keeps its text on screen, with a note that
-// it was not saved.
+// it was not saved, and the next question does not send it back as part of
+// the chat.
 test('a reply that breaks off says so under its text', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Broken');
+	const sent: { role: string; content: string }[][] = [];
 	await page.route('**/api/assistant/chat', async (route) => {
-		const body = route.request().postDataJSON() as { newChatId?: string };
+		const body = route.request().postDataJSON() as {
+			newChatId?: string;
+			chatId?: string;
+			messages: { role: string; content: string }[];
+		};
+		sent.push(body.messages);
+		const frames =
+			sent.length === 1
+				? [
+						{ type: 'token', text: 'The boat is at' },
+						{ type: 'error', message: 'The connection closed before the reply finished.' }
+					]
+				: [{ type: 'token', text: 'The boat is at the quay.' }, { type: 'done' }];
 		await route.fulfill({
 			status: 200,
 			headers: {
 				'content-type': 'text/event-stream',
-				'x-chat-id': body.newChatId ?? '',
-				'x-chat-created': '1',
+				'x-chat-id': body.chatId ?? body.newChatId ?? '',
+				'x-chat-created': sent.length === 1 ? '1' : '0',
 				'x-chat-title': encodeURIComponent('Where is the boat?')
 			},
-			body:
-				`data: ${JSON.stringify({ type: 'token', text: 'The boat is at' })}\n\n` +
-				`data: ${JSON.stringify({ type: 'error', message: 'The endpoint closed the stream before the reply finished.' })}\n\n`
+			body: frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('')
 		});
 	});
 	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
@@ -316,5 +328,10 @@ test('a reply that breaks off says so under its text', async ({ page }) => {
 	await composer.press('Enter');
 	const chat = panel.locator('.chat-scroll');
 	await expect(chat).toContainText('The boat is at');
-	await expect(chat).toContainText('broke off before it finished, so it was not saved');
+	await expect(chat).toContainText('This reply did not finish, so it was not saved.');
+
+	await composer.fill('Where is the boat?');
+	await composer.press('Enter');
+	await expect(chat).toContainText('The boat is at the quay.');
+	expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
 });

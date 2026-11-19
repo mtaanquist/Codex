@@ -993,7 +993,8 @@ writer's own summary, a capped review under the old scope key, arcs and reads
 current at the time, a trashed universe), migrated to head, then
 summarised, enriched, continued, exported, saved and restored. Nothing may be
 lost or asked of the model again. Pending jobs on the legacy queues are not in
-the fixture: pg-boss creates its own schema when the worker starts, outside the
+the fixture (the capped review's job lookup is stubbed, so only its stored
+state is checked): pg-boss creates its own schema when the worker starts, outside the
 migrations. The release flow in `CLAUDE.md` now refreshes the fixture.
 
 ## Stream transcripts (2026-11-19)
@@ -1012,7 +1013,10 @@ estimated exactly when the output count is a guess. It found one gap: a live
 stream that dropped before its stop reason ended as a finished reply (and was
 saved to the chat as one). It now ends with an error, in both adapters, as the
 buffered path already did. The chat panel keeps the partial text of such a
-reply on screen with a note that it broke off and was not saved. The first
+reply on screen with a note that it was not saved, offers no insert for it,
+and leaves it out of the turns the next question sends. An OpenAI-style error
+frame partway through (OpenRouter sends one when its upstream drops) also ends
+in an error now, where it used to finish the reply. The first
 review also found the OpenAI stream dropping a last line sent without a
 newline (losing its text, finish reason and usage); `no-final-newline.sse`
 covers it. The spend rule only bites where the body reported counts: the
@@ -1051,7 +1055,13 @@ to lock, so two scene creates read the same top position and a chapter delete
 racing a create failed on the foreign key. `lockStoryScenes` now locks the
 story row (`for no key update`) after the scenes, and a separate block of the
 harness races both on a story with no scenes, since the seeded story always
-has five.
+has five. The second review found that a change waiting in
+`lockStoryScenes` did not lock a scene the change before it inserted (a
+`for update` select only sees rows that existed when it started), so a mention
+rebuild of that scene could deadlock with it on the story row. An advisory
+lock on the story now comes first, so the waiter's scene select starts after
+the insert commits. Chapter move now reads the chapter list under its locks.
+Both have tests in the same block.
 
 ## One clock (2026-11-19)
 

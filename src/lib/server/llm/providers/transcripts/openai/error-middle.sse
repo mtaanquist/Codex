@@ -1,0 +1,9 @@
+# about: An error partway through, as OpenRouter sends when its upstream drops
+# outcome: retry
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{"content":"The boat is"},"finish_reason":null}]}
+
+data: {"id":"gen-1","object":"chat.completion.chunk","model":"gpt-test","error":{"code":502,"message":"Provider disconnected"},"choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}
+
+data: [DONE]
+

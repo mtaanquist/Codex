@@ -13,8 +13,13 @@ import type { Database } from './auth.ts';
 
 /** Locks every scene row of the story, trashed ones too, then the story row,
  * which a story with no scenes yet still has. Adding, moving or renumbering
- * scenes holds the whole story, so two such changes take turns. */
+ * scenes holds the whole story, so two such changes take turns. The advisory
+ * lock comes first so a caller that waited sees, and locks, a scene the one
+ * before it added: a row inserted after the scene select started is not
+ * locked by it, and a mention rebuild holding that row while it waits for the
+ * story would deadlock. */
 export async function lockStoryScenes(tx: Database, storyId: string): Promise<void> {
+	await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`story-scenes:${storyId}`}))`);
 	await tx.execute(sql`select id from scenes where story_id = ${storyId} order by id for update`);
 	await tx.execute(sql`select id from stories where id = ${storyId} for no key update`);
 }
