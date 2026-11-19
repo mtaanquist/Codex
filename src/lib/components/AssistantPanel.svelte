@@ -132,6 +132,8 @@
 		proposals?: SplitProposal[];
 		// The reply was cut short; a note under it says why.
 		stopped?: StopReason;
+		// The reply broke off with an error and was not saved; a note says so.
+		failed?: string;
 		// A /rewrite reply: its affordance replaces the selection rather than
 		// inserting at the cursor.
 		rewrite?: boolean;
@@ -382,6 +384,8 @@
 			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
 			if (reply && reply.role === 'assistant' && reply.content === '') {
 				reply.content = streamError || 'The Assistant did not return a response.';
+			} else if (reply && reply.role === 'assistant' && streamError) {
+				reply.failed = streamError;
 			}
 		} catch {
 			if (!controller.signal.aborted) {
@@ -1078,6 +1082,12 @@
 									<Icon name="plus" size={12} /> Insert at cursor
 								</button>
 							{/if}
+						{/if}
+						{#if message.failed}
+							<p class="stopped-note">
+								This reply broke off before it finished, so it was not saved. {message.failed} Send your
+								message again to get a full reply.
+							</p>
 						{/if}
 						{#if message.stopped === 'budget'}
 							<p class="stopped-note">

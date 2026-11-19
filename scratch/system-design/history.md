@@ -990,7 +990,7 @@ suite starts from an empty, fully migrated database. #1196 added
 only as far as the last release (`upgrade/previous-release.json`), seeded with
 that release's row shapes in plain SQL (`upgrade/seed.sql`: CRLF bodies, a
 writer's own summary, a capped review under the old scope key, arcs and reads
-current at the time, a trashed universe), migrated to head, then opened,
+current at the time, a trashed universe), migrated to head, then
 summarised, enriched, continued, exported, saved and restored. Nothing may be
 lost or asked of the model again. Pending jobs on the legacy queues are not in
 the fixture: pg-boss creates its own schema when the worker starts, outside the
@@ -1002,15 +1002,22 @@ Stream handling and spend metering drew a finding nearly every review round,
 each fixed with a test for that one case, so #1195 added recorded replies under
 `src/lib/server/llm/providers/transcripts/` (one `.sse` file per case, with
 `# key: value` lines for the expected outcome) and
-`transcripts.test.ts`, which replays each through the live stream and the
-buffered reply: whole, one byte at a time and in uneven chunks, and cut off at
-every event boundary. The rules are the same for every file: the outcome and
+`transcripts.test.ts`, which replays each through the live stream (and the
+buffered reply, where it takes a stream: all Anthropic files, and OpenAI ones
+with a failed status) whole, one byte at a time and in uneven chunks, and
+replays every reply cut off at each event boundary. The rules are the same for every file: the outcome and
 text match, chunking changes nothing, only failures a resend could fix are
-retried, and billed usage is never below what the body reported and is marked
+retried on the buffered path, and billed usage is never below what the body reported and is marked
 estimated exactly when the output count is a guess. It found one gap: a live
 stream that dropped before its stop reason ended as a finished reply (and was
 saved to the chat as one). It now ends with an error, in both adapters, as the
-buffered path already did. A new edge case is a new file.
+buffered path already did. The chat panel keeps the partial text of such a
+reply on screen with a note that it broke off and was not saved. The first
+review also found the OpenAI stream dropping a last line sent without a
+newline (losing its text, finish reason and usage); `no-final-newline.sse`
+covers it. The spend rule only bites where the body reported counts: the
+OpenAI stream sends usage only in its last chunk and does not estimate, so a
+cut-off OpenAI stream records no spend. A new edge case is a new file.
 
 ## Lock order and race harness (2026-11-19)
 
@@ -1030,7 +1037,7 @@ dedupe by held rows. Disabling a fix brings its finding back, which is how the
 harness was checked.
 
 The rule it enforces is in `src/lib/server/row-locks.ts`: a story's scenes,
-then the story, then its chapters, then entities, each lowest id first, with
+then the story, then entities, then its chapters, each lowest id first, with
 `for no key update` on rows that are only updated so foreign-key checks pass.
 Reorder, chapter delete, scene create and both restores now lock the story's
 scenes first; purge locks the story before its chapters; chapter create locks
@@ -1038,6 +1045,13 @@ the story row. #1140 (story rename against a character's first story note) did
 not reproduce: the rename's update takes no key update on the story, which a
 foreign-key check's key share does not wait for, since the slug's unique index
 is partial and so not a key.
+
+The first staging review found that a story with no scenes had no scene rows
+to lock, so two scene creates read the same top position and a chapter delete
+racing a create failed on the foreign key. `lockStoryScenes` now locks the
+story row (`for no key update`) after the scenes, and a separate block of the
+harness races both on a story with no scenes, since the seeded story always
+has five.
 
 ## One clock (2026-11-19)
 
