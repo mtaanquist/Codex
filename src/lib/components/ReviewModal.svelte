@@ -521,9 +521,7 @@
 							<label class="choice">
 								<input type="checkbox" bind:checked={findPatterns} />
 								<span>
-									{bookOffered
-										? 'Look for habits that repeat in the prose'
-										: 'Look for habits that repeat across each chapter'}
+									Look for habits that repeat in the prose
 									<span class="choice-hint">
 										one note per habit, with the fixes linked to it.
 										<a href={resolve('/docs/[topic]', { topic: 'reviewing' })} target="_blank"

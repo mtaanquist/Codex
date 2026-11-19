@@ -391,6 +391,7 @@ async function suggestEdit(
 		sceneId: input.sceneId,
 		author: { assistant: true },
 		range: { start: found.start, end: found.end },
+		original: scene.bodyMd.slice(found.start, found.end),
 		replacement: input.replacement,
 		patternThreadId: ctx.scope?.patternThreadId
 	});
@@ -566,6 +567,7 @@ async function leavePatternNote(
 			sceneId: scene.id,
 			author: { assistant: true },
 			range: { start: found.start, end: found.end },
+			original: scene.bodyMd.slice(found.start, found.end),
 			replacement: edit.replacement,
 			patternThreadId: threadId
 		});

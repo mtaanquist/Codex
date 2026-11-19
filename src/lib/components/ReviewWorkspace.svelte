@@ -2,7 +2,7 @@
 	import PaneResizer from '#lib/components/PaneResizer.svelte';
 	import { withQuery } from '#lib/href';
 	import { focusShownPane } from '#lib/pane-focus';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { refreshAll } from '$app/navigation';
@@ -489,14 +489,25 @@
 	}
 
 	// Each new step opens its scene and points the manuscript at the change.
+	// Only a new step does: the writer may open another scene mid-pass to read
+	// around, and is not pulled back until the next step.
+	let lastStepId: string | null = null;
 	$effect(() => {
 		const step = passStep;
-		if (!pass || !step) return;
-		pass.currentId = step.id;
-		if (step.sceneId !== selectedSceneId && orderedScenes.some((s) => s.id === step.sceneId)) {
-			selectScene(step.sceneId);
+		if (!pass || !step) {
+			lastStepId = null;
+			return;
 		}
-		focusedId = step.id;
+		if (step.id === lastStepId) return;
+		lastStepId = step.id;
+		untrack(() => {
+			if (!pass) return;
+			pass.currentId = step.id;
+			if (step.sceneId !== selectedSceneId && orderedScenes.some((s) => s.id === step.sceneId)) {
+				selectScene(step.sceneId);
+			}
+			focusedId = step.id;
+		});
 	});
 	// The note was cleared or deleted under the pass: nothing left to work.
 	$effect(() => {

@@ -19,6 +19,7 @@ import { buildSurveyMessage, splitSurveyChunks } from './prompts/review.ts';
 import { PERSONA_TOKENS } from './context/budgets.ts';
 import {
 	checkBookFit,
+	maxApplyRequests,
 	patternSurveyOverhead,
 	patternSurveyTokens,
 	planBookPass,
@@ -273,6 +274,7 @@ export async function estimateStoryReview(
 	// scene it shows in, which nothing can know yet.
 	let patternTokens = 0;
 	let wholeBook: WholeBookFit | undefined;
+	let fixRequests = 0;
 	if (patterns) {
 		const contextWindow = modelContextWindow(resolved.config, 'reviewer');
 		const budgetTokens = surveyBudgetTokens(contextWindow);
@@ -287,8 +289,10 @@ export async function estimateStoryReview(
 			});
 			wholeBook = plan.fit;
 			patternTokens = plan.tokens;
+			fixRequests = maxApplyRequests([plan.unit]);
 		} else if (patterns === 'chapter') {
 			const units = chapterPatternUnits(targets);
+			fixRequests = maxApplyRequests(units);
 			patternTokens = units.length
 				? patternSurveyTokens(
 						units,
@@ -309,7 +313,7 @@ export async function estimateStoryReview(
 			});
 			lines.push({
 				label: 'Fixing the habits it finds',
-				note: 'Not known before the run: one request per habit for each scene it shows up in.'
+				note: `Not known before the run: one request per habit for each scene it shows up in, at most ${fixRequests}.`
 			});
 		}
 	}

@@ -254,6 +254,31 @@ describe('the pattern link', () => {
 		expect(result).toEqual({ ok: false, reason: 'That pattern note does not exist.' });
 	});
 
+	it('refuses an edit whose passage moved since the caller found it', async () => {
+		const [scene] = await db
+			.select({ bodyMd: scenes.bodyMd })
+			.from(scenes)
+			.where(eq(scenes.id, sceneId));
+		const result = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { assistant: true },
+			range: { start: 0, end: 7 },
+			original: 'Not what is there',
+			replacement: 'Kara'
+		});
+		expect(result.ok).toBe(false);
+		const ok = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { assistant: true },
+			range: { start: 0, end: 7 },
+			original: scene.bodyMd.slice(0, 7),
+			replacement: 'Kara'
+		});
+		expect(ok.ok).toBe(true);
+	});
+
 	it('leaves the edits standing when the note is cleared', async () => {
 		const threadId = await note();
 		const staged = await createSuggestion(db, {

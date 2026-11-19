@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+	APPLY_SCENES_PER_PATTERN,
+	BOOK_PATTERN_CAP,
 	bookPatternUnit,
+	maxApplyRequests,
 	patternSurveyTokens,
 	WHOLE_BOOK_SHARE,
 	wholeBookFit
@@ -75,5 +78,20 @@ describe('patternSurveyTokens', () => {
 		// The same text either way; the chapter route pays the overhead twice.
 		expect(byChapter - whole).toBeGreaterThan(40);
 		expect(whole).toBeGreaterThan(4 * 500);
+	});
+});
+
+describe('maxApplyRequests', () => {
+	it('is the pattern cap times the scenes, with the scenes per pattern capped', () => {
+		const scenes = (n: number) =>
+			Array.from({ length: n }, (_, i) => ({
+				id: `s${i}`,
+				title: null,
+				bodyMd: '',
+				chapterId: null
+			}));
+		const book = (n: number) => bookPatternUnit(scenes(n), new Map(), true);
+		expect(maxApplyRequests([book(3)])).toBe(BOOK_PATTERN_CAP * 3);
+		expect(maxApplyRequests([book(200)])).toBe(BOOK_PATTERN_CAP * APPLY_SCENES_PER_PATTERN);
 	});
 });

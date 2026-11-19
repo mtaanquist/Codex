@@ -430,6 +430,9 @@ describe('pattern pass prompts', () => {
 			{ name: 'Sighing', description: 'd', sceneIds: ['s1', 's2'], examples: ['a', 'b'] }
 		]);
 		expect(parsePatterns('[]')).toEqual([]);
+		expect(
+			parsePatterns('[{"name":"Odd (one)","sceneIds":["s1"]},{"name":"()","sceneIds":["s1"]}]')
+		).toEqual([{ name: 'Odd one', description: '', sceneIds: ['s1'], examples: [] }]);
 		expect(parsePatterns('no list here')).toBeNull();
 	});
 
