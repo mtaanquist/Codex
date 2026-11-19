@@ -857,7 +857,7 @@
 								.webSearchRequests === 1
 								? ''
 								: 'es'}{/if}{#if usageTotalCost !== null},
-							{spentPhrase(usageTotalCost, data.assistantUsage.totals.estimatedRequests > 0)}{/if}.
+							{spentPhrase(usageTotalCost)}{/if}.
 						{#if data.assistantUsage.totals.estimatedRequests > 0}
 							Includes {data.assistantUsage.totals.estimatedRequests} estimated request{pluralSuffix(
 								data.assistantUsage.totals.estimatedRequests
@@ -886,7 +886,7 @@
 											: 'es'}
 									{/if}
 									{#if cost !== null}
-										- {spentPhrase(cost, entry.estimated, 4)}
+										- {spentPhrase(cost, false, 4)}
 									{/if}
 								</div>
 							</div>

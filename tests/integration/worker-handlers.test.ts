@@ -41,10 +41,11 @@ import { createHandlers, type WorkerDeps, type WorkerServices } from '../../src/
 import {
 	AssistantDisabledError,
 	NoModelError,
-	ReplyCutOffError
+	ReplyCutOffError,
+	ReplyRefusedError
 } from '../../src/lib/server/llm/gateway';
 import { ArcStoryMutedError } from '../../src/lib/server/llm/arc-summary';
-import { EndpointReplyError } from '../../src/lib/server/llm/providers/types';
+import { EndpointReplyError, stoppedByWriter } from '../../src/lib/server/llm/providers/types';
 import { ReviewRunLoadError } from '../../src/lib/server/review-runs';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -73,7 +74,7 @@ afterAll(async () => {
 	await pool.end();
 });
 
-type JobState = { state: 'active' | 'retry'; startedOn: Date } | null;
+type JobState = { state: 'active' | 'retry' | 'cancelled'; startedOn: Date } | null;
 
 function harness(services: Partial<WorkerServices> = {}, current: JobState = null) {
 	const sent: { queue: string; data: unknown }[] = [];
@@ -392,6 +393,61 @@ describe('assistant notices link by id', () => {
 			'The Assistant could not write the arc for Bram. The arc was cut off at the reply limit.'
 		]);
 		// Settled as failed for the activity card.
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it("passes a writer's Stop on to the Assistant's requests as a writer stop", async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const controller = new AbortController();
+		let seen: AbortSignal | undefined;
+		const { handlers } = harness(
+			{
+				summariseCharacterArc: async (_db, opts) => {
+					seen = opts.signal;
+					controller.abort();
+					await new Promise<void>((resolve) =>
+						opts.signal?.addEventListener('abort', () => resolve())
+					);
+					return { outcome: 'written' as const };
+				}
+			},
+			{ state: 'cancelled', startedOn: STARTED }
+		);
+
+		await handlers.assistantEnrich([
+			{
+				...job({ userId: owner.id, universeId: universe.id, characterId: character.id }),
+				signal: controller.signal
+			}
+		]);
+
+		expect(seen && stoppedByWriter(seen)).toBe(true);
+	});
+
+	it('says the model declined an arc, without retrying', async () => {
+		const { owner, universe } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const { handlers, completed } = harness({
+			summariseCharacterArc: async () => {
+				throw new ReplyRefusedError();
+			}
+		});
+
+		// Resolves on the first attempt: a retry would be declined, and billed, again.
+		await handlers.assistantEnrich([
+			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
+		]);
+
+		expect(await titles(owner.id)).toEqual([
+			'The model declined to write the arc for Bram, so nothing was saved.'
+		]);
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 

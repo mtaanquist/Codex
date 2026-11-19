@@ -177,6 +177,32 @@ export class EndpointReplyError extends Error {
 	}
 }
 
+// The abort reason for a stop the writer asked for: Stop on a running job, or
+// a browser that cancelled its request. Nothing runs the request again after
+// it, so a cut-short reply need not be counted at the output cap. Any other
+// abort (a job that expired, a worker shutting down) can be followed by a retry
+// that carries the job's spend, so the cap there must hold.
+export class WriterStopError extends Error {
+	constructor() {
+		super('Stopped by the writer.');
+		this.name = 'AbortError';
+	}
+}
+
+export function stoppedByWriter(signal?: AbortSignal): boolean {
+	return signal?.aborted === true && signal.reason instanceof WriterStopError;
+}
+
+// A signal that aborts as a writer's stop when the given one aborts, for a
+// request whose only abort is the browser going away.
+export function writerStopSignal(signal: AbortSignal): AbortSignal {
+	const controller = new AbortController();
+	const stop = () => controller.abort(new WriterStopError());
+	if (signal.aborted) stop();
+	else signal.addEventListener('abort', stop, { once: true });
+	return controller.signal;
+}
+
 // A request that failed after the endpoint began generating is still billed
 // for the tokens it had used. The adapter attaches that count to the error it
 // throws, so the gateway can log and meter it before it retries or gives up.

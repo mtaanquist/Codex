@@ -1,5 +1,6 @@
 import {
 	EndpointReplyError,
+	stoppedByWriter,
 	withBilledUsage,
 	type ChatMessage,
 	type CompletionRequest,
@@ -329,8 +330,8 @@ type StreamProgress = {
 // billed for thinking it never showed, so it counts as the request's output
 // cap instead (bound). Over-counting only stops a capped run early;
 // under-counting would let it pass the cap. A finished reply's thinking is
-// done, and a cancelled one has no cap left to protect, so the characters are
-// the estimate there.
+// done, and one the writer stopped has no cap left to protect, so the
+// characters are the estimate there.
 function estimatedOutput(progress: StreamProgress, bound: boolean): number {
 	const streamed = tokensForChars(progress.outputChars);
 	const hidden = bound && progress.sawThinking && progress.thinkingChars === 0;
@@ -342,8 +343,8 @@ function estimatedOutput(progress: StreamProgress, bound: boolean): number {
 // at the end, so before it arrives message_start's output count (about 1) is
 // all there is; estimatedOutput stands in for it, so a retried long reply
 // cannot slip past the spend cap. Those counts are marked estimated.
-// cancelled skips the output-cap bound: the writer stopped the request, so no
-// further attempt follows for the bound to protect.
+// cancelled skips the output-cap bound: the writer stopped the request (see
+// WriterStopError), so no further attempt follows for the bound to protect.
 // Undefined when message_start never came.
 function partialUsage(
 	raw: Block,
@@ -427,11 +428,12 @@ async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unkno
 
 // Parse an Anthropic streaming response: "data: {json}" frames whose JSON
 // carries a type. Text arrives as content_block_delta/text_delta; the stream
-// ends with message_stop. Thinking and tool-input deltas are ignored. Usage
-// arrives split across frames: input tokens on message_start, the output
+// ends with message_stop. Thinking and tool-input deltas are not passed on.
+// Usage arrives split across frames: input tokens on message_start, the output
 // total on message_delta; the combined count is emitted before done. A stream
-// that ends in an error event, or without an output total, still emits what it
-// was billed, estimated from the text streamed.
+// that ends in an error event, without an output total, or cut off (the writer
+// stopped it, the connection dropped) still emits what it was billed,
+// estimated from the text and thinking streamed.
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
 	let promptTokens: number | undefined;
 	let cachedPromptTokens = 0;
@@ -452,55 +454,65 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			}
 		};
 	};
-	for await (const json of sseFrames(body)) {
-		const frame = json as {
-			type?: unknown;
-			delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
-			message?: {
-				usage?: {
-					input_tokens?: unknown;
-					cache_creation_input_tokens?: unknown;
-					cache_read_input_tokens?: unknown;
+	try {
+		for await (const json of sseFrames(body)) {
+			const frame = json as {
+				type?: unknown;
+				delta?: { type?: unknown; text?: unknown; thinking?: unknown; stop_reason?: unknown };
+				message?: {
+					usage?: {
+						input_tokens?: unknown;
+						cache_creation_input_tokens?: unknown;
+						cache_read_input_tokens?: unknown;
+					};
 				};
+				usage?: { output_tokens?: unknown; server_tool_use?: unknown };
+				error?: { message?: unknown };
 			};
-			usage?: { output_tokens?: unknown; server_tool_use?: unknown };
-			error?: { message?: unknown };
-		};
-		if (frame.type === 'message_start') {
-			const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
-			if (Number.isFinite(input)) promptTokens = input;
-			if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
-			continue;
-		}
-		if (frame.type === 'message_delta') {
-			const output = Number(frame.usage?.output_tokens);
-			if (Number.isFinite(output)) completionTokens = output;
-			if (frame.usage) searches = webSearches(frame.usage) || searches;
-			finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
-			continue;
-		}
-		if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
-			if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
-				streamedChars += frame.delta.text.length;
-				yield { type: 'token', text: frame.delta.text };
+			if (frame.type === 'message_start') {
+				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
+				if (Number.isFinite(input)) promptTokens = input;
+				if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
+				continue;
 			}
-			continue;
+			if (frame.type === 'message_delta') {
+				const output = Number(frame.usage?.output_tokens);
+				if (Number.isFinite(output)) completionTokens = output;
+				if (frame.usage) searches = webSearches(frame.usage) || searches;
+				finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
+				continue;
+			}
+			if (frame.type === 'content_block_delta' && frame.delta?.type === 'thinking_delta') {
+				if (typeof frame.delta.thinking === 'string') streamedChars += frame.delta.thinking.length;
+				continue;
+			}
+			if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
+				if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
+					streamedChars += frame.delta.text.length;
+					yield { type: 'token', text: frame.delta.text };
+				}
+				continue;
+			}
+			if (frame.type === 'message_stop') {
+				const billed = usage();
+				if (billed) yield billed;
+				yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
+				return;
+			}
+			if (frame.type === 'error') {
+				const billed = usage();
+				if (billed) yield billed;
+				yield {
+					type: 'error',
+					message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
+				};
+				return;
+			}
 		}
-		if (frame.type === 'message_stop') {
-			const billed = usage();
-			if (billed) yield billed;
-			yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
-			return;
-		}
-		if (frame.type === 'error') {
-			const billed = usage();
-			if (billed) yield billed;
-			yield {
-				type: 'error',
-				message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
-			};
-			return;
-		}
+	} catch (err) {
+		const billed = usage();
+		if (billed) yield billed;
+		throw err;
 	}
 	// The stream ended without an explicit message_stop; close it out anyway.
 	const billed = usage();
@@ -563,8 +575,7 @@ async function assembleMessage(
 		return message;
 	} catch (err) {
 		if (!(err instanceof Error)) throw err;
-		const cancelled = signal?.aborted === true || err.name === 'AbortError';
-		throw withBilledUsage(err, partialUsage(usage, progress, cancelled));
+		throw withBilledUsage(err, partialUsage(usage, progress, stoppedByWriter(signal)));
 	}
 }
 

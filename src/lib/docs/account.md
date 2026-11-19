@@ -198,10 +198,11 @@ Your words are sent only to the endpoint you set here.
 
 ### Usage and cost
 
-- **Estimated rows**: when a request fails, or you stop it, before the endpoint
-  reports its token counts, Codex estimates them from what had arrived. Those
-  rows say "estimated", and the 30-day total says how many it includes. A cost
-  that includes estimates reads "up to".
+- **Estimated rows**: with the Claude provider, when a request fails, or you
+  stop it, before the endpoint reports its token counts, Codex estimates them
+  from what had arrived. Those rows say "estimated", and the 30-day total says
+  how many it includes. A request you stopped can cost more than its estimate.
+  With other providers such a request shows "token counts not reported".
 - **Spend cap**: a request that fails partway is counted at the most it could
   have cost, so a capped run may stop a little early but never goes over. Its
   notice then says it spent "up to" the amount. If the endpoint leaves out the

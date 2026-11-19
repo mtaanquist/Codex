@@ -3,6 +3,7 @@ import { anthropicProvider } from './anthropic';
 import {
 	billedUsage,
 	EndpointReplyError,
+	WriterStopError,
 	type Connection,
 	type HttpRequest,
 	type HttpResponse,
@@ -1273,43 +1274,56 @@ describe('anthropicProvider review follow-ups', () => {
 		frame({ type: 'content_block_stop', index: 1 })
 	];
 
-	function abortingBody(frames: string[]): AsyncIterable<Uint8Array> {
+	function abortingBody(frames: string[], abort?: () => void): AsyncIterable<Uint8Array> {
 		const encoder = new TextEncoder();
 		return {
 			async *[Symbol.asyncIterator]() {
 				for (const part of frames) yield encoder.encode(part);
+				abort?.();
 				throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
 			}
 		};
 	}
 
-	it('does not bill a cancelled thinking stream at the output cap (#1127)', async () => {
+	// The body of a request whose signal is aborted partway, with the reason given.
+	function abortedPartway(controller: AbortController, reason?: unknown): HttpRequest {
+		return async () => ({
+			...sseResponse([]),
+			body: abortingBody([start, ...thinkingOpen], () => controller.abort(reason))
+		});
+	}
+
+	it('does not bill a thinking stream the writer stopped at the output cap (#1127)', async () => {
+		const controller = new AbortController();
+		const err = await anthropicProvider
+			.respond(req, conn, abortedPartway(controller, new WriterStopError()), controller.signal)
+			.catch((e: unknown) => e);
+		expect((err as Error).name).toBe('AbortError');
+		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: 1, estimated: true });
+	});
+
+	it('bills at the output cap when a job expired or the worker shut down', async () => {
+		// pg-boss aborts job.signal for both, and a retry carries the job's spend.
+		const controller = new AbortController();
+		const err = await anthropicProvider
+			.respond(req, conn, abortedPartway(controller), controller.signal)
+			.catch((e: unknown) => e);
+		expect(billedUsage(err)?.completionTokens).toBe(16);
+
+		const claimLost = new AbortController();
+		const lost = await anthropicProvider
+			.respond(req, conn, abortedPartway(claimLost, new Error('claim lost')), claimLost.signal)
+			.catch((e: unknown) => e);
+		expect(billedUsage(lost)?.completionTokens).toBe(16);
+	});
+
+	it('bills at the output cap for an abort with no signal behind it', async () => {
 		const http: HttpRequest = async () => ({
 			...sseResponse([]),
 			body: abortingBody([start, ...thinkingOpen])
 		});
 		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
-		expect((err as Error).name).toBe('AbortError');
-		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: 1, estimated: true });
-	});
-
-	it('does not bill at the cap when the signal was aborted (#1127)', async () => {
-		const controller = new AbortController();
-		const encoder = new TextEncoder();
-		const http: HttpRequest = async () => ({
-			...sseResponse([]),
-			body: {
-				async *[Symbol.asyncIterator]() {
-					for (const part of [start, ...thinkingOpen]) yield encoder.encode(part);
-					controller.abort();
-					throw new Error('socket closed');
-				}
-			}
-		});
-		const err = await anthropicProvider
-			.respond(req, conn, http, controller.signal)
-			.catch((e: unknown) => e);
-		expect(billedUsage(err)?.completionTokens).toBe(1);
+		expect(billedUsage(err)?.completionTokens).toBe(16);
 	});
 
 	it('reads the web search count from the usage report (#1104)', async () => {
@@ -1392,6 +1406,35 @@ describe('anthropicProvider review follow-ups', () => {
 			jsonResponse(200, { content: blocks, stop_reason: 'pause_turn' });
 		const result = await anthropicProvider.respond(req, conn, http);
 		expect(result).toMatchObject({ content: 'Checking.', finishReason: 'paused', raw: blocks });
+	});
+
+	it('emits the billed usage, estimated, for a chat stream the writer stopped', async () => {
+		const http: HttpRequest = async () => ({
+			...sseResponse([]),
+			body: abortingBody([
+				start,
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'thinking_delta', thinking: 'abcd' }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 1,
+					delta: { type: 'text_delta', text: 'efgh' }
+				})
+			])
+		});
+		const events: StreamEvent[] = [];
+		const err = await (async () => {
+			for await (const event of anthropicProvider.chatStream(req, conn, http)) events.push(event);
+		})().catch((e: unknown) => e);
+		expect((err as Error).name).toBe('AbortError');
+		// The thinking it streamed counts too: it is billed as output.
+		expect(events).toEqual([
+			{ type: 'token', text: 'efgh' },
+			{ type: 'usage', usage: { promptTokens: 9, completionTokens: 2, estimated: true } }
+		]);
 	});
 
 	it('emits the billed usage, estimated, ahead of a streamed error (#1102)', async () => {
