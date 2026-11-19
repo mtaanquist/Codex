@@ -674,12 +674,12 @@ describe('the whole-book pattern pass', () => {
 		const inner = bookProvider().provider;
 		const provider: Provider = {
 			...inner,
-			async respond(req) {
+			async respond(req, conn, http, signal) {
 				if (isBookSurvey(req.messages) && whole(asked(req.messages))) {
 					seen.push(req.messages);
 					return { content: 'Here are my thoughts, in prose.', toolCalls: [] };
 				}
-				return inner.respond(req);
+				return inner.respond(req, conn, http, signal);
 			}
 		};
 		await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
