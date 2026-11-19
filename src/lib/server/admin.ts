@@ -33,7 +33,6 @@ export async function createFirstAdmin(
 
 	const passwordHash = await hashPassword(input.password);
 	try {
-		const now = new Date();
 		const [row] = await db
 			.insert(users)
 			.values({
@@ -41,8 +40,8 @@ export async function createFirstAdmin(
 				displayName,
 				passwordHash,
 				role: 'admin',
-				emailVerifiedAt: now,
-				approvedAt: now
+				emailVerifiedAt: sql`now()`,
+				approvedAt: sql`now()`
 			})
 			.returning({ id: users.id });
 		return { ok: true, id: row.id };
@@ -66,7 +65,7 @@ export async function approveUser(db: Database, userId: string): Promise<boolean
 	const [row] = await db
 		.update(users)
 		.set({
-			approvedAt: new Date(),
+			approvedAt: sql`now()`,
 			emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`
 		})
 		.where(and(eq(users.id, userId), isNull(users.approvedAt), ne(users.role, 'admin')))
@@ -80,7 +79,7 @@ export async function approveUser(db: Database, userId: string): Promise<boolean
 export async function confirmUserEmail(db: Database, userId: string): Promise<boolean> {
 	const [row] = await db
 		.update(users)
-		.set({ emailVerifiedAt: new Date() })
+		.set({ emailVerifiedAt: sql`now()` })
 		.where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
 		.returning({ id: users.id });
 	return Boolean(row);
@@ -206,7 +205,7 @@ export async function setUserSuspended(
 	return await db.transaction(async (tx) => {
 		const [row] = await tx
 			.update(users)
-			.set({ suspendedAt: suspended ? new Date() : null })
+			.set({ suspendedAt: suspended ? sql`now()` : null })
 			.where(and(eq(users.id, userId), ne(users.role, 'admin')))
 			.returning({ id: users.id });
 		if (!row) return false;

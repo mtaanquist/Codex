@@ -200,6 +200,6 @@ export async function markNotificationsRead(
 	}
 	await db
 		.update(notifications)
-		.set({ readAt: new Date() })
+		.set({ readAt: sql`now()` })
 		.where(and(...scope));
 }

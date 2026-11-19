@@ -23,6 +23,7 @@ import {
 } from '../entity-lookups.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
+import { dbNow } from '../db-clock.ts';
 import {
 	stageEntitySuggestions,
 	summarySuggestionClosed,
@@ -310,11 +311,6 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 		out.push(...rows.map((row) => ({ id: row.id, type })));
 	}
 	return out;
-}
-
-export async function dbNow(db: Database): Promise<Date> {
-	const { rows } = await db.execute<{ now: Date | string }>(sql`select now() as now`);
-	return new Date(rows[0].now);
 }
 
 // The background pass: enrich every entity in the universe that has new prose

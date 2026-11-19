@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
+import { dbNow } from './db-clock.ts';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
@@ -282,12 +283,12 @@ export async function duplicateScene(
 	const owned = await ownedScene(db, userId, sceneId);
 	if (!owned) return GONE;
 
-	const stamp = new Date();
 	return await db.transaction(async (tx) => {
 		// Copy the source as it is under the lock, so an autosave that lands
 		// meanwhile is in the copy.
 		const scene = await lockStoryScene(tx, owned.storyId, sceneId);
 		if (!scene) return GONE;
+		const stamp = await dbNow(tx);
 
 		const created = await makeRoomAfter(tx, scene, {
 			title: scene.title === null ? null : `${scene.title} (copy)`,

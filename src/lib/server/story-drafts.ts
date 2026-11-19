@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { dbNow } from './db-clock.ts';
 import {
 	chapters,
 	characters,
@@ -604,7 +605,7 @@ export async function restoreDraftScene(
 					.for('key share')
 			: [];
 		const chapterId = chapter?.id ?? null;
-		const stamp = new Date();
+		const stamp = await dbNow(tx);
 		const [created] = await tx
 			.insert(scenes)
 			.values({
@@ -680,7 +681,7 @@ export async function newStoryFromDraft(
 				.returning({ id: stories.id, slug: stories.slug });
 
 			const sceneIds = new Map<string, string>();
-			const stamp = new Date();
+			const stamp = await dbNow(tx);
 			let globalPosition = 0;
 			const insertScene = async (
 				scene: DraftContent['scenes'][number],
