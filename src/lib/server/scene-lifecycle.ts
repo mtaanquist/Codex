@@ -350,13 +350,13 @@ async function lockStoryChapters(tx: Database, storyId: string) {
 	await tx.execute(sql`select id from chapters where story_id = ${storyId} order by id for update`);
 }
 
-/** Swaps a chapter with its neighbour. A no-op at either end of the list. */
 // A chapter's place in the story is not part of what its Assistant summary
 // reads, so renumbering leaves updated_at alone and the summary current.
 function keepChapterUpdatedAt() {
 	return { updatedAt: sql`${chapters.updatedAt}` };
 }
 
+/** Swaps a chapter with its neighbour. A no-op at either end of the list. */
 export async function moveChapter(
 	db: Database,
 	userId: string,

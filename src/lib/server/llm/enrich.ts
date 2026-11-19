@@ -39,7 +39,7 @@ import type { ChatMessage } from './providers/types.ts';
 
 export type EnrichScope = { storyId: string } | { universeId: string };
 
-const MAX_APPEARANCES = 16;
+export const MAX_APPEARANCES = 16;
 const MAX_ENRICH_TOKENS = 700;
 // Failed reads in a row after which the pass stops rather than keep calling an
 // endpoint that is down. A cut-off reply is not counted: the endpoint answered.

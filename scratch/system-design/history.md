@@ -992,8 +992,7 @@ restore, split, merge, duplicate, story rename, mute, chapter rename, move
 and delete, entity edits) run through the real server functions, and after
 each step the marks are compared with the request the Assistant would send.
 `arcRequest` and `enrichRequest` were split out of the arc and enrich passes
-so the test builds the same request the passes do. Summaries store no
-fingerprint, so the test keeps the prompt each was written from.
+so the test builds the same request the passes do.
 
 Rules it holds: anything whose input changed is marked; a scene or chapter
 summary whose input did not change is not (no fingerprint check, so a paid
@@ -1003,13 +1002,22 @@ name, aliases and details are the writer's to edit and are left out too.
 Needless arc and enrich marks cost no call (the fingerprint check) and are
 only printed.
 
+After each round of passes the marks are checked again, so a pass that
+rewrites a scene summary without marking its chapter fails too. The fake
+model's replies follow the prompt, and the test keeps the prompt behind each
+reply, so a summary is judged against the input it was actually written
+from (a copied summary maps to its source's prompt). A chapter whose scenes
+came, went or moved may be marked even when its input comes out the same.
+A duplicate keeps its source's summary under the title "X (copy)" (#1089), so
+a title that differs only by "(copy)" is not owed a refresh.
+
 What it found on main: renumbering chapters on a chapter move or delete bumped
 every chapter's `updated_at`, so each summary read as out of date (#1200);
 reordering scenes inside one chapter left its summary current (#1146). A
 removal that shifts a full 16-passage enrich sample is reported, not failed
-(#1201). The fake model's summaries follow the prompt, so a changed scene
-summary moves its chapter's input as a real one would; duplicates copy their
-summary, so a chapter with two equal summaries is not judged on a reorder.
+(#1201). Write paths not yet in the action list are #1214. Probes that
+disabled one mark at a time (the summaries pass's chapter mark, a character
+rename's arc mark, the trash and restore marks) each failed the test.
 
 ## November review (2026-11-18)
 

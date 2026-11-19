@@ -4,16 +4,19 @@
 // actions through the real server functions and, after each one, checks the
 // marks against what the Assistant would actually be sent:
 //
-// - whatever's input changed must be marked (a missed mark leaves the writer
-//   with an arc or summary describing text that is no longer there); for an
-//   enrich read, only a passage it has not read yet counts, since a trash or
-//   mute that only takes passages away is not worth a paid re-read, and
+// - anything whose input changed must be marked (a missed mark leaves the
+//   writer with an arc or summary describing text that is no longer there);
+//   for an enrich read, only a passage it has not read yet counts, since a
+//   trash or mute that only takes passages away is not worth a paid re-read;
 // - a scene or chapter summary whose input did not change must not be marked
 //   (summaries have no fingerprint check, so a needless mark is a paid call).
 //
 // Arcs and enrich reads carry a fingerprint of their last request and skip the
 // call when it matches, so a needless mark there costs no model call; those are
-// counted and reported, not failed.
+// printed, not failed.
+//
+// The marks the passes themselves set (a new scene summary marks its chapter
+// and the arcs that read it) are checked again after each round of passes.
 //
 // A failure prints the seed and the actions that led to it. STALE_SEEDS and
 // STALE_STEPS widen a local run.
@@ -72,10 +75,14 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'stale-marks-invariant-secret
 
 const { arcIsStale, arcRequest, summariseCharacterArc } =
 	await import('../../src/lib/server/llm/arc-summary');
-const { enrichRequest, enrichUniverse } = await import('../../src/lib/server/llm/enrich');
+const { enrichRequest, enrichUniverse, MAX_APPEARANCES } =
+	await import('../../src/lib/server/llm/enrich');
+const { entityAppearances } = await import('../../src/lib/server/plan-data');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
+
+let chapterCount = 0;
 
 const SEEDS = Number(process.env.STALE_SEEDS ?? 8);
 const STEPS = Number(process.env.STALE_STEPS ?? 30);
@@ -90,8 +97,11 @@ const stubProvider: Provider = {
 		yield { type: 'done' };
 	},
 	async respond(req) {
+		const prompt = req.messages.map((m) => String(m.content)).join('\n');
+		const content = `Summary ${hash(JSON.stringify(req.messages)).slice(0, 8)}.`;
+		writtenFrom.set(content, prompt.slice(prompt.indexOf('Summarise ')));
 		return {
-			content: `Summary ${hash(JSON.stringify(req.messages)).slice(0, 8)}.`,
+			content,
 			toolCalls: [],
 			usage: { promptTokens: 10, completionTokens: 10 }
 		};
@@ -374,7 +384,7 @@ const actions: Record<string, Action> = {
 					isNotNull(scenes.deletedAt)
 				)
 			)
-			.orderBy(asc(stories.positionInSeries), asc(scenes.globalPosition));
+			.orderBy(asc(stories.positionInSeries), asc(scenes.globalPosition), asc(scenes.deletedAt));
 		const scene = r.pick(trashed);
 		if (!scene) return null;
 		await restoreScene(db, userId, scene.id);
@@ -455,7 +465,7 @@ const actions: Record<string, Action> = {
 		const story = r.pick(await liveStories());
 		const chapter = story && r.pick((await storyOrder(story.id)).chapters);
 		if (!chapter) return null;
-		await renameChapter(db, userId, chapter.id, `Chapter ${r.int(100)}`);
+		await renameChapter(db, userId, chapter.id, `Chapter ${++chapterCount}`);
 		return `rename a chapter in ${story.title}`;
 	},
 	async moveChapter(r) {
@@ -481,14 +491,28 @@ const actions: Record<string, Action> = {
 			.from(table)
 			.where(eq(table.universeId, universeId))
 			// Seeded together, so by name for a repeatable pick.
-			.orderBy(sql.raw(kind === 'lore' ? 'title' : 'name'));
+			.orderBy(
+				asc(kind === 'lore' ? loreEntries.title : table === places ? places.name : characters.name)
+			);
 		const target = r.pick(rows);
 		if (!target) return null;
 		const current = await loadEntity(kind, target.id);
 		const change = r.pick(['name', 'tags', 'details', 'summary', 'body'] as const)!;
 		const next = { ...current };
-		if (change === 'name') next.name = `${current.name.split(' ')[0]} ${r.int(100)}`;
-		if (change === 'tags') next.tags = r.chance(0.5) ? [] : [`the ${r.pick(['old', 'young'])} one`];
+		if (change === 'name') {
+			next.name = `${current.name.split(' ')[0]} ${r.int(100)}`;
+			// Kept as an alias, the old name still finds the same passages, so
+			// only the rename itself can mark what reads the name.
+			if (r.chance(0.5) && !next.tags.includes(current.name))
+				next.tags = [...next.tags, current.name];
+		}
+		if (change === 'tags') {
+			// "the rain" and "at dawn" are in the prose, so the alias finds new
+			// passages; the others find none.
+			next.tags = r.chance(0.3)
+				? []
+				: [r.pick(['the rain', 'at dawn', 'the old one', 'the stranger'])!];
+		}
 		if (change === 'details') next.details = [{ label: 'Age', value: String(20 + r.int(40)) }];
 		if (change === 'summary') next.summaryMd = `Summary ${r.int(1000)}`;
 		if (change === 'body') next.bodyMd = `Notes ${r.int(1000)}`;
@@ -529,55 +553,54 @@ async function loadEntity(kind: 'character' | 'place' | 'lore', id: string) {
 // The Assistant's side: bring everything current, then check marks against
 // what it would be sent.
 
-// The prompt each generated summary was written from, taken when it was last
-// brought current. Summaries store no fingerprint of their own, so the test
-// keeps one.
-const summaryInputs = new Map<string, string>();
-// Summaries whose input differed from that at some step since, even if a later
-// step put it back (a swap undone): their mark is owed.
-const summaryDirty = new Set<string>();
+// Summaries store no fingerprint of their own, so the stub keeps the prompt
+// each reply was written from, keyed by the reply. A copied summary (split,
+// duplicate) carries its source's text, so it maps to its source's prompt.
+const writtenFrom = new Map<string, string>();
 
-async function chapterSummaryInputs(): Promise<
-	Map<
-		string,
-		{
-			title: string | null;
-			input: string | null;
-			stale: boolean;
-			generated: boolean;
-			storyId: string;
-			repeats: boolean;
-		}
-	>
-> {
+// Summaries whose input differed from what they were written from at some step
+// since, even if a later step put it back (a swap undone): their mark is owed.
+// Keyed by id and summary text, so a new summary starts clean.
+const dirty = new Set<string>();
+
+// The scenes, in order, each chapter held when its summary was written, keyed
+// as `dirty` is.
+const chapterScenes = new Map<string, string>();
+
+const label = (title: string | null, id: string) => title ?? `untitled ${id.slice(0, 4)}`;
+
+// The prose a scene summary prompt carries, after its "---" line.
+const promptBody = (prompt: string) => prompt.slice(prompt.indexOf('\n---\n') + 5);
+const promptTitle = (prompt: string) => prompt.slice(0, prompt.indexOf('\n'));
+const uncopied = (title: string) => title.replaceAll(' (copy)', '');
+
+async function chapterStates() {
 	const rows = await db
 		.select({
 			id: chapters.id,
 			storyId: chapters.storyId,
 			title: chapters.title,
+			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
 			updatedAt: chapters.updatedAt
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(stories.id, chapters.storyId))
-		.where(and(eq(stories.universeId, universeId), isNull(stories.deletedAt)));
-	const out = new Map();
+		.where(and(eq(stories.universeId, universeId), isNull(stories.deletedAt)))
+		.orderBy(asc(stories.positionInSeries), asc(chapters.position));
+	const out = [];
 	for (const chapter of rows) {
-		const summaries = (
-			await db
-				.select({ summaryMd: scenes.summaryMd })
-				.from(scenes)
-				.where(and(eq(scenes.chapterId, chapter.id), isNull(scenes.deletedAt)))
-				.orderBy(asc(scenes.globalPosition))
-		)
-			.map((s) => s.summaryMd?.trim())
-			.filter((s): s is string => !!s);
-		out.set(chapter.id, {
-			title: chapter.title,
-			storyId: chapter.storyId,
-			// A duplicate keeps its source's summary, so two scenes can read the
-			// same; swapping them is a reorder that does not change the input.
-			repeats: new Set(summaries).size < summaries.length,
+		const sceneRows = await db
+			.select({ id: scenes.id, summaryMd: scenes.summaryMd })
+			.from(scenes)
+			.where(and(eq(scenes.chapterId, chapter.id), isNull(scenes.deletedAt)))
+			.orderBy(asc(scenes.globalPosition));
+		const summaries = sceneRows.map((s) => s.summaryMd?.trim()).filter((s): s is string => !!s);
+		out.push({
+			id: chapter.id,
+			name: `chapter summary of ${label(chapter.title, chapter.id)}`,
+			summaryMd: chapter.summaryMd,
+			sceneIds: sceneRows.map((s) => s.id).join(),
 			// A chapter with no scene summaries is passed over, not refreshed.
 			input: summaries.length ? buildChapterSummaryMessage(chapter.title, summaries) : null,
 			generated: chapter.summaryGeneratedAt !== null,
@@ -587,11 +610,10 @@ async function chapterSummaryInputs(): Promise<
 	return out;
 }
 
-async function sceneSummaryStates() {
+async function sceneStates() {
 	const rows = await db
 		.select({
 			id: scenes.id,
-			storyId: scenes.storyId,
 			chapterId: scenes.chapterId,
 			title: scenes.title,
 			bodyMd: scenes.bodyMd,
@@ -603,23 +625,24 @@ async function sceneSummaryStates() {
 		.innerJoin(stories, eq(stories.id, scenes.storyId))
 		.where(
 			and(eq(stories.universeId, universeId), isNull(stories.deletedAt), isNull(scenes.deletedAt))
-		);
-	return rows.map((scene) => ({
-		id: scene.id,
-		storyId: scene.storyId,
-		chapterId: scene.chapterId,
-		title: scene.title,
-		blank: !scene.bodyMd.trim(),
-		// The next summaries pass writes this scene's summary.
-		due:
-			!!scene.bodyMd.trim() &&
-			(!scene.summaryMd?.trim() ||
-				(scene.summaryGeneratedAt !== null &&
-					!summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt))),
-		input: buildSceneSummaryMessage(scene.title, scene.bodyMd),
-		generated: scene.summaryGeneratedAt !== null,
-		stale: !summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt)
-	}));
+		)
+		.orderBy(asc(stories.positionInSeries), asc(scenes.globalPosition));
+	return rows.map((scene) => {
+		const stale = !summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt);
+		const blank = !scene.bodyMd.trim();
+		return {
+			id: scene.id,
+			chapterId: scene.chapterId,
+			name: `scene summary of ${label(scene.title, scene.id)}`,
+			summaryMd: scene.summaryMd,
+			blank,
+			// The next summaries pass writes this scene's summary.
+			due: !blank && (!scene.summaryMd?.trim() || (scene.summaryGeneratedAt !== null && stale)),
+			input: buildSceneSummaryMessage(scene.title, scene.bodyMd),
+			generated: scene.summaryGeneratedAt !== null,
+			stale
+		};
+	});
 }
 
 // Entities the enrich pass would consider: mentioned in a live scene of a live
@@ -636,15 +659,21 @@ async function enrichEligible(): Promise<Set<string>> {
 	return new Set(rows.map((row: { id: string }) => row.id));
 }
 
-async function entityStates() {
-	const out: {
-		kind: 'character' | 'place' | 'lore';
-		id: string;
-		name: string;
-		enrichedAt: Date | null;
-		enrichedInput: string | null;
-	}[] = [];
-	for (const row of await db.select().from(characters).where(eq(characters.universeId, universeId)))
+type EntityState = {
+	kind: 'character' | 'place' | 'lore';
+	id: string;
+	name: string;
+	enrichedAt: Date | null;
+	enrichedInput: string | null;
+};
+
+async function entityStates(): Promise<EntityState[]> {
+	const out: EntityState[] = [];
+	for (const row of await db
+		.select()
+		.from(characters)
+		.where(eq(characters.universeId, universeId))
+		.orderBy(asc(characters.name)))
 		out.push({
 			kind: 'character',
 			id: row.id,
@@ -652,7 +681,11 @@ async function entityStates() {
 			enrichedAt: row.assistantEnrichedAt,
 			enrichedInput: row.assistantEnrichedInput
 		});
-	for (const row of await db.select().from(places).where(eq(places.universeId, universeId)))
+	for (const row of await db
+		.select()
+		.from(places)
+		.where(eq(places.universeId, universeId))
+		.orderBy(asc(places.name)))
 		out.push({
 			kind: 'place',
 			id: row.id,
@@ -663,7 +696,8 @@ async function entityStates() {
 	for (const row of await db
 		.select()
 		.from(loreEntries)
-		.where(eq(loreEntries.universeId, universeId)))
+		.where(eq(loreEntries.universeId, universeId))
+		.orderBy(asc(loreEntries.title)))
 		out.push({
 			kind: 'lore',
 			id: row.id,
@@ -676,34 +710,41 @@ async function entityStates() {
 
 const enrichMarked = (at: Date | null) => at === null || at < STALE_MARK_BEFORE;
 
-// The passages of each entity's last enrich request, taken when its stored
-// fingerprint matched. A trash, merge or mute only takes passages away, and by
-// design does not pay for a re-read (the suggestions already staged came from
-// text the writer can still see in History); a re-read is owed when the
-// request gains a line it did not have.
-const enrichLines = new Map<string, Set<string>>();
+// The passages of each entity's last enrich read, taken when its stored
+// fingerprint matched. A trash or mute only takes passages away, and by design
+// does not pay for a re-read; a re-read is owed when the request gains a
+// passage it did not have. The entity's own name, aliases and details are the
+// writer's to edit without paying for a re-read, so only passages count.
+const enrichPassages = new Map<string, { passages: Set<string>; full: boolean }>();
 
-// Whether that request held as many passages as a read sends
-// (MAX_APPEARANCES in enrich.ts).
-const enrichFull = new Map<string, boolean>();
-const ENRICH_SAMPLE = 16;
+// The passages of an enrich request, without their numbers: a removal
+// renumbers the rest without adding any. A passage can run over a line break.
+function passagesOf(request: { messages: { content: unknown }[] }): string[] {
+	const text = request.messages.map((m) => String(m.content)).join('\n');
+	const start = text.indexOf('Passages where it appears:\n');
+	const end = text.indexOf('\n\nSuggest only');
+	if (start < 0 || end < 0) return [];
+	return text
+		.slice(start + 'Passages where it appears:\n'.length, end)
+		.split(/^\d+\. /m)
+		.slice(1)
+		.map((passage) => passage.replace(/\n$/, ''));
+}
 
-const requestLines = (request: { messages: { content: unknown }[] }) =>
-	new Set(passageLines(request));
-
-const passageLines = (request: { messages: { content: unknown }[] }) =>
-	request.messages.flatMap((m) =>
-		// Only the numbered passage lines: the entity's own name, aliases and
-		// details are the writer's to edit without paying for a re-read, and a
-		// removal renumbers the rest without adding any.
-		String(m.content)
-			.split('\n')
-			.filter((line) => /^\d+\. /.test(line))
-			.map((line) => line.replace(/^\d+\. /, ''))
+// Every passage an entity appears in, before the read's sample is taken, as
+// snippet text without the story and scene label.
+async function allSnippets(entity: EntityState): Promise<Set<string>> {
+	const rows = await entityAppearances(
+		db,
+		{ kind: entity.kind, id: entity.id },
+		{ universeId },
+		{ assistant: true }
 	);
+	return new Set(rows.map((row) => row.snippet));
+}
+const unlabelled = (passage: string) => passage.replace(/^\[[^\]\n]*\] /, '');
 
-// Runs the Assistant's background passes until everything it reads is current,
-// and records the summary fingerprints the next check compares against.
+// Runs the Assistant's background passes until everything it reads is current.
 async function bringCurrent() {
 	await settleMentions();
 	for (const story of await liveStories()) {
@@ -717,72 +758,84 @@ async function bringCurrent() {
 			arcSummaryAt: characters.arcSummaryAt
 		})
 		.from(characters)
-		.where(eq(characters.universeId, universeId))) {
+		.where(eq(characters.universeId, universeId))
+		.orderBy(asc(characters.name))) {
 		if (character.arcSummaryMd && !arcIsStale(character)) continue;
 		await summariseCharacterArc(db, { userId, characterId: character.id }, deps);
 	}
 	await enrichUniverse(db, { userId, universeId }, deps);
 
-	for (const scene of await sceneSummaryStates()) {
-		if (scene.generated && !scene.stale) {
-			summaryInputs.set(scene.id, scene.input);
-			summaryDirty.delete(scene.id);
-		}
-	}
-	for (const [id, chapter] of await chapterSummaryInputs()) {
-		if (chapter.generated && !chapter.stale && chapter.input) {
-			summaryInputs.set(id, chapter.input);
-			summaryDirty.delete(id);
-		}
+	for (const chapter of await chapterStates()) {
+		const key = `${chapter.id}:${chapter.summaryMd}`;
+		if (chapter.generated && !chapter.stale && !chapterScenes.has(key))
+			chapterScenes.set(key, chapter.sceneIds);
 	}
 	for (const entity of await entityStates()) {
 		const request = await enrichRequest(db, { userId, scope: { universeId }, entityId: entity.id });
 		if (request && request.input === entity.enrichedInput) {
-			enrichLines.set(entity.id, requestLines(request));
-			enrichFull.set(entity.id, passageLines(request).length >= ENRICH_SAMPLE);
+			const passages = passagesOf(request);
+			enrichPassages.set(entity.id, {
+				passages: new Set(passages),
+				full: passages.length >= MAX_APPEARANCES
+			});
 		}
 	}
 }
 
 type Finding = { rule: 'missed' | 'extra'; what: string; strict: boolean };
 
-async function checkMarks(): Promise<Finding[]> {
+// `before` holds each entity's full set of snippets as of the step's start,
+// for telling a sample shift from new prose.
+async function checkMarks(before?: Map<string, Set<string>>): Promise<Finding[]> {
 	const findings: Finding[] = [];
-	const muted = new Set<string>();
-	for (const story of await liveStories()) if (await storyMuted(story.id)) muted.add(story.id);
+	const missed = (what: string, strict = true) => findings.push({ rule: 'missed', what, strict });
+	const extra = (what: string, strict = true) => findings.push({ rule: 'extra', what, strict });
 
-	const sceneStates = await sceneSummaryStates();
+	// A summary is judged against the prompt it was written from. One whose
+	// prompt is unknown (none here: the writer writes no summaries) is skipped.
+	const judge = (
+		item: { id: string; name: string; summaryMd: string | null; stale: boolean },
+		input: string,
+		opts: { owed?: (was: string) => boolean } = {}
+	) => {
+		const was = item.summaryMd ? writtenFrom.get(item.summaryMd.trim()) : undefined;
+		if (was === undefined) return;
+		const key = `${item.id}:${item.summaryMd}`;
+		const changed = was !== input;
+		if (changed) dirty.add(key);
+		const owed = opts.owed ? opts.owed(was) : changed;
+		if (owed && !item.stale) missed(item.name);
+		if (!dirty.has(key) && item.stale) extra(item.name);
+	};
+
+	const scenesNow = await sceneStates();
 	// A chapter holding a scene whose summary is due is marked by the pass that
-	// writes it, so its own mark is not judged until then.
+	// writes it, so its own mark is judged after that pass.
 	const chaptersWithDueScenes = new Set(
-		sceneStates.filter((scene) => scene.due && scene.chapterId).map((scene) => scene.chapterId)
+		scenesNow.filter((scene) => scene.due && scene.chapterId).map((scene) => scene.chapterId)
 	);
-	for (const scene of sceneStates) {
+	for (const scene of scenesNow) {
 		if (!scene.generated || scene.blank) continue;
-		const was = summaryInputs.get(scene.id);
-		// A copy (split, duplicate) inherits a stamp; compare it with the input
-		// it was copied from only when that is known.
-		if (was === undefined) continue;
-		const changed = was !== scene.input;
-		if (changed) summaryDirty.add(scene.id);
-		if (changed && !scene.stale)
-			findings.push({ rule: 'missed', what: `scene summary ${scene.title}`, strict: true });
-		if (!summaryDirty.has(scene.id) && scene.stale && !muted.has(scene.storyId))
-			findings.push({ rule: 'extra', what: `scene summary ${scene.title}`, strict: true });
+		judge(scene, scene.input, {
+			// A duplicate keeps its source's current summary under the title
+			// "X (copy)" rather than paying to summarise the same prose again
+			// (#1089). Any other change of title or prose is owed a refresh.
+			owed: (was) =>
+				promptBody(was) !== promptBody(scene.input) ||
+				uncopied(promptTitle(was)) !== uncopied(promptTitle(scene.input))
+		});
 	}
-	for (const [id, chapter] of await chapterSummaryInputs()) {
-		// A chapter left with no scene summaries is passed over and keeps any
-		// mark; what it is compared with starts again at its next summary.
-		if (chapter.input === null) summaryInputs.delete(id);
-		if (!chapter.generated || chapter.input === null || chaptersWithDueScenes.has(id)) continue;
-		const was = summaryInputs.get(id);
-		if (was === undefined) continue;
-		const changed = was !== chapter.input;
-		if (changed) summaryDirty.add(id);
-		if (changed && !chapter.stale)
-			findings.push({ rule: 'missed', what: `chapter summary of ${chapter.title}`, strict: true });
-		if (!summaryDirty.has(id) && chapter.stale && !muted.has(chapter.storyId) && !chapter.repeats)
-			findings.push({ rule: 'extra', what: `chapter summary of ${chapter.title}`, strict: true });
+	for (const chapter of await chapterStates()) {
+		// A chapter whose scenes came, went or moved is marked without reading
+		// their summaries, so a mark is fine even when the input came out the
+		// same (a scene with no summary yet, two equal summaries from a duplicate).
+		// Like `dirty`, it holds once seen, even if a later step puts the scenes back.
+		const key = `${chapter.id}:${chapter.summaryMd}`;
+		const was = chapterScenes.get(key);
+		if (was !== undefined && was !== chapter.sceneIds) dirty.add(key);
+		if (!chapter.generated || chapter.input === null || chaptersWithDueScenes.has(chapter.id))
+			continue;
+		judge(chapter, chapter.input);
 	}
 
 	for (const character of await db
@@ -795,56 +848,39 @@ async function checkMarks(): Promise<Finding[]> {
 			arcSummaryInput: characters.arcSummaryInput
 		})
 		.from(characters)
-		.where(eq(characters.universeId, universeId))) {
+		.where(eq(characters.universeId, universeId))
+		.orderBy(asc(characters.name))) {
 		if (!character.arcSummaryMd) continue;
 		const request = await arcRequest(db, character);
 		const changed = (request?.input ?? null) !== character.arcSummaryInput;
 		const stale = arcIsStale(character);
-		if (changed && !stale)
-			findings.push({ rule: 'missed', what: `arc of ${character.name}`, strict: true });
-		if (!changed && stale)
-			findings.push({ rule: 'extra', what: `arc of ${character.name}`, strict: false });
+		if (changed && !stale) missed(`arc of ${character.name}`);
+		// No paid call: the arc pass skips a request the same as the last.
+		if (!changed && stale) extra(`arc of ${character.name}`, false);
 	}
 
 	const eligible = await enrichEligible();
 	for (const entity of await entityStates()) {
 		if (!eligible.has(entity.id) || entity.enrichedInput === null) continue;
-		const request = await enrichRequest(db, {
-			userId,
-			scope: { universeId },
-			entityId: entity.id
-		});
+		const request = await enrichRequest(db, { userId, scope: { universeId }, entityId: entity.id });
 		const changed = request?.input !== entity.enrichedInput;
-		const before = enrichLines.get(entity.id);
-		const gained =
-			!request || !before || [...requestLines(request)].some((line) => !before.has(line));
 		const marked = enrichMarked(entity.enrichedAt);
-		// A read sends at most ENRICH_SAMPLE passages. When it was full, taking
-		// one away can bring in a passage that was left out before; that waits
-		// for the next real change (a known gap, #1201), so it is reported, not failed.
-		const sampled = enrichFull.get(entity.id) ?? false;
-		if (changed && gained && !marked && sampled) {
-			findings.push({
-				rule: 'missed',
-				what: `enrich of ${entity.name} (sample shift)`,
-				strict: false
-			});
-		} else if (changed && gained && !marked)
-			findings.push({
-				rule: 'missed',
-				what: `enrich of ${entity.kind} ${entity.name}${
-					request && before
-						? ` (new: ${[...requestLines(request)].filter((l) => !before.has(l)).join(' | ')})`
-						: ''
-				}`,
-				strict: true
-			});
-		if (!changed && marked)
-			findings.push({
-				rule: 'extra',
-				what: `enrich of ${entity.kind} ${entity.name}`,
-				strict: false
-			});
+		const what = `enrich of ${entity.kind} ${entity.name}`;
+		if (!changed && marked) extra(what, false);
+		if (!changed || marked) continue;
+		const last = enrichPassages.get(entity.id);
+		if (!request || !last) {
+			missed(what);
+			continue;
+		}
+		const gained = passagesOf(request).filter((passage) => !last.passages.has(passage));
+		if (!gained.length) continue;
+		// A read sends at most MAX_APPEARANCES passages. When the last one was
+		// full, taking a passage away can bring in one that was left out of it
+		// though already written; that waits for the next real change (#1201).
+		const shifted =
+			last.full && gained.every((passage) => before?.get(entity.id)?.has(unlabelled(passage)));
+		missed(`${what}${shifted ? ' (sample shift)' : ''} (new: ${gained.join(' | ')})`, !shifted);
 	}
 	return findings;
 }
@@ -857,12 +893,13 @@ const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
 describe('Assistant stale marks follow what the Assistant reads', () => {
 	const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
 
-	it.each(seeds)('seed %i', { timeout: 120_000 }, async (seed) => {
+	it.each(seeds)('seed %i', { timeout: 300_000 }, async (seed) => {
 		const r = rng(seed);
-		summaryInputs.clear();
-		summaryDirty.clear();
-		enrichLines.clear();
-		enrichFull.clear();
+		writtenFrom.clear();
+		dirty.clear();
+		chapterScenes.clear();
+		enrichPassages.clear();
+		chapterCount = 0;
 		await seedWorld(r);
 		await bringCurrent();
 		// The passes themselves must leave nothing out of date.
@@ -871,32 +908,42 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 		const log: string[] = [];
 		const names = Object.keys(actions);
 		const soft: string[] = [];
+		const fail = (when: string, findings: Finding[]) =>
+			expect.fail(
+				[
+					`seed ${seed}, ${when}`,
+					...findings.map(
+						(f) => `  ${f.rule === 'missed' ? 'not marked' : 'marked needlessly'}: ${f.what}`
+					),
+					'after:',
+					...log.map((line, i) => `  ${i + 1}. ${line}`)
+				].join('\n')
+			);
 		for (let step = 0; step < STEPS; step++) {
 			const name = r.pick(names)!;
+			const snippets = new Map<string, Set<string>>();
+			for (const entity of await entityStates()) snippets.set(entity.id, await allSnippets(entity));
 			await nextMillisecond();
 			const did = await actions[name](r);
 			if (!did) continue;
 			log.push(did);
 			await settleMentions();
-			const findings = await checkMarks();
-			const strict = findings.filter((f) => f.strict);
-			if (strict.length) {
-				expect.fail(
-					[
-						`seed ${seed}, step ${step + 1}: ${did}`,
-						...strict.map(
-							(f) => `  ${f.rule === 'missed' ? 'not marked' : 'marked needlessly'}: ${f.what}`
-						),
-						'after:',
-						...log.map((line, i) => `  ${i + 1}. ${line}`)
-					].join('\n')
+			let findings = await checkMarks(snippets);
+			if (findings.some((f) => f.strict))
+				fail(
+					`step ${step + 1}: ${did}`,
+					findings.filter((f) => f.strict)
 				);
-			}
-			soft.push(...findings.map((f) => `${did}: ${f.what}`));
-			await nextMillisecond();
+			soft.push(...findings.map((f) => `${did}: ${f.rule} ${f.what}`));
 			await bringCurrent();
+			// What the passes wrote, and what they marked while writing it.
+			findings = await checkMarks(snippets);
+			if (findings.some((f) => f.strict))
+				fail(
+					`the passes after step ${step + 1}`,
+					findings.filter((f) => f.strict)
+				);
 		}
-		if (soft.length)
-			console.info(`seed ${seed}: needless marks (no paid call)\n  ${soft.join('\n  ')}`);
+		if (soft.length) console.info(`seed ${seed}: not failed\n  ${soft.join('\n  ')}`);
 	});
 });
