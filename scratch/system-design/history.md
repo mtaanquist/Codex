@@ -1013,8 +1013,10 @@ estimated exactly when the output count is a guess. It found one gap: a live
 stream that dropped before its stop reason ended as a finished reply (and was
 saved to the chat as one). It now ends with an error, in both adapters, as the
 buffered path already did. The chat panel keeps the partial text of such a
-reply on screen with a note that it was not saved, offers no insert for it,
-and leaves it out of the turns the next question sends. An OpenAI-style error
+reply on screen with a note that it was not saved. Any reply the server did
+not store (an error, a stream that closed without finishing, an error before
+any text) offers no insert and is left out of the turns the next question
+sends; a writer's own Stop keeps what arrived, as before. An OpenAI-style error
 frame partway through (OpenRouter sends one when its upstream drops) also ends
 in an error now, where it used to finish the reply. The first
 review also found the OpenAI stream dropping a last line sent without a
