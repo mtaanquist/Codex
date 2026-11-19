@@ -1461,6 +1461,18 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 5 of staging/review-follow-ups: review centre
+      merge and duplicate save first (2026-11-19). The review centre sent
+      a merge or duplicate straight away, so an edit still waiting to save
+      (a debounce, or a retry after a dropped connection) was left out: the
+      merge trashed the scene it read, and the retried save then got a 404,
+      losing the words. It now follows the Write page: pause typing, land
+      the review editor's pending save, refuse with the same message if it
+      fails, then remount the editor on the stored text. The flush loop and
+      the message moved to scene-actions.ts so both pages share them;
+      ReviewEditor gained flushSave, isDirty and a paused prop to match
+      SceneEditor.
+
 - [x] Staging review round 4 of staging/review-follow-ups: merge markers
       on CRLF scenes (2026-11-19). mergeScenes worked out where each
       merged-in marker lands from the raw bodies, so a target stored with
