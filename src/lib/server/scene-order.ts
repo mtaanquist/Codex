@@ -130,6 +130,12 @@ export async function applySceneOrder(
 			rechaptered.push(id);
 			for (const chapter of [from, targetChapters[i]]) if (chapter) chaptersChanged.add(chapter);
 		});
+		// A chapter summary reads its scenes in order, so a reorder inside one
+		// chapter changes it too.
+		for (const chapter of order.chapters) {
+			const before = was.filter((id) => chapterWas.get(id) === chapter.id);
+			if (before.join() !== chapter.sceneIds.join()) chaptersChanged.add(chapter.id);
+		}
 		// Only what the writer moved counts as a change; the scenes it shifted
 		// keep their touched_at.
 		const touched = [...new Set([...moved, ...rechaptered])];
