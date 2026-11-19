@@ -303,12 +303,21 @@ const UNFINISHED = [
 			{ type: 'token', text: 'The boat is at' },
 			{ type: 'error', message: 'The connection closed before the reply finished.' }
 		],
-		shows: 'This reply did not finish, so it was not saved.'
+		shows: 'This reply was not saved.'
 	},
 	{
 		name: 'closes without finishing',
 		frames: [{ type: 'token', text: 'The boat is at' }],
-		shows: 'This reply did not finish, so it was not saved.'
+		shows: 'This reply was not saved.'
+	},
+	{
+		name: 'finishes but fails to save',
+		frames: [
+			{ type: 'token', text: 'The boat is at' },
+			{ type: 'done' },
+			{ type: 'error', message: 'The reply could not be saved.' }
+		],
+		shows: 'This reply was not saved.'
 	},
 	{
 		name: 'fails before any text',
@@ -322,6 +331,11 @@ for (const unfinished of UNFINISHED) {
 		page
 	}) => {
 		const { panel } = await freshStoryPanel(page, 'Broken');
+		// An open scene, so a reply that can be inserted shows its button.
+		await page.getByRole('button', { name: 'New chapter' }).click();
+		await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+		await page.getByRole('button', { name: 'New scene' }).click();
+		await expect(page).toHaveURL(/scene=/);
 		const sent: { role: string; content: string }[][] = [];
 		await page.route('**/api/assistant/chat', async (route) => {
 			const body = route.request().postDataJSON() as {
@@ -350,10 +364,13 @@ for (const unfinished of UNFINISHED) {
 		await composer.press('Enter');
 		const chat = panel.locator('.chat-scroll');
 		await expect(chat).toContainText(unfinished.shows);
+		const insert = panel.getByRole('button', { name: 'Insert at cursor' });
+		await expect(insert).toHaveCount(0);
 
 		await composer.fill('Where is the boat?');
 		await composer.press('Enter');
 		await expect(chat).toContainText('The boat is at the quay.');
+		await expect(insert).toHaveCount(1);
 		expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
 	});
 }
