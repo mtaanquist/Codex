@@ -9,7 +9,9 @@ import {
 } from '../db/schema.ts';
 import { createThread, openAssistantNote } from '../review.ts';
 import { assembleStoryFrame, buildSystemMessage } from './context/assemble.ts';
-import { estimateTokens, PERSONA_TOKENS } from './context/budgets.ts';
+import { estimateTokens, PERSONA_TOKENS, tokensForChars } from './context/budgets.ts';
+import { roleMaxTokens, type ResolvedConfig } from './config.ts';
+import { defaultMaxTokens } from '../../assistant-tuning.ts';
 import {
 	buildPatternApplyMessage,
 	buildPatternSurveyMessage,
@@ -62,14 +64,16 @@ export type WholeBookFit = 'fits' | 'chapters' | 'unavailable';
 
 export function wholeBookFit(
 	surveyTokens: number,
-	contextWindow: number | undefined
+	contextWindow: number | undefined,
+	replyTokens = 0
 ): WholeBookFit {
 	if (!contextWindow) return 'unavailable';
-	return surveyTokens <= contextWindow * WHOLE_BOOK_SHARE ? 'fits' : 'chapters';
+	return surveyTokens + replyTokens <= contextWindow * WHOLE_BOOK_SHARE ? 'fits' : 'chapters';
 }
 
 // The book as one unit, its scenes in reading order under their chapter
-// titles. When it does not fit, the survey goes chapter by chapter.
+// titles and grouped by chapter. When it fits, the survey reads it in one
+// request and goes chapter by chapter only if that request fails.
 export function bookPatternUnit(
 	scenes: { id: string; title: string | null; bodyMd: string; chapterId: string | null }[],
 	chapterTitles: Map<string, string | null>,
@@ -83,13 +87,12 @@ export function bookPatternUnit(
 			? chapterTitles.get(s.chapterId)?.trim() || 'Untitled chapter'
 			: 'Unfiled scenes'
 	}));
-	if (fits) return { key: 'book', scope: 'book', scenes: listed, whole: true };
 	const chapters: PatternScene[][] = [];
 	scenes.forEach((scene, i) => {
 		if (i === 0 || scene.chapterId !== scenes[i - 1].chapterId) chapters.push([]);
 		chapters[chapters.length - 1].push(listed[i]);
 	});
-	return { key: 'book', scope: 'book', scenes: listed, chapters };
+	return { key: 'book', scope: 'book', scenes: listed, chapters, ...(fits ? { whole: true } : {}) };
 }
 
 // The tokens the survey of these units sends: each request's text plus the
@@ -102,7 +105,7 @@ export function patternSurveyTokens(
 	let total = 0;
 	for (const unit of units) {
 		const cap = unit.scope === 'book' ? BOOK_PATTERN_CAP : CHAPTER_PATTERN_CAP;
-		for (const part of unit.chapters ?? [unit.scenes]) {
+		for (const part of unit.whole ? [unit.scenes] : (unit.chapters ?? [unit.scenes])) {
 			const chunks = unit.whole ? [part] : splitPatternChunks(part, budgetTokens);
 			chunks.forEach((chunk, i) => {
 				total +=
@@ -131,31 +134,71 @@ export async function patternSurveyOverhead(
 	return (frame ? estimateTokens(buildSystemMessage(frame).content) : 0) + PERSONA_TOKENS;
 }
 
-// The whole-book unit for this story's scenes, whether it fits the window, and
-// what the survey sends either way.
+// The reply room a reviewer request reserves: the writer's own figure, or the
+// default allowing for a model that thinks, which is the larger.
+export function reviewerReplyTokens(config: ResolvedConfig, contextWindow?: number): number {
+	return roleMaxTokens(config, 'reviewer') ?? defaultMaxTokens('reviewer', true, contextWindow);
+}
+
+async function chapterTitles(db: Database, storyId: string) {
+	const rows = await db
+		.select({ id: chapters.id, title: chapters.title })
+		.from(chapters)
+		.where(eq(chapters.storyId, storyId));
+	return new Map(rows.map((row) => [row.id, row.title]));
+}
+
+type BookScene = { id: string; title: string | null; bodyMd: string; chapterId: string | null };
+
+// The whole-book unit for this story's scenes, whether it fits the window with
+// room for the reply, and what the survey sends either way.
 export async function planBookPass(
 	db: Database,
 	opts: {
 		userId: string;
 		storyId: string;
-		scenes: { id: string; title: string | null; bodyMd: string; chapterId: string | null }[];
+		scenes: BookScene[];
 		contextWindow: number | undefined;
 		budgetTokens: number;
+		replyTokens: number;
 	}
 ): Promise<{ unit: PatternUnit; fit: WholeBookFit; tokens: number }> {
-	const rows = await db
-		.select({ id: chapters.id, title: chapters.title })
-		.from(chapters)
-		.where(eq(chapters.storyId, opts.storyId));
-	const titles = new Map(rows.map((row) => [row.id, row.title]));
+	const titles = await chapterTitles(db, opts.storyId);
 	const overhead = await patternSurveyOverhead(db, opts.userId, opts.storyId);
 	const whole = bookPatternUnit(opts.scenes, titles, true);
-	const fit = wholeBookFit(
-		patternSurveyTokens([whole], opts.budgetTokens, overhead),
-		opts.contextWindow
-	);
-	const unit = fit === 'fits' ? whole : bookPatternUnit(opts.scenes, titles, false);
+	const wholeTokens = patternSurveyTokens([whole], opts.budgetTokens, overhead);
+	const fit = wholeBookFit(wholeTokens, opts.contextWindow, opts.replyTokens);
+	if (fit === 'fits') return { unit: whole, fit, tokens: wholeTokens };
+	const unit = bookPatternUnit(opts.scenes, titles, false);
 	return { unit, fit, tokens: patternSurveyTokens([unit], opts.budgetTokens, overhead) };
+}
+
+// The fit alone, from the length of each scene rather than its text, for the
+// review window's check.
+export async function checkBookFit(
+	db: Database,
+	opts: {
+		userId: string;
+		storyId: string;
+		scenes: (Omit<BookScene, 'bodyMd'> & { bodyChars: number })[];
+		contextWindow: number | undefined;
+		replyTokens: number;
+	}
+): Promise<WholeBookFit> {
+	if (!opts.contextWindow) return 'unavailable';
+	const titles = await chapterTitles(db, opts.storyId);
+	const overhead = await patternSurveyOverhead(db, opts.userId, opts.storyId);
+	const skeleton = bookPatternUnit(
+		opts.scenes.map((s) => ({ ...s, bodyMd: '' })),
+		titles,
+		true
+	);
+	const bodies = opts.scenes.reduce((sum, s) => sum + tokensForChars(s.bodyChars), 0);
+	return wholeBookFit(
+		patternSurveyTokens([skeleton], 0, overhead) + bodies,
+		opts.contextWindow,
+		opts.replyTokens
+	);
 }
 
 export type PatternPassResult = {
@@ -242,43 +285,106 @@ async function surveyOnce(
 	);
 }
 
-// Stage A for one unit. A chapter (or a book that fits) is surveyed in chunks
-// of the budget; the book fallback goes chapter by chapter, carrying the
-// patterns found so far. Returns null when the spend cap stopped it part-way.
+// How many patterns found so far a chapter survey of the book is handed: the
+// most widespread, so the list stays short on a long book.
+const KNOWN_CARRIED = 20;
+
+const widestFirst = (patterns: FoundPattern[]) =>
+	[...patterns].sort((a, b) => b.sceneIds.length - a.sceneIds.length);
+
+class SurveyCapped extends Error {}
+
+// Surveys one part in chunks of the budget (or in one request for a book that
+// fits). Throws SurveyCapped when the spend cap stopped it.
+async function surveyPart(
+	db: Database,
+	req: Request & { budgetTokens: number },
+	unit: PatternUnit,
+	part: PatternScene[],
+	open: string[],
+	known: KnownPattern[],
+	deps: GatewayDeps
+): Promise<FoundPattern[]> {
+	const cap = unit.scope === 'book' ? BOOK_PATTERN_CAP : CHAPTER_PATTERN_CAP;
+	const chunks = unit.whole ? [part] : splitPatternChunks(part, req.budgetTokens);
+	const found: FoundPattern[][] = [];
+	for (const [i, chunk] of chunks.entries()) {
+		req.signal?.throwIfAborted();
+		if (req.meter?.capReached) throw new SurveyCapped();
+		const content = buildPatternSurveyMessage(chunk, {
+			scope: unit.scope,
+			cap,
+			open,
+			...(known.length ? { known } : {}),
+			...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {})
+		});
+		found.push(await surveyOnce(db, req, content, deps));
+	}
+	return mergePatterns(found);
+}
+
+// Stage A for one unit. A chapter, or a book that fits, is one part; the book
+// otherwise goes chapter by chapter, carrying the patterns found so far and
+// saving after each chapter. A book that fits but whose single request fails
+// falls back to the chapters. Returns null when the spend cap stopped it.
 async function surveyUnit(
 	db: Database,
 	req: Request & { budgetTokens: number },
 	unit: PatternUnit,
+	entry: PatternUnitState,
 	open: string[],
+	failures: ReviewFailure[],
+	save: () => Promise<void>,
 	deps: GatewayDeps
 ): Promise<FoundPattern[] | null> {
 	const cap = unit.scope === 'book' ? BOOK_PATTERN_CAP : CHAPTER_PATTERN_CAP;
-	const found: FoundPattern[][] = [];
-	const parts = unit.chapters ?? [unit.scenes];
-	for (const part of parts) {
-		const known: KnownPattern[] = unit.chapters
-			? mergePatterns(found).map((p) => ({ name: p.name, description: p.description }))
-			: [];
-		const chunks = unit.whole ? [part] : splitPatternChunks(part, req.budgetTokens);
-		for (const [i, chunk] of chunks.entries()) {
-			req.signal?.throwIfAborted();
-			if (req.meter?.capReached) return null;
-			const content = buildPatternSurveyMessage(chunk, {
-				scope: unit.scope,
-				cap,
-				open,
-				...(known.length ? { known } : {}),
-				...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {})
-			});
-			found.push(await surveyOnce(db, req, content, deps));
+	let found: FoundPattern[];
+	try {
+		if (unit.whole && !entry.partial) {
+			try {
+				found = await surveyPart(db, req, unit, unit.scenes, open, [], deps);
+			} catch (err) {
+				if (err instanceof SurveyCapped || req.signal?.aborted || !unit.chapters) throw err;
+				logEvent('info', 'assistant.patterns.book_fallback', {
+					storyId: req.storyId,
+					error: err instanceof Error ? err.message : String(err)
+				});
+				return surveyUnit(db, req, { ...unit, whole: false }, entry, open, failures, save, deps);
+			}
+		} else if (unit.chapters) {
+			const partial = (entry.partial ??= { parts: 0, found: [] });
+			for (const [index, part] of unit.chapters.entries()) {
+				if (index < partial.parts) continue;
+				const known = widestFirst(partial.found)
+					.slice(0, KNOWN_CARRIED)
+					.map((p) => ({ name: p.name, description: p.description }));
+				try {
+					const more = await surveyPart(db, req, unit, part, open, known, deps);
+					partial.found = mergePatterns([partial.found, more]);
+				} catch (err) {
+					if (err instanceof SurveyCapped || req.signal?.aborted) throw err;
+					failures.push({
+						message: `The search for repeated habits skipped "${part[0]?.chapterTitle ?? 'a chapter'}": ${err instanceof Error ? err.message : String(err)}`
+					});
+				}
+				partial.parts = index + 1;
+				await save();
+			}
+			found = partial.found;
+		} else {
+			found = await surveyPart(db, req, unit, unit.scenes, open, [], deps);
 		}
+	} catch (err) {
+		if (err instanceof SurveyCapped) return null;
+		throw err;
 	}
 	const known = new Set(unit.scenes.map((s) => s.id));
 	const openKeys = new Set(open.map((name) => name.trim().toLowerCase()));
-	return mergePatterns(found)
-		.map((p) => ({ ...p, sceneIds: p.sceneIds.filter((id) => known.has(id)) }))
-		.filter((p) => p.sceneIds.length > 0 && !openKeys.has(p.name.trim().toLowerCase()))
-		.slice(0, cap);
+	return widestFirst(
+		found
+			.map((p) => ({ ...p, sceneIds: p.sceneIds.filter((id) => known.has(id)) }))
+			.filter((p) => p.sceneIds.length > 0 && !openKeys.has(p.name.trim().toLowerCase()))
+	).slice(0, cap);
 }
 
 // Where a pattern's note says it shows up: the scene titles for a chapter, the
@@ -367,12 +473,13 @@ export async function runPatternPass(
 					db,
 					unit.scenes.map((s) => s.id)
 				);
-				const found = await surveyUnit(db, req, unit, open, deps);
+				const found = await surveyUnit(db, req, unit, entry, open, failures, save, deps);
 				if (!found) {
 					capped = true;
 					break;
 				}
 				entry.patterns = found.map((p) => ({ ...p, applied: [] }));
+				delete entry.partial;
 			} catch (err) {
 				if (opts.signal?.aborted) throw err;
 				failures.push({

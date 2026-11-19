@@ -15,6 +15,11 @@ describe('wholeBookFit', () => {
 		expect(wholeBookFit(edge + 1, window)).toBe('chapters');
 	});
 
+	it('leaves room for the reply', () => {
+		expect(wholeBookFit(70_000, 100_000)).toBe('fits');
+		expect(wholeBookFit(70_000, 100_000, 10_001)).toBe('chapters');
+	});
+
 	it('is not offered when the window is unknown', () => {
 		expect(wholeBookFit(10, undefined)).toBe('unavailable');
 	});
@@ -35,7 +40,8 @@ describe('bookPatternUnit', () => {
 	it('lists every scene under its chapter title, as one request when it fits', () => {
 		const unit = bookPatternUnit(scenes, titles, true);
 		expect(unit).toMatchObject({ key: 'book', scope: 'book', whole: true });
-		expect(unit.chapters).toBeUndefined();
+		// The chapters stay at hand for a fallback.
+		expect(unit.chapters).toHaveLength(3);
 		expect(unit.scenes.map((s) => s.chapterTitle)).toEqual([
 			'The Road',
 			'The Road',

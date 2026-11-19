@@ -101,6 +101,7 @@
 		warnUsd: number;
 		capUsd?: number;
 		capEnforceable: boolean;
+		wholeBook?: 'fits' | 'chapters' | 'unavailable';
 	};
 
 	// The estimate is advisory: anything that does not carry the two figures the
@@ -185,14 +186,23 @@
 	let patternReach = $state<PatternScope>('chapter');
 	let wholeBook = $state<'fits' | 'chapters' | 'unavailable'>('unavailable');
 	let wholeBookToken = 0;
-	async function checkWholeBook() {
+	// The story the check last ran for, so it runs once per story per opening,
+	// and only when the pattern option is ticked on a whole-story review.
+	let checkedFor: string | null = null;
+	$effect(() => {
+		if (!reviewModal.open || level !== 'story' || !findPatterns) return;
+		if (checkedFor === storyId) return;
+		checkedFor = storyId;
+		void checkWholeBook(storyId);
+	});
+	async function checkWholeBook(forStory: string) {
 		const token = ++wholeBookToken;
 		wholeBook = 'unavailable';
 		try {
 			const response = await fetch('/api/assistant/review-job', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ storyId, wholeBook: true })
+				body: JSON.stringify({ storyId: forStory, wholeBook: true })
 			});
 			if (!response.ok) return;
 			const body = (await response.json()) as { wholeBook?: string };
@@ -215,7 +225,8 @@
 			picked = { mechanics: false, prose: false, lore: false };
 			findPatterns = false;
 			patternReach = 'chapter';
-			void checkWholeBook();
+			wholeBook = 'unavailable';
+			checkedFor = null;
 			runToken += 1;
 			progress = null;
 			estimate = null;
@@ -422,6 +433,12 @@
 								estimate.estTokens
 							)} tokens to send.
 						</p>
+						{#if estimate.wholeBook === 'chapters'}
+							<p class="rm-note">
+								The book is too long for your model to read at once, so it is read chapter by
+								chapter.
+							</p>
+						{/if}
 						{#if estimate.lines?.length}
 							<ul class="rm-lines">
 								{#each estimate.lines as line, i (i)}

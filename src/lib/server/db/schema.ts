@@ -1458,6 +1458,13 @@ export type PatternUnitState = {
 		noteBody?: string;
 		applied: string[];
 	}[];
+	// A survey that goes part by part (the whole book, chapter by chapter):
+	// how many parts are done and what they found, so a stopped run resumes
+	// from the next part rather than paying for the earlier ones again.
+	partial?: {
+		parts: number;
+		found: { name: string; description: string; sceneIds: string[]; examples: string[] }[];
+	};
 };
 
 export type ReviewRunState = {

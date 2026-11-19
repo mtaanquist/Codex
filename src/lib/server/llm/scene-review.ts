@@ -19,7 +19,12 @@ import {
 	saveReviewRun
 } from '../review-runs.ts';
 import { needsSummary, summariseStory } from './summaries.ts';
-import { planBookPass, runPatternPass, type PatternUnit } from './pattern-pass.ts';
+import {
+	planBookPass,
+	reviewerReplyTokens,
+	runPatternPass,
+	type PatternUnit
+} from './pattern-pass.ts';
 import {
 	assembleContext,
 	assembleSceneDelta,
@@ -1093,7 +1098,8 @@ export async function reviewStoryScenes(
 									storyId: opts.storyId,
 									scenes: targets,
 									contextWindow,
-									budgetTokens
+									budgetTokens,
+									replyTokens: reviewerReplyTokens(resolved.config, contextWindow)
 								})
 							).unit
 						]

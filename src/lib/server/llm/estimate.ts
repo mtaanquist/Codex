@@ -18,9 +18,11 @@ import {
 import { buildSurveyMessage, splitSurveyChunks } from './prompts/review.ts';
 import { PERSONA_TOKENS } from './context/budgets.ts';
 import {
+	checkBookFit,
 	patternSurveyOverhead,
 	patternSurveyTokens,
 	planBookPass,
+	reviewerReplyTokens,
 	type WholeBookFit
 } from './pattern-pass.ts';
 import {
@@ -274,17 +276,18 @@ export async function estimateStoryReview(
 	if (patterns) {
 		const contextWindow = modelContextWindow(resolved.config, 'reviewer');
 		const budgetTokens = surveyBudgetTokens(contextWindow);
-		if (patterns === 'book') {
+		if (patterns === 'book' && targets.length > 1) {
 			const plan = await planBookPass(db, {
 				userId: opts.userId,
 				storyId: opts.storyId,
 				scenes: targets,
 				contextWindow,
-				budgetTokens
+				budgetTokens,
+				replyTokens: reviewerReplyTokens(resolved.config, contextWindow)
 			});
 			wholeBook = plan.fit;
 			patternTokens = plan.tokens;
-		} else {
+		} else if (patterns === 'chapter') {
 			const units = chapterPatternUnits(targets);
 			patternTokens = units.length
 				? patternSurveyTokens(
@@ -390,7 +393,7 @@ export async function wholeBookCheck(
 			id: scenes.id,
 			title: scenes.title,
 			chapterId: scenes.chapterId,
-			bodyMd: scenes.bodyMd
+			bodyChars: sql<number>`length(${scenes.bodyMd})`.mapWith(Number)
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
@@ -404,11 +407,10 @@ export async function wholeBookCheck(
 		)
 		.orderBy(asc(scenes.globalPosition));
 	if (rows.length < 2) return 'unavailable';
-	const plan = await planBookPass(db, {
+	return checkBookFit(db, {
 		...opts,
 		scenes: rows,
 		contextWindow,
-		budgetTokens: surveyBudgetTokens(contextWindow)
+		replyTokens: reviewerReplyTokens(resolved.config, contextWindow)
 	});
-	return plan.fit;
 }

@@ -360,7 +360,11 @@ describe('the whole-book pattern pass', () => {
 
 	// Answers a survey with one pattern over the scenes it was shown that sigh,
 	// and an apply turn with one edit, as above.
-	function bookProvider(): { provider: Provider; seen: ChatMessage[][] } {
+	function bookProvider(failSurvey?: (text: string, n: number) => boolean): {
+		provider: Provider;
+		seen: ChatMessage[][];
+	} {
+		let surveys = 0;
 		const seen: ChatMessage[][] = [];
 		const provider: Provider = {
 			async *chatStream() {
@@ -370,6 +374,8 @@ describe('the whole-book pattern pass', () => {
 				seen.push(req.messages);
 				const text = asked(req.messages);
 				if (isBookSurvey(req.messages)) {
+					surveys += 1;
+					if (failSurvey?.(text, surveys)) throw new Error('Context length exceeded.');
 					const ids = [...text.matchAll(/\(id: ([0-9a-f-]{36})\)\n([^\n]*)/g)]
 						.filter((m) => m[2].includes('sighed'))
 						.map((m) => m[1]);
@@ -386,7 +392,8 @@ describe('the whole-book pattern pass', () => {
 									]
 								: []
 						),
-						toolCalls: []
+						toolCalls: [],
+						usage: { promptTokens: 1000, completionTokens: 0 }
 					};
 				}
 				if (isApply(req.messages) && !req.messages.some((m) => m.role === 'tool')) {
@@ -544,5 +551,74 @@ describe('the whole-book pattern pass', () => {
 		expect(estimate.lines.map((l) => l.label)).toContain(
 			'Reading the whole book for repeated habits'
 		);
+	});
+
+	it('falls back to the chapters when the single request over the book fails', async () => {
+		await addSecondChapter();
+		await windowOf(1_000_000);
+		const whole = (text: string) => text.includes('## One') && text.includes('## Two');
+		const { provider, seen } = bookProvider(whole);
+		const result = await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
+		// The whole-book request failed, then one survey per chapter.
+		const surveys = seen.filter(isBookSurvey).map(asked);
+		expect(surveys.filter(whole).length).toBeGreaterThan(0);
+		expect(surveys.filter((t) => !whole(t))).toHaveLength(2);
+		expect(await patternNotes()).toHaveLength(1);
+		expect(result.failures.some((f) => f.message.includes('repeated habits'))).toBe(false);
+	});
+
+	it('records a chapter whose survey fails and carries on with the next', async () => {
+		await addSecondChapter();
+		await pool.query(`update scenes set body_md = body_md || repeat(' And so on.', 1300)`);
+		await windowOf(20000);
+		const { provider } = bookProvider((text) => text.includes('### Scene 1 '));
+		const result = await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
+		expect(result.failures.some((f) => f.message.includes('skipped "One"'))).toBe(true);
+		const notes = await patternNotes();
+		expect(notes).toHaveLength(1);
+		expect(notes[0].sceneId).toBe(sceneIds[3]);
+	});
+
+	it('resumes a capped chapter-by-chapter survey from the next chapter', async () => {
+		await addSecondChapter();
+		await pool.query(`update scenes set body_md = body_md || repeat(' And so on.', 900)`);
+		const configure = async (spendCapUsd: number) => {
+			await saveAccountLlmConfig(db, userId, {
+				enabled: true,
+				assistantName: '',
+				persona: 'balanced',
+				endpoint: 'https://api.example.com/v1',
+				apiKey: 'sk',
+				models: { reviewer: MODEL },
+				toolCallBudget: 8,
+				modelContextManual: { [MODEL]: 20000 },
+				spendCapUsd
+			});
+			await saveModelPricing(db, userId, { [MODEL]: { prompt: 0.001, completion: 0 } });
+		};
+		await configure(0.5);
+		const first = bookProvider();
+		const capped = await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'book', jobId: 'book-1' },
+			{ provider: first.provider }
+		);
+		expect(capped.capped).toBe(true);
+		expect(first.seen.filter(isBookSurvey)).toHaveLength(1);
+
+		await configure(1000);
+		const second = bookProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'book', jobId: 'book-2' },
+			{ provider: second.provider }
+		);
+		const surveys = second.seen.filter(isBookSurvey);
+		expect(surveys).toHaveLength(1);
+		expect(asked(surveys[0])).toContain('Two 1');
+		expect(asked(surveys[0])).not.toContain('### Scene 1 ');
+		const notes = await patternNotes();
+		expect(notes).toHaveLength(1);
+		expect(notes[0].body).toContain('Shows up in: One, Two.');
 	});
 });
