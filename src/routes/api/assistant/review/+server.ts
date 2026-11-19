@@ -4,6 +4,7 @@ import { db } from '#lib/server/db';
 import { scenes, stories } from '#lib/server/db/schema';
 import {
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantGate,
 	throwAssistantError
 } from '#lib/server/llm/assistant-route';
@@ -50,7 +51,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			storyId: scene.storyId,
 			scene,
 			categories,
-			signal: request.signal
+			signal: requestSignal(request)
 		});
 	} catch (err) {
 		throwAssistantError(

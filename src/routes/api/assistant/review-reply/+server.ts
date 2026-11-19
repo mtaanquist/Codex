@@ -6,6 +6,7 @@ import { reviewComments, reviewThreads } from '#lib/server/db/schema';
 import { ownedStory } from '#lib/server/story-access';
 import {
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantGate,
 	throwAssistantError
 } from '#lib/server/llm/assistant-route';
@@ -56,7 +57,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const repliesBefore = await assistantCommentCount(threadId);
 	let content: string;
 	try {
-		content = await complete(db, { ...turn, signal: request.signal });
+		content = await complete(db, { ...turn, signal: requestSignal(request) });
 	} catch (err) {
 		throwAssistantError(err, 'The Assistant could not reply.');
 	}

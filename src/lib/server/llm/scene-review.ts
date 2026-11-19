@@ -679,8 +679,10 @@ async function openRun(
 	}
 	const current = state ?? emptyReviewRun();
 	current.scope = opts.scope;
-	// A resumed run is a fresh attempt with the whole ceiling again, so the
-	// earlier attempt's stop flags and spend do not carry into it.
+	// The earlier attempt's stop flags and reported spend described that attempt,
+	// so they are cleared. The cap is the meter's (jobSpendMeter): a retry of the
+	// same job carries on from what its earlier attempts spent, and only a new
+	// job picking up a capped run starts with the whole ceiling.
 	current.capped = false;
 	current.aborted = false;
 	current.spentUsd = 0;

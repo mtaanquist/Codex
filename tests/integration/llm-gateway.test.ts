@@ -2314,6 +2314,32 @@ describe('gateway refusal and paused turns (#1083)', () => {
 		expect(seen).toHaveLength(2);
 	});
 
+	it('allows the pause resumes again in each round of the tool loop', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene('Text.');
+		const paused = { content: 'x', toolCalls: [], finishReason: 'paused' as const, raw: [] };
+		const read = (id: string) => ({
+			content: '',
+			toolCalls: [{ id, name: 'get_scene', arguments: JSON.stringify({ sceneId }) }]
+		});
+		// A pause in each of three rounds: no one round pauses more than it may.
+		const { provider, seen } = queued([
+			paused,
+			read('c1'),
+			paused,
+			read('c2'),
+			paused,
+			{ content: 'Done.', toolCalls: [], finishReason: 'stop' }
+		]);
+		const result = await completeDetailed(
+			db,
+			{ userId, storyId, role: 'chat', enableTools: true, messages: [] },
+			{ provider, http: noHttp }
+		);
+		expect(result.content).toBe('xDone.');
+		expect(seen).toHaveLength(6);
+	});
+
 	it('gives up on a turn that keeps pausing', async () => {
 		await configure(true);
 		const paused = { content: 'x', toolCalls: [], finishReason: 'paused' as const, raw: [] };

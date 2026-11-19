@@ -1461,6 +1461,28 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 1, jobs and billing (staging/review-follow-ups,
+      2026-11-19). A refused arc settles as failed with a "declined" notice
+      instead of being retried (and billed) by pg-boss; the review, summary,
+      continuity and enrich jobs already counted a refusal as a failed item
+      and did not throw. pg-boss aborts job.signal the same way for a Stop
+      (a cancel the heartbeat notices), an expiry and a shutdown, so the
+      worker now runs the Assistant's requests under a derived signal
+      (jobRunSignal) that checks the job's state when it aborts and passes
+      only a cancel on as a WriterStopError reason; the interactive routes
+      wrap request.signal the same way. The Claude adapter skips the
+      output-cap bound only for that reason, so an expired or shut-down
+      attempt still counts at the cap before its retry carries the spend. A
+      plain chat stream that is cut off now emits an estimated count
+      (thinking deltas included) before rethrowing, so a stopped chat is
+      logged as estimated rather than unreported. Because a stopped request
+      can be under-counted, the account page reads "about" with the
+      estimated-request count rather than "up to", and the help says so. The
+      agent loop's pause counter resets with each round, as the paused text
+      does. A job that finishes while Stop is in flight is no longer shown
+      as stopped: the card waits for the stop's answer and shows stopped
+      only when it was taken and the job did not end done.
+
 - [x] Review runs, job spend and job stops (staging/review-follow-ups,
       2026-11-19; #1117, #1105, #1103, #1045, #1046, #1093, #1106, #1108,
       #1113). Each queued Assistant job's spend is kept in a new

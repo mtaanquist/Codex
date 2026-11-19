@@ -52,7 +52,8 @@ import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.
 import {
 	AssistantDisabledError,
 	NoModelError,
-	ReplyCutOffError
+	ReplyCutOffError,
+	ReplyRefusedError
 } from '../lib/server/llm/gateway.ts';
 import { EndpointReplyError } from '../lib/server/llm/providers/types.ts';
 import { ArcStoryMutedError, summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
@@ -61,7 +62,7 @@ import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.t
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { storyIsLive } from '../lib/server/universe-scope.ts';
-import { shouldNotifyWriter } from './job-guard.ts';
+import { jobRunSignal, shouldNotifyWriter } from './job-guard.ts';
 import { spentPhrase } from '../lib/format.ts';
 
 // The job handlers, kept apart from index.ts (which owns the pg-boss
@@ -197,7 +198,7 @@ export function createHandlers(deps: WorkerDeps) {
 				userId,
 				characterId,
 				jobId: job.id,
-				signal: job.signal
+				signal: jobRunSignal(boss, job.name, job)
 			});
 			if (result.outcome === 'missing') {
 				logEvent('warn', 'assistant.arc_skipped', { characterId, userId, reason: 'not owner' });
@@ -215,18 +216,24 @@ export function createHandlers(deps: WorkerDeps) {
 								: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
-			if (error instanceof ReplyCutOffError || error instanceof EndpointReplyError) {
-				// A retry would stop at the same limit, or get the same answer back,
-				// so say why and end here. The job is settled as completed with a
-				// failed output, which the activity card reads as failed, and
-				// pg-boss does not run it again.
+			if (
+				error instanceof ReplyCutOffError ||
+				error instanceof ReplyRefusedError ||
+				error instanceof EndpointReplyError
+			) {
+				// A retry would stop at the same limit, be declined again (and billed
+				// again), or get the same answer back, so say why and end here. The
+				// job is settled as completed with a failed output, which the
+				// activity card reads as failed, and pg-boss does not run it again.
 				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
 				await queueDigests(
 					await insertNotifications(db, [userId], 'assistant_enrich', {
 						title:
 							error instanceof ReplyCutOffError
 								? `The Assistant could not write the arc for ${character.name}. ${error.message}`
-								: `The Assistant could not write the arc for ${character.name}: the endpoint did not send a reply. Check the endpoint in your settings, then ${ARC_AGAIN}.`,
+								: error instanceof ReplyRefusedError
+									? `The model declined to write the arc for ${character.name}, so nothing was saved.`
+									: `The Assistant could not write the arc for ${character.name}: the endpoint did not send a reply. Check the endpoint in your settings, then ${ARC_AGAIN}.`,
 						href
 					})
 				);
@@ -411,7 +418,7 @@ export function createHandlers(deps: WorkerDeps) {
 							userId,
 							universeId,
 							jobId: job.id,
-							signal: job.signal
+							signal: jobRunSignal(boss, job.name, job)
 						});
 						if (!result.ran) {
 							title = `There was nothing to compare for continuity in "${universe.name}".`;
@@ -469,7 +476,7 @@ export function createHandlers(deps: WorkerDeps) {
 							userId,
 							storyId,
 							jobId: job.id,
-							signal: job.signal
+							signal: jobRunSignal(boss, job.name, job)
 						});
 						// The capped wording replaces the outcome line, so it is built
 						// before the suffixes rather than over the top of them.
@@ -508,7 +515,7 @@ export function createHandlers(deps: WorkerDeps) {
 						chapterId,
 						categories,
 						jobId: job.id,
-						signal: job.signal,
+						signal: jobRunSignal(boss, job.name, job),
 						legacyJobCategories
 					});
 					const problem = firstFailure(result.failures);
@@ -569,7 +576,7 @@ export function createHandlers(deps: WorkerDeps) {
 					userId,
 					storyId,
 					jobId: job.id,
-					signal: job.signal
+					signal: jobRunSignal(boss, job.name, job)
 				});
 				const written = result.scenes + result.chapters;
 				const href = `/stories/${storyId}`;
@@ -647,7 +654,7 @@ export function createHandlers(deps: WorkerDeps) {
 					userId,
 					universeId,
 					jobId: job.id,
-					signal: job.signal
+					signal: jobRunSignal(boss, job.name, job)
 				});
 				const href = `/universes/${universeId}/plan`;
 				const name = universe.name;

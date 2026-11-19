@@ -154,11 +154,11 @@ export function trackJob(opts: TrackOptions): Promise<void> {
 
 async function followJob(opts: TrackOptions, jobId: string | null): Promise<void> {
 	const id = startActivity(opts.runningLabel);
-	// Set once the writer selects Stop, so the cancelled job reads as stopped
-	// rather than failed.
-	let stopping = false;
-	const stop = async () => {
-		stopping = true;
+	// The writer's last Stop, resolving true once the queue took it. A job that
+	// ends while it is in flight waits for the answer, so a job that finished
+	// on its own is not shown as stopped.
+	let stopRequest: Promise<boolean> | undefined;
+	const requestStop = async (): Promise<boolean> => {
 		resolveActivity(id, { state: 'running', detail: 'Stopping...', stop: undefined });
 		let message: string;
 		try {
@@ -167,19 +167,21 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ id: jobId })
 			});
-			if (response.ok) return;
+			if (response.ok) return true;
 			// Already settled: the next poll shows how it ended.
 			if (response.status === 404) {
-				stopping = false;
 				resolveActivity(id, { state: 'running', detail: undefined });
-				return;
+				return false;
 			}
 			message = 'Could not stop it. Try again in a moment.';
 		} catch {
 			message = 'Could not stop it. Check your connection and try again.';
 		}
-		stopping = false;
 		resolveActivity(id, { state: 'running', detail: message, stop });
+		return false;
+	};
+	const stop = () => {
+		stopRequest = requestStop();
 	};
 	if (!jobId) {
 		resolveActivity(id, {
@@ -234,7 +236,10 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 			} catch {
 				// A blip leaves the card running; the next poll catches up.
 			}
-			if (stopping && state !== 'running') {
+			// A cancelled job reads as failed; one that finished anyway is done.
+			const stopped =
+				state !== 'running' && stopRequest !== undefined && (await stopRequest) && state !== 'done';
+			if (stopped) {
 				resolveActivity(id, {
 					state: 'done',
 					label: `${opts.runningLabel.replace(/\.\.\.$/, '')}: stopped`,

@@ -522,7 +522,8 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 	let usage: TokenUsage | undefined;
 	let stopped: AgentResult['stopped'];
 	// Text from paused rounds of the current answer, put ahead of the text the
-	// resumed round finishes with.
+	// resumed round finishes with, and how many times that answer has paused.
+	// Both start over once a round ends in tool calls.
 	let pausedText = '';
 	let pauses = 0;
 	const push = (message: ChatMessage) => {
@@ -599,6 +600,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			return { content: pausedText + response.content, surfaces, notes, usage, stopped };
 		}
 		pausedText = '';
+		pauses = 0;
 
 		push({
 			role: 'assistant',
