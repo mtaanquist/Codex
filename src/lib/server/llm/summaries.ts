@@ -38,7 +38,7 @@ export type SummaryResult = {
 	// left for a later run, with what it had spent by then.
 	capped?: boolean;
 	spentUsd?: number;
-	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	// Set when spentUsd includes estimated counts, not only reported ones.
 	spentEstimated?: boolean;
 	// Why a cap that was set could not be enforced. Only reported when the run
 	// metered itself; a caller that passed its own meter reads it from that.

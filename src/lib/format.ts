@@ -97,11 +97,12 @@ export function formatNumber(n: number): string {
 }
 
 /**
- * "about $1.20", or "up to $1.20" when the figure includes estimated counts
- * (an upper bound rather than what the endpoint reported).
+ * "about $1.20", or "about $1.20 (estimated)" when the figure includes counts
+ * the endpoint did not report. An estimate is not a bound: it can sit above or
+ * below what was billed.
  */
 export function spentPhrase(usd: number, estimated?: boolean, digits = 2): string {
-	return `${estimated ? 'up to' : 'about'} $${usd.toFixed(digits)}`;
+	return `about $${usd.toFixed(digits)}${estimated ? ' (estimated)' : ''}`;
 }
 
 /** "950", "1.2k": compact counts for tight rows. Empty for non-positive. */
