@@ -72,8 +72,8 @@
 	{/if}
 	<div class="command-list" {id} role="listbox" aria-label="Commands" bind:this={list}>
 		{#each sections as section (section.id)}
-			<div role="group" aria-labelledby="{id}-{section.id}">
-				<div class="command-group" id="{id}-{section.id}">{section.label}</div>
+			<div role="group" aria-labelledby="{id}-group-{section.id}">
+				<div class="command-group" id="{id}-group-{section.id}">{section.label}</div>
 				{#each section.rows as row (row.command.name)}
 					<!-- Options take no focus: the text field keeps it and points at the
 					     highlighted row, so the pointer only needs a click. -->

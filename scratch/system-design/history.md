@@ -1066,6 +1066,13 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   save so the picked model answers it. The chip is locked while a new chat's
   first message is in flight, since that message carries the choice. A
   starter suggestion no longer clears a typed draft. Filed as low: #1215.
+- Staging review round 5. A catch-up that starts a new chat now saves the
+  model picked on the chip to that chat (it had run on the default while the
+  chip showed the pick). The command menu's group headings no longer share
+  ids with options, so the highlighted row is announced. A send reads the
+  draft after any pending model save, so text typed meanwhile is not wiped,
+  and a /who or /find line that cannot go ahead goes back to the chat box.
+  Filed as low: #1217.
 
 ## November review (2026-11-18)
 
