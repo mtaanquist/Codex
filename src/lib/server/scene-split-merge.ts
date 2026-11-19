@@ -5,6 +5,7 @@ import { dbNow } from './db-clock.ts';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
+import { lockStoryScenes } from './row-locks.ts';
 import { textHash } from '#lib/text-hash';
 import { lfOffset, toLf } from '#lib/line-endings';
 import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
@@ -39,7 +40,7 @@ export async function splitScene(
 	return await db.transaction(async (tx) => {
 		// Cut the text as it is under the lock, so an autosave that lands
 		// meanwhile is never replaced.
-		const scene = await lockStoryScenes(tx, owned.storyId, sceneId);
+		const scene = await lockStoryScene(tx, owned.storyId, sceneId);
 		if (!scene) return GONE;
 		// The editor reads \r\n as one newline, so its offset, fingerprint,
 		// and marker anchors all count in the newline text; a body imported
@@ -151,20 +152,12 @@ function clampAnchors(start: number, end: number, lo: number, hi: number, length
 	return { anchorStart, anchorEnd };
 }
 
-// Locks every scene row of the story, lowest id first like mergeScenes, then
-// reads the scene. Inserting a scene shifts the later ones, so the whole story
-// is held: two splits or duplicates in one story then take turns rather than
-// handing out the same position, and the order rows are locked in cannot
-// deadlock a merge. Other paths that add a scene (createScene, the restores)
-// do not take this lock.
+// Locks every scene row of the story, then reads the scene. Inserting a scene
+// shifts the later ones, so the whole story is held: two paths that add or
+// move scenes then take turns rather than handing out the same position.
 // Returns null when the scene, or its story, is gone by then.
-async function lockStoryScenes(tx: Database, storyId: string, sceneId: string) {
-	await tx
-		.select({ id: scenes.id })
-		.from(scenes)
-		.where(eq(scenes.storyId, storyId))
-		.orderBy(asc(scenes.id))
-		.for('update');
+async function lockStoryScene(tx: Database, storyId: string, sceneId: string) {
+	await lockStoryScenes(tx, storyId);
 	// A fresh read, so it sees what a split that held the lock before us did.
 	const [scene] = await tx
 		.select()
@@ -293,7 +286,7 @@ export async function duplicateScene(
 	return await db.transaction(async (tx) => {
 		// Copy the source as it is under the lock, so an autosave that lands
 		// meanwhile is in the copy.
-		const scene = await lockStoryScenes(tx, owned.storyId, sceneId);
+		const scene = await lockStoryScene(tx, owned.storyId, sceneId);
 		if (!scene) return GONE;
 		const stamp = await dbNow(tx);
 

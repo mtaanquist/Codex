@@ -40,16 +40,20 @@ export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> 
 	// The scene rows are locked first, lowest id first: a mention rebuild holds
 	// its scene row while it rewrites the scene's mentions, so deleting those
 	// mentions before the scene would take the two in the opposite order.
+	// Then the story and its chapters, in the order row-locks.ts sets.
 	const sceneRows = await tx
 		.select({ id: scenes.id })
 		.from(scenes)
 		.where(eq(scenes.storyId, storyId))
 		.orderBy(asc(scenes.id))
 		.for('update');
+	await tx.select({ id: stories.id }).from(stories).where(eq(stories.id, storyId)).for('update');
 	const chapterRows = await tx
 		.select({ id: chapters.id })
 		.from(chapters)
-		.where(eq(chapters.storyId, storyId));
+		.where(eq(chapters.storyId, storyId))
+		.orderBy(asc(chapters.id))
+		.for('update');
 	const pubRows = await tx
 		.select({ id: publications.id })
 		.from(publications)
