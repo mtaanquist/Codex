@@ -238,7 +238,7 @@ export async function decideEntitySuggestion(
 	if (decision === 'reject') {
 		const rejected = await db
 			.update(entitySuggestions)
-			.set({ status: 'rejected', decidedAt: new Date() })
+			.set({ status: 'rejected', decidedAt: sql`now()` })
 			.where(stillPending)
 			.returning({ id: entitySuggestions.id });
 		return rejected.length ? { ok: true } : gone;
@@ -250,7 +250,7 @@ export async function decideEntitySuggestion(
 		await db.transaction(async (tx) => {
 			const claimed = await tx
 				.update(entitySuggestions)
-				.set({ status: 'accepted', decidedAt: new Date() })
+				.set({ status: 'accepted', decidedAt: sql`now()` })
 				.where(stillPending)
 				.returning({ id: entitySuggestions.id });
 			if (!claimed.length) throw new AlreadyDecided();

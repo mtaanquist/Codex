@@ -10,6 +10,39 @@ import { loadConfig } from '@sveltejs/load-config';
 
 const svelteConfig = (await loadConfig('./', { traverse: false }))?.config;
 
+// Display formatting goes through #lib/format so the locale stays fixed.
+const fixedLocale = [
+	{
+		selector: 'CallExpression[callee.property.name=/^toLocale(String|DateString|TimeString)$/]',
+		message: 'Use a #lib/format helper so the display locale stays fixed.'
+	},
+	{
+		selector:
+			":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|NumberFormat|RelativeTimeFormat|ListFormat|PluralRules)$/]",
+		message: 'Use a #lib/format helper so the display locale stays fixed.'
+	}
+];
+
+// Stored timestamps come from the database clock (see src/lib/server/db-clock.ts).
+const appClockStamp =
+	'Stamp stored times with the database clock: sql`now()`, or dbNow() from #lib/server/db-clock.';
+const oneClock = [
+	{
+		selector: "CallExpression[callee.property.name='$onUpdate'] NewExpression[callee.name='Date']",
+		message: appClockStamp
+	},
+	{
+		selector:
+			"CallExpression[callee.property.name=/^(set|values)$/] > ObjectExpression > Property > NewExpression[callee.name='Date'][arguments.length=0]",
+		message: appClockStamp
+	},
+	{
+		selector:
+			"Property[key.name='set'] > ObjectExpression > Property > NewExpression[callee.name='Date'][arguments.length=0]",
+		message: appClockStamp
+	}
+];
+
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 
 export default defineConfig(
@@ -58,24 +91,15 @@ export default defineConfig(
 		}
 	},
 	{
-		// Display formatting goes through #lib/format so the locale stays fixed.
 		files: ['src/**'],
 		ignores: ['src/lib/format.ts'],
-		rules: {
-			'no-restricted-syntax': [
-				'error',
-				{
-					selector:
-						'CallExpression[callee.property.name=/^toLocale(String|DateString|TimeString)$/]',
-					message: 'Use a #lib/format helper so the display locale stays fixed.'
-				},
-				{
-					selector:
-						":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|NumberFormat|RelativeTimeFormat|ListFormat|PluralRules)$/]",
-					message: 'Use a #lib/format helper so the display locale stays fixed.'
-				}
-			]
-		}
+		rules: { 'no-restricted-syntax': ['error', ...fixedLocale] }
+	},
+	{
+		// A later block replaces no-restricted-syntax rather than adding to it,
+		// so server code repeats the locale rules.
+		files: ['src/lib/server/**'],
+		rules: { 'no-restricted-syntax': ['error', ...fixedLocale, ...oneClock] }
 	},
 	{
 		// Override or add rule settings here, such as:

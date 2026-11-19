@@ -4,6 +4,7 @@ import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { isIP } from 'node:net';
 import type { Database } from '../auth.ts';
 import { appSettings } from '../db/schema.ts';
+import { sql } from 'drizzle-orm';
 import { readSetting } from '../settings.ts';
 import type { HttpRequest, HttpRequestInit, HttpResponse } from './providers/types.ts';
 
@@ -186,7 +187,7 @@ export async function saveEgressPolicy(
 		.values({ key: EGRESS_KEY, value: { policy: input.policy, allowlist } })
 		.onConflictDoUpdate({
 			target: appSettings.key,
-			set: { value: { policy: input.policy, allowlist }, updatedAt: new Date() }
+			set: { value: { policy: input.policy, allowlist }, updatedAt: sql`clock_timestamp()` }
 		});
 	return { ok: true };
 }

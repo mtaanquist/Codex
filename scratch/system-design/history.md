@@ -982,6 +982,22 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## One clock (2026-11-19)
+
+Several review findings came from comparing a stamp written with the app
+server's clock (`new Date()`) against one written by Postgres (#1120, #1139,
+#1143). #1194 made the database clock the only one for stored timestamps:
+every `updated_at` `$onUpdate` now writes `clock_timestamp()` (no migration:
+the hook is app-side, and inserts already used `defaultNow()`), the remaining
+`new Date()` writes became `now()`, copies (duplicate, add back, new story from
+a draft) stamp with `dbNow`, and the review continuation stamps `reviewedAt`
+with `dbNowText` and compares it with `updated_at` in SQL at microsecond
+precision. An ESLint rule refuses `new Date()` in `.set`, `.values` and
+`$onUpdate` under `src/lib/server`; a `new Date()` held in a variable first is
+not caught, so the rule is in `design.md` too. A continued review also takes a
+redone scene's notes out of the count (`notesByScene`, absent on older rows,
+which keep the old count).
+
 ## Stale-mark invariant test (2026-11-19)
 
 Review rounds kept finding missed or needless Assistant out-of-date marks one

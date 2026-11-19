@@ -14,7 +14,7 @@ import type { ChatMessage, Provider } from '../../src/lib/server/llm/providers/t
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { reviewStoryScenes } = await import('../../src/lib/server/llm/scene-review');
-const { loadReviewRun, saveReviewRun, emptyReviewRun, purgeReviewRuns } =
+const { adoptCappedRun, loadReviewRun, saveReviewRun, emptyReviewRun, purgeReviewRuns } =
 	await import('../../src/lib/server/review-runs');
 
 let pool: pg.Pool;
@@ -315,5 +315,45 @@ describe('resuming a run', () => {
 
 		const summaryFailures = result.failures.filter((f) => f.message.includes('summar'));
 		expect(summaryFailures).toHaveLength(1);
+	});
+
+	// #1143: the reviewed-at stamp and updated_at come from one clock and are
+	// compared at full precision, and a redone scene's notes leave the count.
+	it('reviews again a scene edited just after its pass, and drops its notes', async () => {
+		const storyId = await seedStory(2);
+		const [first, second] = await sceneIds(storyId);
+		const { rows } = await pool.query<{ at: string }>(`select clock_timestamp()::text as at`);
+		const stamp = rows[0].at;
+		// Less than a millisecond after the stamp: a JS Date comparison reads it
+		// as the same time.
+		await pool.query(
+			`update scenes set updated_at = $1::timestamptz + interval '200 microseconds' where id = $2`,
+			[stamp, first]
+		);
+		await pool.query(
+			`update scenes set updated_at = $1::timestamptz - interval '1 second' where id = $2`,
+			[stamp, second]
+		);
+		await saveReviewRun(db, {
+			jobId: 'capped-1143',
+			userId,
+			state: {
+				...emptyReviewRun(),
+				scope: 'scope-1143',
+				capped: true,
+				completed: [first, second],
+				reviewed: 2,
+				notes: 5,
+				notesByScene: { [first]: 2, [second]: 3 },
+				reviewedAt: { [first]: stamp, [second]: stamp }
+			}
+		});
+
+		const adopted = await adoptCappedRun(db, { userId, scope: 'scope-1143' });
+
+		expect(adopted?.completed).toEqual([second]);
+		expect(adopted?.reviewed).toBe(1);
+		expect(adopted?.notes).toBe(3);
+		expect(adopted?.notesByScene).toEqual({ [second]: 3 });
 	});
 });

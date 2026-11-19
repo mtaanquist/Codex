@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assistantReviewRuns, scenes, type ReviewRunState } from './db/schema.ts';
 import { parseCategories, type ReviewCategory } from '../review-shape.ts';
@@ -134,13 +134,23 @@ async function editedSince(
 	const stamps = state.reviewedAt ?? {};
 	const stamped = ids.filter((id) => stamps[id]);
 	if (stamped.length === 0) return new Set();
+	// Compared in SQL at full precision: a JS Date keeps only milliseconds, so
+	// an edit in the same millisecond as the stamp would read as before it.
 	const rows = await db
-		.select({ id: scenes.id, updatedAt: scenes.updatedAt })
+		.select({ id: scenes.id })
 		.from(scenes)
-		.where(inArray(scenes.id, stamped));
-	return new Set(
-		rows.filter((row) => row.updatedAt > new Date(stamps[row.id])).map((row) => row.id)
-	);
+		.innerJoin(
+			sql`unnest(array[${sql.join(
+				stamped.map((id) => sql`${id}`),
+				sql`, `
+			)}]::uuid[], array[${sql.join(
+				stamped.map((id) => sql`${stamps[id]}`),
+				sql`, `
+			)}]::timestamptz[]) as stamp(id, at)`,
+			sql`stamp.id = ${scenes.id}`
+		)
+		.where(sql`${scenes.updatedAt} > stamp.at`);
+	return new Set(rows.map((row) => row.id));
 }
 
 async function newestRun(
@@ -190,18 +200,24 @@ async function carryForward(
 	const reviewedAt = Object.fromEntries(
 		Object.entries(state.reviewedAt ?? {}).filter(([id]) => !redo.has(id))
 	);
+	const notesByScene = Object.fromEntries(
+		Object.entries(state.notesByScene ?? {}).filter(([id]) => !redo.has(id))
+	);
+	// The redone scenes' notes stay on them, but the new pass counts them again.
+	const redoneNotes = [...redo].reduce((sum, id) => sum + (state.notesByScene?.[id] ?? 0), 0);
 	return {
 		...emptyReviewRun(),
 		scope,
 		completed: kept.filter((id) => !edited.has(id)),
 		reviewed: Math.max(0, state.reviewed - edited.size),
 		failed: Math.max(0, state.failed - failedScenes.size),
-		notes: state.notes,
+		notes: Math.max(0, state.notes - redoneNotes),
 		// Scene failures only, for the scenes that stay done: the earlier run's
 		// own messages (a cap it hit, a price it lacked) say nothing about this
 		// one.
 		failures: state.failures.filter((failure) => failure.sceneId && !redo.has(failure.sceneId)),
 		...(Object.keys(reviewedAt).length ? { reviewedAt } : {}),
+		...(Object.keys(notesByScene).length ? { notesByScene } : {}),
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
 		capped: false,
 		spentUsd: 0,
@@ -234,6 +250,6 @@ export async function saveReviewRun(
 		.values({ jobId: opts.jobId, userId: opts.userId, state: opts.state })
 		.onConflictDoUpdate({
 			target: assistantReviewRuns.jobId,
-			set: { state: opts.state, updatedAt: new Date() }
+			set: { state: opts.state, updatedAt: sql`clock_timestamp()` }
 		});
 }

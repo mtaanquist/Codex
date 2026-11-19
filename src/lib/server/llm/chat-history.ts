@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, notInArray, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import {
 	assistantChatMessages,
@@ -223,7 +223,7 @@ export async function appendChat(
 	// The picker lists chats by when they were last used.
 	await db
 		.update(assistantChats)
-		.set({ updatedAt: new Date() })
+		.set({ updatedAt: sql`clock_timestamp()` })
 		.where(eq(assistantChats.id, chatId));
 	return true;
 }

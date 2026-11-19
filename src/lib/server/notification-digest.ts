@@ -84,7 +84,7 @@ export async function markEmailed(db: Database, ids: string[]): Promise<void> {
 	if (ids.length === 0) return;
 	await db
 		.update(notifications)
-		.set({ emailedAt: new Date() })
+		.set({ emailedAt: sql`now()` })
 		.where(inArray(notifications.id, ids));
 }
 
@@ -109,7 +109,7 @@ export async function applyReviewerOptOut(db: Database, token: string): Promise<
 	if (!reviewerId) return false;
 	const updated = await db
 		.update(reviewers)
-		.set({ emailOptOutAt: new Date() })
+		.set({ emailOptOutAt: sql`now()` })
 		.where(eq(reviewers.id, reviewerId))
 		.returning({ id: reviewers.id });
 	return updated.length > 0;
