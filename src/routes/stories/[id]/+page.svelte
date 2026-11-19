@@ -28,8 +28,10 @@
 	} from '#lib/components/StoryRowMenu.svelte';
 	import {
 		duplicateScene as duplicateSceneAction,
+		flushEditors as flushAll,
 		mergeScenes as mergeScenesAction,
 		persistProposalState,
+		SAVE_FAILED,
 		splitScene as splitSceneAction
 	} from '#lib/scene-actions';
 	import EditorToolbar from '#lib/components/EditorToolbar.svelte';
@@ -95,17 +97,7 @@
 	const openEditors = () =>
 		[sceneEditor, ...Object.values(docEditors)].filter((editor) => editor != null);
 
-	// Lands every pending save; false when one failed and its words are still
-	// only in the browser.
-	async function flushEditors(): Promise<boolean> {
-		const editors = openEditors();
-		await Promise.all(editors.map((editor) => editor.flushSave()));
-		// One more pass for an image upload that landed during the first (the
-		// writer chose to leave while it was still on its way).
-		const dirty = editors.filter((editor) => editor.isDirty());
-		await Promise.all(dirty.map((editor) => editor.flushSave()));
-		return !editors.some((editor) => editor.isDirty());
-	}
+	const flushEditors = () => flushAll(openEditors());
 
 	// Set while the page saves and then replaces the open scene (a scene
 	// switch, split or merge). The editors stay on screen but take no typing:
@@ -140,8 +132,6 @@
 		'An image is still uploading into this scene and may not be added if you leave now. Leave anyway? Cancel to stay until it is in.';
 	const WAIT_UPLOADING = 'An image is still uploading into this scene. Try again once it is in.';
 	const BUSY = 'Another change to the scenes is still running. Try again when it is done.';
-	const SAVE_FAILED =
-		'The scene could not be saved, so nothing was changed. If the scene says it was changed in another window, choose Load newer version or Keep mine first. Otherwise, try again in a moment.';
 
 	// A quick scene round-trip (A to B and back) faster than the debounced
 	// save lands would let the reload of A return stale prose, which the
