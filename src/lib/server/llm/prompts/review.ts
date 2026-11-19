@@ -177,25 +177,37 @@ function surveySceneBlock(scene: SurveyScene, index: number): string {
 	return `- ${title} (id: ${scene.id}): ${surveyContent(scene)}`;
 }
 
-// Split the listing into sequential chunks that each fit the budget, story
-// order preserved and no overlap. A single scene that overruns the budget on
-// its own still gets its own chunk rather than being dropped.
-export function splitSurveyChunks(scenes: SurveyScene[], budgetTokens: number): SurveyScene[][] {
-	const chunks: SurveyScene[][] = [];
-	let current: SurveyScene[] = [];
+// Split a listing into sequential chunks that each fit the budget, order
+// preserved and no overlap. An item that overruns the budget on its own still
+// gets its own chunk rather than being dropped.
+function splitByBudget<T>(
+	items: T[],
+	cost: (item: T, index: number) => number,
+	budgetTokens: number
+): T[][] {
+	const chunks: T[][] = [];
+	let current: T[] = [];
 	let used = 0;
-	scenes.forEach((scene, i) => {
-		const cost = estimateTokens(surveySceneBlock(scene, i));
-		if (current.length > 0 && used + cost > budgetTokens) {
+	items.forEach((item, i) => {
+		const tokens = cost(item, i);
+		if (current.length > 0 && used + tokens > budgetTokens) {
 			chunks.push(current);
 			current = [];
 			used = 0;
 		}
-		current.push(scene);
-		used += cost;
+		current.push(item);
+		used += tokens;
 	});
 	if (current.length) chunks.push(current);
 	return chunks;
+}
+
+export function splitSurveyChunks(scenes: SurveyScene[], budgetTokens: number): SurveyScene[][] {
+	return splitByBudget(
+		scenes,
+		(scene, i) => estimateTokens(surveySceneBlock(scene, i)),
+		budgetTokens
+	);
 }
 
 // Consecutive scenes of the same story, for the universe listing.
@@ -327,10 +339,11 @@ function shapeCandidates(parsed: unknown[]): ContinuityCandidate[] {
 // The longest array that parses from this '[', found by walking the closing
 // brackets from the end of the reply back: the outermost close that parses is
 // the whole array, and anything after it is prose.
-function parseArrayFrom(
+function parseArrayFrom<T>(
 	reply: string,
-	start: number
-): { candidates: ContinuityCandidate[]; end: number } | null {
+	start: number,
+	shape: (parsed: unknown[]) => T[]
+): { items: T[]; end: number } | null {
 	for (let end = reply.lastIndexOf(']'); end > start; end = reply.lastIndexOf(']', end - 1)) {
 		let parsed: unknown;
 		try {
@@ -339,7 +352,7 @@ function parseArrayFrom(
 			continue;
 		}
 		if (!Array.isArray(parsed)) return null;
-		return { candidates: shapeCandidates(parsed), end };
+		return { items: shape(parsed), end };
 	}
 	return null;
 }
@@ -349,29 +362,33 @@ function parseArrayFrom(
 // and the retry turn is the right answer.
 const MAX_ARRAY_STARTS = 20;
 
-// The survey reply, read leniently: the adapters have no structured-output
+// A JSON array reply, read leniently: the adapters have no structured-output
 // mode, so the model is asked for a bare JSON array and often obliges with a
 // code fence or a sentence around it. Every '[' is tried as an array start and
-// the best result wins: the most findings, earliest on a tie. Anchoring on the
-// first '[' alone was wrong twice over - a bracket in the prose ahead of the
-// JSON burned the retry, and a reply opening with a stray '[]' parsed cleanly
-// and reported no contradictions at all. An empty array is still a valid answer
+// the best result wins: the most usable entries, earliest on a tie. Anchoring
+// on the first '[' alone was wrong twice over - a bracket in the prose ahead of
+// the JSON burned the retry, and a reply opening with a stray '[]' parsed
+// cleanly and reported nothing at all. An empty array is still a valid answer
 // ("nothing found"), so it wins only when nothing else parsed. Null means
 // nothing parsed, which the caller retries once with a corrective turn.
-export function parseCandidates(reply: string): ContinuityCandidate[] | null {
-	let best: ContinuityCandidate[] | null = null;
+function parseLenientArray<T>(reply: string, shape: (parsed: unknown[]) => T[]): T[] | null {
+	let best: T[] | null = null;
 	let starts = 0;
 	for (let start = reply.indexOf('['); start !== -1; start = reply.indexOf('[', start + 1)) {
 		if (starts >= MAX_ARRAY_STARTS) break;
 		starts += 1;
-		const found = parseArrayFrom(reply, start);
+		const found = parseArrayFrom(reply, start, shape);
 		if (!found) continue;
-		if (!best || found.candidates.length > best.length) best = found.candidates;
+		if (!best || found.items.length > best.length) best = found.items;
 		// Brackets inside an array that already parsed are its own nested values,
-		// not competing candidates; skip past them.
+		// not competing entries; skip past them.
 		start = found.end;
 	}
 	return best;
+}
+
+export function parseCandidates(reply: string): ContinuityCandidate[] | null {
+	return parseLenientArray(reply, shapeCandidates);
 }
 
 // The corrective turn after an unparseable survey reply.
@@ -407,4 +424,222 @@ export function buildRereadMessage(input: {
 		'The passage:',
 		input.passage
 	].join('\n');
+}
+
+// ---- the pattern pass (chapter-wide and whole-book) ----
+//
+// Habits in the prose such as POV epithets, a pet phrase, or filter verbs
+// usually first show across a chapter, where each scene alone holds only one or
+// two instances. The pass runs in two stages, like the continuity pass: a
+// survey over the full prose of the chapter (or the whole book) asks for
+// recurring patterns as JSON, with no tools; then an apply stage takes one
+// pattern and one scene at a time and stages a linked suggest_edit for each
+// instance it would change.
+
+export type PatternScene = {
+	id: string;
+	title: string | null;
+	bodyMd: string;
+	// The chapter heading, for the whole-book listing.
+	chapterTitle?: string;
+};
+
+// A pattern the survey found.
+export type FoundPattern = {
+	name: string;
+	description: string;
+	sceneIds: string[];
+	examples: string[];
+};
+
+function patternSceneBlock(scene: PatternScene): string {
+	const title = (scene.title ?? '').trim() || 'Untitled scene';
+	return `### ${title} (id: ${scene.id})\n${scene.bodyMd.trim() || '(empty)'}`;
+}
+
+// The listing, with a chapter heading wherever the chapter changes (the
+// whole-book survey); a chapter survey has no headings.
+function patternListing(scenes: PatternScene[]): string {
+	const out: string[] = [];
+	let chapter: string | undefined;
+	for (const scene of scenes) {
+		if (scene.chapterTitle !== undefined && scene.chapterTitle !== chapter) {
+			chapter = scene.chapterTitle;
+			out.push(`## ${chapter}`);
+		}
+		out.push(patternSceneBlock(scene));
+	}
+	return out.join('\n\n');
+}
+
+export function patternListingTokens(scenes: PatternScene[]): number {
+	return estimateTokens(patternListing(scenes));
+}
+
+export function splitPatternChunks(scenes: PatternScene[], budgetTokens: number): PatternScene[][] {
+	return splitByBudget(scenes, (scene) => estimateTokens(patternSceneBlock(scene)), budgetTokens);
+}
+
+// What the survey looks for. Kept to habits that repeat; a one-off fix is the
+// scene review's job.
+const PATTERN_LOOKS_FOR = [
+	'- Point-of-view epithets: a character called by a descriptor ("the elf", "the older man") where the name or a pronoun would read more naturally.',
+	'- A pet word or phrase that recurs often enough to register.',
+	'- Filter verbs (saw, heard, felt, noticed) that keep the reader at a distance.',
+	'- A sentence shape or opening repeated as a tic, or a character gesture used again and again.'
+];
+
+export const PATTERN_FORMAT = [
+	'Reply with a JSON array and nothing else: no prose before or after it, no code fence, no explanation.',
+	'[{"name": "a short name", "description": "one or two sentences on the pattern and why it matters", "sceneIds": ["the ids of the scenes where it shows"], "examples": ["short exact quotes of instances"]}]',
+	'Name each scene by the exact id given below. Do not stage notes and do not call tools; a later stage goes through each scene and proposes the fixes. If you see no recurring pattern, reply with [].'
+];
+
+export type KnownPattern = { name: string; description: string };
+
+export function buildPatternSurveyMessage(
+	scenes: PatternScene[],
+	options: {
+		scope: 'chapter' | 'book';
+		cap: number;
+		chunk?: SurveyChunk;
+		// Patterns found in earlier chapters (the whole-book pass going chapter
+		// by chapter), reported again under the same name when they show here.
+		known?: KnownPattern[];
+		// Patterns that already have an open note, not to be reported again.
+		open?: string[];
+	}
+): string {
+	const book = options.scope === 'book';
+	const lines = [
+		book
+			? 'This is the survey stage of a whole-book pattern pass. Below is the full text of the book, chapter by chapter. Find the habits in the prose that recur across it:'
+			: 'This is the survey stage of a chapter pattern pass. Below is the full text of the chapter, scene by scene. Find the habits in the prose that recur across it:',
+		...PATTERN_LOOKS_FOR,
+		`Report only patterns with several instances, not one-off fixes, spelling, or grammar. Report at most ${options.cap}, the ones that matter most.`,
+		...PATTERN_FORMAT
+	];
+	if (options.known?.length) {
+		lines.push(
+			'Patterns found so far in earlier chapters. If one shows here too, report it again under exactly the same name with the ids and examples from this part; also report any new ones:',
+			...options.known.map((p) => `- ${clamp(p.name)}: ${clamp(p.description)}`)
+		);
+	}
+	if (options.open?.length) {
+		lines.push(
+			'These patterns already have open notes. Do not report them again:',
+			...options.open.map((name) => `- ${clamp(name)}`)
+		);
+	}
+	if (options.chunk) {
+		lines.push(
+			`This is part ${options.chunk.index} of ${options.chunk.total} of the text; the other parts are surveyed separately.`
+		);
+	}
+	lines.push('The text:', patternListing(scenes));
+	return lines.join('\n');
+}
+
+const MAX_PATTERN_EXAMPLES = 6;
+
+function shapePatterns(parsed: unknown[]): FoundPattern[] {
+	return parsed.flatMap((entry) => {
+		if (!entry || typeof entry !== 'object') return [];
+		const { name, description, sceneIds, examples } = entry as Record<string, unknown>;
+		if (typeof name !== 'string' || !name.trim()) return [];
+		if (!Array.isArray(sceneIds)) return [];
+		const ids = sceneIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+		if (!ids.length) return [];
+		return [
+			{
+				name: name.trim(),
+				description: typeof description === 'string' ? description.trim() : '',
+				sceneIds: [...new Set(ids)],
+				examples: Array.isArray(examples)
+					? examples
+							.filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
+							.map((e) => e.trim())
+							.slice(0, MAX_PATTERN_EXAMPLES)
+					: []
+			}
+		];
+	});
+}
+
+export function parsePatterns(reply: string): FoundPattern[] | null {
+	return parseLenientArray(reply, shapePatterns);
+}
+
+const patternKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+
+// Patterns from several survey replies (chunks, or chapters of the book) as one
+// list: the same name (ignoring case and spacing) is one pattern, its scenes and
+// examples joined in the order they came, its first description kept.
+export function mergePatterns(lists: FoundPattern[][]): FoundPattern[] {
+	const merged = new Map<string, FoundPattern>();
+	for (const pattern of lists.flat()) {
+		const key = patternKey(pattern.name);
+		const existing = merged.get(key);
+		if (!existing) {
+			merged.set(key, {
+				...pattern,
+				sceneIds: [...pattern.sceneIds],
+				examples: [...pattern.examples]
+			});
+			continue;
+		}
+		if (!existing.description) existing.description = pattern.description;
+		for (const id of pattern.sceneIds)
+			if (!existing.sceneIds.includes(id)) existing.sceneIds.push(id);
+		for (const example of pattern.examples) {
+			if (existing.examples.length >= MAX_PATTERN_EXAMPLES) break;
+			if (!existing.examples.includes(example)) existing.examples.push(example);
+		}
+	}
+	return [...merged.values()];
+}
+
+export const PATTERN_RETRY_MESSAGE =
+	'That reply could not be read. Send the same patterns again as a JSON array and nothing else: no prose, no code fence. Each entry is {"name": "...", "description": "...", "sceneIds": ["..."], "examples": ["..."]}. Reply with [] if you found none.';
+
+// The note a pattern leaves, on the first scene where it shows: what it is,
+// and where else it turns up so the writer can find every side of it.
+export function patternNoteBody(
+	pattern: FoundPattern,
+	where: { label: string; places: string[] }
+): string {
+	const description = pattern.description || 'A habit that recurs in the prose.';
+	const lines = [`Pattern note (${pattern.name}): ${description}`];
+	if (pattern.examples.length) {
+		lines.push('', `For example: ${pattern.examples.map((e) => `"${e}"`).join(', ')}.`);
+	}
+	if (where.places.length > 1) lines.push('', `${where.label}: ${where.places.join(', ')}.`);
+	return lines.join('\n');
+}
+
+// Stage B: one pattern and one scene's full text. Only suggest_edit is
+// offered, and every edit it stages is linked to the pattern's note.
+export function buildPatternApplyMessage(
+	pattern: FoundPattern,
+	scene: PatternScene,
+	bodyChars: number
+): string {
+	const body = scene.bodyMd.trim();
+	const text =
+		body.length <= bodyChars
+			? body
+			: body.slice(0, bodyChars).trimEnd() + '\n[... the rest of this scene is cut to fit]';
+	const lines = [
+		'This is the apply stage of a pattern pass. A survey of the prose found this pattern:',
+		`${pattern.name}: ${pattern.description || 'a habit that recurs in the prose.'}`
+	];
+	if (pattern.examples.length) {
+		lines.push(`Instances it noted: ${pattern.examples.map((e) => `"${e}"`).join(', ')}.`);
+	}
+	lines.push(
+		"Below is the full text of one scene where it shows; it is all you need, so do not call get_scene. Stage a suggest_edit for each instance in this scene that you would change, keeping each change minimal and in the author's voice. Keep some variety on purpose: leave an instance alone where it helps the rhythm or clarity. Change nothing else.",
+		'If no instance in this scene needs changing, reply with the single word "none" and stage nothing.',
+		patternSceneBlock({ ...scene, bodyMd: text })
+	);
+	return lines.join('\n');
 }

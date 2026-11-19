@@ -13,7 +13,7 @@ import {
 	trackJob,
 	type JobScope
 } from '#lib/activity.svelte';
-import type { ReviewCategory } from '#lib/review-shape';
+import type { PatternScope, ReviewCategory } from '#lib/review-shape';
 
 // Asks the Assistant to review one scene inline. Stages comments and suggested
 // edits, then opens the review page when anything was staged. An empty category
@@ -128,13 +128,19 @@ export async function startBackgroundReview(opts: {
 	storyId: string;
 	chapterId?: string;
 	categories: ReviewCategory[];
+	patterns?: PatternScope;
 	label: string;
 	reviewHref: string;
 	onJobId?: JobIdHandler;
 }): Promise<void> {
 	await launchJob({
 		url: '/api/assistant/review-job',
-		payload: { storyId: opts.storyId, chapterId: opts.chapterId, categories: opts.categories },
+		payload: {
+			storyId: opts.storyId,
+			chapterId: opts.chapterId,
+			categories: opts.categories,
+			patterns: opts.patterns
+		},
 		kind: 'review',
 		onJobId: opts.onJobId,
 		failLabel: `Could not review ${opts.label}`,

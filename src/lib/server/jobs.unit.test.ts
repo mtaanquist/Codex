@@ -61,6 +61,16 @@ describe('Assistant job send options (long runs)', () => {
 	});
 });
 
+describe('reviewScopeKey', () => {
+	it('gives a run with a pattern pass its own scope, and leaves the plain key as it was', () => {
+		const plain = reviewScopeKey({ storyId: 's', categories: [] });
+		expect(plain).toBe('full:s:general');
+		expect(reviewScopeKey({ storyId: 's', categories: [], patterns: 'chapter' })).toBe(
+			`${plain}:patterns-chapter`
+		);
+	});
+});
+
 describe('reviewJobState', () => {
 	it('calls a forgotten job with unfinished progress stale, not done', () => {
 		expect(reviewJobState('done', 'scenes')).toBe('stale');

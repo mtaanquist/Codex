@@ -5,7 +5,7 @@ import {
 	requireAssistantUniverse
 } from '#lib/server/llm/assistant-route';
 import { queueAssistantReview } from '#lib/server/jobs';
-import { parseCategories } from '#lib/review-shape';
+import { coversProse, parseCategories, parsePatternScope } from '#lib/review-shape';
 import { db } from '#lib/server/db';
 import { estimateStoryReview } from '#lib/server/llm/estimate';
 import { AssistantDisabledError } from '#lib/server/llm/gateway';
@@ -23,6 +23,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		universeId?: unknown;
 		chapterId?: unknown;
 		categories?: unknown;
+		patterns?: unknown;
 		mode?: unknown;
 		estimate?: unknown;
 	}>(request, locals);
@@ -43,7 +44,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				userId,
 				storyId: story.id,
 				chapterId: typeof payload.chapterId === 'string' ? payload.chapterId : undefined,
-				categories: parseCategories(payload.categories)
+				categories: parseCategories(payload.categories),
+				patterns: parsePatternScope(payload.patterns)
 			});
 			return new Response(JSON.stringify(estimate), {
 				headers: { 'content-type': 'application/json' }
@@ -76,8 +78,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	} else {
 		const chapterId = typeof payload.chapterId === 'string' ? payload.chapterId : undefined;
 		const categories = parseCategories(payload.categories);
+		const patterns = coversProse(categories) ? parsePatternScope(payload.patterns) : undefined;
 		const story = await requireAssistantStory(userId, payload.storyId);
-		jobId = await queueAssistantReview({ userId, storyId: story.id, chapterId, categories });
+		jobId = await queueAssistantReview({
+			userId,
+			storyId: story.id,
+			chapterId,
+			categories,
+			...(patterns ? { patterns } : {})
+		});
 	}
 	if (jobId === 'coalesced') {
 		error(

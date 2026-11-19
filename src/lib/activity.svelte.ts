@@ -72,7 +72,7 @@ export type JobScope = {
 };
 
 export type JobProgress = {
-	phase: 'summaries' | 'scenes' | 'consistency' | 'done';
+	phase: 'summaries' | 'patterns' | 'scenes' | 'consistency' | 'done';
 	completed: number;
 	total: number;
 };

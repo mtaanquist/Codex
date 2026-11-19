@@ -46,7 +46,7 @@ import {
 	reviewUniverseContinuity
 } from '../lib/server/llm/scene-review.ts';
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
-import { parseCategories, type ReviewCategory } from '../lib/review-shape.ts';
+import { parseCategories, type PatternScope, type ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
 import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.ts';
 import {
@@ -94,6 +94,7 @@ export type AssistantReviewData = {
 	chapterId?: string;
 	categories?: ReviewCategory[];
 	mode?: 'full' | 'continuity';
+	patterns?: PatternScope;
 };
 
 export type AssistantSummariesData = { userId: string; storyId: string };
@@ -358,7 +359,7 @@ export function createHandlers(deps: WorkerDeps) {
 		// scenes.
 		async assistantReview(jobs: JobWithMetadata<AssistantReviewData>[]) {
 			for (const job of jobs) {
-				const { userId, storyId, universeId, chapterId, categories, mode } = job.data;
+				const { userId, storyId, universeId, chapterId, categories, mode, patterns } = job.data;
 
 				// A universe-wide continuity pass: no single story owns it. The notes
 				// land on each owning story's scene; the writer is pointed at the
@@ -482,6 +483,7 @@ export function createHandlers(deps: WorkerDeps) {
 						storyId,
 						chapterId,
 						categories,
+						patterns,
 						jobId: job.id,
 						signal: job.signal,
 						legacyJobCategories

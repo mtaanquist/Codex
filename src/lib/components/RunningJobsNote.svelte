@@ -19,6 +19,7 @@
 			return `Assistant review: ${p.completed} of ${p.total} scenes`;
 		}
 		if (p?.phase === 'summaries') return 'Assistant review: updating summaries first';
+		if (p?.phase === 'patterns') return 'Assistant review: looking for repeated habits';
 		if (p?.phase === 'consistency') return 'Assistant review: checking consistency';
 		return 'Assistant review starting';
 	}

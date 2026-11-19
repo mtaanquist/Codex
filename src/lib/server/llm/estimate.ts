@@ -15,9 +15,20 @@ import {
 	resolveLlmConfig,
 	type ResolvedConfig
 } from './config.ts';
-import { buildSurveyMessage, splitSurveyChunks } from './prompts/review.ts';
-import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
-import { reviewTiers, surveyBudgetTokens } from './scene-review.ts';
+import {
+	buildPatternSurveyMessage,
+	buildSurveyMessage,
+	splitPatternChunks,
+	splitSurveyChunks
+} from './prompts/review.ts';
+import { CHAPTER_PATTERN_CAP, type PatternUnit } from './pattern-pass.ts';
+import {
+	coversProse,
+	isFullReview,
+	type PatternScope,
+	type ReviewCategory
+} from '../../review-shape.ts';
+import { chapterPatternUnits, reviewTiers, surveyBudgetTokens } from './scene-review.ts';
 import { storyIsLive } from '../universe-scope.ts';
 
 // The pre-flight estimate a review run is confirmed against: how many scenes it
@@ -129,6 +140,7 @@ export type EstimateOptions = {
 	storyId: string;
 	chapterId?: string;
 	categories?: ReviewCategory[];
+	patterns?: PatternScope;
 };
 
 // Assembles what the run would send and counts it. Mirrors reviewStoryScenes:
@@ -154,13 +166,15 @@ export async function estimateStoryReview(
 	// one chapter. Summaries and bodies are only what the survey listing needs,
 	// so a review that cannot reach the survey stage leaves them on the server.
 	const surveyPossible = isFullReview(categories);
+	const patterns = coversProse(categories) ? opts.patterns : undefined;
+	const bodiesNeeded = surveyPossible || Boolean(patterns);
 	const allScenes = await db
 		.select({
 			id: scenes.id,
 			title: scenes.title,
 			chapterId: scenes.chapterId,
 			summaryMd: surveyPossible ? scenes.summaryMd : sql<string | null>`null`,
-			bodyMd: surveyPossible ? scenes.bodyMd : sql<string>`''`
+			bodyMd: bodiesNeeded ? scenes.bodyMd : sql<string>`''`
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
@@ -250,9 +264,29 @@ export async function estimateStoryReview(
 		});
 	}
 
-	// The survey is a single plain request per chunk, so the agentic multiplier
-	// does not apply to it.
-	const estTokens = Math.round(sceneTokens * multiplier + surveyTokens);
+	// The pattern pass: a survey of each chapter's prose this can size, then one
+	// request per pattern per scene it shows in, which nothing can know yet.
+	let patternTokens = 0;
+	if (patterns === 'chapter') {
+		patternTokens = await patternSurveyTokens(
+			db,
+			opts.userId,
+			opts.storyId,
+			resolved.config,
+			chapterPatternUnits(targets)
+		);
+		if (patternTokens > 0) {
+			lines.push({ label: 'Looking for repeated habits in each chapter', tokens: patternTokens });
+			lines.push({
+				label: 'Fixing the habits it finds',
+				note: 'Not known before the run: one request per habit for each scene it shows up in.'
+			});
+		}
+	}
+
+	// The surveys are single plain requests per chunk, so the agentic multiplier
+	// does not apply to them.
+	const estTokens = Math.round(sceneTokens * multiplier + surveyTokens + patternTokens);
 	const price = resolved.config.modelPricing?.[model];
 	const estCompletionCostUsd = price ? estCompletionTokens * price.completion : undefined;
 
@@ -311,4 +345,36 @@ async function surveyStageTokens(
 			),
 		0
 	);
+}
+
+// The pattern survey of each unit: its prose in the chunks the run would send,
+// with the frame the pass ships (the story frame alone).
+async function patternSurveyTokens(
+	db: Database,
+	userId: string,
+	storyId: string,
+	config: ResolvedConfig,
+	units: PatternUnit[]
+): Promise<number> {
+	if (!units.length) return 0;
+	const budgetTokens = surveyBudgetTokens(modelContextWindow(config, 'reviewer'));
+	const frame = await assembleStoryFrame(db, { userId, storyId, includeTiers: ['frame'] });
+	const frameTokens = frame ? estimateTokens(buildSystemMessage(frame).content) : 0;
+	let total = 0;
+	for (const unit of units) {
+		const chunks = splitPatternChunks(unit.scenes, budgetTokens);
+		chunks.forEach((chunk, i) => {
+			total +=
+				frameTokens +
+				PERSONA_TOKENS +
+				estimateTokens(
+					buildPatternSurveyMessage(chunk, {
+						scope: unit.scope,
+						cap: CHAPTER_PATTERN_CAP,
+						...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {})
+					})
+				);
+		});
+	}
+	return total;
 }
