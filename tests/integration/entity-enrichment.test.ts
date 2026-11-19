@@ -854,6 +854,41 @@ describe('enrichUniverse', () => {
 		expect(calls).toBe(2);
 	});
 
+	it('clears a mark without asking the model after a read that staged a summary', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		const first = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(first.staged).toBeGreaterThan(0);
+		expect(lastPrompt).toContain('a one or two sentence summary');
+		// Marked with nothing changed in what it reads; the staged summary only
+		// changes whether the request asks for one.
+		await pool.query(
+			`update characters set assistant_enriched_at = clock_timestamp() - interval '50 years' where id = $1`,
+			[bram]
+		);
+		const second = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(second).toMatchObject({ entities: 0, unchanged: 1 });
+		expect(calls).toBe(1);
+	});
+
+	it('passes over an entity deleted while the pass runs', async () => {
+		await makeCharacter({ name: 'Bram' });
+		const cass = await makeCharacter({ name: 'Cass' });
+		await sceneWithProse('Bram and Cass at the harbour.');
+		duringCall = async () => {
+			duringCall = null;
+			await pool.query(`delete from entity_mentions where target_id = $1`, [cass]);
+			await pool.query(`delete from characters where id = $1`, [cass]);
+		};
+		try {
+			const result = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+			expect(result).toMatchObject({ entities: 1, failed: 0 });
+			expect(calls).toBe(1);
+		} finally {
+			duringCall = null;
+		}
+	});
+
 	it('stops with its own reason when no model is chosen', async () => {
 		await saveAccountLlmConfig(db, ownerId, {
 			enabled: true,

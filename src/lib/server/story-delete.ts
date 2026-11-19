@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { scheduleObjectDeletions } from './assets.ts';
 import {
@@ -37,10 +37,15 @@ export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 // story's to delete; only the per-story overlays, memberships, and story-scoped
 // relationship rows go. Shared by deleteStory and the account purge.
 export async function deleteStoryWithin(tx: Tx, storyId: string): Promise<void> {
+	// The scene rows are locked first, lowest id first: a mention rebuild holds
+	// its scene row while it rewrites the scene's mentions, so deleting those
+	// mentions before the scene would take the two in the opposite order.
 	const sceneRows = await tx
 		.select({ id: scenes.id })
 		.from(scenes)
-		.where(eq(scenes.storyId, storyId));
+		.where(eq(scenes.storyId, storyId))
+		.orderBy(asc(scenes.id))
+		.for('update');
 	const chapterRows = await tx
 		.select({ id: chapters.id })
 		.from(chapters)

@@ -15,11 +15,22 @@ import {
 } from './chat-history';
 import { CHAT_MISSING } from '#lib/assistant-chat';
 import { isUuid } from '#lib/slug';
-import type { ChatMessage, SplitProposal, StreamEvent } from './providers/types';
+import {
+	writerStopSignal,
+	type ChatMessage,
+	type SplitProposal,
+	type StreamEvent
+} from './providers/types';
 
 // The shared front door and transport of the assistant endpoints, so the
 // rate-limit/parse/ownership/gate sequence and the SSE pump exist once
 // instead of once per route.
+
+// The signal an Assistant request runs under. The browser going away is the
+// writer stopping it, which nothing retries (see WriterStopError).
+export function requestSignal(request: Request): AbortSignal {
+	return writerStopSignal(request.signal);
+}
 
 // Rate-limits the caller and parses the JSON body.
 export async function readAssistantPayload<T = Record<string, unknown>>(
@@ -144,7 +155,7 @@ export function assistantSseResponse(options: {
 					role: options.role,
 					enableTools: options.enableTools,
 					messages: options.messages,
-					signal: request.signal
+					signal: requestSignal(request)
 				})) {
 					controller.enqueue(frame(event));
 					if (event.type === 'token') reply += event.text;

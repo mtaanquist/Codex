@@ -96,6 +96,15 @@ export function formatNumber(n: number): string {
 	return n.toLocaleString(DISPLAY_LOCALE);
 }
 
+/**
+ * "about $1.20", or "about $1.20 (estimated)" when the figure includes counts
+ * the endpoint did not report. An estimate is not a bound: it can sit above or
+ * below what was billed.
+ */
+export function spentPhrase(usd: number, estimated?: boolean, digits = 2): string {
+	return `about $${usd.toFixed(digits)}${estimated ? ' (estimated)' : ''}`;
+}
+
 /** "950", "1.2k": compact counts for tight rows. Empty for non-positive. */
 export function compactCount(n: number): string {
 	if (n <= 0) return '';

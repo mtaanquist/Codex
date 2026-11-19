@@ -22,6 +22,7 @@ import {
 	deleteChapter,
 	destroyScene,
 	listTrashedScenes,
+	markChapterSummariesStale,
 	markEntitiesStale,
 	markMentionsStale,
 	moveChapter,
@@ -358,12 +359,15 @@ describe('marking entities stale', () => {
 
 	// Holds LOW, starts the mark, waits until it is blocked, and reports
 	// whether HIGH is still free (the mark has not taken it out of order).
-	async function highFreeWhileBlocked(mark: (tx: Database) => Promise<void>): Promise<boolean> {
+	async function highFreeWhileBlocked(
+		mark: (tx: Database) => Promise<void>,
+		table: 'characters' | 'chapters' = 'characters'
+	): Promise<boolean> {
 		const holder = await pool.connect();
 		const probe = await pool.connect();
 		try {
 			await holder.query('begin');
-			await holder.query('select id from characters where id = $1 for update', [LOW]);
+			await holder.query(`select id from ${table} where id = $1 for update`, [LOW]);
 			const running = db.transaction(mark);
 			for (let i = 0; i < 100; i++) {
 				const { rows } = await probe.query(
@@ -376,7 +380,7 @@ describe('marking entities stale', () => {
 			let free = true;
 			await probe.query('begin');
 			try {
-				await probe.query('select id from characters where id = $1 for update nowait', [HIGH]);
+				await probe.query(`select id from ${table} where id = $1 for update nowait`, [HIGH]);
 			} catch {
 				free = false;
 			}
@@ -394,6 +398,23 @@ describe('marking entities stale', () => {
 		await seedPair();
 		const free = await highFreeWhileBlocked((tx) =>
 			markMentionsStale(tx, { sceneIds: [s1] }, { enrich: true })
+		);
+		expect(free).toBe(true);
+	});
+
+	it('locks chapters lowest id first when marking their summaries', async () => {
+		// The higher id first, so a scan in table order meets it first.
+		for (const [id, position] of [
+			[HIGH, 3],
+			[LOW, 4]
+		] as const) {
+			await db
+				.insert(chapters)
+				.values({ id, storyId, position, summaryMd: 'S', summaryGeneratedAt: new Date() });
+		}
+		const free = await highFreeWhileBlocked(
+			(tx) => markChapterSummariesStale(tx, [HIGH, LOW]),
+			'chapters'
 		);
 		expect(free).toBe(true);
 	});
