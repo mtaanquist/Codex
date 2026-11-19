@@ -56,3 +56,22 @@ export function contextBudgetTokens(contextWindow: number | undefined): number {
 export function chatBudgetTokens(contextWindow: number | undefined): number {
 	return windowBudget(contextWindow, CHAT_WINDOW_SHARE, CHAT_BUDGET_TOKENS, CHAT_CEILING_TOKENS);
 }
+
+// What the writer attaches to a message (a scene, a chapter, a whole book).
+// With the chat and context shares this leaves 30% of the window for the
+// persona, the tool schemas and the reply. An unknown window may be a small
+// local model, so its fallback is modest. The ceiling is high, since the writer
+// chose to send it, but bounded: the message is sent again on every tool round
+// of the reply.
+const ATTACHMENT_WINDOW_SHARE = 0.3;
+const ATTACHMENT_CEILING_TOKENS = 100_000;
+export const ATTACHMENT_BUDGET_TOKENS = 2000;
+
+export function attachmentBudgetTokens(contextWindow: number | undefined): number {
+	return windowBudget(
+		contextWindow,
+		ATTACHMENT_WINDOW_SHARE,
+		ATTACHMENT_BUDGET_TOKENS,
+		ATTACHMENT_CEILING_TOKENS
+	);
+}

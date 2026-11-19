@@ -1,5 +1,5 @@
 {
-	"id": "477aa260-b692-4307-b812-1821ee0adc25",
+	"id": "9a710a9e-387e-45d1-b5b3-1a9be56a513b",
 	"prevId": "48eae928-ea6f-4230-971f-a8aa41295254",
 	"version": "7",
 	"dialect": "postgresql",
@@ -521,6 +521,12 @@
 					"primaryKey": false,
 					"notNull": true,
 					"default": "''"
+				},
+				"settings": {
+					"name": "settings",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": false
 				},
 				"created_at": {
 					"name": "created_at",
@@ -3765,12 +3771,6 @@
 					"notNull": true,
 					"default": "''"
 				},
-				"pattern_thread_id": {
-					"name": "pattern_thread_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": false
-				},
 				"status": {
 					"name": "status",
 					"type": "text",
@@ -3843,21 +3843,6 @@
 					"concurrently": false,
 					"method": "btree",
 					"with": {}
-				},
-				"review_suggestions_pattern_thread_idx": {
-					"name": "review_suggestions_pattern_thread_idx",
-					"columns": [
-						{
-							"expression": "pattern_thread_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
 				}
 			},
 			"foreignKeys": {
@@ -3904,15 +3889,6 @@
 					"columnsFrom": ["base_revision_id"],
 					"columnsTo": ["id"],
 					"onDelete": "no action",
-					"onUpdate": "no action"
-				},
-				"review_suggestions_pattern_thread_id_review_threads_id_fk": {
-					"name": "review_suggestions_pattern_thread_id_review_threads_id_fk",
-					"tableFrom": "review_suggestions",
-					"tableTo": "review_threads",
-					"columnsFrom": ["pattern_thread_id"],
-					"columnsTo": ["id"],
-					"onDelete": "set null",
 					"onUpdate": "no action"
 				},
 				"review_suggestions_decided_by_user_id_users_id_fk": {
