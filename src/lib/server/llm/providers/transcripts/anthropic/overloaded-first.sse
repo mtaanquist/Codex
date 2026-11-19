@@ -1,0 +1,6 @@
+# about: An overload before anything was generated
+# outcome: retry
+
+event: error
+data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}
+

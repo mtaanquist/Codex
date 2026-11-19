@@ -1,0 +1,8 @@
+# about: An endpoint that ignores the stream flag and answers in one body
+# outcome: reply
+# text: Whole.
+# finish: stop
+# content-type: application/json
+# stream: buffered
+
+{"content": [{"type": "text", "text": "Whole."}], "stop_reason": "end_turn", "usage": {"input_tokens": 25, "output_tokens": 4}}

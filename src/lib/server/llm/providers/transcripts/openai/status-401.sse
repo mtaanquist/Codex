@@ -1,0 +1,6 @@
+# about: A bad key
+# outcome: fail
+# status: 401
+# content-type: application/json
+
+{"error": {"message": "Invalid key"}}

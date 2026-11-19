@@ -1,0 +1,11 @@
+# about: A reply cut off at the token cap
+# outcome: reply
+# text: Once
+# finish: length
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{"content":"Once"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":20,"completion_tokens":16,"total_tokens":36}}
+
+data: [DONE]
+

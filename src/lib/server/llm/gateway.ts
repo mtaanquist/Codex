@@ -204,7 +204,7 @@ const RETRY_DELAYS_MS = [250, 1000];
 // for; none of those improve on a second try. Nor does an endpoint that already
 // sat silent for the whole idle timeout, or one that answered with something
 // other than a reply (see EndpointReplyError).
-function isTransientFailure(err: unknown): boolean {
+export function isTransientFailure(err: unknown): boolean {
 	if (err instanceof EgressDeniedError) return false;
 	if (err instanceof EgressTimeoutError) return false;
 	if (err instanceof EndpointReplyError) return false;
