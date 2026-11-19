@@ -11,7 +11,7 @@ import {
 	type GatewayDeps
 } from './gateway.ts';
 import { resolveLlmConfig } from './config.ts';
-import { SpendMeter } from './spend.ts';
+import { SpendMeter, spentFields } from './spend.ts';
 import { buildEnrichMessage } from './prompts/enrich.ts';
 import { entityAppearances, type PlanAppearance } from '../plan-data.ts';
 import {
@@ -251,6 +251,8 @@ export type UniverseEnrichResult = {
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	spentEstimated?: boolean;
 	// Why a cap that was set could not be enforced.
 	capNotApplied?: string;
 };
@@ -431,7 +433,7 @@ export async function enrichUniverse(
 		...(disabled ? { disabled: true } : {}),
 		...(noModel ? { noModel: true } : {}),
 		...(stoppedFailing ? { stoppedFailing: true } : {}),
-		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }

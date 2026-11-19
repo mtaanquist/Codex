@@ -93,6 +93,7 @@ contacts a model on its own.
   run already read and starts from a fresh budget. Leave the box empty for no cap.
   This needs your endpoint to publish prices for the model; without a price the
   run says the cap could not be applied rather than stopping or ignoring it.
+  See Usage and cost, below, for how requests are counted.
 - **Warn above**: before a chapter or whole-story review starts, the review window
   shows what it will send and, where a price is known, what that costs. Above this
   figure it asks you to confirm again. Leave the box empty for the default of
@@ -189,14 +190,30 @@ contacts a model on its own.
   the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
-  are known, an estimated cost shows too. With the Claude provider, repeated
-  context (your world details, earlier turns) is cached by the API and billed
-  far cheaper on reuse; the log counts cached tokens as sent, so the estimate
-  errs on the high side. The list shows 50 requests at a time;
+  are known, an estimated cost shows too. The list shows 50 requests at a time;
   use Older and Newer to page through the rest. Only counts are kept; the text
-  itself is never stored in this log.
+  itself is never stored in this log. See Usage and cost, below.
 
 Your words are sent only to the endpoint you set here.
+
+### Usage and cost
+
+- **Estimated rows**: when a request fails, or you stop it, before the endpoint
+  reports its token counts, Codex estimates them from what had arrived. Those
+  rows say "estimated", and the 30-day total says how many it includes. A cost
+  that includes estimates reads "up to".
+- **Spend cap**: a request that fails partway is counted at the most it could
+  have cost, so a capped run may stop a little early but never goes over. Its
+  notice then says it spent "up to" the amount. If the endpoint leaves out the
+  token counts for any request, that request cannot be priced, and the run says
+  the cap could not be fully applied.
+- **Cached context**: with the Claude provider, repeated context (your world
+  details, earlier turns) is cached by the API and billed far cheaper on reuse.
+  The cost in the list counts cached tokens at the full price, so it errs on
+  the high side.
+- **Web searches**: with the Claude provider, the list shows how many web
+  searches a request ran. Claude charges for each search on top of tokens; that
+  fee is not in the cost shown here or counted by the spend cap.
 
 ### Which model to pick for each role
 

@@ -1415,6 +1415,11 @@ export const assistantUsage = pgTable(
 		model: text('model').notNull(),
 		promptTokens: integer('prompt_tokens'),
 		completionTokens: integer('completion_tokens'),
+		// True when the counts are Codex's own estimate (a stream that failed or
+		// was cancelled before the endpoint reported them), not the endpoint's.
+		estimated: boolean('estimated').notNull().default(false),
+		// Server-side web searches the endpoint reported, billed per search.
+		webSearchRequests: integer('web_search_requests'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [index('assistant_usage_user_idx').on(table.userId, table.createdAt)]
@@ -1453,6 +1458,8 @@ export type ReviewRunState = {
 	// what it had spent in USD. A retry of the same job resumes from here.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	spentEstimated?: boolean;
 	// Set when the run started from an earlier capped run's progress, so its
 	// completed list includes that run's scenes (see adoptCappedRun).
 	carriedForward?: boolean;

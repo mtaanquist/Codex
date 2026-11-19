@@ -143,7 +143,15 @@ describe('anthropicProvider web search', () => {
 describe('anthropicProvider.respond', () => {
 	it('normalises stop_reason onto the neutral finish reason', async () => {
 		const seen: (string | undefined)[] = [];
-		for (const reason of ['end_turn', 'max_tokens', 'tool_use', 'refusal', undefined]) {
+		for (const reason of [
+			'end_turn',
+			'max_tokens',
+			'tool_use',
+			'refusal',
+			'pause_turn',
+			'model_context_window_exceeded',
+			undefined
+		]) {
 			const http: HttpRequest = async () =>
 				jsonResponse(200, {
 					content: [{ type: 'text', text: 'x' }],
@@ -156,7 +164,7 @@ describe('anthropicProvider.respond', () => {
 			);
 			seen.push(result.finishReason);
 		}
-		expect(seen).toEqual(['stop', 'length', 'toolCalls', 'other', undefined]);
+		expect(seen).toEqual(['stop', 'length', 'toolCalls', 'refusal', 'paused', 'other', undefined]);
 	});
 
 	it('ignores a tuned temperature', async () => {
@@ -800,7 +808,8 @@ describe('anthropicProvider.respond over a stream', () => {
 		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
 		expect(billedUsage(err)).toEqual({
 			promptTokens: 9,
-			completionTokens: Math.ceil((text.length + toolJson.length) / 4)
+			completionTokens: Math.ceil((text.length + toolJson.length) / 4),
+			estimated: true
 		});
 	});
 
@@ -824,7 +833,11 @@ describe('anthropicProvider.respond over a stream', () => {
 				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
 			]);
 		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
-		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: req.maxTokens });
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 9,
+			completionTokens: req.maxTokens,
+			estimated: true
+		});
 	});
 
 	it('adds web search results to the input of a failed stream', async () => {
@@ -852,7 +865,8 @@ describe('anthropicProvider.respond over a stream', () => {
 		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
 		expect(billedUsage(err)).toEqual({
 			promptTokens: 9 + Math.ceil(JSON.stringify(result).length / 4),
-			completionTokens: 1
+			completionTokens: 1,
+			estimated: true
 		});
 	});
 
@@ -874,7 +888,11 @@ describe('anthropicProvider.respond over a stream', () => {
 				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
 			]);
 		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
-		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: thinking.length / 4 });
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 9,
+			completionTokens: thinking.length / 4,
+			estimated: true
+		});
 	});
 
 	it('estimates a finished thinking reply with no output count from the characters', async () => {
@@ -896,7 +914,11 @@ describe('anthropicProvider.respond over a stream', () => {
 				...end('end_turn', {})
 			]);
 		const result = await anthropicProvider.respond(req, conn, http);
-		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: text.length / 4 });
+		expect(result.usage).toEqual({
+			promptTokens: 9,
+			completionTokens: text.length / 4,
+			estimated: true
+		});
 	});
 
 	it('retries the timeout and rate limit errors a stream can send', async () => {
@@ -940,7 +962,11 @@ describe('anthropicProvider.respond over a stream', () => {
 				...end('end_turn', {})
 			]);
 		const result = await anthropicProvider.respond(req, conn, http);
-		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: text.length / 4 });
+		expect(result.usage).toEqual({
+			promptTokens: 9,
+			completionTokens: text.length / 4,
+			estimated: true
+		});
 	});
 
 	it('attaches no usage to a failure before message_start', async () => {
@@ -1207,5 +1233,183 @@ describe('anthropicProvider.listModels', () => {
 	it('throws on a non-2xx status', async () => {
 		const http: HttpRequest = async () => jsonResponse(401, { error: 'unauthorized' });
 		await expect(anthropicProvider.listModels(conn, http)).rejects.toThrow();
+	});
+});
+
+describe('anthropicProvider review follow-ups', () => {
+	const req = { model: 'claude-x', messages: [], maxTokens: 16 };
+	const frame = (obj: unknown) => `event: x\ndata: ${JSON.stringify(obj)}\n\n`;
+	const start = frame({
+		type: 'message_start',
+		message: { usage: { input_tokens: 9, output_tokens: 1 } }
+	});
+	const thinkingOpen = [
+		frame({
+			type: 'content_block_start',
+			index: 0,
+			content_block: { type: 'thinking', thinking: '' }
+		}),
+		frame({
+			type: 'content_block_delta',
+			index: 0,
+			delta: { type: 'signature_delta', signature: 's' }
+		})
+	];
+	const end = (stop_reason: string, usage: Record<string, unknown> = { output_tokens: 5 }) => [
+		frame({ type: 'message_delta', delta: { stop_reason }, usage }),
+		frame({ type: 'message_stop' })
+	];
+	const toolCall = (json: string) => [
+		frame({
+			type: 'content_block_start',
+			index: 1,
+			content_block: { type: 'tool_use', id: 'tu1', name: 'get_scene', input: {} }
+		}),
+		frame({
+			type: 'content_block_delta',
+			index: 1,
+			delta: { type: 'input_json_delta', partial_json: json }
+		}),
+		frame({ type: 'content_block_stop', index: 1 })
+	];
+
+	function abortingBody(frames: string[]): AsyncIterable<Uint8Array> {
+		const encoder = new TextEncoder();
+		return {
+			async *[Symbol.asyncIterator]() {
+				for (const part of frames) yield encoder.encode(part);
+				throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+			}
+		};
+	}
+
+	it('does not bill a cancelled thinking stream at the output cap (#1127)', async () => {
+		const http: HttpRequest = async () => ({
+			...sseResponse([]),
+			body: abortingBody([start, ...thinkingOpen])
+		});
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect((err as Error).name).toBe('AbortError');
+		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: 1, estimated: true });
+	});
+
+	it('does not bill at the cap when the signal was aborted (#1127)', async () => {
+		const controller = new AbortController();
+		const encoder = new TextEncoder();
+		const http: HttpRequest = async () => ({
+			...sseResponse([]),
+			body: {
+				async *[Symbol.asyncIterator]() {
+					for (const part of [start, ...thinkingOpen]) yield encoder.encode(part);
+					controller.abort();
+					throw new Error('socket closed');
+				}
+			}
+		});
+		const err = await anthropicProvider
+			.respond(req, conn, http, controller.signal)
+			.catch((e: unknown) => e);
+		expect(billedUsage(err)?.completionTokens).toBe(1);
+	});
+
+	it('reads the web search count from the usage report (#1104)', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start,
+				...end('end_turn', { output_tokens: 5, server_tool_use: { web_search_requests: 2 } })
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: 5, webSearchRequests: 2 });
+
+		const json: HttpRequest = async () =>
+			jsonResponse(200, {
+				content: [],
+				usage: { input_tokens: 3, output_tokens: 4, server_tool_use: { web_search_requests: 1 } }
+			});
+		expect((await anthropicProvider.respond(req, conn, json)).usage).toEqual({
+			promptTokens: 3,
+			completionTokens: 4,
+			webSearchRequests: 1
+		});
+	});
+
+	it('joins an event split over several data lines (#1074)', async () => {
+		const text = JSON.stringify({
+			type: 'content_block_delta',
+			index: 0,
+			delta: { type: 'text_delta', text: 'Hello' }
+		});
+		const cut = text.indexOf('"delta"');
+		const split = `event: content_block_delta\ndata: ${text.slice(0, cut)}\ndata: ${text.slice(cut)}\n\n`;
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start,
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				split,
+				frame({ type: 'content_block_stop', index: 0 }),
+				...end('end_turn')
+			]);
+		expect((await anthropicProvider.respond(req, conn, http)).content).toBe('Hello');
+
+		const streamed: HttpRequest = async () => sseResponse([start, split, ...end('end_turn')]);
+		const events = await drain(anthropicProvider.chatStream(req, conn, streamed));
+		expect(events[0]).toEqual({ type: 'token', text: 'Hello' });
+	});
+
+	it('reads a stream sent without an event-stream content type (#1085)', async () => {
+		for (const type of ['', 'text/plain; charset=utf-8', 'application/octet-stream']) {
+			const frames = [
+				start,
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+				frame({ type: 'content_block_stop', index: 0 }),
+				...end('end_turn')
+			];
+			const http: HttpRequest = async () => ({
+				...sseResponse(frames),
+				headers: (type ? { 'content-type': type } : {}) as Record<string, string>
+			});
+			const result = await anthropicProvider.respond(req, conn, http);
+			expect(result).toMatchObject({ content: 'Hi', finishReason: 'stop' });
+		}
+	});
+
+	it('passes broken tool input through as a malformed call, not empty arguments (#1094)', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([start, ...toolCall('{"sceneId": oops}'), ...end('tool_use')]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.toolCalls).toEqual([
+			{ id: 'tu1', name: 'get_scene', arguments: '{"sceneId": oops}' }
+		]);
+	});
+
+	it('keeps a paused turn whole so it can be resumed (#1083)', async () => {
+		const blocks = [
+			{ type: 'text', text: 'Checking.' },
+			{ type: 'server_tool_use', id: 'st1', name: 'web_search', input: { query: 'q' } }
+		];
+		const http: HttpRequest = async () =>
+			jsonResponse(200, { content: blocks, stop_reason: 'pause_turn' });
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result).toMatchObject({ content: 'Checking.', finishReason: 'paused', raw: blocks });
+	});
+
+	it('emits the billed usage, estimated, ahead of a streamed error (#1102)', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start,
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'text_delta', text: 'abcdefgh' }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'busy' } })
+			]);
+		const events = await drain(anthropicProvider.chatStream(req, conn, http));
+		expect(events).toEqual([
+			{ type: 'token', text: 'abcdefgh' },
+			{ type: 'usage', usage: { promptTokens: 9, completionTokens: 2, estimated: true } },
+			{ type: 'error', message: 'busy' }
+		]);
 	});
 });

@@ -5,7 +5,7 @@ import { chapters, scenes, stories } from '../db/schema.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
 import { resolveLlmConfig } from './config.ts';
-import { SpendMeter } from './spend.ts';
+import { SpendMeter, spentFields } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
 import { markMentionsStale } from '../scene-lifecycle.ts';
@@ -31,6 +31,8 @@ export type SummaryResult = {
 	// left for a later run, with what it had spent by then.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	spentEstimated?: boolean;
 	// Why a cap that was set could not be enforced. Only reported when the run
 	// metered itself; a caller that passed its own meter reads it from that.
 	capNotApplied?: string;
@@ -289,7 +291,7 @@ export async function summariseStory(
 		scenes: written,
 		chapters: chaptersWritten,
 		failed,
-		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {}),
 		...(ownMeter && meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }

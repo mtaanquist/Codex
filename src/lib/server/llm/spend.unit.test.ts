@@ -3,7 +3,8 @@ import {
 	CAP_NOT_APPLIED_MESSAGE,
 	CAP_NOT_APPLIED_NO_USAGE_MESSAGE,
 	SpendMeter,
-	requestCostUsd
+	requestCostUsd,
+	spentFields
 } from './spend';
 
 const pricing = { priced: { prompt: 0.001, completion: 0.002 } };
@@ -83,5 +84,21 @@ describe('SpendMeter', () => {
 		meter.record('priced', undefined);
 		meter.record('other', { promptTokens: 1, completionTokens: 1 });
 		expect(meter.notAppliedMessage).toBe(CAP_NOT_APPLIED_MESSAGE);
+	});
+
+	it('still meters an estimate, and says the total includes one (#1116)', () => {
+		const meter = new SpendMeter({ pricing, capUsd: 1 });
+		meter.record('priced', { promptTokens: 100, completionTokens: 10 });
+		expect(meter.spentEstimated).toBe(false);
+		expect(spentFields(meter)).toEqual({ spentUsd: meter.spentUsd });
+		meter.record('priced', { promptTokens: 100, completionTokens: 400, estimated: true });
+		expect(meter.spentUsd).toBeCloseTo(0.2 + 0.8 + 0.02, 10);
+		expect(meter.capReached).toBe(true);
+		expect(spentFields(meter)).toEqual({ spentUsd: meter.spentUsd, spentEstimated: true });
+	});
+
+	it('says the cap was not fully applied when one request reported no counts (#1125)', () => {
+		expect(CAP_NOT_APPLIED_NO_USAGE_MESSAGE).toMatch(/for every request/);
+		expect(CAP_NOT_APPLIED_NO_USAGE_MESSAGE).toMatch(/not be fully applied/);
 	});
 });

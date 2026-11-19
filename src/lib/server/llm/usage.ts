@@ -7,7 +7,10 @@ import type { TokenUsage } from './providers/types.ts';
 // The usage log: one row of metadata per request the gateway sends to the
 // writer's endpoint, so the account page can show what the Assistant has been
 // costing. Token counts come from the endpoint's own report and are null when
-// it sent none; prompt text is never stored.
+// it sent none. A request that failed or was cancelled before the endpoint
+// reported its totals carries the adapter's estimate instead, and its row is
+// marked estimated so it is never shown as a reported count. Prompt text is
+// never stored.
 
 export type UsageEntry = {
 	userId: string;
@@ -29,7 +32,7 @@ export type UsageEntry = {
 function logEstimateAccuracy(entry: UsageEntry): void {
 	const actual = entry.usage?.promptTokens;
 	const estimated = entry.estimatedPromptTokens;
-	if (!actual || estimated === undefined) return;
+	if (!actual || estimated === undefined || entry.usage?.estimated) return;
 	logEvent('info', 'assistant.usage.estimate', {
 		model: entry.model,
 		estimated,
@@ -49,7 +52,9 @@ export async function recordAssistantUsage(db: Database, entry: UsageEntry): Pro
 			role: entry.role,
 			model: entry.model,
 			promptTokens: entry.usage?.promptTokens ?? null,
-			completionTokens: entry.usage?.completionTokens ?? null
+			completionTokens: entry.usage?.completionTokens ?? null,
+			estimated: entry.usage?.estimated ?? false,
+			webSearchRequests: entry.usage?.webSearchRequests ?? null
 		});
 	} catch (err) {
 		logEvent('warn', 'assistant.usage', {
@@ -65,6 +70,8 @@ export type UsageRow = {
 	model: string;
 	promptTokens: number | null;
 	completionTokens: number | null;
+	estimated: boolean;
+	webSearchRequests: number | null;
 	createdAt: Date;
 };
 
@@ -75,7 +82,14 @@ export type UsageSummary = {
 	page: number;
 	hasMore: boolean;
 	// Thirty-day totals across all requests, not just the listed ones.
-	totals: { requests: number; promptTokens: number; completionTokens: number };
+	// estimatedRequests counts the rows whose counts are estimates.
+	totals: {
+		requests: number;
+		promptTokens: number;
+		completionTokens: number;
+		estimatedRequests: number;
+		webSearchRequests: number;
+	};
 	// Thirty-day token sums per model, so a caller holding per-model prices can
 	// estimate the period's cost.
 	byModel: { model: string; promptTokens: number; completionTokens: number }[];
@@ -98,6 +112,8 @@ export async function recentAssistantUsage(
 			model: assistantUsage.model,
 			promptTokens: assistantUsage.promptTokens,
 			completionTokens: assistantUsage.completionTokens,
+			estimated: assistantUsage.estimated,
+			webSearchRequests: assistantUsage.webSearchRequests,
 			createdAt: assistantUsage.createdAt
 		})
 		.from(assistantUsage)
@@ -112,7 +128,9 @@ export async function recentAssistantUsage(
 		.select({
 			requests: sql<number>`count(*)::int`,
 			promptTokens: sql<number>`coalesce(sum(${assistantUsage.promptTokens}), 0)::int`,
-			completionTokens: sql<number>`coalesce(sum(${assistantUsage.completionTokens}), 0)::int`
+			completionTokens: sql<number>`coalesce(sum(${assistantUsage.completionTokens}), 0)::int`,
+			estimatedRequests: sql<number>`(count(*) filter (where ${assistantUsage.estimated}))::int`,
+			webSearchRequests: sql<number>`coalesce(sum(${assistantUsage.webSearchRequests}), 0)::int`
 		})
 		.from(assistantUsage)
 		.where(and(eq(assistantUsage.userId, userId), gte(assistantUsage.createdAt, since)));
@@ -131,7 +149,13 @@ export async function recentAssistantUsage(
 		recent,
 		page: safePage,
 		hasMore: rows.length > USAGE_PAGE_SIZE,
-		totals: totals ?? { requests: 0, promptTokens: 0, completionTokens: 0 },
+		totals: totals ?? {
+			requests: 0,
+			promptTokens: 0,
+			completionTokens: 0,
+			estimatedRequests: 0,
+			webSearchRequests: 0
+		},
 		byModel
 	};
 }

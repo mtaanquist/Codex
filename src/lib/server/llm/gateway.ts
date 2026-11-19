@@ -50,13 +50,17 @@ import type { SpendMeter } from './spend.ts';
 
 // Adds one request's reported counts to a running total, so a caller can price
 // a whole agentic turn. Undefined stays undefined until something is reported.
+// The total is estimated once any part of it is.
 function addUsage(total: TokenUsage | undefined, next?: TokenUsage): TokenUsage | undefined {
 	if (!next) return total;
 	const cached = (total?.cachedPromptTokens ?? 0) + (next.cachedPromptTokens ?? 0);
+	const searches = (total?.webSearchRequests ?? 0) + (next.webSearchRequests ?? 0);
 	return {
 		promptTokens: (total?.promptTokens ?? 0) + next.promptTokens,
 		completionTokens: (total?.completionTokens ?? 0) + next.completionTokens,
-		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+		...(cached > 0 ? { cachedPromptTokens: cached } : {}),
+		...(searches > 0 ? { webSearchRequests: searches } : {}),
+		...(total?.estimated || next.estimated ? { estimated: true } : {})
 	};
 }
 
@@ -92,6 +96,24 @@ export class ReplyCutOffError extends Error {
 		this.name = 'ReplyCutOffError';
 	}
 }
+
+// The model declined to answer. The same request is declined again, so it is
+// reported rather than retried, and a review counts it as a failed scene.
+export class ReplyRefusedError extends Error {
+	constructor(message = 'The model declined to answer this request. Nothing was applied.') {
+		super(message);
+		this.name = 'ReplyRefusedError';
+	}
+}
+
+const REFUSED_STREAM_MESSAGE = 'The model declined to answer this request.';
+
+// Claude pauses a turn whose server-side web search loop ran long; sending the
+// paused turn back resumes it. A turn still paused after this many resumes is
+// reported instead of returned half done.
+const MAX_PAUSE_RESUMES = 2;
+const PAUSED_MESSAGE =
+	'The reply stopped partway through a web search and could not be finished. Try again.';
 
 // The absolute ceiling on tool calls in one run, whatever the request asks
 // for; a cross-scene pass over a long story is the case that needs the room.
@@ -499,6 +521,10 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 	let notes = 0;
 	let usage: TokenUsage | undefined;
 	let stopped: AgentResult['stopped'];
+	// Text from paused rounds of the current answer, put ahead of the text the
+	// resumed round finishes with.
+	let pausedText = '';
+	let pauses = 0;
 	const push = (message: ChatMessage) => {
 		messages.push(message);
 		estimated += messageTokens(message);
@@ -558,12 +584,21 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				);
 			}
 		}
+		if (response.finishReason === 'refusal') throw new ReplyRefusedError();
+		if (response.finishReason === 'paused') {
+			pauses += 1;
+			if (pauses > MAX_PAUSE_RESUMES) throw new Error(PAUSED_MESSAGE);
+			pausedText += response.content;
+			push({ role: 'assistant', content: response.content, raw: response.raw });
+			continue;
+		}
 		// A concluding round's answer is final. Some endpoints emit tool calls even
 		// under tool_choice none; dispatching them would restart a loop that has
 		// already been stopped, so they are ignored.
 		if (!p.tools || concluding || response.toolCalls.length === 0) {
-			return { content: response.content, surfaces, notes, usage, stopped };
+			return { content: pausedText + response.content, surfaces, notes, usage, stopped };
 		}
+		pausedText = '';
 
 		push({
 			role: 'assistant',
@@ -614,28 +649,43 @@ export async function* stream(
 		yield { type: 'done' };
 		return;
 	}
-	// The usage frame is the gateway's to log, not the client's to render.
-	let usage: { promptTokens: number; completionTokens: number } | undefined;
-	for await (const event of prepared.provider.chatStream(
-		{
-			model: prepared.model,
-			messages: prepared.messages,
-			maxTokens: prepared.maxTokens,
-			tuning: prepared.tuning,
-			extraParams: prepared.extraParams,
-			webSearch: prepared.webSearch
-		},
-		prepared.conn,
-		prepared.http,
-		req.signal
-	)) {
-		if (event.type === 'usage') {
-			usage = event.usage;
-			continue;
+	// The usage frame is the gateway's to log, not the client's to render. The
+	// row is written in finally: a caller stops reading at done or error, and a
+	// cancel throws, and every one of those still sent a request.
+	let usage: TokenUsage | undefined;
+	try {
+		for await (const event of prepared.provider.chatStream(
+			{
+				model: prepared.model,
+				messages: prepared.messages,
+				maxTokens: prepared.maxTokens,
+				tuning: prepared.tuning,
+				extraParams: prepared.extraParams,
+				webSearch: prepared.webSearch
+			},
+			prepared.conn,
+			prepared.http,
+			req.signal
+		)) {
+			if (event.type === 'usage') {
+				usage = event.usage;
+				continue;
+			}
+			// A declined or paused reply is not a finished one, so it ends as an
+			// error and the caller does not keep it.
+			if (event.type === 'done' && event.finishReason === 'refusal') {
+				yield { type: 'error', message: REFUSED_STREAM_MESSAGE };
+				return;
+			}
+			if (event.type === 'done' && event.finishReason === 'paused') {
+				yield { type: 'error', message: PAUSED_MESSAGE };
+				return;
+			}
+			yield event;
 		}
-		yield event;
+	} finally {
+		await recordUsage(db, prepared, req, prepared.messages, usage);
 	}
-	await recordUsage(db, prepared, req, prepared.messages, usage);
 }
 
 // What a buffered run produced. Most callers want the text only (complete);
@@ -684,20 +734,33 @@ export async function completeDetailed(
 		const { content, notes, usage, stopped } = await runAgent(db, prepared, req);
 		return { content, notes, usage, stopped, model: prepared.model };
 	}
-	const response = await respondWithRetry(db, prepared, req, {
-		model: prepared.model,
-		messages: prepared.messages,
-		maxTokens: prepared.maxTokens,
-		tuning: prepared.tuning,
-		extraParams: prepared.extraParams,
-		webSearch: prepared.webSearch
-	});
-	await recordUsage(db, prepared, req, prepared.messages, response.usage);
-	return {
-		content: response.content,
-		notes: 0,
-		usage: addUsage(response.failedUsage, response.usage),
-		model: prepared.model,
-		cutOff: response.finishReason === 'length'
-	};
+	const messages = [...prepared.messages];
+	let usage: TokenUsage | undefined;
+	let content = '';
+	for (let pauses = 0; ; pauses += 1) {
+		const response = await respondWithRetry(db, prepared, req, {
+			model: prepared.model,
+			messages,
+			maxTokens: prepared.maxTokens,
+			tuning: prepared.tuning,
+			extraParams: prepared.extraParams,
+			webSearch: prepared.webSearch
+		});
+		await recordUsage(db, prepared, req, messages, response.usage);
+		usage = addUsage(addUsage(usage, response.failedUsage), response.usage);
+		content += response.content;
+		if (response.finishReason === 'refusal') throw new ReplyRefusedError();
+		if (response.finishReason === 'paused') {
+			if (pauses >= MAX_PAUSE_RESUMES) throw new Error(PAUSED_MESSAGE);
+			messages.push({ role: 'assistant', content: response.content, raw: response.raw });
+			continue;
+		}
+		return {
+			content,
+			notes: 0,
+			usage,
+			model: prepared.model,
+			cutOff: response.finishReason === 'length'
+		};
+	}
 }

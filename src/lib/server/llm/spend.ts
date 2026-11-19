@@ -16,10 +16,11 @@ import type { TokenUsage } from './providers/types.ts';
 export const CAP_NOT_APPLIED_MESSAGE =
 	'A spend cap is set but the model has no known price, so it was not applied.';
 
-// The other reason a priced run cannot be metered: the endpoint answered without
-// reporting how many tokens it billed, so there is nothing to price.
+// The other reason a priced run cannot be metered: the endpoint answered at
+// least one request without reporting how many tokens it billed, so that
+// request could not be priced and the cap could not cover the whole run.
 export const CAP_NOT_APPLIED_NO_USAGE_MESSAGE =
-	'A spend cap is set but the endpoint did not report token counts, so it was not applied.';
+	'A spend cap is set but the endpoint did not report token counts for every request, so the cap could not be fully applied.';
 
 // Cache reads bill at a fraction of fresh prompt tokens. Providers differ, but
 // they cluster around a tenth; this provisional rate is applied to every
@@ -44,12 +45,22 @@ export function requestCostUsd(
 	);
 }
 
+// What a stopped run reports it spent: the figure, and whether it includes
+// estimates (see SpendMeter.spentEstimated).
+export function spentFields(meter: SpendMeter): { spentUsd: number; spentEstimated?: true } {
+	return {
+		spentUsd: meter.spentUsd,
+		...(meter.spentEstimated ? { spentEstimated: true as const } : {})
+	};
+}
+
 export class SpendMeter {
 	readonly capUsd: number | undefined;
 	private readonly pricing: ModelPricing | undefined;
 	private usd = 0;
 	private unpriced = false;
 	private unreported = false;
+	private estimated = false;
 
 	constructor(opts: { pricing?: ModelPricing; capUsd?: number }) {
 		this.pricing = opts.pricing;
@@ -74,11 +85,19 @@ export class SpendMeter {
 			this.unpriced = true;
 			return;
 		}
+		if (usage.estimated) this.estimated = true;
 		this.usd += cost;
 	}
 
 	get spentUsd(): number {
 		return this.usd;
+	}
+
+	// True when spentUsd includes estimated counts (a failed attempt metered at
+	// its output cap, say), so the figure is an upper bound rather than what
+	// the endpoint reported. Notices word it as "up to".
+	get spentEstimated(): boolean {
+		return this.estimated;
 	}
 
 	// True once the run has spent its ceiling. Always false when there is no cap,
