@@ -2130,7 +2130,9 @@ describe('gateway request retries', () => {
 				{ promptTokens: 40, completionTokens: 2 }
 			])
 		);
-		expect(result.usage).toEqual({ promptTokens: 80, completionTokens: 9 });
+		// The failed attempt's output is an estimate, so the total is marked one.
+		expect(result.usage).toEqual({ promptTokens: 80, completionTokens: 9, estimated: true });
+		expect(meter.spentEstimated).toBe(true);
 		expect(meter.spentUsd).toBeCloseTo(80 * 0.001 + 9 * 0.01);
 		expect(meter.notApplied).toBe(false);
 	});
@@ -2231,5 +2233,111 @@ describe('gateway request retries', () => {
 		);
 		expect(text).toBe('whole');
 		expect(endpoint.calls()).toBe(2);
+	});
+});
+
+describe('gateway refusal and paused turns (#1083)', () => {
+	const noHttp: HttpRequest = async () => {
+		throw new Error('the injected provider should not call the transport');
+	};
+
+	// Answers each request with the next canned response.
+	function queued(responses: Awaited<ReturnType<Provider['respond']>>[]) {
+		const seen: ChatMessage[][] = [];
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'token', text: 'partial' };
+				yield { type: 'done', finishReason: 'refusal' };
+			},
+			async respond(req) {
+				seen.push([...req.messages]);
+				return responses.shift() ?? { content: '', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		return { provider, seen };
+	}
+
+	it('reports a refused reply as a failure, not as an empty answer', async () => {
+		await configure(true);
+		const { provider } = queued([{ content: '', toolCalls: [], finishReason: 'refusal' }]);
+		await expect(
+			completeDetailed(db, { userId, role: 'chat', messages: [] }, { provider, http: noHttp })
+		).rejects.toThrow(/declined/);
+	});
+
+	it('reports a refused round of the tool loop as a failure', async () => {
+		await configure(true);
+		const { storyId } = await seedStoryScene('Text.');
+		const { provider } = queued([{ content: '', toolCalls: [], finishReason: 'refusal' }]);
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, storyId, role: 'chat', enableTools: true, messages: [] },
+				{ provider, http: noHttp }
+			)
+		).rejects.toThrow(/declined/);
+	});
+
+	it('resumes a paused turn and returns the whole answer', async () => {
+		await configure(true);
+		const blocks = [{ type: 'text', text: 'First, ' }];
+		const { provider, seen } = queued([
+			{ content: 'First, ', toolCalls: [], finishReason: 'paused', raw: blocks },
+			{ content: 'then done.', toolCalls: [], finishReason: 'stop' }
+		]);
+		const result = await completeDetailed(
+			db,
+			{ userId, role: 'chat', messages: [{ role: 'user', content: 'q' }] },
+			{ provider, http: noHttp }
+		);
+		expect(result.content).toBe('First, then done.');
+		expect(seen).toHaveLength(2);
+		expect(seen[1].at(-1)).toEqual({ role: 'assistant', content: 'First, ', raw: blocks });
+	});
+
+	it('resumes a paused round of the tool loop', async () => {
+		await configure(true);
+		const { storyId } = await seedStoryScene('Text.');
+		const { provider, seen } = queued([
+			{ content: 'Looking. ', toolCalls: [], finishReason: 'paused', raw: [] },
+			{ content: 'Found it.', toolCalls: [], finishReason: 'stop' }
+		]);
+		const result = await completeDetailed(
+			db,
+			{ userId, storyId, role: 'chat', enableTools: true, messages: [] },
+			{ provider, http: noHttp }
+		);
+		expect(result.content).toBe('Looking. Found it.');
+		expect(seen).toHaveLength(2);
+	});
+
+	it('gives up on a turn that keeps pausing', async () => {
+		await configure(true);
+		const paused = { content: 'x', toolCalls: [], finishReason: 'paused' as const, raw: [] };
+		const { provider, seen } = queued([paused, paused, paused, paused]);
+		await expect(
+			completeDetailed(db, { userId, role: 'chat', messages: [] }, { provider, http: noHttp })
+		).rejects.toThrow(/stopped partway/);
+		expect(seen).toHaveLength(3);
+	});
+
+	it('ends a refused stream with an error instead of done', async () => {
+		await configure(true);
+		const { provider } = queued([]);
+		const events: StreamEvent[] = [];
+		for await (const event of stream(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider, http: noHttp }
+		)) {
+			events.push(event);
+		}
+		expect(events).toEqual([
+			{ type: 'token', text: 'partial' },
+			{ type: 'error', message: 'The model declined to answer this request.' }
+		]);
 	});
 });

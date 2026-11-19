@@ -1461,6 +1461,34 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review follow-ups: usage log and Claude adapter (#1116,
+      #1127, #1123, #1102, #1104, #1125, #1074, #1083, #1085, #1094,
+      2026-11-19). The spend meter keeps its output-cap bound for a failed
+      thinking attempt, but the usage log no longer presents it as reported:
+      `assistant_usage` gains an additive `estimated` flag (and a
+      `web_search_requests` count), the account page marks those rows and the
+      30-day total says how many it includes, and a cost or a capped run's
+      notice that includes estimates reads "up to" instead of "about". A
+      request the writer cancelled (aborted signal or AbortError) skips the
+      bound, since no further attempt follows for it to protect. Plain
+      streamed turns now write their row in a finally, so a caller that stops
+      reading at done, an error or a cancel still logs it; a streamed error
+      event carries an estimated count first. The "cap not applied" notice for
+      missing counts says "for every request" and "could not be fully
+      applied", since per-request metering still caps the rounds that did
+      report. Web search fees are counted from server_tool_use but not priced:
+      no per-search price is discoverable from the endpoint (Claude models
+      have none either, #1031), so the help article says the fee is outside
+      the cost and the cap. Adapter: SSE data lines join until the blank
+      line; a stream with no or a generic content type is sniffed; broken
+      tool input outside a max_tokens stop reaches the dispatcher as raw text
+      (a bad-call result) instead of empty arguments; refusal and pause_turn
+      get their own finish reasons. A refusal throws ReplyRefusedError (a
+      failed scene or reply), a paused buffered turn is resumed up to twice
+      by sending its blocks back, and a paused or refused plain stream ends
+      as an error. The billing explanation lives in a new "Usage and cost"
+      section of the account help article, linked from the Usage heading.
+
 - [x] Review follow-ups: mention index and stale marks (2026-11-19).
       A mention rebuild now reads the scene body under the scene's row lock,
       in the transaction that writes the index, so a save landing between
