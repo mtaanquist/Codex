@@ -5,6 +5,7 @@ import { acceptedPatternEdit } from '../review';
 import { paragraphWindow } from '#lib/paragraphs';
 import { assembleReviewReplyContext, buildSystemMessage } from './context/assemble';
 import { buildRereadMessage } from './prompts/review';
+import { resolveLlmConfig } from './config';
 import { completeDetailed, type GatewayDeps } from './gateway';
 import type { ChatMessage } from './providers/types';
 
@@ -36,6 +37,9 @@ export async function rereadPatternEdit(
 ): Promise<RereadResult> {
 	const edit = await acceptedPatternEdit(db, input.userId, input.suggestionId);
 	if (!edit) return { skipped: 'gone' };
+	// A follow-up is staged through suggest_edit; without tools there is none.
+	const { config } = await resolveLlmConfig(db, input.userId, edit.storyId);
+	if (config.supportsTools === false) return { skipped: 'done' };
 	if (reread.has(input.suggestionId)) return { skipped: 'done' };
 	reread.add(input.suggestionId);
 	if (reread.size > REREAD_MEMORY) reread.delete(reread.values().next().value!);

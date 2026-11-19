@@ -665,4 +665,43 @@ describe('the whole-book pattern pass', () => {
 		expect(notes).toHaveLength(1);
 		expect(notes[0].body).toContain('Shows up in: One, Two.');
 	});
+
+	it('does not send the whole book again after an unreadable reply', async () => {
+		await addSecondChapter();
+		await windowOf(1_000_000);
+		const whole = (text: string) => text.includes('## One') && text.includes('## Two');
+		const seen: ChatMessage[][] = [];
+		const inner = bookProvider().provider;
+		const provider: Provider = {
+			...inner,
+			async respond(req) {
+				if (isBookSurvey(req.messages) && whole(asked(req.messages))) {
+					seen.push(req.messages);
+					return { content: 'Here are my thoughts, in prose.', toolCalls: [] };
+				}
+				return inner.respond(req);
+			}
+		};
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
+		expect(seen).toHaveLength(1);
+		expect(await patternNotes()).toHaveLength(1);
+	});
+
+	it('skips the pass when the endpoint cannot call tools', async () => {
+		await addSecondChapter();
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			modelContextManual: { [MODEL]: 1_000_000 },
+			supportsTools: false
+		});
+		const { provider, seen } = bookProvider();
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'book' }, { provider });
+		expect(seen.some(isBookSurvey)).toBe(false);
+	});
 });
