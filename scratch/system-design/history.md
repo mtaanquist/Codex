@@ -1011,12 +1011,14 @@ text match, chunking changes nothing, only failures a resend could fix are
 retried on the buffered path, and billed usage is never below what the body reported and is marked
 estimated exactly when the output count is a guess. It found one gap: a live
 stream that dropped before its stop reason ended as a finished reply (and was
-saved to the chat as one). It now ends with an error, in both adapters, as the
-buffered path already did. The chat panel keeps the partial text of such a
-reply on screen with a note that it was not saved. Any reply the server did
-not store (an error, a stream that closed without finishing, an error before
-any text) offers no insert and is left out of the turns the next question
-sends; a writer's own Stop keeps what arrived, as before. An OpenAI-style error
+saved to the chat as one). It now ends with an error in both adapters, as the
+Anthropic buffered path already did (OpenAI's buffered call is one JSON
+body). The chat panel keeps the partial text of such a reply on screen with a
+note that it was not saved. A reply the server did not store is left out of
+the turns the next question sends: an error, a stream that closed without
+finishing or failed to save after it finished, a writer's own Stop, and the
+panel's own hints. Errors and hints, including failed /write and /rewrite
+replies, offer no insert; a stopped reply keeps what arrived to insert. An OpenAI-style error
 frame partway through (OpenRouter sends one when its upstream drops) also ends
 in an error now, where it used to finish the reply. The first
 review also found the OpenAI stream dropping a last line sent without a

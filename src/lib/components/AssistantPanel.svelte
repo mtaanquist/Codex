@@ -132,9 +132,11 @@
 		proposals?: SplitProposal[];
 		// The reply was cut short; a note under it says why.
 		stopped?: StopReason;
-		// The server did not store this reply (an error, or a stream that
-		// broke off), so it is not sent back as history and cannot be inserted.
+		// The server did not store this reply, so it is not sent back as history.
 		unsaved?: boolean;
+		// An error or a hint rather than the Assistant's writing, or a reply that
+		// broke off: it cannot be inserted.
+		notice?: boolean;
 		// Why a reply with some text broke off; a note under it says so.
 		failed?: string;
 		// A /rewrite reply: its affordance replaces the selection rather than
@@ -240,9 +242,14 @@
 		}
 	}
 
-	function markUnsaved() {
+	// The last reply was not stored; `notice` when it is an error rather than
+	// writing the writer may want to insert.
+	function markUnsaved(notice: boolean) {
 		const last = messages[messages.length - 1];
-		if (last && last.role === 'assistant') last.unsaved = true;
+		if (last && last.role === 'assistant') {
+			last.unsaved = true;
+			if (notice) last.notice = true;
+		}
 	}
 
 	function markStopped(reason: StopReason) {
@@ -362,7 +369,7 @@
 				appendToReply(
 					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
 				);
-				markUnsaved();
+				markUnsaved(true);
 				return;
 			}
 			const reader = response.body.getReader();
@@ -385,24 +392,28 @@
 				}
 			}
 			const reply = messages[messages.length - 1];
-			// The same test the server applies before it stores a reply.
+			// The same test the server applies before it stores a reply. An error
+			// after done means storing it failed.
 			const stored =
 				finished &&
+				!streamError &&
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
 			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
 			if (reply?.role === 'assistant' && !stored) {
 				reply.unsaved = true;
+				reply.notice = true;
 				if (reply.content === '')
 					reply.content = streamError || 'The Assistant did not return a response.';
-				else if (!finished)
-					reply.failed = streamError || 'The connection closed before the reply finished.';
+				else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
-			// A writer's own Stop keeps what arrived, as before.
-			if (!controller.signal.aborted) {
+			// A writer's own Stop keeps what arrived to insert, but the server
+			// stored none of it.
+			if (controller.signal.aborted) markUnsaved(false);
+			else {
 				appendToReply('Sorry, something went wrong reaching the Assistant.');
-				markUnsaved();
+				markUnsaved(true);
 			}
 		} finally {
 			busy = false;
@@ -554,7 +565,7 @@
 
 	// A plain assistant message, for usage hints and command errors.
 	function assistantSay(content: string) {
-		messages = [...messages, { role: 'assistant', content }];
+		messages = [...messages, { role: 'assistant', content, unsaved: true, notice: true }];
 	}
 
 	// POST a brief (and optional selection) to the buffered co-author endpoint and
@@ -583,16 +594,19 @@
 			if (!(reply && reply.role === 'assistant')) return;
 			if (!response.ok) {
 				reply.content = 'Sorry, the Assistant could not draft that passage. Try again.';
+				markUnsaved(true);
 				return;
 			}
 			const { text } = (await response.json()) as { text?: string };
 			reply.content = text?.trim() || 'The Assistant did not return a passage.';
-			if (opts.rewrite) reply.rewrite = true;
+			if (!text?.trim()) markUnsaved(true);
+			else if (opts.rewrite) reply.rewrite = true;
 		} catch {
 			if (!controller.signal.aborted) {
 				const reply = messages[messages.length - 1];
 				if (reply && reply.role === 'assistant') {
 					reply.content = 'Sorry, something went wrong reaching the Assistant.';
+					markUnsaved(true);
 				}
 			}
 		} finally {
@@ -1075,7 +1089,7 @@
 								{@html renderReplyMarkdown(message.content)}
 							{/if}
 						</div>
-						{#if message.content && !message.unsaved && !(busy && index === messages.length - 1) && index > 0}
+						{#if message.content && !message.notice && !(busy && index === messages.length - 1) && index > 0}
 							{#if message.rewrite && onReplaceSelection}
 								<button
 									class="msg-insert"
@@ -1100,7 +1114,7 @@
 						{/if}
 						{#if message.failed}
 							<p class="stopped-note">
-								This reply did not finish, so it was not saved. {message.failed}
+								This reply was not saved. {message.failed}
 							</p>
 						{/if}
 						{#if message.stopped === 'budget'}
