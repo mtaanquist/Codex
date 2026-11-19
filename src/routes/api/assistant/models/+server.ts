@@ -2,7 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import { assistantLayout, resolveLlmConfig } from '#lib/server/llm/config';
 import { listEndpointModels } from '#lib/server/llm/models';
-import { rateLimitAssistant } from '#lib/server/write-guard';
+import { rateLimitLookups } from '#lib/server/write-guard';
 
 // The models the composer's model chip offers: what the account's endpoint
 // lists, plus any model the writer has already set for a role, so an endpoint
@@ -10,7 +10,7 @@ import { rateLimitAssistant } from '#lib/server/write-guard';
 // error; the chip shows what it has and says the list is incomplete.
 export const GET: RequestHandler = async ({ locals }) => {
 	const userId = locals.user!.id;
-	rateLimitAssistant(userId);
+	rateLimitLookups(userId);
 	const layout = await assistantLayout(db, userId);
 	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this account.');
 	const { config } = await resolveLlmConfig(db, userId);

@@ -15,7 +15,7 @@
 	// list comes from the endpoint when the menu opens; "Default" clears the
 	// chat's own choice so it follows the story or account setting again.
 	import { EFFORT_LEVELS, modelTakesEffort } from '#lib/assistant-tuning';
-	import type { ChatModelInfo, ChatModelSettings } from '#lib/assistant-chat';
+	import { chatEffort, type ChatModelInfo, type ChatModelSettings } from '#lib/assistant-chat';
 	import { menu } from '#lib/menu';
 	import Icon from './Icon.svelte';
 
@@ -55,9 +55,8 @@
 		return () => controller.abort();
 	});
 
-	const model = $derived(settings.model ?? info.model);
-	const showEffort = $derived(info.claude && modelTakesEffort(model));
-	const effort = $derived(settings.effort ?? info.effort ?? 'medium');
+	const effort = $derived(chatEffort(settings, info));
+	const showEffort = $derived(effort !== null);
 	// The chat's own pick stays listed even when the endpoint no longer lists it.
 	const choices = $derived(
 		settings.model && !models.includes(settings.model) ? [settings.model, ...models] : models

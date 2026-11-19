@@ -2,6 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import { deleteChat, getChat, listChat, setChatSettings } from '#lib/server/llm/chat-history';
 import { readJson } from '#lib/server/validation';
+import { rateLimitWrites } from '#lib/server/write-guard';
 import { hasChatSummary } from '#lib/server/llm/chat-summary';
 import { CHAT_MISSING, readChatSettings } from '#lib/assistant-chat';
 import { ownedStory } from '#lib/server/story-access';
@@ -39,6 +40,7 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
 
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) error(401, 'Sign in first.');
+	rateLimitWrites(locals.user.id);
 	const chat = await liveChat(locals.user.id, params.id!);
 	const body = await readJson<{ settings?: unknown }>(request);
 	// Clearing takes an explicit {}: a missing or malformed setting is refused.

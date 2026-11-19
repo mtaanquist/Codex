@@ -62,7 +62,7 @@ export function chatBudgetTokens(contextWindow: number | undefined): number {
 // of the reply.
 const ATTACHMENT_WINDOW_SHARE = 0.3;
 const ATTACHMENT_CEILING_TOKENS = 100_000;
-export const ATTACHMENT_BUDGET_TOKENS = 4000;
+export const ATTACHMENT_BUDGET_TOKENS = 2000;
 
 export function attachmentBudgetTokens(contextWindow: number | undefined): number {
 	return windowBudget(

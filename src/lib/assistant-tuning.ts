@@ -109,6 +109,11 @@ export function modelTakesEffort(model: string): boolean {
 	return CLAUDE_EFFORT_MODELS.test(model);
 }
 
+// The effort a role's Claude model runs at when nothing sets one.
+export function defaultEffort(role: AssistantRole): EffortLevel {
+	return CLAUDE_ROLE_EFFORT[role];
+}
+
 export function claudeEffort(
 	role: AssistantRole,
 	model: string,

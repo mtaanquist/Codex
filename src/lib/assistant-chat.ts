@@ -1,4 +1,9 @@
-import { EFFORT_LEVELS, type EffortLevel } from './assistant-tuning.ts';
+import {
+	defaultEffort,
+	EFFORT_LEVELS,
+	modelTakesEffort,
+	type EffortLevel
+} from './assistant-tuning.ts';
 import { isUuid } from './slug.ts';
 
 // How many recent turns the side panel sends with each chat request. The
@@ -46,6 +51,16 @@ export function readChatSettings(raw: unknown): ChatModelSettings {
 // on without a chat setting, its effort where the model takes one, and whether
 // the endpoint is Claude (the only provider with effort levels).
 export type ChatModelInfo = { model: string; effort: EffortLevel | null; claude: boolean };
+
+// The effort the chip shows, or null where the model takes none. A model the
+// chat picked leaves the account's effort behind (the server drops it too).
+export function chatEffort(settings: ChatModelSettings, info: ChatModelInfo): EffortLevel | null {
+	const model = settings.model ?? info.model;
+	if (!info.claude || !modelTakesEffort(model)) return null;
+	if (settings.effort) return settings.effort;
+	const swapped = settings.model !== undefined && settings.model !== info.model;
+	return (swapped ? null : info.effort) ?? defaultEffort('chat');
+}
 
 // Something the writer added to a message as context, shown as a chip in the
 // composer and over the sent message. The server reads the content itself by

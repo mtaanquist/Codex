@@ -56,6 +56,7 @@
 	import {
 		attachmentKey,
 		attachmentLabel,
+		chatEffort,
 		MAX_ATTACHMENTS,
 		type AttachmentKind,
 		CHAT_MISSING,
@@ -71,12 +72,12 @@
 	import {
 		commandsForScope,
 		matchCommands,
+		SLASH_COMMANDS,
 		matchSlash,
 		slashName,
 		slashArgs,
 		type SlashCommand
 	} from '#lib/assistant-slash';
-	import { modelTakesEffort } from '#lib/assistant-tuning';
 	import Icon from './Icon.svelte';
 	import AssistantProposal from './AssistantProposal.svelte';
 	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
@@ -233,11 +234,7 @@
 	// svelte-ignore state_referenced_locally
 	const modelInfo: ChatModelInfo = chat?.model ?? { model: '', effort: null, claude: false };
 	const chipModel = $derived(chatSettings.model ?? modelInfo.model);
-	const chipEffort = $derived(
-		modelInfo.claude && modelTakesEffort(chipModel)
-			? (chatSettings.effort ?? modelInfo.effort ?? 'medium')
-			: null
-	);
+	const chipEffort = $derived(chatEffort(chatSettings, modelInfo));
 	let input = $state('');
 	let busy = $state(false);
 	// An earlier chat is loading; nothing is sent until it is in place, or the
@@ -348,13 +345,15 @@
 	// writer's turn before the reply (a chat message), so a chat it starts is
 	// kept whatever happens to the reply; otherwise (a recap) the server drops
 	// the new chat again unless a reply is stored, so the panel only adopts it
-	// then. Returns 'gone' when the open chat no longer exists.
+	// then. Returns 'gone' when the open chat no longer exists, and 'refused'
+	// when the server turned the request away before storing anything (a rate
+	// limit, a setting, a bad request), with the reason in the reply.
 	async function streamInto(
 		url: string,
 		payload: object,
 		title: string,
 		storesTurnFirst: boolean
-	): Promise<'gone' | void> {
+	): Promise<'gone' | 'refused' | void> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
@@ -383,7 +382,8 @@
 				if (storesTurnFirst || existed || chatId === storedIn) noteChatUsed(storedIn, storedTitle);
 				else startedIn = storedIn;
 			}
-			if (response.status === 404 && (await errorMessage(response)) === CHAT_MISSING) {
+			const failure = response.ok ? '' : await errorMessage(response);
+			if (response.status === 404 && failure === CHAT_MISSING) {
 				// The open chat was deleted elsewhere (another tab).
 				const gone = chatId;
 				chats = chats.filter((c) => c.id !== gone);
@@ -392,6 +392,10 @@
 				messages = [{ role: 'assistant', content: 'This chat was deleted.' }];
 				olderSummarised = false;
 				return 'gone';
+			}
+			if (response.status >= 400 && response.status < 500) {
+				appendToReply(failure || 'The Assistant could not take that request.');
+				return 'refused';
 			}
 			if (!response.ok || !response.body) {
 				appendToReply(
@@ -489,6 +493,19 @@
 			chatTitle(question),
 			true
 		);
+		// Turned away before it was stored: the message comes off the transcript
+		// and goes back in the chat box, with what it carried.
+		if (outcome === 'refused') {
+			const reply = messages[messages.length - 1];
+			messages = [
+				// The turn and its reply are the last two.
+				...messages.slice(0, -2),
+				{
+					role: 'assistant',
+					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`
+				}
+			];
+		}
 		// Not sent: start afresh, and put the question (and its passage) back so
 		// it need not be typed again.
 		if (outcome === 'gone') {
@@ -499,6 +516,8 @@
 						'This chat was deleted. Your message was not sent; send it again to start a new chat.'
 				}
 			];
+		}
+		if (outcome === 'gone' || outcome === 'refused') {
 			if (turn.reference && !reference) reference = turn.reference;
 			if (turn.attachments && attachments.length === 0) attachments = turn.attachments;
 			if (!input.trim()) {
@@ -511,11 +530,26 @@
 		}
 	}
 
-	function runSlashCommand(raw: string) {
-		input = '';
-		if (composer) composer.style.height = 'auto';
+	// `typed` says the line came from the chat box, which it then clears; a
+	// command chosen from the menu leaves the writer's draft alone.
+	function runSlashCommand(raw: string, typed = true) {
+		if (typed) {
+			input = '';
+			if (composer) composer.style.height = 'auto';
+		}
 		commandSelected = 0;
 		const name = slashName(raw);
+		const story = SLASH_COMMANDS.find((c) => c.name === name)?.scope === 'story';
+		if (story && !isStory) {
+			assistantSay(`/${name} works in a story. Open a story to use it.`);
+			return;
+		}
+		// One popover at a time.
+		if (name === 'history' || name === 'model' || name === 'context') {
+			commandsOpen = false;
+			modelOpen = false;
+			contextOpen = false;
+		}
 		switch (name) {
 			case 'history':
 				pickerOpen = true;
@@ -595,23 +629,32 @@
 
 	// Choosing a command from the menu. A command that takes arguments leaves
 	// "/name " in the composer to type the argument into; the rest run straightaway.
+	// From the button menu the chat box may hold a draft, which is kept: a
+	// command that takes input puts its name in front of it.
 	function chooseCommand(command: SlashCommand) {
+		const fromMenu = commandsOpen;
 		commandsOpen = false;
 		commandSelected = 0;
 		// The filter field is about to go; commands that open something move
 		// focus on from here.
 		composer?.focus();
+		const draft = fromMenu ? input.trim() : '';
 		if (command.args) {
-			setComposer(`/${command.name} `);
+			setComposer(`/${command.name} ${draft}`);
 			return;
 		}
-		// Like a typed command, it waits for the reply in progress; the line
-		// stays in the composer to send when the reply is done.
+		// Like a typed command, it waits for the reply in progress.
 		if (busy || switching) {
-			setComposer(`/${command.name}`);
+			if (draft) {
+				flashActivity(
+					'failed',
+					'Wait for the reply',
+					'Choose the command again when the reply has finished.'
+				);
+			} else setComposer(`/${command.name}`);
 			return;
 		}
-		runSlashCommand(`/${command.name}`);
+		runSlashCommand(`/${command.name}`, !fromMenu);
 	}
 
 	// A plain assistant message, for usage hints and command errors.
@@ -826,8 +869,15 @@
 			commandSelected = (commandSelected + 1) % count;
 		} else if (event.key === 'ArrowUp' && count > 0) {
 			commandSelected = (commandSelected - 1 + count) % count;
-		} else if ((event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) && count > 0) {
+		} else if (event.key === 'Enter' && !event.shiftKey && count > 0) {
 			chooseCommand(shownCommands[commandSelected]);
+		} else if (event.key === 'Tab' && !event.shiftKey && count > 0 && !commandsOpen) {
+			// Tab completes the name and runs nothing; once it is complete, Tab
+			// moves on as usual.
+			const command = shownCommands[commandSelected];
+			const done = `/${command.name}${command.args ? ' ' : ''}`;
+			if (input === done || input === `/${command.name}`) return false;
+			setComposer(done);
 		} else if (event.key === 'Escape') {
 			if (commandsOpen) {
 				commandsOpen = false;
@@ -846,6 +896,7 @@
 	// command; only Enter or a click runs one.
 	function filterKeydown(event: KeyboardEvent) {
 		if (event.key === 'Tab') {
+			commandsTrigger?.focus();
 			commandsOpen = false;
 			return;
 		}
@@ -863,12 +914,25 @@
 		if (!chatId) return;
 		settingsSave?.abort();
 		settingsSave = new AbortController();
+		const signal = settingsSave.signal;
+		const failed = () =>
+			flashActivity(
+				'failed',
+				'Could not save the model',
+				'This chat keeps it until you reload. Pick it again to retry.'
+			);
 		void fetch(`/api/assistant/chats/${chatId}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ settings: next }),
-			signal: settingsSave.signal
-		}).catch(() => {});
+			signal
+		})
+			.then((response) => {
+				if (!response.ok) failed();
+			})
+			.catch(() => {
+				if (!signal.aborted) failed();
+			});
 	}
 
 	// What the next message carries as context, from the + button; chips in
@@ -1388,6 +1452,7 @@
 					placeholder={isStory ? 'Ask about your story' : 'Ask about this universe'}
 					aria-label="Message the Assistant"
 					aria-controls={slashOpen ? commandListId : undefined}
+					aria-autocomplete="list"
 					aria-activedescendant={slashOpen && shownCommands[commandSelected]
 						? `${commandListId}-${shownCommands[commandSelected].name}`
 						: undefined}

@@ -27,11 +27,17 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		if (!isUuid(storyId)) error(404, 'No such story.');
 		const contents = await storyContents(db, userId, storyId);
 		if (!contents) error(404, 'No such story.');
-		const { config } = await resolveLlmConfig(db, userId);
-		const model = url.searchParams.get('model') || pickModel(config, 'chat');
-		const price = config.modelPricing?.[model]?.prompt;
+		// A config that cannot be read (a key that no longer decrypts) still
+		// lists the story, just without a price.
+		const config = await resolveLlmConfig(db, userId)
+			.then((resolved) => resolved.config)
+			.catch(() => null);
+		const model = url.searchParams.get('model') || (config ? pickModel(config, 'chat') : '');
+		const price = config?.modelPricing?.[model]?.prompt;
 		// Priced on what is sent: a book over the attachment budget is cut.
-		const window = modelContextWindow(withRoleOverride(config, 'chat', { model }), 'chat');
+		const window = config
+			? modelContextWindow(withRoleOverride(config, 'chat', { model }), 'chat')
+			: undefined;
 		const sent = Math.min(contents.tokens, attachmentBudgetTokens(window));
 		return Response.json({
 			...contents,
