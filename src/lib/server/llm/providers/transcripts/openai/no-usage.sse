@@ -1,0 +1,11 @@
+# about: An endpoint that reports no usage
+# outcome: reply
+# text: Quiet.
+# finish: stop
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{"content":"Quiet."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

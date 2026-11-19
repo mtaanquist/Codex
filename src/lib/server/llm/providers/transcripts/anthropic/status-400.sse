@@ -1,0 +1,6 @@
+# about: A request the endpoint refuses
+# outcome: fail
+# status: 400
+# content-type: application/json
+
+{"type": "error", "error": {"type": "invalid_request_error", "message": "Bad"}}

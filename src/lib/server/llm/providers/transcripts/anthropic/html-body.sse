@@ -1,0 +1,5 @@
+# about: A captive portal's web page instead of a reply
+# outcome: fail
+# content-type: text/html
+
+<html><body>Sign in to the network</body></html>

@@ -996,6 +996,22 @@ lost or asked of the model again. Pending jobs on the legacy queues are not in
 the fixture: pg-boss creates its own schema when the worker starts, outside the
 migrations. The release flow in `CLAUDE.md` now refreshes the fixture.
 
+## Stream transcripts (2026-11-19)
+
+Stream handling and spend metering drew a finding nearly every review round,
+each fixed with a test for that one case, so #1195 added recorded replies under
+`src/lib/server/llm/providers/transcripts/` (one `.sse` file per case, with
+`# key: value` lines for the expected outcome) and
+`transcripts.test.ts`, which replays each through the live stream and the
+buffered reply: whole, one byte at a time and in uneven chunks, and cut off at
+every event boundary. The rules are the same for every file: the outcome and
+text match, chunking changes nothing, only failures a resend could fix are
+retried, and billed usage is never below what the body reported and is marked
+estimated exactly when the output count is a guess. It found one gap: a live
+stream that dropped before its stop reason ended as a finished reply (and was
+saved to the chat as one). It now ends with an error, in both adapters, as the
+buffered path already did. A new edge case is a new file.
+
 ## Lock order and race harness (2026-11-19)
 
 Deadlocks and positions shared by two scenes were found one pair of
