@@ -86,6 +86,12 @@ function focusInstruction(categories: ReviewCategory[]): string {
 	].join('\n');
 }
 
+// One theme per comment, so each note can be replied to, resolved, and worked
+// through on its own. A model told to be sparing otherwise crams a pattern, a
+// pacing note, and an overall verdict into one whole-scene comment.
+const ONE_THEME_PER_NOTE =
+	'Leave one comment per theme. Never combine a recurring pattern, a pacing or structure observation, and an overall impression in one comment; each is its own leave_comment call. When a comment describes a recurring pattern, open it with "Pattern note (<the pattern>):" and give the line edits for it as separate suggest_edit calls.';
+
 // sceneTextIncluded says whether the caller put the scene's prose in the
 // request already (the scene-local tier survived the budget). A weak model
 // re-reads the scene it has been handed unless it is told plainly not to, so
@@ -105,8 +111,9 @@ export function buildReviewMessage(
 			: 'Read it in full with get_scene, then leave your feedback through your tools, anchored to the scene:',
 		'- leave_comment for an observation about continuity, characterisation, pacing, or clarity; quote the passage you mean.',
 		"- suggest_edit for a concrete line edit: replace an exact passage with an improved version, keeping the change minimal and faithful to the author's voice.",
+		ONE_THEME_PER_NOTE,
 		sparing
-			? 'Be specific and sparing; a few high-value notes beat many shallow ones. Check the scene against the established world and entity details in your context. Do not rewrite the scene wholesale or change the meaning of the prose.'
+			? 'Be specific and sparing; a few high-value notes beat many shallow ones. Splitting your observations into one comment per theme does not count against being sparing. Check the scene against the established world and entity details in your context. Do not rewrite the scene wholesale or change the meaning of the prose.'
 			: focusInstruction(categories)
 	];
 	if (prior.length === 0) {

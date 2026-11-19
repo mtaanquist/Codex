@@ -1057,6 +1057,11 @@ calls the gateway, which proxies through the egress guard.
   holds together" comment on the first scene); the job's notification already
   reports that it found no continuity issues.
 
+- [built] One theme per note (#1131): the review prompt asks for one comment
+  per theme, so a recurring pattern, a pacing observation, and an overall
+  impression arrive as separate notes the writer can resolve on their own. A
+  pattern note opens with "Pattern note (<the pattern>):".
+
 ### Background jobs - sequencing steps 4 and 7
 
 - [built] pg-boss queues `assistant-review-v2`, `assistant-summaries-v2`, and
