@@ -468,8 +468,16 @@
 			return;
 		}
 		if (busy || switching) return;
-		input = '';
-		if (composer) composer.style.height = 'auto';
+		// A model just picked is saved before the message goes, so it answers.
+		if (settingsSaving) {
+			await settingsSaving;
+			if (busy || switching) return;
+		}
+		// Text passed in (a starter suggestion) leaves the writer's draft alone.
+		if (text === undefined) {
+			input = '';
+			if (composer) composer.style.height = 'auto';
+		}
 		const turn: Message = { role: 'user', content: question };
 		if (reference) {
 			turn.reference = reference;
@@ -938,32 +946,45 @@
 	// sends it with its first message.
 	// Saves go one at a time, newest wins, so quick clicks cannot land out of
 	// order; while another chat loads the choice would go to the wrong one.
-	let settingsSave: AbortController | null = null;
+	// A new chat's first message carries its choice, so the choice is locked
+	// until that message is stored. Saves run one after another so the newest
+	// lands last; if the newest fails, the earlier choice comes back.
+	let settingsSaving: Promise<void> | null = null;
+	const settingsLocked = $derived(switching || (busy && !chatId));
+	$effect(() => {
+		if (settingsLocked) modelOpen = false;
+	});
 	function changeSettings(next: ChatModelSettings) {
-		if (switching) return;
+		if (settingsLocked) return;
+		const previous = chatSettings;
 		chatSettings = next;
 		if (!chatId) return;
-		settingsSave?.abort();
-		settingsSave = new AbortController();
-		const signal = settingsSave.signal;
-		const failed = () =>
+		const savingFor = chatId;
+		const failed = () => {
+			if (settingsSaving !== saving) return;
+			if (chatId === savingFor) chatSettings = previous;
 			flashActivity(
 				'failed',
 				'Could not save the model',
-				'This chat keeps it until you reload. Pick it again to retry.'
+				'The chat keeps its earlier model. Try again in a moment.'
 			);
-		void fetch(`/api/assistant/chats/${chatId}`, {
-			method: 'PATCH',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ settings: next }),
-			signal
-		})
+		};
+		const saving: Promise<void> = (settingsSaving ?? Promise.resolve())
+			.then(() =>
+				fetch(`/api/assistant/chats/${savingFor}`, {
+					method: 'PATCH',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ settings: next })
+				})
+			)
 			.then((response) => {
 				if (!response.ok) failed();
 			})
-			.catch(() => {
-				if (!signal.aborted) failed();
+			.catch(failed)
+			.finally(() => {
+				if (settingsSaving === saving) settingsSaving = null;
 			});
+		settingsSaving = saving;
 	}
 
 	// What the next message carries as context, from the + button; chips in
@@ -1531,6 +1552,7 @@
 								: ''}"
 							aria-haspopup="menu"
 							aria-expanded={modelOpen}
+							disabled={settingsLocked}
 							onclick={() => {
 								modelOpen = !modelOpen;
 								if (modelOpen) {

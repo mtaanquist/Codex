@@ -440,3 +440,41 @@ test('the command menu and Tab keep a draft, and a refused send comes back', asy
 	await expect(panel.locator('.msg.assistant-msg').last()).toContainText('to use /rewrite');
 	await expect(composer).toHaveValue('/rewrite cut the adverbs');
 });
+
+// A model that could not be saved does not stay on the chip, and a starter
+// suggestion leaves a typed draft in the chat box.
+test('a failed model save reverts the chip, and a suggestion keeps the draft', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Revert');
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+
+	await page.route('**/api/assistant/chat', (route) =>
+		route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': '00000000-0000-4000-8000-000000000001',
+				'x-chat-title': 'Suggested'
+			},
+			body: `data: ${JSON.stringify({ type: 'done' })}\n\n`
+		})
+	);
+	await composer.fill('My own question');
+	await panel.locator('.suggest-chip').first().click();
+	await expect(panel.locator('.msg.user')).toHaveCount(1);
+	await expect(composer).toHaveValue('My own question');
+
+	await page.route('**/api/assistant/models', (route) =>
+		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
+	);
+	await page.route('**/api/assistant/chats/*', (route) =>
+		route.request().method() === 'PATCH' ? route.fulfill({ status: 500 }) : route.continue()
+	);
+	const chip = panel.getByRole('button', { name: /Model for this chat/ });
+	await chip.click();
+	await page
+		.getByRole('menu', { name: 'Model for this chat' })
+		.getByRole('menuitemradio', { name: 'small-model' })
+		.click();
+	await expect(page.getByText('Could not save the model')).toBeVisible();
+	await expect(chip).not.toContainText('small-model');
+});
