@@ -103,8 +103,6 @@ const CLAUDE_ROLE_EFFORT: Record<AssistantRole, EffortLevel> = {
 const CLAUDE_EFFORT_MODELS =
 	/^claude-((fable|mythos|opus|sonnet|haiku)-5|opus-4-[5-8]|sonnet-4-6)(\b|-)/;
 
-// The effort a Claude request carries: the role's own, else the Codex default
-// where the model takes one, else none.
 export function modelTakesEffort(model: string): boolean {
 	return CLAUDE_EFFORT_MODELS.test(model);
 }
@@ -114,6 +112,8 @@ export function defaultEffort(role: AssistantRole): EffortLevel {
 	return CLAUDE_ROLE_EFFORT[role];
 }
 
+// The effort a Claude request carries: the role's own, else the Codex default
+// where the model takes one, else none.
 export function claudeEffort(
 	role: AssistantRole,
 	model: string,

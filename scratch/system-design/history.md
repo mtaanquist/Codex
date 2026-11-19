@@ -1052,6 +1052,14 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   worked out. Only a settings object sent with a message is saved. Catch me
   up, `/write` and `/rewrite` keep their own roles' models; the help says so.
   Filed as low: #1188, #1189.
+- Staging review round 3. A send that never reached the server (offline)
+  now comes back to the chat box like a refused one, and a draft that did
+  not go out is merged back with anything typed or added since rather than
+  skipped. A typed command clears the line only once it is accepted, and a
+  /write or /rewrite that cannot go ahead or fails puts the line back. Only
+  a new chat sends its model choice with a message; a stored chat changes it
+  through the chip's own save, so a stale tab cannot overwrite it. A new
+  chat whose first turn fails to store is dropped again. Filed as low: #1212.
 
 ## November review (2026-11-18)
 

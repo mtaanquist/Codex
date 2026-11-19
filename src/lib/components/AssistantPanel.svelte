@@ -353,7 +353,7 @@
 		payload: object,
 		title: string,
 		storesTurnFirst: boolean
-	): Promise<'gone' | 'refused' | void> {
+	): Promise<'gone' | 'refused' | 'unreached' | void> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
@@ -363,6 +363,7 @@
 		// A chat message is stored before its reply, so a stopped send leaves its
 		// turn in the chat the next send reuses.
 		if (creating && storesTurnFirst) nextChatMayExist = true;
+		let reached = false;
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
@@ -370,6 +371,7 @@
 				body: JSON.stringify({ ...payload, chatId, ...(chatId ? {} : { newChatId: nextChatId }) }),
 				signal: controller.signal
 			});
+			reached = true;
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
 			applyAttached(response.headers.get('x-chat-attachments'));
 			const storedIn = response.headers.get('x-chat-id');
@@ -389,6 +391,7 @@
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
 				freshChatId();
+				chatSettings = {};
 				messages = [{ role: 'assistant', content: 'This chat was deleted.' }];
 				olderSummarised = false;
 				return 'gone';
@@ -435,6 +438,8 @@
 		} catch {
 			if (!controller.signal.aborted) {
 				appendToReply('Sorry, something went wrong reaching the Assistant.');
+				// No answer at all (offline, a dropped connection): nothing was stored.
+				if (!reached) return 'unreached';
 			}
 		} finally {
 			busy = false;
@@ -450,7 +455,9 @@
 	// this" on a selection; shown as a chip the writer can remove before sending.
 	let reference = $state<ChatReference | null>(null);
 
-	async function send(text?: string) {
+	// `typed` is the line as the writer typed it, when `text` was built from it
+	// (/who, /find); a send that does not go out puts that back.
+	async function send(text?: string, typed?: string) {
 		const question = (text ?? input).trim();
 		if (!question) return;
 		// A line that starts with "/" is a command, not a message to the model.
@@ -488,14 +495,16 @@
 					reference: m.reference,
 					attachments: m.attachments
 				})),
-				settings: $state.snapshot(chatSettings)
+				// A stored chat keeps its choice through the chip's own save, so a
+				// stale tab cannot overwrite it; a new chat sends it to be stored.
+				...(chatId ? {} : { settings: $state.snapshot(chatSettings) })
 			},
 			chatTitle(question),
 			true
 		);
 		// Turned away before it was stored: the message comes off the transcript
 		// and goes back in the chat box, with what it carried.
-		if (outcome === 'refused') {
+		if (outcome === 'refused' || outcome === 'unreached') {
 			const reply = messages[messages.length - 1];
 			messages = [
 				// The turn and its reply are the last two.
@@ -517,32 +526,44 @@
 				}
 			];
 		}
-		if (outcome === 'gone' || outcome === 'refused') {
-			if (turn.reference && !reference) reference = turn.reference;
-			if (turn.attachments && attachments.length === 0) attachments = turn.attachments;
-			if (!input.trim()) {
-				input = question;
-				if (composer) {
-					composer.value = question;
-					fit(composer);
-				}
-			}
+		if (outcome) restoreDraft(typed ?? question, turn);
+	}
+
+	// Puts a message that did not go out back in the chat box, alongside
+	// anything typed or added since: its text first, its context merged in.
+	function restoreDraft(
+		text: string,
+		turn: { reference?: ChatReference; attachments?: ChatAttachment[] }
+	) {
+		if (turn.reference && !reference) reference = turn.reference;
+		if (turn.attachments) {
+			const keys = new Set(attachments.map(attachmentKey));
+			const missing = turn.attachments.filter((a) => !keys.has(attachmentKey(a)));
+			attachments = [...missing, ...attachments].slice(0, MAX_ATTACHMENTS);
+		}
+		const current = input.trim();
+		if (current === text) return;
+		const value = current ? `${text}\n\n${current}` : text;
+		input = value;
+		if (composer) {
+			composer.value = value;
+			fit(composer);
 		}
 	}
 
 	// `typed` says the line came from the chat box, which it then clears; a
 	// command chosen from the menu leaves the writer's draft alone.
 	function runSlashCommand(raw: string, typed = true) {
-		if (typed) {
-			input = '';
-			if (composer) composer.style.height = 'auto';
-		}
 		commandSelected = 0;
 		const name = slashName(raw);
 		const story = SLASH_COMMANDS.find((c) => c.name === name)?.scope === 'story';
 		if (story && !isStory) {
 			assistantSay(`/${name} works in a story. Open a story to use it.`);
 			return;
+		}
+		if (typed) {
+			input = '';
+			if (composer) composer.style.height = 'auto';
 		}
 		// One popover at a time.
 		if (name === 'history' || name === 'model' || name === 'context') {
@@ -572,11 +593,17 @@
 			case 'clear':
 				newChat();
 				break;
+			// A /write or /rewrite that cannot go ahead, or fails, puts the
+			// typed line back so the brief need not be typed again.
 			case 'write':
-				void coauthorDraft(slashArgs(raw));
+				void coauthorDraft(slashArgs(raw)).then((done) => {
+					if (!done && typed) restoreDraft(raw, {});
+				});
 				break;
 			case 'rewrite':
-				void rewriteSelection(slashArgs(raw));
+				void rewriteSelection(slashArgs(raw)).then((done) => {
+					if (!done && typed) restoreDraft(raw, {});
+				});
 				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
@@ -588,10 +615,10 @@
 				void continuityReview();
 				break;
 			case 'who':
-				askWho(slashArgs(raw));
+				askWho(slashArgs(raw), raw);
 				break;
 			case 'find':
-				askFind(slashArgs(raw));
+				askFind(slashArgs(raw), raw);
 				break;
 			case 'catchup':
 			case 'catch-up':
@@ -673,7 +700,7 @@
 			reference?: { kind: 'selection'; text: string };
 		},
 		opts: { rewrite?: boolean } = {}
-	) {
+	): Promise<boolean> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
@@ -685,21 +712,24 @@
 				signal: controller.signal
 			});
 			const reply = messages[messages.length - 1];
-			if (!(reply && reply.role === 'assistant')) return;
+			if (!(reply && reply.role === 'assistant')) return true;
 			if (!response.ok) {
-				reply.content = 'Sorry, the Assistant could not draft that passage. Try again.';
-				return;
+				reply.content =
+					'Sorry, the Assistant could not draft that passage. The command is back in the chat box to try again.';
+				return false;
 			}
 			const { text } = (await response.json()) as { text?: string };
 			reply.content = text?.trim() || 'The Assistant did not return a passage.';
 			if (opts.rewrite) reply.rewrite = true;
+			return true;
 		} catch {
-			if (!controller.signal.aborted) {
-				const reply = messages[messages.length - 1];
-				if (reply && reply.role === 'assistant') {
-					reply.content = 'Sorry, something went wrong reaching the Assistant.';
-				}
+			if (controller.signal.aborted) return true;
+			const reply = messages[messages.length - 1];
+			if (reply && reply.role === 'assistant') {
+				reply.content =
+					'Sorry, something went wrong reaching the Assistant. The command is back in the chat box to try again.';
 			}
+			return false;
 		} finally {
 			busy = false;
 			pending = null;
@@ -709,50 +739,50 @@
 	// /write: draft a passage from a brief through the co-author endpoint (the same
 	// one the toolbar Write button uses), shown as a reply the writer can insert.
 	// Needs a story focus; the universe surface has no scene to draft into.
-	async function coauthorDraft(brief: string) {
+	async function coauthorDraft(brief: string): Promise<boolean> {
 		if (!('storyId' in scope)) {
 			assistantSay('Drafting needs an open story or scene. Open a story to use /write.');
-			return;
+			return false;
 		}
 		if (!brief) {
 			assistantSay('Add a brief after the command, like "/write a tense standoff at the gate".');
-			return;
+			return false;
 		}
-		if (busy || switching) return;
+		if (busy || switching) return false;
 		messages = [
 			...messages,
 			{ role: 'user', content: `/write ${brief}` },
 			{ role: 'assistant', content: '' }
 		];
-		await runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
+		return runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
 	}
 
 	// /rewrite: co-author a rewrite of the editor's current selection to an
 	// instruction. Needs an open scene editor and a live selection; the reply's
 	// affordance replaces the selection rather than inserting at the cursor.
-	async function rewriteSelection(how: string) {
+	async function rewriteSelection(how: string): Promise<boolean> {
 		if (!('storyId' in scope)) {
 			assistantSay('Rewriting needs an open scene. Open a scene to use /rewrite.');
-			return;
+			return false;
 		}
 		if (!getSelection) {
 			assistantSay('Open a scene in the editor to use /rewrite.');
-			return;
+			return false;
 		}
 		const selection = getSelection()?.trim();
 		if (!selection) {
 			assistantSay('Select the passage you want rewritten first, then type /rewrite.');
-			return;
+			return false;
 		}
 		if (!how) {
 			assistantSay('Say how to rewrite it, like "/rewrite tighten this and cut the adverbs".');
-			return;
+			return false;
 		}
-		if (busy || switching) return;
+		if (busy || switching) return false;
 		const ask: Message = { role: 'user', content: `/rewrite ${how}` };
 		if (sceneId) ask.reference = { sceneId, text: selection };
 		messages = [...messages, ask, { role: 'assistant', content: '' }];
-		await runCoauthor(
+		return runCoauthor(
 			{
 				storyId: scope.storyId,
 				sceneId,
@@ -805,23 +835,24 @@
 
 	// /who: show a character or place sheet inline, a templated chat send that
 	// leans on the tool-enabled chat (get_entity). Works in both scopes.
-	function askWho(who: string) {
+	function askWho(who: string, typed: string) {
 		if (!who) {
 			assistantSay('Name who to look up, like "/who Marra".');
 			return;
 		}
-		void send(`Show me a short sheet for ${who}: the key facts you have on them.`);
+		void send(`Show me a short sheet for ${who}: the key facts you have on them.`, typed);
 	}
 
 	// /find: search the universe and list hits, a templated send backed by the
 	// universe-scoped search_text tool. Works in both scopes.
-	function askFind(query: string) {
+	function askFind(query: string, typed: string) {
 		if (!query) {
 			assistantSay('Say what to search for, like "/find the obsidian coins".');
 			return;
 		}
 		void send(
-			`Search this universe for "${query}" and list what you find, with where each turns up.`
+			`Search this universe for "${query}" and list what you find, with where each turns up.`,
+			typed
 		);
 	}
 
@@ -1430,7 +1461,10 @@
 						id={contextListId}
 						model={chipModel || undefined}
 						onAdd={addAttachment}
-						onClose={() => (contextOpen = false)}
+						onClose={() => {
+							contextTrigger?.focus();
+							contextOpen = false;
+						}}
 					/>
 				</div>
 			{/if}
@@ -1458,7 +1492,8 @@
 						: undefined}
 					value={input}
 					oninput={grow}
-					onkeydown={onKeydown}></textarea>
+					onkeydown={onKeydown}
+					onblur={() => (slashDismissed = input)}></textarea>
 				<div class="composer-row">
 					<div class="composer-tools">
 						<button
