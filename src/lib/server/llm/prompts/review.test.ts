@@ -106,6 +106,21 @@ describe('review categories', () => {
 		expect(message).not.toContain('full copyedit');
 	});
 
+	it('asks for one comment per theme in the sparing and the exhaustive passes', () => {
+		for (const categories of [[], ['prose'], ['mechanics', 'prose', 'lore']] as const) {
+			const message = buildReviewMessage(scene, [], [...categories]);
+			expect(message).toContain('Leave one comment per theme.');
+			expect(message).toContain('Pattern note (');
+		}
+	});
+
+	it('tells the sparing pass that splitting notes by theme is not padding', () => {
+		expect(buildReviewMessage(scene)).toContain('does not count against being sparing');
+		expect(buildReviewMessage(scene, [], ['prose'])).not.toContain(
+			'does not count against being sparing'
+		);
+	});
+
 	it('all three categories is the full pass and drops the sparing instruction', () => {
 		const message = buildReviewMessage(scene, [], ['mechanics', 'prose', 'lore']);
 		expect(message).toContain('full copyedit pass');
