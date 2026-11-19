@@ -94,8 +94,8 @@ function reported(t: Transcript, body: string): { input?: number; output?: numbe
 	return result;
 }
 
-// Spend is never below what the endpoint reported, and is marked estimated
-// exactly when the output count is the adapter's own guess.
+// Spend is what the endpoint reported (the output count exactly), and is
+// marked estimated exactly when the output count is the adapter's own guess.
 function checkUsage(
 	billed: TokenUsage | undefined,
 	counts: { input?: number; output?: number },
@@ -103,9 +103,11 @@ function checkUsage(
 ) {
 	if (counts.input === undefined) return;
 	expect(billed, `${where}: billed`).toBeDefined();
+	// A server tool (web search) raises the input count in a later frame than
+	// the one read here, so the input side is a floor.
 	expect(billed!.promptTokens, `${where}: prompt`).toBeGreaterThanOrEqual(counts.input);
 	if (counts.output !== undefined) {
-		expect(billed!.completionTokens, `${where}: output`).toBeGreaterThanOrEqual(counts.output);
+		expect(billed!.completionTokens, `${where}: output`).toBe(counts.output);
 		expect(billed!.estimated ?? false, `${where}: estimated`).toBe(false);
 	} else {
 		expect(billed!.estimated, `${where}: estimated`).toBe(true);

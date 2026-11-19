@@ -132,7 +132,10 @@
 		proposals?: SplitProposal[];
 		// The reply was cut short; a note under it says why.
 		stopped?: StopReason;
-		// The reply broke off with an error and was not saved; a note says so.
+		// The server did not store this reply (an error, or a stream that
+		// broke off), so it is not sent back as history and cannot be inserted.
+		unsaved?: boolean;
+		// Why a reply with some text broke off; a note under it says so.
 		failed?: string;
 		// A /rewrite reply: its affordance replaces the selection rather than
 		// inserting at the cursor.
@@ -235,6 +238,11 @@
 		if (last && last.role === 'assistant') {
 			last.proposals = [...(last.proposals ?? []), proposal];
 		}
+	}
+
+	function markUnsaved() {
+		const last = messages[messages.length - 1];
+		if (last && last.role === 'assistant') last.unsaved = true;
 	}
 
 	function markStopped(reason: StopReason) {
@@ -354,6 +362,7 @@
 				appendToReply(
 					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
 				);
+				markUnsaved();
 				return;
 			}
 			const reader = response.body.getReader();
@@ -382,14 +391,18 @@
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
 			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
-			if (reply && reply.role === 'assistant' && reply.content === '') {
-				reply.content = streamError || 'The Assistant did not return a response.';
-			} else if (reply && reply.role === 'assistant' && streamError) {
-				reply.failed = streamError;
+			if (reply?.role === 'assistant' && !stored) {
+				reply.unsaved = true;
+				if (reply.content === '')
+					reply.content = streamError || 'The Assistant did not return a response.';
+				else if (!finished)
+					reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
+			// A writer's own Stop keeps what arrived, as before.
 			if (!controller.signal.aborted) {
 				appendToReply('Sorry, something went wrong reaching the Assistant.');
+				markUnsaved();
 			}
 		} finally {
 			busy = false;
@@ -433,7 +446,7 @@
 				...(isStory ? { sceneId } : {}),
 				// A reply that broke off was not saved, so the model does not see it either.
 				messages: turns
-					.filter((m) => !m.failed)
+					.filter((m) => !m.unsaved)
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
 			},
@@ -1062,7 +1075,7 @@
 								{@html renderReplyMarkdown(message.content)}
 							{/if}
 						</div>
-						{#if message.content && !message.failed && !(busy && index === messages.length - 1) && index > 0}
+						{#if message.content && !message.unsaved && !(busy && index === messages.length - 1) && index > 0}
 							{#if message.rewrite && onReplaceSelection}
 								<button
 									class="msg-insert"
