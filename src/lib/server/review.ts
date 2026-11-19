@@ -336,7 +336,9 @@ export async function openAssistantNote(
 				isNull(reviewThreads.resolvedAt),
 				isNull(reviewThreads.anchorStart),
 				eq(reviewComments.assistant, true),
-				sql`starts_with(${reviewComments.bodyMd}, ${opening})`
+				sql`starts_with(${reviewComments.bodyMd}, ${opening})`,
+				// The note's own opening comment, not a reply in its thread.
+				sql`not exists (select 1 from ${reviewComments} as earlier where earlier.thread_id = ${reviewThreads.id} and earlier.created_at < ${reviewComments.createdAt})`
 			)
 		)
 		.orderBy(asc(reviewThreads.createdAt))
@@ -1042,8 +1044,18 @@ export async function decideSuggestion(
 	if (row.suggestion.status !== 'pending') {
 		return { ok: false, reason: 'That suggestion was already decided.' };
 	}
-	if (override !== undefined && override.length > MAX_REPLACEMENT_LENGTH) {
-		return { ok: false, reason: 'That suggestion is too long.' };
+	if (override !== undefined) {
+		// Rewording is the guided pass's Edit, on a pattern note's own edits; any
+		// other suggestion is taken or left as its author proposed it.
+		if (!row.suggestion.patternThreadId) {
+			return { ok: false, reason: 'Only the edits of a pattern note can be reworded here.' };
+		}
+		if (override.length > MAX_REPLACEMENT_LENGTH) {
+			return { ok: false, reason: 'That suggestion is too long.' };
+		}
+		if (!override.trim() && row.suggestion.replacement !== '') {
+			return { ok: false, reason: 'Write the wording to use, or skip this change.' };
+		}
 	}
 	const replacement = accept && override !== undefined ? override : row.suggestion.replacement;
 

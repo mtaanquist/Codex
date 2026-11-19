@@ -277,6 +277,28 @@ describe('the pattern link', () => {
 	});
 
 	it('accepts with the owner wording and records what was applied', async () => {
+		const threadId = await note();
+		const staged = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { assistant: true },
+			range: { start: 0, end: 7 },
+			replacement: 'Kara',
+			patternThreadId: threadId
+		});
+		if (!staged.ok) throw new Error(staged.reason);
+		const empty = await decideSuggestion(db, userId, storyId, staged.suggestionId, true, '  ');
+		expect(empty.ok).toBe(false);
+		const result = await decideSuggestion(db, userId, storyId, staged.suggestionId, true, 'She');
+		expect(result.ok).toBe(true);
+		const [scene] = await db.select({ bodyMd: scenes.bodyMd }).from(scenes);
+		expect(scene.bodyMd.startsWith('She crossed the ford.')).toBe(true);
+		const [row] = await db.select().from(reviewSuggestions);
+		expect(row.status).toBe('accepted');
+		expect(row.replacement).toBe('She');
+	});
+
+	it('takes no rewording for an edit outside a pattern note', async () => {
 		const staged = await createSuggestion(db, {
 			storyId,
 			sceneId,
@@ -286,12 +308,10 @@ describe('the pattern link', () => {
 		});
 		if (!staged.ok) throw new Error(staged.reason);
 		const result = await decideSuggestion(db, userId, storyId, staged.suggestionId, true, 'She');
-		expect(result.ok).toBe(true);
-		const [scene] = await db.select({ bodyMd: scenes.bodyMd }).from(scenes);
-		expect(scene.bodyMd.startsWith('She crossed the ford.')).toBe(true);
+		expect(result.ok).toBe(false);
 		const [row] = await db.select().from(reviewSuggestions);
-		expect(row.status).toBe('accepted');
-		expect(row.replacement).toBe('She');
+		expect(row.status).toBe('pending');
+		expect(row.replacement).toBe('Kara');
 	});
 });
 
@@ -359,6 +379,33 @@ describe('rereadPatternEdit', () => {
 			(s) => s.status === 'pending'
 		);
 		expect(followUp?.patternThreadId).toBe(threadId);
+	});
+
+	it('stages at most one follow-up, and only once per accepted edit', async () => {
+		const { suggestionId } = await acceptedEdit();
+		const call = (id: string, original: string, replacement: string): ProviderToolCall => ({
+			id,
+			name: 'suggest_edit',
+			arguments: JSON.stringify({ sceneId, original, replacement })
+		});
+		const { provider, seen } = scripted([
+			{
+				content: '',
+				toolCalls: [
+					call('t1', 'Mira followed her', 'Mira followed Kara'),
+					call('t2', 'Far behind them', 'Behind them')
+				]
+			},
+			{ content: 'done' }
+		]);
+		expect(await rereadPatternEdit(db, { userId, suggestionId }, { provider })).toEqual({
+			staged: 1
+		});
+		const calls = seen.length;
+		expect(await rereadPatternEdit(db, { userId, suggestionId }, { provider })).toEqual({
+			skipped: 'done'
+		});
+		expect(seen).toHaveLength(calls);
 	});
 
 	it('refuses a follow-up outside the window', async () => {

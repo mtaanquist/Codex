@@ -17,9 +17,17 @@ import type { ChatMessage } from './providers/types';
 // Each side of the changed paragraph.
 const NEIGHBOURS = 1;
 // One edit and an answer; a little room for a retry of an edit that misquoted.
+// The gateway never goes below the account's own budget, so maxEdits in the
+// scope is what holds the re-read to one follow-up.
 const REREAD_TOOL_BUDGET = 3;
 
-export type RereadResult = { staged: number } | { skipped: 'gone' | 'not-found' };
+// Accepted edits already re-read by this process. The client asks once per
+// accept; this stops a repeat (a double fire, a retry) from paying for the
+// same re-read again and stacking follow-ups. Bounded, oldest first out.
+const reread = new Set<string>();
+const REREAD_MEMORY = 5000;
+
+export type RereadResult = { staged: number } | { skipped: 'gone' | 'not-found' | 'done' };
 
 export async function rereadPatternEdit(
 	db: Database,
@@ -28,6 +36,9 @@ export async function rereadPatternEdit(
 ): Promise<RereadResult> {
 	const edit = await acceptedPatternEdit(db, input.userId, input.suggestionId);
 	if (!edit) return { skipped: 'gone' };
+	if (reread.has(input.suggestionId)) return { skipped: 'done' };
+	reread.add(input.suggestionId);
+	if (reread.size > REREAD_MEMORY) reread.delete(reread.values().next().value!);
 	if (!edit.spot) return { skipped: 'not-found' };
 	const [note] = await db
 		.select({ body: reviewComments.bodyMd })
@@ -68,6 +79,7 @@ export async function rereadPatternEdit(
 			toolScope: {
 				patternThreadId: edit.patternThreadId,
 				editWindow: { sceneId: edit.sceneId, ...window },
+				maxEdits: 1,
 				storyOnly: true
 			},
 			messages: context ? [buildSystemMessage(context), task] : [task],

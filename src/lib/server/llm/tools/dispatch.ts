@@ -42,7 +42,14 @@ export type ToolScope = {
 	// Refuse a suggest_edit outside this stretch of this scene (the re-read
 	// after an accept looks at one paragraph and its neighbours).
 	editWindow?: { sceneId: string; start: number; end: number };
+	// The most suggest_edit calls that may stage in this turn (the re-read stages
+	// at most one follow-up).
+	maxEdits?: number;
 };
+
+// Edits staged so far per turn, for ToolScope.maxEdits. The gateway builds one
+// context per turn and reuses it across the rounds of the tool loop.
+const stagedEdits = new WeakMap<ToolContext, number>();
 
 export type ToolContext = {
 	db: Database;
@@ -346,6 +353,13 @@ async function suggestEdit(
 	input: { sceneId: string; original: string; replacement: string }
 ): Promise<ToolOutcome> {
 	if (!input.original) return { result: 'Provide the exact text to replace.', staged: false };
+	const limit = ctx.scope?.maxEdits;
+	if (limit !== undefined && (stagedEdits.get(ctx) ?? 0) >= limit) {
+		return {
+			result: `Only ${limit} edit${limit === 1 ? '' : 's'} may be staged in this turn; answer now.`,
+			staged: false
+		};
+	}
 	const window = ctx.scope?.editWindow;
 	if (window && window.sceneId !== input.sceneId) {
 		return { result: 'Only the passage under review can be edited in this turn.', staged: false };
@@ -381,6 +395,7 @@ async function suggestEdit(
 		patternThreadId: ctx.scope?.patternThreadId
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
+	if (limit !== undefined) stagedEdits.set(ctx, (stagedEdits.get(ctx) ?? 0) + 1);
 	return {
 		result: `Staged a suggested edit (id ${result.suggestionId}). The author will accept or reject it; nothing has changed yet.`,
 		staged: true,
@@ -509,7 +524,11 @@ async function leavePatternNote(
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
 
-	let threadId = await openAssistantNote(ctx.db, scene.id, comment);
+	// Only a pattern note is extended by a retry; any other opening always starts
+	// a note of its own.
+	let threadId = comment.startsWith('Pattern note')
+		? await openAssistantNote(ctx.db, scene.id, comment)
+		: null;
 	let staged = 0;
 	if (!threadId) {
 		const kept = input.kept.filter((entry) => entry.quote.trim());

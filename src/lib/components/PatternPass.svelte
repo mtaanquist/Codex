@@ -60,9 +60,11 @@
 	let draft = $state('');
 	let busy = $state(false);
 	let failure = $state<string | null>(null);
-	// A new step starts clean.
+	// A new step starts clean. Keyed on the id, not the object: a data refresh
+	// rebuilds the step object and must not throw away wording being typed.
+	const stepId = $derived(step?.id);
 	$effect(() => {
-		void step?.id;
+		void stepId;
 		editing = false;
 		failure = null;
 	});
@@ -156,7 +158,11 @@
 					{#if failure}<p class="rv-anchor-lost">{failure}</p>{/if}
 					<div class="rv-actions">
 						{#if context}
-							<button class="btn btn-sm btn-primary" type="submit" disabled={busy}>
+							<button
+								class="btn btn-sm btn-primary"
+								type="submit"
+								disabled={busy || (editing && !draft.trim() && step.replacement !== '')}
+							>
 								<Icon name="check" size={13} />
 								{editing ? 'Accept my wording' : 'Accept'}
 							</button>

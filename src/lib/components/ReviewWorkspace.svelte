@@ -459,7 +459,9 @@
 		const step = passStep;
 		if (!pass || !step) return;
 		pass.currentId = step.id;
-		if (step.sceneId !== selectedSceneId) selectScene(step.sceneId);
+		if (step.sceneId !== selectedSceneId && orderedScenes.some((s) => s.id === step.sceneId)) {
+			selectScene(step.sceneId);
+		}
 		focusedId = step.id;
 	});
 	// The note was cleared or deleted under the pass: nothing left to work.
@@ -484,9 +486,13 @@
 
 	// The Assistant re-reads the changed paragraph and its neighbours and may
 	// stage one follow-up edit on the same note, which the pass then reaches.
+	// Only the latest re-read reports its status; an earlier one finishing late
+	// must not clear the running note of the one after it.
+	let rereadToken = 0;
 	async function rereadAfter(suggestionId: string) {
 		const current = pass;
 		if (!current) return;
+		const token = ++rereadToken;
 		current.reread = 'running';
 		let ok: boolean;
 		try {
@@ -500,8 +506,8 @@
 			ok = false;
 		}
 		if (pass !== current) return;
-		current.reread = ok ? 'idle' : 'failed';
 		if (ok) await refreshAll();
+		if (token === rereadToken) current.reread = ok ? 'idle' : 'failed';
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
