@@ -36,7 +36,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	pool: pg.Pool;
 };
 const { resetRateLimits } = await import('#lib/server/rate-limit');
-const { saveAccountLlmConfig, saveStoryLlmOverride } =
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const { deleteChat, listChat, listChats, resolveChat } =
 	await import('../../src/lib/server/llm/chat-history');
@@ -51,6 +51,7 @@ const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
 const modelsRoute = await import('../../src/routes/api/assistant/models/+server');
+const contextRoute = await import('../../src/routes/api/assistant/context/+server');
 
 let userId: string;
 let universeId: string;
@@ -730,6 +731,34 @@ describe('the model list', () => {
 	it('refuses while the Assistant is off', async () => {
 		await configure(false);
 		await expectStatus(getModels(), 403);
+	});
+});
+
+describe('the context picker', () => {
+	function getContext(query: string) {
+		return contextRoute.GET({
+			url: new URL(`http://localhost/api/assistant/context?${query}`),
+			locals: { user: { id: userId } }
+		} as unknown as Parameters<typeof contextRoute.GET>[0]) as Promise<Response>;
+	}
+
+	it('searches the library and prices the whole book on the chat model', async () => {
+		const found = await (await getContext('q=Scene')).json();
+		expect(found.items.map((item: { label: string }) => item.label)).toEqual(['Scene 1']);
+		expect((await (await getContext(`storyId=${storyId}`)).json()).usd).toBeNull();
+		await saveModelPricing(db, userId, { 'chat-model': { prompt: 0.001, completion: 0.002 } });
+		const priced = await (await getContext(`storyId=${storyId}&model=chat-model`)).json();
+		expect(priced.usd).toBeCloseTo(priced.tokens * 0.001);
+	});
+
+	it("refuses a story that is not a story, or not the writer's", async () => {
+		await expectStatus(getContext('storyId=nope'), 404);
+		await expectStatus(getContext('storyId=11111111-1111-4111-8111-111111111111'), 404);
+	});
+
+	it('refuses while the Assistant is off', async () => {
+		await configure(false);
+		await expectStatus(getContext('q='), 403);
 	});
 });
 
