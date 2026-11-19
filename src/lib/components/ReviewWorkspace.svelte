@@ -452,6 +452,8 @@
 		done: SvelteSet<string>;
 		currentId: string | null;
 		reread: 'idle' | 'running' | 'failed';
+		// The writer is rewording or accepting the current step.
+		held: boolean;
 	} | null>(null);
 	const passNote = $derived(pass ? (threads.find((t) => t.id === pass!.threadId) ?? null) : null);
 	const passOpen = $derived(
@@ -481,7 +483,8 @@
 			followUps: new SvelteSet(),
 			done: new SvelteSet(),
 			currentId: queue[0]?.id ?? null,
-			reread: 'idle'
+			reread: 'idle',
+			held: false
 		};
 		composer = null;
 		chosenPanel = 'comments';
@@ -558,9 +561,10 @@
 		for (const id of ids) current.followUps.add(id);
 		if (token !== rereadToken) return;
 		current.reread = ok ? 'idle' : 'failed';
-		// The follow-up is the next step, ahead of whatever the pass moved on to.
+		// The follow-up is the next step, ahead of whatever the pass moved on to,
+		// unless the writer is already rewording that step; it then comes after.
 		const next = ids.find((id) => passOpen.some((s) => s.id === id));
-		if (next) current.currentId = next;
+		if (next && !current.held) current.currentId = next;
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
@@ -743,6 +747,9 @@
 						onSkip={(id) => pass?.done.add(id)}
 						beforeAccept={flushEditor}
 						onStop={() => (pass = null)}
+						onHeld={(held) => {
+							if (pass) pass.held = held;
+						}}
 					/>
 				{:else if selectedScene}
 					<ReviewPanel
