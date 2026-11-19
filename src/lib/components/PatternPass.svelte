@@ -19,6 +19,7 @@
 		reread,
 		onAccepted,
 		onSkip,
+		beforeAccept,
 		onStop
 	}: {
 		note: ReviewThread;
@@ -38,6 +39,9 @@
 			replacement: string | undefined
 		) => void;
 		onSkip: (id: string) => void;
+		// Saves the open editor first, so the accept is checked against the
+		// writer's latest text; false when that save failed.
+		beforeAccept: () => Promise<boolean>;
 		onStop: () => void;
 	} = $props();
 
@@ -120,9 +124,15 @@
 				<form
 					method="POST"
 					action="?/acceptSuggestion"
-					use:enhance={() => {
+					use:enhance={async ({ cancel }) => {
 						busy = true;
 						failure = null;
+						if (!(await beforeAccept())) {
+							busy = false;
+							failure = 'Your latest typing could not be saved, so nothing was accepted.';
+							cancel();
+							return;
+						}
 						const id = step!.id;
 						const replacement = editing ? draft : undefined;
 						return async ({ result, update }) => {

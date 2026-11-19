@@ -257,11 +257,14 @@ type Request = {
 
 // One survey request with one corrective retry. Throws when the reply is
 // unreadable twice.
+class SurveyCapped extends Error {}
+
 async function surveyOnce(
 	db: Database,
 	req: Request,
 	content: string,
-	deps: GatewayDeps
+	deps: GatewayDeps,
+	askAgain = true
 ): Promise<FoundPattern[]> {
 	const task: ChatMessage = { role: 'user', content };
 	const messages: ChatMessage[] = req.system ? [req.system, task] : [task];
@@ -275,6 +278,9 @@ async function surveyOnce(
 	const first = await completeDetailed(db, { ...base, messages }, deps);
 	const parsed = parsePatterns(first.content);
 	if (parsed) return parsed;
+	if (!askAgain)
+		throw new Error('The pattern search did not answer with the JSON it was asked for.');
+	if (req.meter?.capReached) throw new SurveyCapped();
 	// The retry repeats the text in the same first message, so a provider that
 	// caches the prompt prefix reads it from cache rather than paying for it again.
 	const retry = await completeDetailed(
@@ -303,8 +309,6 @@ const KNOWN_CARRIED = 20;
 const widestFirst = (patterns: FoundPattern[]) =>
 	[...patterns].sort((a, b) => b.sceneIds.length - a.sceneIds.length);
 
-class SurveyCapped extends Error {}
-
 // Surveys one part in chunks of the budget (or in one request for a book that
 // fits). Throws SurveyCapped when the spend cap stopped it.
 async function surveyPart(
@@ -329,7 +333,9 @@ async function surveyPart(
 			...(known.length ? { known } : {}),
 			...(chunks.length > 1 ? { chunk: { index: i + 1, total: chunks.length } } : {})
 		});
-		found.push(await surveyOnce(db, req, content, deps));
+		// The whole book is not sent a second time to ask again: an unreadable
+		// reply falls back to the chapters instead.
+		found.push(await surveyOnce(db, req, content, deps, !unit.whole));
 	}
 	return mergePatterns(found);
 }
@@ -512,14 +518,15 @@ export async function runPatternPass(
 				}
 				entry.patterns = found.map((p) => ({ ...p, applied: [] }));
 				delete entry.partial;
+				entry.surveyed = true;
 			} catch (err) {
 				if (opts.signal?.aborted) throw err;
+				// Left unsurveyed, so a continued run tries this unit again.
 				failures.push({
 					message: `The search for repeated habits failed: ${err instanceof Error ? err.message : String(err)}`
 				});
 				entry.patterns = [];
 			}
-			entry.surveyed = true;
 			await save();
 		}
 

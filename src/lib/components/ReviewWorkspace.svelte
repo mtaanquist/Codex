@@ -733,6 +733,7 @@
 						reread={pass.reread}
 						onAccepted={passAccepted}
 						onSkip={(id) => pass?.done.add(id)}
+						beforeAccept={flushEditor}
 						onStop={() => (pass = null)}
 					/>
 				{:else if selectedScene}

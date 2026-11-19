@@ -5,8 +5,9 @@ import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // #1132: an Assistant pattern note with edits in two scenes. The author works
-// through it from the note's card: accepts the first edit, skips the second,
-// sees the counter move, and resolves the note at the end. The note and its
+// through it from the note's card: an accept over unsaved typing in the marked
+// words is refused, the first edit is skipped, the second accepted, and the
+// note resolved at the end. The note and its
 // edits are seeded straight into the database, so no model is needed; this
 // account has no Assistant set up, so no re-read runs after the accept.
 
@@ -80,19 +81,29 @@ test('the author works through a pattern note across two scenes', async ({ page 
 	await expect(pass.locator('.inspector-kind')).toHaveText('POV epithets');
 	await expect(pass.getByText('1 of 2')).toBeVisible();
 	await expect(pass.locator('.pp-para')).toContainText('crossed the ford.');
+	// Typing inside the marked words, not yet saved when Accept is clicked, is
+	// saved first: the accept is refused rather than the typing lost.
+	await page.locator('.review-edit .cm-content').click();
+	await page.keyboard.press('ControlOrMeta+Home');
+	for (let i = 0; i < 'The elf'.length; i++) await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('k');
 	await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+	await expect(pass.locator('.rv-anchor-lost')).toBeVisible();
+	await expect(pass.getByText('1 of 2')).toBeVisible();
+	await pass.getByRole('button', { name: 'Skip' }).click();
 
-	// The accept lands in the first scene, and the pass moves on to the second.
+	// The pass moves on to the second scene, and its accept lands there.
 	await expect(pass.getByText('2 of 2')).toBeVisible();
 	await expect(pass.locator('.pp-para')).toContainText('looked back.');
 	await expect(page.locator('.review-edit .cm-content')).toContainText('looked back.');
-	await pass.getByRole('button', { name: 'Skip' }).click();
+	await pass.getByRole('button', { name: 'Accept', exact: true }).click();
 
 	await expect(pass.getByText('You have been through every change in this note.')).toBeVisible();
 	await pass.getByRole('button', { name: 'Resolve the note' }).click();
 	await expect(page.locator('.inspector-kind')).toHaveCount(0);
 
-	// The accepted change is in the first scene's text; the skipped one waits.
+	// The typing is kept in the first scene, and the second scene has the change.
 	await gotoReady(page, `${storyPath}/review`);
 	await expect(page.locator('.rv-card').filter({ hasText: 'Pattern note' })).toHaveCount(0);
 	const pool2 = new pg.Pool({ connectionString: e2eDatabaseUrl() });
@@ -102,7 +113,7 @@ test('the author works through a pattern note across two scenes', async ({ page 
 			 join universes u on u.id = st.universe_id where u.name = $1 order by s.global_position`,
 			[name]
 		);
-		expect(rows.map((r) => r.body_md)).toEqual(['Kara crossed the ford.', second]);
+		expect(rows.map((r) => r.body_md)).toEqual(['The elk crossed the ford.', 'Kara looked back.']);
 	} finally {
 		await pool2.end();
 	}

@@ -1094,7 +1094,9 @@ export async function reviewStoryScenes(
 	// The pattern pass runs before the scene reviews when the review covers the
 	// prose, so its notes reach each scene review as already said.
 	let scenePrior = new Map<string, PriorNote[]>();
-	if (!capped && patterns) {
+	// The fixes are staged through suggest_edit, so an endpoint that cannot call
+	// tools would pay for the pass and get nothing from it.
+	if (!capped && patterns && resolved.config.supportsTools !== false) {
 		const contextWindow = modelContextWindow(resolved.config, 'reviewer');
 		const budgetTokens = surveyBudgetTokens(contextWindow);
 		const units =
