@@ -6,6 +6,7 @@ import { recordRevision } from './revisions';
 import { queueSceneMentions } from './jobs';
 import { replaceWholeWord, wholeWordMatches } from '#lib/prose-replace';
 import { wordCount } from '#lib/word-count';
+import { toLf } from '#lib/line-endings';
 
 // Renaming an entity can sweep the old name out of the prose: count first
 // so the offer says what it will touch, then replace with a revision per
@@ -90,7 +91,9 @@ export async function replaceProse(
 				(marker): marker is { id: string; anchorStart: number; anchorEnd: number } =>
 					marker.anchorStart !== null && marker.anchorEnd !== null
 			);
-			const result = replaceWholeWord(scene.bodyMd, find, replace, markers);
+			// Anchors count \r\n as one character, as the editor does, so the
+			// replace runs on, and stores, the text with plain newlines.
+			const result = replaceWholeWord(toLf(scene.bodyMd), find, replace, markers);
 			if (result.count === 0) return 0;
 			await tx
 				.update(scenes)

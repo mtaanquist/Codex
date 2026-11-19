@@ -4,6 +4,7 @@ import { sceneMarkers, scenes, stories } from './db/schema.ts';
 import { ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 import { findTodoLines } from '#lib/todo-markers';
+import { toLf } from '#lib/line-endings';
 import { createAnchorMapper } from '../review-anchor.ts';
 import type { ActionFailure } from './action-result.ts';
 
@@ -118,14 +119,16 @@ export async function updateMarkerAnchors(
 // through the old-to-new diff, so it keeps pointing at the same words. A
 // marker whose start or end text is gone, or whose range is left empty,
 // loses its anchor rather than pointing at whatever now sits at its old
-// offsets. Run inside the transaction that
-// writes the body.
+// offsets. Run inside the transaction that writes the body. Anchors count
+// \r\n as one character, as the editor does, so the diff runs on that text.
 export async function remapMarkerAnchors(
 	db: Database,
 	sceneId: string,
-	oldBody: string,
-	newBody: string
+	storedOld: string,
+	storedNew: string
 ): Promise<void> {
+	const oldBody = toLf(storedOld);
+	const newBody = toLf(storedNew);
 	if (oldBody === newBody) return;
 	const markers = await db
 		.select({
@@ -256,7 +259,8 @@ export async function listStoryTodos(db: Database, storyId: string): Promise<Sto
 
 	const todos: StoryTodo[] = [];
 	for (const scene of sceneRows) {
-		const body = scene.bodyMd ?? '';
+		// Anchors count \r\n as one character, as the editor does.
+		const body = toLf(scene.bodyMd ?? '');
 		for (const marker of markersByScene.get(scene.id) ?? []) {
 			const snippet =
 				marker.anchorStart !== null && marker.anchorEnd !== null

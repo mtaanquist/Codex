@@ -1461,6 +1461,27 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 5 of staging/review-follow-ups: split and
+      merge history, CRLF anchors (2026-11-19). Split and merge recorded
+      their new text as an autosave, which rolls into the latest autosave
+      when it is under two minutes old, so typing and then splitting
+      replaced the full pre-split text in History with the head alone. They
+      now record checkpoints with a label ("Split into two scenes", "Split
+      from the scene before", "Merged N scenes"), which always insert. The
+      remaining paths that read a body stored with \r\n in stored offsets
+      now go through toLf like split and merge: remapMarkerAnchors (the
+      review save, restore, accepted suggestions, draft saves) diffs the
+      newline texts, the prose sweep replaces in and stores the newline
+      text, the TODO list slices quotes from it, and locateSplitInStory
+      searches it and returns its fingerprint. Merge now clamps the
+      target's markers to its trimmed text and widens any marker left empty
+      by the trim to one character, as split does; split marks its
+      chapter's summary out of date, as duplicate does. The lockStoryScenes
+      comment no longer claims every scene insert takes that lock (#1160).
+      The Assistant's split proposal still validates its passage against
+      the stored text; the confirm normalises both, so only proposing a
+      passage across a \r\n line break is refused.
+
 - [x] Staging review round 4 of staging/review-follow-ups: merge markers
       on CRLF scenes (2026-11-19). mergeScenes worked out where each
       merged-in marker lands from the raw bodies, so a target stored with
