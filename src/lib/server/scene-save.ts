@@ -51,8 +51,10 @@ export async function saveSceneBody(
 				conflict: { bodyMd: current.bodyMd, title: current.title }
 			};
 		}
-		// Arcs name the scenes they retell.
-		if (current.title !== save.title) await markMentionsStale(tx, { sceneIds: [sceneId] });
+		// Arcs and enrich passages name the scenes they quote.
+		if (current.title !== save.title) {
+			await markMentionsStale(tx, { sceneIds: [sceneId] }, { enrich: true });
+		}
 		const count = wordCount(save.bodyMd);
 		// An idle editor keeps resending the same text. History already ends on
 		// it and the anchors have nothing to move through, so only a new title
@@ -60,13 +62,16 @@ export async function saveSceneBody(
 		if (!bodyChanged) {
 			if (current.title !== save.title) {
 				// Mentions read only the body, so an index that was current stays
-				// current; one already behind keeps its pending rebuild.
+				// current; one already behind keeps its pending rebuild. The app
+				// clock, as updated_at's $onUpdate uses for every other save, so an
+				// edit never moves updated_at back behind this one.
+				const now = new Date();
 				await tx
 					.update(scenes)
 					.set({
 						title: save.title,
-						updatedAt: sql`now()`,
-						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then now() else ${scenes.mentionsIndexedAt} end`
+						updatedAt: now,
+						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then ${now}::timestamptz else ${scenes.mentionsIndexedAt} end`
 					})
 					.where(eq(scenes.id, sceneId));
 			}

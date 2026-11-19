@@ -301,6 +301,16 @@ export const scenes = pgTable(
 			.notNull()
 			.defaultNow()
 			.$onUpdate(() => new Date()),
+		// When anything about the scene last changed, prose or not (a status, a
+		// move, the trash). The story card's edited time and the scene a story
+		// opens on read it; updated_at stays the prose clock the Assistant
+		// compares against. clock_timestamp(), not now(), so a later statement
+		// in the same transaction (the scene a split or merge acted on, after
+		// the scenes it shifted) reads as the later change.
+		touchedAt: timestamp('touched_at', { withTimezone: true })
+			.notNull()
+			.default(sql`clock_timestamp()`)
+			.$onUpdate(() => sql`clock_timestamp()`),
 		// When the mention index was last rebuilt for this scene. Null means never.
 		// The reconcile sweep re-indexes any scene whose body changed after this,
 		// or whose universe's mentions_changed_at is later, so a dropped rebuild
@@ -1416,6 +1426,11 @@ export const assistantUsage = pgTable(
 		model: text('model').notNull(),
 		promptTokens: integer('prompt_tokens'),
 		completionTokens: integer('completion_tokens'),
+		// True when the counts are Codex's own estimate (a stream that failed or
+		// was cancelled before the endpoint reported them), not the endpoint's.
+		estimated: boolean('estimated').notNull().default(false),
+		// Server-side web searches the endpoint reported, billed per search.
+		webSearchRequests: integer('web_search_requests'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => [index('assistant_usage_user_idx').on(table.userId, table.createdAt)]
@@ -1454,6 +1469,8 @@ export type ReviewRunState = {
 	// what it had spent in USD. A retry of the same job resumes from here.
 	capped?: boolean;
 	spentUsd?: number;
+	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	spentEstimated?: boolean;
 	// Set when the run started from an earlier capped run's progress, so its
 	// completed list includes that run's scenes (see adoptCappedRun).
 	carriedForward?: boolean;

@@ -1486,6 +1486,88 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       its next heartbeat). A shorter expiry or a no-progress check was not
       built; Stop covers the stuck case without guessing a timeout.
 
+- [x] Staging review follow-ups: usage log and Claude adapter (#1116,
+      #1127, #1123, #1102, #1104, #1125, #1074, #1083, #1085, #1094,
+      2026-11-19). The spend meter keeps its output-cap bound for a failed
+      thinking attempt, but the usage log no longer presents it as reported:
+      `assistant_usage` gains an additive `estimated` flag (and a
+      `web_search_requests` count), the account page marks those rows and the
+      30-day total says how many it includes, and a cost or a capped run's
+      notice that includes estimates reads "up to" instead of "about". A
+      request the writer cancelled (aborted signal or AbortError) skips the
+      bound, since no further attempt follows for it to protect. Plain
+      streamed turns now write their row in a finally, so a caller that stops
+      reading at done, an error or a cancel still logs it; a streamed error
+      event carries an estimated count first. The "cap not applied" notice for
+      missing counts says "for every request" and "could not be fully
+      applied", since per-request metering still caps the rounds that did
+      report. Web search fees are counted from server_tool_use but not priced:
+      no per-search price is discoverable from the endpoint (Claude models
+      have none either, #1031), so the help article says the fee is outside
+      the cost and the cap. Adapter: SSE data lines join until the blank
+      line; a stream with no or a generic content type is sniffed; broken
+      tool input outside a max_tokens stop reaches the dispatcher as raw text
+      (a bad-call result) instead of empty arguments; refusal and pause_turn
+      get their own finish reasons. A refusal throws ReplyRefusedError (a
+      failed scene or reply), a paused buffered turn is resumed up to twice
+      by sending its blocks back, and a paused or refused plain stream ends
+      as an error. The billing explanation lives in a new "Usage and cost"
+      section of the account help article, linked from the Usage heading.
+
+- [x] Review follow-ups: mention index and stale marks (2026-11-19).
+      A mention rebuild now reads the scene body under the scene's row lock,
+      in the transaction that writes the index, so a save landing between
+      the read and the stamp can no longer leave old text stamped current,
+      and a trashed scene restored meanwhile is indexed rather than stamped
+      empty (#1073, #1128, #1112). The rebuild locks the scene before its
+      mention rows, but the story purge deleted mentions before scenes, a
+      real deadlock the two-connection test reproduced (the story itself was
+      not the problem); the purge, and Delete forever on a scene, now lock
+      the scene rows first, lowest id first (#1095). Passages are compared in
+      reading order, so swapping two paragraphs that mention a character
+      marks the arc, while text added above only shifts positions and does
+      not (#1070, #1119). A reorder marks only what the scenes outside the
+      longest run that kept its relative order mention, so moving one scene
+      to the end marks one scene's characters, not the story's (#1087). A
+      story rename marks its scenes' entities for arcs and enrich, a
+      character rename marks its arc, and a scene rename now marks enrich
+      too: passages are labelled with story and scene titles, and the
+      request hash still skips an unchanged request. This reverses the
+      earlier call that renames were not worth a paid re-read (#1069,
+      #1096). Restoring a universe no longer marks the whole universe: the
+      rebuild keeps marking while the universe is in the trash (nothing in
+      it is read until the restore), so the restore has nothing left to
+      mark; a trashed or muted story still skips marks and is marked on
+      restore or unmute (#1107). The enrich request hash leaves out whether a
+      summary is still wanted, so a read that staged a summary does not make
+      the next unchanged read a paid call; entities hashed with a summary
+      known get one re-read the next time they are marked (#1086). An entity
+      deleted while an enrich pass runs is passed over instead of failing the
+      pass (#1072).
+
+- [x] Summaries and scene-change follow-ups (#1071, #1111, #1114, #1120,
+      2026-11-19). A summary is now stamped with the updated_at it was built
+      from (the guarded write already proves the row still has it), not a
+      clock reading, so currency compares a column with a copy of itself;
+      inserts set updated_at on the database clock and saves on the app
+      clock, and either could be ahead. The title-only save moved to the app
+      clock like every other update. The guarded write also checks the old
+      stamp, so trashing, restoring or merging a scene marks its chapter's
+      summary stale (stamp moved just behind updated_at, a new value each
+      time) and a pass already writing from the old scenes does not save
+      over the mark. Moves between chapters still leave the chapter summary
+      as it is (scene-order.ts was in another lane; see #1100). The pass now
+      stops at the first no-model or turned-off refusal and the notice says
+      so, settled as failed like enrich, and a pass whose every write lost
+      to an edit says that instead of "found nothing". New
+      scenes.touched_at (clock_timestamp(), bumped by every Drizzle update
+      through $onUpdate and by the reorder for the rows it moved) drives the
+      library's edited time and the scene a story opens on, so a status
+      change, move or restore counts as editing the story while updated_at
+      stays the prose clock. clock_timestamp() so the scene a split or
+      merge acted on reads later than the scenes it shifted in the same
+      transaction. Migration 0084 backfills it from updated_at.
+
 - [x] Staging review round 8 (#1122, 2026-11-18). The output-cap floor
       from round 6 also applied to a finished reply without an output count,
       so a compatible endpoint that omits it booked every thinking request at

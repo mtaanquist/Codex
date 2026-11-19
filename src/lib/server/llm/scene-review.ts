@@ -43,7 +43,7 @@ import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { summaryIsCurrent } from '../summary-currency.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig } from './config.ts';
-import { CAP_NOT_APPLIED_MESSAGE, type SpendMeter } from './spend.ts';
+import { CAP_NOT_APPLIED_MESSAGE, spentFields, type SpendMeter } from './spend.ts';
 import { jobSpendMeter } from './job-spend.ts';
 import { errorFields, logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
@@ -639,6 +639,7 @@ export type ContinuityReviewResult = {
 	// Set when the run stopped because it had spent the account's ceiling.
 	capped?: boolean;
 	spentUsd?: number;
+	spentEstimated?: boolean;
 };
 
 // The run state a review writes as it advances, when it was queued with a job
@@ -683,6 +684,7 @@ async function openRun(
 	current.capped = false;
 	current.aborted = false;
 	current.spentUsd = 0;
+	delete current.spentEstimated;
 	return {
 		state: current,
 		async save() {
@@ -743,7 +745,7 @@ export async function reviewStoryContinuity(
 		run.state.phase = 'done';
 		run.state.failures = failures;
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 		await run.save();
 		await meter.flush();
 		return {
@@ -753,7 +755,7 @@ export async function reviewStoryContinuity(
 			failures,
 			summariesRefreshed: summaries.refreshed,
 			capped: true,
-			spentUsd: meter.spentUsd
+			...spentFields(meter)
 		};
 	}
 	// The pass re-runs from the start on a continuation or a retry, so the notes
@@ -789,7 +791,7 @@ export async function reviewStoryContinuity(
 	run.state.phase = 'done';
 	if (result.spendCapped) {
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 	}
 	await run.save();
 	await meter.flush();
@@ -801,7 +803,7 @@ export async function reviewStoryContinuity(
 		candidatesCapped: result.capped,
 		failures,
 		summariesRefreshed: summaries.refreshed,
-		...(result.spendCapped ? { capped: true, spentUsd: meter.spentUsd } : {})
+		...(result.spendCapped ? { capped: true, ...spentFields(meter) } : {})
 	};
 }
 
@@ -883,7 +885,7 @@ export async function reviewUniverseContinuity(
 	run.state.phase = 'done';
 	if (result.spendCapped) {
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 	}
 	await run.save();
 	await meter.flush();
@@ -894,7 +896,7 @@ export async function reviewUniverseContinuity(
 		candidates: result.candidates,
 		candidatesCapped: result.capped,
 		failures,
-		...(result.spendCapped ? { capped: true, spentUsd: meter.spentUsd } : {})
+		...(result.spendCapped ? { capped: true, ...spentFields(meter) } : {})
 	};
 }
 
@@ -912,9 +914,11 @@ export type StoryReviewResult = {
 	total: number;
 	// Set when the run stopped at a scene boundary because it had spent the
 	// account's ceiling; a distinct outcome from a failure or a cancellation.
-	// spentUsd is what it had spent when it stopped.
+	// spentUsd is what it had spent when it stopped, an upper bound when
+	// spentEstimated is set.
 	capped?: boolean;
 	spentUsd?: number;
+	spentEstimated?: boolean;
 };
 
 // A whole-story or single-chapter review: every non-deleted scene in scope,
@@ -1120,7 +1124,7 @@ export async function reviewStoryScenes(
 	if (aborted) run.state.aborted = true;
 	if (capped) {
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 	}
 	await run.save();
 	await meter.flush();
@@ -1131,7 +1135,7 @@ export async function reviewStoryScenes(
 		failures,
 		total: targets.length,
 		...(aborted ? { aborted: true } : {}),
-		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {}),
 		...(summaries.refreshed ? { summariesRefreshed: true } : {})
 	};
 }

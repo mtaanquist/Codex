@@ -96,6 +96,14 @@ export function formatNumber(n: number): string {
 	return n.toLocaleString(DISPLAY_LOCALE);
 }
 
+/**
+ * "about $1.20", or "up to $1.20" when the figure includes estimated counts
+ * (an upper bound rather than what the endpoint reported).
+ */
+export function spentPhrase(usd: number, estimated?: boolean, digits = 2): string {
+	return `${estimated ? 'up to' : 'about'} $${usd.toFixed(digits)}`;
+}
+
 /** "950", "1.2k": compact counts for tight rows. Empty for non-positive. */
 export function compactCount(n: number): string {
 	if (n <= 0) return '';

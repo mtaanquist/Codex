@@ -13,6 +13,34 @@ export type SceneOrder = {
 // the page is out of date (a scene added or trashed elsewhere).
 const STALE_ORDER = 'The story changed since this page loaded. Reload and try again.';
 
+// The scenes whose place relative to the others changed between two orders:
+// everything outside a longest run that kept its relative order. Moving one
+// scene from the start to the end names only that scene, though every other
+// scene's rank shifts. Scenes missing from `was` count as moved.
+export function movedScenes(was: string[], now: string[]): string[] {
+	const rank = new Map(was.map((id, i) => [id, i]));
+	const ranks = now.map((id) => rank.get(id) ?? -1);
+	// Longest strictly increasing run of old ranks (patience sorting), kept as
+	// indexes into `now` so the run can be walked back.
+	const tails: number[] = [];
+	const prev: number[] = new Array(now.length).fill(-1);
+	ranks.forEach((r, i) => {
+		if (r < 0) return;
+		let lo = 0;
+		let hi = tails.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (ranks[tails[mid]] < r) lo = mid + 1;
+			else hi = mid;
+		}
+		if (lo > 0) prev[i] = tails[lo - 1];
+		tails[lo] = i;
+	});
+	const kept = new Set<number>();
+	for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = prev[i]) kept.add(i);
+	return now.filter((_, i) => !kept.has(i));
+}
+
 // Applies a full ordering of a story's scenes: every chapter and every scene
 // must appear exactly once. Renumbering the whole story keeps the positions
 // consistent no matter what moved; stories are small enough that this costs
@@ -85,20 +113,22 @@ export async function applySceneOrder(
 				values.map((value) => sql`${value}`),
 				sql`, `
 			);
-		// Rank among live scenes, not the stored number: renumbering closes the
-		// gap a trashed scene left without changing the reading order.
-		const was = new Map(
-			[...sceneRows]
-				.sort((a, b) => a.globalPosition - b.globalPosition)
-				.map((row, rank) => [row.id, rank])
-		);
-		const moved = ids.filter((id, i) => was.get(id) !== i);
+		// Compared by reading order among live scenes, not the stored number:
+		// renumbering closes the gap a trashed scene left without changing it.
+		const was = [...sceneRows]
+			.sort((a, b) => a.globalPosition - b.globalPosition)
+			.map((row) => row.id);
+		const moved = movedScenes(was, ids);
 		await db.transaction(async (tx) => {
 			await tx.execute(sql`
 			update scenes set
 				chapter_id = v.chapter_id,
 				position_in_chapter = v.position_in_chapter,
-				global_position = v.global_position
+				global_position = v.global_position,
+				touched_at = case
+					when (scenes.chapter_id, scenes.position_in_chapter, scenes.global_position)
+						is distinct from (v.chapter_id, v.position_in_chapter, v.global_position)
+					then clock_timestamp() else scenes.touched_at end
 			from (
 				select
 					unnest(array[${column(ids)}]::uuid[]) as id,
@@ -108,7 +138,8 @@ export async function applySceneOrder(
 			) as v
 			where scenes.id = v.id
 		`);
-			// Arcs retell the character's scenes in reading order.
+			// Arcs retell the character's scenes in reading order. Only what a
+			// moved scene mentions can read in a new order.
 			await markMentionsStale(tx, { sceneIds: moved });
 		});
 	}

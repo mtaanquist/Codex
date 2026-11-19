@@ -1,5 +1,5 @@
 {
-	"id": "496af2da-e4c2-4765-9167-7ead94fa4d39",
+	"id": "3de6214c-7f06-4d92-a676-841a75ef100f",
 	"prevId": "982b001a-5420-46a2-8f39-e76bf8f252c4",
 	"version": "7",
 	"dialect": "postgresql",
@@ -631,54 +631,6 @@
 					"value": "(\"assistant_chats\".\"story_id\" is null) <> (\"assistant_chats\".\"universe_id\" is null)"
 				}
 			},
-			"isRLSEnabled": false
-		},
-		"public.assistant_job_spend": {
-			"name": "assistant_job_spend",
-			"schema": "",
-			"columns": {
-				"job_id": {
-					"name": "job_id",
-					"type": "text",
-					"primaryKey": true,
-					"notNull": true
-				},
-				"user_id": {
-					"name": "user_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"spent_usd": {
-					"name": "spent_usd",
-					"type": "double precision",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"updated_at": {
-					"name": "updated_at",
-					"type": "timestamp with time zone",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				}
-			},
-			"indexes": {},
-			"foreignKeys": {
-				"assistant_job_spend_user_id_users_id_fk": {
-					"name": "assistant_job_spend_user_id_users_id_fk",
-					"tableFrom": "assistant_job_spend",
-					"tableTo": "users",
-					"columnsFrom": ["user_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				}
-			},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"policies": {},
-			"checkConstraints": {},
 			"isRLSEnabled": false
 		},
 		"public.assistant_review_runs": {
@@ -4507,6 +4459,13 @@
 					"primaryKey": false,
 					"notNull": true,
 					"default": "now()"
+				},
+				"touched_at": {
+					"name": "touched_at",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "clock_timestamp()"
 				},
 				"mentions_indexed_at": {
 					"name": "mentions_indexed_at",

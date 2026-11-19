@@ -764,6 +764,40 @@ describe('assistant review notices', () => {
 		]);
 	});
 
+	it('says so when every summary changed while it was being written', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			summariseStory: async () => ({ scenes: 0, chapters: 0, failed: 0, changed: 2 })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'"Halden" changed while the Assistant was summarising it, so nothing was saved. Run it again to bring the summaries up to date.'
+		]);
+	});
+
+	it('stops a summaries run with no model chosen and settles it as failed', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers, completed } = harness({
+			summariseStory: async () => ({ scenes: 1, chapters: 0, failed: 0, noModel: true })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'No model is chosen for the Assistant, so it stopped summarising "Halden", after 1 summary. Pick one under Account, Assistant, Models per role, then run it again.'
+		]);
+		expect(completed).toHaveLength(1);
+	});
+
+	it('stops a summaries run with the Assistant turned off', async () => {
+		const { owner, story } = await seedStory();
+		const { handlers } = harness({
+			summariseStory: async () => ({ scenes: 0, chapters: 0, failed: 0, disabled: true })
+		});
+		await handlers.assistantSummaries([job({ userId: owner.id, storyId: story.id })]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant is turned off, so it stopped summarising "Halden". Switch it back on in your settings, then run it again.'
+		]);
+	});
+
 	it('says where a capped summaries run stopped and what it spent', async () => {
 		const { owner, story } = await seedStory();
 		const { handlers } = harness({

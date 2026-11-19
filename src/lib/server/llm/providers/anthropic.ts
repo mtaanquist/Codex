@@ -37,13 +37,20 @@ function headers(conn: Connection): Record<string, string> {
 	return h;
 }
 
-function parseArguments(raw: string): Record<string, unknown> {
+// Tool input JSON as an object, or undefined when it does not parse to one.
+function parseInput(raw: string): Record<string, unknown> | undefined {
 	try {
 		const parsed = JSON.parse(raw);
-		return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: undefined;
 	} catch {
-		return {};
+		return undefined;
 	}
+}
+
+function parseArguments(raw: string): Record<string, unknown> {
+	return parseInput(raw) ?? {};
 }
 
 // Map our neutral messages onto the Messages API shape. System messages cannot
@@ -189,7 +196,10 @@ type ContentBlock = {
 	input?: unknown;
 };
 
-function parseContent(raw: unknown): {
+function parseContent(
+	raw: unknown,
+	keepBlocks = false
+): {
 	content: string;
 	toolCalls: ProviderToolCall[];
 	raw?: unknown;
@@ -199,7 +209,8 @@ function parseContent(raw: unknown): {
 	const toolCalls: ProviderToolCall[] = [];
 	// With thinking enabled the response opens with thinking blocks that must
 	// be echoed unchanged if this turn re-enters a tool loop; keep the whole
-	// block array for that case only.
+	// block array for that case, and for a paused turn (keepBlocks), which is
+	// resumed by sending its blocks back as they are.
 	const hasThinking = blocks.some(
 		(block) => block.type === 'thinking' || block.type === 'redacted_thinking'
 	);
@@ -220,17 +231,20 @@ function parseContent(raw: unknown): {
 	return {
 		content: text.join(''),
 		toolCalls,
-		...(hasThinking && toolCalls.length > 0 ? { raw: blocks } : {})
+		...(keepBlocks || (hasThinking && toolCalls.length > 0) ? { raw: blocks } : {})
 	};
 }
 
 // The Messages API reports stop_reason; max_tokens is its name for a reply cut
-// off at the token cap.
+// off at the token cap, and pause_turn for a server-side search loop that
+// stopped partway and is resumed with another request.
 function parseStopReason(raw: unknown): FinishReason | undefined {
 	if (typeof raw !== 'string' || !raw) return undefined;
 	if (raw === 'end_turn' || raw === 'stop_sequence') return 'stop';
 	if (raw === 'max_tokens') return 'length';
 	if (raw === 'tool_use') return 'toolCalls';
+	if (raw === 'refusal') return 'refusal';
+	if (raw === 'pause_turn') return 'paused';
 	return 'other';
 }
 
@@ -260,6 +274,15 @@ function promptTotal(usage: {
 	return input + (Number.isFinite(creation) ? creation : 0) + (Number.isFinite(read) ? read : 0);
 }
 
+// Web searches the request ran, from usage.server_tool_use. Claude bills
+// them per search; the count is logged, not priced (no per-search price is
+// discoverable from the endpoint).
+function webSearches(usage: { server_tool_use?: unknown }): number {
+	const tool = usage.server_tool_use as { web_search_requests?: unknown } | undefined;
+	const count = Number(tool?.web_search_requests);
+	return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
 function parseUsage(raw: unknown): TokenUsage | undefined {
 	const usage = raw as
 		| {
@@ -267,6 +290,7 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 				output_tokens?: unknown;
 				cache_creation_input_tokens?: unknown;
 				cache_read_input_tokens?: unknown;
+				server_tool_use?: unknown;
 		  }
 		| undefined;
 	if (!usage) return undefined;
@@ -274,10 +298,12 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	const completion = Number(usage.output_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
 	const cached = cacheRead(usage);
+	const searches = webSearches(usage);
 	return {
 		promptTokens: prompt,
 		completionTokens: completion,
-		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+		...(cached > 0 ? { cachedPromptTokens: cached } : {}),
+		...(searches > 0 ? { webSearchRequests: searches } : {})
 	};
 }
 
@@ -301,12 +327,13 @@ type StreamProgress = {
 // The output a stream was billed for when no message_delta reported it: the
 // characters streamed. A failed attempt whose thinking streamed no text is
 // billed for thinking it never showed, so it counts as the request's output
-// cap instead. Over-counting only stops a capped run early; under-counting
-// would let it pass the cap. A finished reply's thinking is done, so the
-// characters are the estimate there.
-function estimatedOutput(progress: StreamProgress, failed: boolean): number {
+// cap instead (bound). Over-counting only stops a capped run early;
+// under-counting would let it pass the cap. A finished reply's thinking is
+// done, and a cancelled one has no cap left to protect, so the characters are
+// the estimate there.
+function estimatedOutput(progress: StreamProgress, bound: boolean): number {
 	const streamed = tokensForChars(progress.outputChars);
-	const hidden = failed && progress.sawThinking && progress.thinkingChars === 0;
+	const hidden = bound && progress.sawThinking && progress.thinkingChars === 0;
 	return hidden ? Math.max(streamed, progress.maxTokens) : streamed;
 }
 
@@ -314,9 +341,15 @@ function estimatedOutput(progress: StreamProgress, failed: boolean): number {
 // message_start and the output so far. The real API sends message_delta once,
 // at the end, so before it arrives message_start's output count (about 1) is
 // all there is; estimatedOutput stands in for it, so a retried long reply
-// cannot slip past the spend cap.
+// cannot slip past the spend cap. Those counts are marked estimated.
+// cancelled skips the output-cap bound: the writer stopped the request, so no
+// further attempt follows for the bound to protect.
 // Undefined when message_start never came.
-function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefined {
+function partialUsage(
+	raw: Block,
+	progress: StreamProgress,
+	cancelled: boolean
+): TokenUsage | undefined {
 	const started = promptTotal(raw);
 	if (!Number.isFinite(started)) return undefined;
 	const prompt = progress.sawDelta ? started : started + tokensForChars(progress.resultChars);
@@ -324,12 +357,15 @@ function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefi
 	const counted = Number.isFinite(reported) ? reported : 0;
 	const completion = progress.sawDelta
 		? counted
-		: Math.max(counted, estimatedOutput(progress, true));
+		: Math.max(counted, estimatedOutput(progress, !cancelled));
 	const cached = cacheRead(raw);
+	const searches = webSearches(raw);
 	return {
 		promptTokens: prompt,
 		completionTokens: completion,
-		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+		...(cached > 0 ? { cachedPromptTokens: cached } : {}),
+		...(searches > 0 ? { webSearchRequests: searches } : {}),
+		...(progress.sawDelta ? {} : { estimated: true })
 	};
 }
 
@@ -339,47 +375,83 @@ const INPUT_USAGE_KEYS = new Set([
 	'cache_read_input_tokens'
 ]);
 
-// The parsed JSON of each "data:" line of a server-sent event stream. Event
-// name lines and unparseable data are skipped.
-function frameData(line: string): unknown {
-	line = line.replace(/\r$/, '');
-	if (!line.startsWith('data:')) return undefined;
-	const data = line.slice(5).trim();
-	if (!data) return undefined;
+function parseJson(text: string): unknown {
 	try {
-		return JSON.parse(data);
+		return JSON.parse(text);
 	} catch {
 		return undefined;
 	}
 }
 
+// The parsed JSON of each event of a server-sent event stream. An event's
+// "data:" lines join with a newline, as the format says, so a proxy that splits
+// one payload over several lines still parses. The data is also tried as each
+// line arrives, so an endpoint that leaves out the blank line between events
+// is read too. Event name lines and unparseable data are skipped.
 async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unknown> {
 	const decoder = new TextDecoder();
 	let buffer = '';
+	let data: string[] = [];
+	function* line(raw: string): Generator<unknown> {
+		const text = raw.replace(/\r$/, '');
+		if (!text) {
+			// The blank line ends the event; whatever did not parse is dropped.
+			data = [];
+			return;
+		}
+		if (!text.startsWith('data:')) return;
+		const part = text.slice(5).replace(/^ /, '');
+		data.push(part);
+		const joined = data.join('\n').trim();
+		if (!joined) return;
+		// A line that parses alone after leftovers that never did (an endpoint
+		// with no blank lines that also sent a non-JSON line) starts afresh.
+		const json = parseJson(joined) ?? (data.length > 1 ? parseJson(part) : undefined);
+		if (json !== undefined) {
+			data = [];
+			yield json;
+		}
+	}
 	for await (const chunk of body) {
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
 		while ((newline = buffer.indexOf('\n')) !== -1) {
-			const json = frameData(buffer.slice(0, newline));
+			const raw = buffer.slice(0, newline);
 			buffer = buffer.slice(newline + 1);
-			if (json !== undefined) yield json;
+			yield* line(raw);
 		}
 	}
-	// A last frame the endpoint did not end with a newline.
-	const json = frameData(buffer + decoder.decode());
-	if (json !== undefined) yield json;
+	// A last line the endpoint did not end with a newline.
+	yield* line(buffer + decoder.decode());
 }
 
 // Parse an Anthropic streaming response: "data: {json}" frames whose JSON
 // carries a type. Text arrives as content_block_delta/text_delta; the stream
 // ends with message_stop. Thinking and tool-input deltas are ignored. Usage
 // arrives split across frames: input tokens on message_start, the output
-// total on message_delta; the combined count is emitted before done.
+// total on message_delta; the combined count is emitted before done. A stream
+// that ends in an error event, or without an output total, still emits what it
+// was billed, estimated from the text streamed.
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
 	let promptTokens: number | undefined;
 	let cachedPromptTokens = 0;
 	let completionTokens: number | undefined;
+	let searches = 0;
+	let streamedChars = 0;
 	let finishReason: FinishReason | undefined;
+	const usage = (): StreamEvent | undefined => {
+		if (promptTokens === undefined && completionTokens === undefined) return undefined;
+		return {
+			type: 'usage',
+			usage: {
+				promptTokens: promptTokens ?? 0,
+				completionTokens: completionTokens ?? tokensForChars(streamedChars),
+				...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {}),
+				...(searches > 0 ? { webSearchRequests: searches } : {}),
+				...(completionTokens === undefined ? { estimated: true } : {})
+			}
+		};
+	};
 	for await (const json of sseFrames(body)) {
 		const frame = json as {
 			type?: unknown;
@@ -391,7 +463,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 					cache_read_input_tokens?: unknown;
 				};
 			};
-			usage?: { output_tokens?: unknown };
+			usage?: { output_tokens?: unknown; server_tool_use?: unknown };
 			error?: { message?: unknown };
 		};
 		if (frame.type === 'message_start') {
@@ -403,30 +475,26 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 		if (frame.type === 'message_delta') {
 			const output = Number(frame.usage?.output_tokens);
 			if (Number.isFinite(output)) completionTokens = output;
+			if (frame.usage) searches = webSearches(frame.usage) || searches;
 			finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
 			continue;
 		}
 		if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
 			if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
+				streamedChars += frame.delta.text.length;
 				yield { type: 'token', text: frame.delta.text };
 			}
 			continue;
 		}
 		if (frame.type === 'message_stop') {
-			if (promptTokens !== undefined || completionTokens !== undefined) {
-				yield {
-					type: 'usage',
-					usage: {
-						promptTokens: promptTokens ?? 0,
-						completionTokens: completionTokens ?? 0,
-						...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
-					}
-				};
-			}
+			const billed = usage();
+			if (billed) yield billed;
 			yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
 			return;
 		}
 		if (frame.type === 'error') {
+			const billed = usage();
+			if (billed) yield billed;
 			yield {
 				type: 'error',
 				message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
@@ -435,10 +503,20 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 		}
 	}
 	// The stream ended without an explicit message_stop; close it out anyway.
+	const billed = usage();
+	if (billed) yield billed;
 	yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
 }
 
-type BufferedMessage = { content?: unknown; usage?: unknown; stop_reason?: unknown };
+type BufferedMessage = {
+	content?: unknown;
+	usage?: unknown;
+	stop_reason?: unknown;
+	// Assembled from a stream only: set when the output count is an estimate,
+	// and the raw text of any tool input that did not parse, by call id.
+	estimated?: boolean;
+	brokenInputs?: Map<string, string>;
+};
 
 type Block = Record<string, unknown>;
 
@@ -458,7 +536,8 @@ const STREAM_ERROR_STATUS = new Map<unknown, number>([
 // timeout only fires on real silence.
 async function assembleMessage(
 	body: AsyncIterable<Uint8Array>,
-	maxTokens: number
+	maxTokens: number,
+	signal?: AbortSignal
 ): Promise<BufferedMessage> {
 	const usage: Block = {};
 	const progress: StreamProgress = {
@@ -479,10 +558,13 @@ async function assembleMessage(
 				Number.isFinite(reported) ? reported : 0,
 				estimatedOutput(progress, false)
 			);
+			message.estimated = true;
 		}
 		return message;
 	} catch (err) {
-		throw err instanceof Error ? withBilledUsage(err, partialUsage(usage, progress)) : err;
+		if (!(err instanceof Error)) throw err;
+		const cancelled = signal?.aborted === true || err.name === 'AbortError';
+		throw withBilledUsage(err, partialUsage(usage, progress, cancelled));
 	}
 }
 
@@ -495,7 +577,19 @@ async function assembleFrames(
 ): Promise<BufferedMessage> {
 	const blocks: Block[] = [];
 	const inputJson = new Map<number, string>();
+	const brokenInputs = new Map<string, string>();
 	let stopReason: unknown;
+	// A reply cut off at the token cap can stop mid-argument: its broken input
+	// stays empty so the message still assembles and its max_tokens stop
+	// reaches the cut-off retry. Anywhere else broken input is a malformed
+	// call, and its raw text goes back as the call's arguments, so the tool
+	// reports a bad call to the model instead of running with no arguments.
+	const finished = (): BufferedMessage => ({
+		content: blocks.filter(Boolean),
+		usage,
+		stop_reason: stopReason,
+		...(brokenInputs.size > 0 && stopReason !== 'max_tokens' ? { brokenInputs } : {})
+	});
 	for await (const json of sseFrames(body)) {
 		const frame = json as {
 			type?: unknown;
@@ -548,10 +642,12 @@ async function assembleFrames(
 			case 'content_block_stop': {
 				const raw = inputJson.get(index);
 				// The start frame carries an empty input; the deltas carry the real
-				// one, and a call with no arguments sends none. A reply cut off at
-				// the token cap can stop mid-argument: parse leniently so the message
-				// still assembles and its max_tokens stop reaches the cut-off retry.
-				if (block && raw !== undefined) block.input = parseArguments(raw);
+				// one, and a call with no arguments sends none.
+				if (block && raw !== undefined) {
+					const input = parseInput(raw);
+					block.input = input ?? {};
+					if (!input && typeof block.id === 'string') brokenInputs.set(block.id, raw);
+				}
 				inputJson.delete(index);
 				break;
 			}
@@ -573,7 +669,7 @@ async function assembleFrames(
 				}
 				break;
 			case 'message_stop':
-				return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
+				return finished();
 			case 'error': {
 				const message =
 					typeof frame.error?.message === 'string' ? frame.error.message : 'unknown error';
@@ -588,20 +684,36 @@ async function assembleFrames(
 	}
 	// Some Anthropic-compatible endpoints close the body after message_delta
 	// without a message_stop. Once the stop reason is in, the reply is whole.
-	if (stopReason !== undefined) {
-		return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
-	}
+	if (stopReason !== undefined) return finished();
 	throw new Error('The endpoint closed the stream before the reply finished.');
 }
 
 // The reply to a stream: true request. An endpoint that ignores the flag and
 // answers in one JSON body is read as one, with or without a JSON content
 // type; a broken JSON body throws SyntaxError, which the gateway does not
-// retry. Anything else (a captive portal's web page, say) is not a reply.
-async function readReply(res: HttpResponse, maxTokens: number): Promise<BufferedMessage> {
+// retry. A stream sent with no content type or a generic one is recognised by
+// its opening line. Anything else (a captive portal's web page, say) is not a
+// reply.
+const GENERIC_TYPES = ['', 'text/plain', 'application/octet-stream'];
+
+async function readReply(
+	res: HttpResponse,
+	maxTokens: number,
+	signal?: AbortSignal
+): Promise<BufferedMessage> {
 	const type = (res.headers['content-type'] ?? '').toLowerCase();
-	if (type.includes('text/event-stream')) return assembleMessage(res.body, maxTokens);
+	if (type.includes('text/event-stream')) return assembleMessage(res.body, maxTokens, signal);
 	const text = await res.text();
+	const generic = GENERIC_TYPES.includes(type.split(';')[0].trim());
+	if (generic && /^\s*(event|data):/.test(text)) {
+		return assembleMessage(
+			(async function* () {
+				yield new TextEncoder().encode(text);
+			})(),
+			maxTokens,
+			signal
+		);
+	}
 	if (type.includes('json') || (!type && /^\s*\{/.test(text))) {
 		return JSON.parse(text) as BufferedMessage;
 	}
@@ -644,11 +756,19 @@ export const anthropicProvider: Provider = {
 		if (res.status < 200 || res.status >= 300) {
 			throw new Error(`Endpoint returned ${res.status}: ${truncate(await res.text())}`);
 		}
-		const json = await readReply(res, req.maxTokens);
+		const json = await readReply(res, req.maxTokens, signal);
 		const finishReason = parseStopReason(json?.stop_reason);
+		const parsed = parseContent(json?.content, finishReason === 'paused');
+		const broken = json?.brokenInputs;
+		const usage = parseUsage(json?.usage);
 		return {
-			...parseContent(json?.content),
-			usage: parseUsage(json?.usage),
+			...parsed,
+			toolCalls: broken
+				? parsed.toolCalls.map((call) =>
+						broken.has(call.id) ? { ...call, arguments: broken.get(call.id)! } : call
+					)
+				: parsed.toolCalls,
+			usage: usage && json?.estimated ? { ...usage, estimated: true } : usage,
 			...(finishReason ? { finishReason } : {})
 		};
 	},

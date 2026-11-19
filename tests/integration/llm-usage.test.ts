@@ -9,7 +9,11 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'llm-usage-test-secret';
 
-import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
+import {
+	withBilledUsage,
+	type HttpRequest,
+	type Provider
+} from '../../src/lib/server/llm/providers/types';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { complete, stream } = await import('../../src/lib/server/llm/gateway');
@@ -83,7 +87,13 @@ describe('gateway usage recording', () => {
 			promptTokens: 100,
 			completionTokens: 20
 		});
-		expect(summary.totals).toEqual({ requests: 1, promptTokens: 100, completionTokens: 20 });
+		expect(summary.totals).toEqual({
+			requests: 1,
+			promptTokens: 100,
+			completionTokens: 20,
+			estimatedRequests: 0,
+			webSearchRequests: 0
+		});
 	});
 
 	it('consumes the streamed usage frame: logged, never forwarded', async () => {
@@ -131,6 +141,110 @@ describe('gateway usage recording', () => {
 		const summary = await recentAssistantUsage(db, userId);
 		expect(summary.recent[0]).toMatchObject({ promptTokens: null, completionTokens: null });
 		expect(summary.totals.requests).toBe(1);
+	});
+
+	// The chat route stops reading at done (and at error), so the generator
+	// never runs past its loop; the row must land anyway.
+	it('logs a streamed turn whose caller stops reading at done (#1102)', async () => {
+		await configure();
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'token', text: 'hi' };
+				yield { type: 'usage', usage: { promptTokens: 7, completionTokens: 1 } };
+				yield { type: 'done' };
+				yield { type: 'token', text: 'never read' };
+			},
+			async respond() {
+				return { content: '', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		for await (const event of stream(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider, http: noHttp }
+		)) {
+			if (event.type === 'done') break;
+		}
+		const summary = await recentAssistantUsage(db, userId);
+		expect(summary.recent).toHaveLength(1);
+		expect(summary.recent[0]).toMatchObject({ promptTokens: 7, completionTokens: 1 });
+	});
+
+	it('logs a streamed turn that was cancelled partway (#1102)', async () => {
+		await configure();
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'token', text: 'hi' };
+				throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+			},
+			async respond() {
+				return { content: '', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		await expect(async () => {
+			for await (const event of stream(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider, http: noHttp }
+			)) {
+				void event;
+			}
+		}).rejects.toThrow('aborted');
+		const summary = await recentAssistantUsage(db, userId);
+		expect(summary.recent).toHaveLength(1);
+		expect(summary.recent[0]).toMatchObject({ promptTokens: null, completionTokens: null });
+	});
+
+	it('marks an estimated attempt in the log, apart from reported counts (#1116)', async () => {
+		await configure();
+		let attempts = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				if (attempts === 1) {
+					throw withBilledUsage(new Error('Endpoint returned 529: overloaded'), {
+						promptTokens: 50,
+						completionTokens: 16384,
+						estimated: true
+					});
+				}
+				return {
+					content: 'ok',
+					toolCalls: [],
+					usage: { promptTokens: 50, completionTokens: 10, webSearchRequests: 2 }
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider, http: noHttp, sleep: async () => {} }
+		);
+		const summary = await recentAssistantUsage(db, userId);
+		const [reported, estimated] = summary.recent;
+		expect(estimated).toMatchObject({ completionTokens: 16384, estimated: true });
+		expect(reported).toMatchObject({
+			completionTokens: 10,
+			estimated: false,
+			webSearchRequests: 2
+		});
+		expect(summary.totals).toMatchObject({
+			requests: 2,
+			estimatedRequests: 1,
+			webSearchRequests: 2
+		});
 	});
 });
 
@@ -246,7 +360,13 @@ describe('recentAssistantUsage', () => {
 			usage: { promptTokens: 5, completionTokens: 1 }
 		});
 		const summary = await recentAssistantUsage(db, userId);
-		expect(summary.totals).toEqual({ requests: 3, promptTokens: 45, completionTokens: 11 });
+		expect(summary.totals).toEqual({
+			requests: 3,
+			promptTokens: 45,
+			completionTokens: 11,
+			estimatedRequests: 0,
+			webSearchRequests: 0
+		});
 		expect(summary.byModel.sort((x, y) => x.model.localeCompare(y.model))).toEqual([
 			{ model: 'a', promptTokens: 40, completionTokens: 10 },
 			{ model: 'b', promptTokens: 5, completionTokens: 1 }

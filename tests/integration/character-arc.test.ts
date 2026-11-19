@@ -25,6 +25,8 @@ import { setSceneStatus } from '../../src/lib/server/scene-status';
 import { applySceneOrder } from '../../src/lib/server/scene-order';
 import { saveSceneBody } from '../../src/lib/server/scene-save';
 import { restoreUniverse, trashUniverse } from '../../src/lib/server/universe-lifecycle';
+import { saveStoryDetails } from '../../src/lib/server/story-details';
+import { saveEntity } from '../../src/lib/server/entity-save';
 
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
@@ -474,7 +476,7 @@ describe('arc staleness', () => {
 		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
 	});
 
-	it('goes stale, without an enrich mark, when a mentioning scene is renamed', async () => {
+	it('goes stale, and is marked for enrichment, when a mentioning scene is renamed', async () => {
 		const bram = await makeCharacter();
 		const sceneId = await sceneWithProse('Bram at the harbour.');
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
@@ -495,18 +497,46 @@ describe('arc staleness', () => {
 		expect((await saveSceneBody(db, sceneId, { ...save, title: 'Low tide' })).ok).toBe(true);
 		const after = await readCharacter(bram.id);
 		expect(arcIsStale(after)).toBe(true);
-		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
+		// The enrich pass quotes each passage under its scene title.
+		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 
-	it('goes stale, and is marked for enrichment, when its universe is restored', async () => {
+	it('stays current through a universe trash and restore that changed nothing', async () => {
 		const bram = await makeCharacter();
 		await sceneWithProse('Bram at the harbour.');
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const enrichedAt = new Date('2026-01-01T00:00:00Z');
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: enrichedAt })
+			.where(eq(characters.id, bram.id));
 		expect(await trashUniverse(db, ownerId, universeId)).toBe(true);
+		expect(await restoreUniverse(db, ownerId, universeId)).toBe(true);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(false);
+		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
+	});
+
+	it('goes stale, and is marked for enrichment, when a passage changes while its universe is in the trash', async () => {
+		const bram = await makeCharacter();
+		const cass = await db
+			.insert(characters)
+			.values({ universeId, ownerId, name: 'Cass' })
+			.returning({ id: characters.id })
+			.then(([row]) => row);
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		await sceneWithProse('Cass on the road.');
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: cass.id }, deps);
+		expect(await trashUniverse(db, ownerId, universeId)).toBe(true);
+		await db.update(scenes).set({ bodyMd: 'Bram on the quay.' }).where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(true);
 		const after = await readCharacter(bram.id);
 		expect(arcIsStale(after)).toBe(true);
 		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+		// Only what changed is marked.
+		expect(arcIsStale(await readCharacter(cass.id))).toBe(false);
 	});
 
 	it('goes stale when a new scene summary is written for a mentioning scene', async () => {
@@ -567,7 +597,7 @@ describe('arc staleness', () => {
 		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 
-	it('goes stale, and is marked for enrichment, when a trashed standalone home is revived', async () => {
+	it('stays current when a trashed standalone home is revived', async () => {
 		const home = await standaloneUniverse(db, ownerId);
 		const [story] = await db
 			.insert(stories)
@@ -585,11 +615,120 @@ describe('arc staleness', () => {
 			.where(eq(characters.id, bram.id));
 		await db.update(universes).set({ deletedAt: new Date() }).where(eq(universes.id, home.id));
 
-		// Asking for the standalone home again brings it back.
+		// Asking for the standalone home again brings it back, with nothing changed.
 		expect((await standaloneUniverse(db, ownerId)).deletedAt).toBeNull();
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(false);
+		expect(after.assistantEnrichedAt! > STALE_MARK_BEFORE).toBe(true);
+	});
+
+	// Wider than a passage's window, so each passage quotes only the filler.
+	const filler = ' The tide ran out over the flats. '.repeat(3);
+
+	it('goes stale when two passages that mention the character swap places', async () => {
+		const bram = await makeCharacter();
+		const harbour = `${filler}Bram at the harbour.${filler}`;
+		const road = `Bram on the road.${filler}`;
+		const sceneId = await sceneWithProse(harbour + road);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(scenes)
+			.set({ bodyMd: `${filler}Bram on the road.${filler}Bram at the harbour.${filler}` })
+			.where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+		// The same passages, but the arc reads the first one.
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(true);
+	});
+
+	it('stays current when text added above only shifts the passages', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneWithProse(`${filler}Bram at the harbour.`);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(scenes)
+			.set({ bodyMd: `A new opening line.${filler}Bram at the harbour.` })
+			.where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+	});
+
+	it('marks only the characters of a scene moved from the start to the end', async () => {
+		const bram = await makeCharacter();
+		const [cass] = await db
+			.insert(characters)
+			.values({ universeId, ownerId, name: 'Cass' })
+			.returning({ id: characters.id });
+		const ids: string[] = [];
+		for (const [i, bodyMd] of ['Bram at the harbour.', 'Cass waits.', 'Cass leaves.'].entries()) {
+			const [scene] = await db
+				.insert(scenes)
+				.values({ storyId: firstStoryId, globalPosition: i + 1, bodyMd })
+				.returning({ id: scenes.id });
+			await rebuildSceneMentions(db, scene.id);
+			ids.push(scene.id);
+		}
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: cass.id }, deps);
+		const [first, second, third] = ids;
+		const order = { chapters: [], orphanSceneIds: [second, third, first] };
+		expect((await applySceneOrder(db, firstStoryId, order)).ok).toBe(true);
+		// Every rank shifted, but Cass's two scenes still read in the same order.
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(true);
+		expect(arcIsStale(await readCharacter(cass.id))).toBe(false);
+	});
+
+	it('goes stale, and is marked for enrichment, when a story it reads is renamed', async () => {
+		const bram = await makeCharacter();
+		await sceneWithProse('Bram at the harbour.');
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const enrichedAt = new Date('2026-01-01T00:00:00Z');
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: enrichedAt })
+			.where(eq(characters.id, bram.id));
+		const [story] = await db
+			.select({ id: stories.id, title: stories.title, slug: stories.slug })
+			.from(stories)
+			.where(eq(stories.id, firstStoryId));
+		const details = {
+			author: null,
+			brief: 'A brief.',
+			descriptionMd: null,
+			styleNotes: null,
+			coverColor: null
+		};
+
+		await saveStoryDetails(db, ownerId, story, { ...details, title: story.title });
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+
+		await saveStoryDetails(db, ownerId, story, { ...details, title: 'The Deep Tide' });
 		const after = await readCharacter(bram.id);
 		expect(arcIsStale(after)).toBe(true);
 		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+	});
+
+	it('goes stale, without an enrich mark, when the character is renamed', async () => {
+		const bram = await makeCharacter();
+		await sceneWithProse('Bram at the harbour.');
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const enrichedAt = new Date('2026-01-01T00:00:00Z');
+		await db
+			.update(characters)
+			.set({ assistantEnrichedAt: enrichedAt })
+			.where(eq(characters.id, bram.id));
+		const save = { tags: [], summaryMd: 'A sailor.', bodyMd: 'Notes.' };
+
+		expect(
+			(await saveEntity(db, 'character', bram.id, ownerId, { ...save, name: 'Bram' })).ok
+		).toBe(true);
+		expect(arcIsStale(await readCharacter(bram.id))).toBe(false);
+
+		expect(
+			(await saveEntity(db, 'character', bram.id, ownerId, { ...save, name: 'Bram Tull' })).ok
+		).toBe(true);
+		const after = await readCharacter(bram.id);
+		expect(arcIsStale(after)).toBe(true);
+		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
 	});
 
 	it('stays current when a reorder after a deletion keeps the reading order', async () => {
@@ -771,15 +910,6 @@ describe('a restore that cannot mark what it brings back', () => {
 		await withFailingMark(() => restoreStory(db, ownerId, secondStoryId));
 		const [story] = await db.select().from(stories).where(eq(stories.id, secondStoryId));
 		expect(story.deletedAt).not.toBeNull();
-	});
-
-	it('leaves a universe in the trash', async () => {
-		const bram = await makeCharacter();
-		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
-		expect(await trashUniverse(db, ownerId, universeId)).toBe(true);
-		await withFailingMark(() => restoreUniverse(db, ownerId, universeId));
-		const [universe] = await db.select().from(universes).where(eq(universes.id, universeId));
-		expect(universe.deletedAt).not.toBeNull();
 	});
 });
 
