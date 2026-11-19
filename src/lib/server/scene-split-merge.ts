@@ -274,14 +274,8 @@ export async function mergeScenes(
 	if (unique.length < 2)
 		return { ok: false, code: 'invalid', reason: 'Pick at least two scenes to merge.' };
 
-	const rows = await db
-		.select({
-			id: scenes.id,
-			storyId: scenes.storyId,
-			chapterId: scenes.chapterId,
-			bodyMd: scenes.bodyMd,
-			globalPosition: scenes.globalPosition
-		})
+	const owned = await db
+		.select({ id: scenes.id })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(
@@ -292,14 +286,36 @@ export async function mergeScenes(
 				storyIsLive(),
 				isNull(scenes.deletedAt)
 			)
-		)
-		.orderBy(asc(scenes.globalPosition));
-	if (rows.length !== unique.length) {
-		return { ok: false, code: 'not_found', reason: 'One of those scenes no longer exists.' };
-	}
+		);
+	const gone = {
+		ok: false,
+		code: 'not_found',
+		reason: 'One of those scenes no longer exists.'
+	} as const;
+	if (owned.length !== unique.length) return gone;
 
-	const [target, ...rest] = rows;
-	await db.transaction(async (tx) => {
+	return await db.transaction(async (tx) => {
+		// Lock the scenes lowest id first and read their bodies under the lock,
+		// so an autosave that lands meanwhile is merged in, never replaced.
+		const locked = await tx
+			.select({
+				id: scenes.id,
+				storyId: scenes.storyId,
+				chapterId: scenes.chapterId,
+				bodyMd: scenes.bodyMd,
+				globalPosition: scenes.globalPosition,
+				deletedAt: scenes.deletedAt
+			})
+			.from(scenes)
+			.where(inArray(scenes.id, unique))
+			.orderBy(asc(scenes.id))
+			.for('update');
+		const rows = locked
+			.filter((scene) => scene.storyId === storyId && scene.deletedAt === null)
+			.sort((a, b) => a.globalPosition - b.globalPosition);
+		if (rows.length !== unique.length) return gone;
+
+		const [target, ...rest] = rows;
 		let merged = target.bodyMd.replace(/\s+$/, '');
 		for (const scene of rest) {
 			// Where this scene's text lands in the merged body, for its markers.
@@ -348,7 +364,6 @@ export async function mergeScenes(
 			.where(
 				and(eq(entityMentions.sourceType, 'scene'), inArray(entityMentions.sourceId, restIds))
 			);
+		return { ok: true as const, targetSceneId: target.id };
 	});
-
-	return { ok: true, targetSceneId: target.id };
 }

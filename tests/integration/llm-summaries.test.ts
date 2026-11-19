@@ -542,6 +542,26 @@ describe('chapter summary after a change of scenes', () => {
 		});
 	});
 
+	it('refreshes the chapter on a later run when the run that refreshed its scene stopped first', async () => {
+		await nextMillisecond();
+		await db.update(scenes).set({ bodyMd: 'Alice ran.' }).where(eq(scenes.id, sceneAId));
+		// The first run took calls 1 and 2. Call 3 writes the scene summary;
+		// the chapter's, and any retry of it, fail.
+		duringCall = async (call) => {
+			if (call >= 4) throw new Error('unreachable');
+		};
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 1,
+			chapters: 0,
+			failed: 1
+		});
+		duringCall = null;
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 0,
+			chapters: 1
+		});
+	});
+
 	it('does not mark a chapter current when a scene is restored while it is being written', async () => {
 		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
 		duringCall = async () => {

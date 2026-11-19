@@ -306,9 +306,9 @@ export const scenes = pgTable(
 		// opens on read it; updated_at stays the prose clock the Assistant
 		// compares against. clock_timestamp(), not now(), so a later statement
 		// in the same transaction (the scene a split or merge acted on, after
-		// the scenes it shifted) reads as the later change.
+		// the scenes it shifted) reads as the later change. Null on scenes last
+		// changed before the column existed: read coalesce(touched_at, updated_at).
 		touchedAt: timestamp('touched_at', { withTimezone: true })
-			.notNull()
 			.default(sql`clock_timestamp()`)
 			.$onUpdate(() => sql`clock_timestamp()`),
 		// When the mention index was last rebuilt for this scene. Null means never.

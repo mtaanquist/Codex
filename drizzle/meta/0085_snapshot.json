@@ -4477,7 +4477,7 @@
 					"name": "touched_at",
 					"type": "timestamp with time zone",
 					"primaryKey": false,
-					"notNull": true,
+					"notNull": false,
 					"default": "clock_timestamp()"
 				},
 				"mentions_indexed_at": {
