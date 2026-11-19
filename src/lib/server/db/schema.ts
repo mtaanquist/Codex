@@ -1469,7 +1469,7 @@ export type ReviewRunState = {
 	// what it had spent in USD. A retry of the same job resumes from here.
 	capped?: boolean;
 	spentUsd?: number;
-	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	// Set when spentUsd includes estimated counts, so it is approximate.
 	spentEstimated?: boolean;
 	// Set when the run started from an earlier capped run's progress, so its
 	// completed list includes that run's scenes (see adoptCappedRun).
