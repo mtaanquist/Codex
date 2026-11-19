@@ -1060,6 +1060,12 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   a new chat sends its model choice with a message; a stored chat changes it
   through the chip's own save, so a stale tab cannot overwrite it. A new
   chat whose first turn fails to store is dropped again. Filed as low: #1212.
+- Staging review round 4. A failed model save now puts the earlier model
+  back on the chip (it had kept showing the new one while the chat ran on
+  the old). Saves run one after another, and a message waits for a pending
+  save so the picked model answers it. The chip is locked while a new chat's
+  first message is in flight, since that message carries the choice. A
+  starter suggestion no longer clears a typed draft. Filed as low: #1215.
 
 ## November review (2026-11-18)
 
