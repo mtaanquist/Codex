@@ -431,23 +431,19 @@ describe('reviewer digests', () => {
 		);
 		const at = (micros: number) =>
 			sql`${rows[0].base}::timestamptz + make_interval(secs => ${micros} / 1000000.0)`;
-		await db
-			.insert(reviewComments)
-			.values({
-				threadId: thread.id,
-				authorUserId: owner.id,
-				bodyMd: 'First.',
-				createdAt: at(100)
-			});
+		await db.insert(reviewComments).values({
+			threadId: thread.id,
+			authorUserId: owner.id,
+			bodyMd: 'First.',
+			createdAt: at(100)
+		});
 		const digest = await buildReviewerDigest(db, guest.id, 'https://codex.test');
-		await db
-			.insert(reviewComments)
-			.values({
-				threadId: thread.id,
-				authorUserId: owner.id,
-				bodyMd: 'Second.',
-				createdAt: at(400)
-			});
+		await db.insert(reviewComments).values({
+			threadId: thread.id,
+			authorUserId: owner.id,
+			bodyMd: 'Second.',
+			createdAt: at(400)
+		});
 		await markReviewerNotified(db, guest.id, digest!.upTo);
 
 		const next = await buildReviewerDigest(db, guest.id, 'https://codex.test');
