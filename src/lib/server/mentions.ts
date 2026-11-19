@@ -6,8 +6,7 @@ import {
 	entityMentions,
 	placeStoryMemberships,
 	scenes,
-	stories,
-	universes
+	stories
 } from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
 import { listMentionPins } from './mention-pins.ts';
@@ -78,12 +77,19 @@ async function storyContext(db: Database, context: MentionRebuildContext, storyI
 	return ctx;
 }
 
-type MentionPassages = { targetType: EntityType; targetId: string; surroundingText: string };
+type MentionPassages = {
+	targetType: EntityType;
+	targetId: string;
+	position: number;
+	surroundingText: string;
+};
 
 // The entities whose passages in a scene differ between two indexings of it:
-// mentioned only in one, or quoted with different surrounding text. These are
-// the ones whose arc and enrichment read something new. A status change or a
-// rename elsewhere reindexes the scene without changing any of them.
+// mentioned only in one, or quoted with different surrounding text or in a
+// different order (an arc reads a scene's first passage). These are the ones
+// whose arc and enrichment read something new. A status change, a rename
+// elsewhere, or text added that only shifts positions reindexes the scene
+// without changing any of them.
 export function changedTargets(
 	before: MentionPassages[],
 	after: MentionPassages[]
@@ -91,12 +97,14 @@ export function changedTargets(
 	const targets = new Map<string, { targetType: EntityType; targetId: string }>();
 	const passages = (rows: MentionPassages[]) => {
 		const byTarget = new Map<string, string[]>();
-		for (const { targetType, targetId, surroundingText } of rows) {
+		for (const { targetType, targetId, surroundingText } of [...rows].sort(
+			(a, b) => a.position - b.position
+		)) {
 			const key = `${targetType}:${targetId}`;
 			targets.set(key, { targetType, targetId });
 			byTarget.set(key, [...(byTarget.get(key) ?? []), surroundingText]);
 		}
-		return new Map([...byTarget].map(([key, texts]) => [key, JSON.stringify(texts.sort())]));
+		return new Map([...byTarget].map(([key, texts]) => [key, JSON.stringify(texts)]));
 	};
 	const was = passages(before);
 	const now = passages(after);
@@ -108,86 +116,81 @@ export async function rebuildSceneMentions(
 	sceneId: string,
 	context?: MentionRebuildContext
 ): Promise<{ ok: true; count: number } | { ok: false; reason: string }> {
-	const [scene] = await db
-		.select({
-			id: scenes.id,
-			bodyMd: scenes.bodyMd,
-			storyId: scenes.storyId,
-			universeId: stories.universeId,
-			deletedAt: scenes.deletedAt
-		})
+	const missing = { ok: false as const, reason: 'That scene no longer exists.' };
+	const [head] = await db
+		.select({ storyId: scenes.storyId, universeId: stories.universeId })
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(eq(scenes.id, sceneId));
-	if (!scene) return { ok: false, reason: 'That scene no longer exists.' };
-	// A trashed scene holds no mentions. Clear and stamp so a rebuild queued
-	// before the deletion cannot re-add rows, and the reconcile sweep settles.
-	if (scene.deletedAt) {
-		await db.transaction(async (tx) => {
-			await tx
-				.delete(entityMentions)
-				.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
-			await tx.execute(sql`update scenes set mentions_indexed_at = now() where id = ${scene.id}`);
-		});
-		return { ok: true, count: 0 };
-	}
-
+	if (!head) return missing;
 	// A caller-supplied context only applies to its own universe; a single
-	// scene rebuild builds a fresh one.
+	// scene rebuild builds a fresh one. Either way its load time is before the
+	// body is read below.
 	const shared =
-		context?.universeId === scene.universeId
+		context?.universeId === head.universeId
 			? context
-			: await universeMentionContext(db, scene.universeId);
-	const { members, pins } = await storyContext(db, shared, scene.storyId);
-	const found = detectMentions(scene.bodyMd, shared.targets, {
-		storyMembers: members,
-		pins
-	});
-
-	const rows = found.map((match) => ({
-		sourceType: 'scene',
-		sourceId: scene.id,
-		targetType: match.targetType,
-		targetId: match.targetId,
-		position: match.position,
-		surroundingText: mentionSnippet(scene.bodyMd, match.position, match.length)
-	}));
+			: await universeMentionContext(db, head.universeId);
+	const { members, pins } = await storyContext(db, shared, head.storyId);
 
 	return await db.transaction(async (tx) => {
 		// The scene row first, then the story, then entities: the order saves,
 		// reorders, trash, merge and the summary job take, so none of them can
-		// deadlock with a rebuild. The watermark is the context's load time, so
-		// "indexed against the names as of then"; a later body save or flagged
-		// name change moves past it and the reconcile sweep catches it. Raw SQL
-		// so it does not trip the scene's updated_at $onUpdate, which would make
-		// every scene look perpetually stale.
-		const stamped = await tx.execute(sql`
-			update scenes set mentions_indexed_at = ${shared.loadedAt}
-			where id = ${scene.id} and deleted_at is null
-			returning id
-		`);
-		// Trashed since it was read: the trash already cleared its mentions.
-		if (stamped.rows.length === 0) return { ok: true as const, count: 0 };
-		// Whether the Assistant reads this scene. Restoring a story or universe,
-		// or unmuting a story, marks what it mentions, so a change made while it
-		// was out of reach needs no mark. The share lock waits for a restore or
-		// mute in flight, so the mark and that change cannot miss each other.
+		// deadlock with a rebuild. The body is read under the row lock, so no
+		// save can land between the read and the stamp: the index always
+		// matches the text it is stamped against.
+		const [scene] = await tx
+			.select({ id: scenes.id, bodyMd: scenes.bodyMd, deletedAt: scenes.deletedAt })
+			.from(scenes)
+			.where(eq(scenes.id, sceneId))
+			.for('update');
+		if (!scene) return missing;
+		const clear = () =>
+			tx
+				.delete(entityMentions)
+				.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
+		// A trashed scene holds no mentions. Clear and stamp so a rebuild queued
+		// before the deletion cannot re-add rows, and the reconcile sweep settles.
+		// Raw SQL so the stamp does not trip the scene's updated_at $onUpdate,
+		// which would make every scene look perpetually stale.
+		if (scene.deletedAt) {
+			await clear();
+			await tx.execute(sql`update scenes set mentions_indexed_at = now() where id = ${scene.id}`);
+			return { ok: true as const, count: 0 };
+		}
+
+		const found = detectMentions(scene.bodyMd, shared.targets, { storyMembers: members, pins });
+		const rows = found.map((match) => ({
+			sourceType: 'scene',
+			sourceId: scene.id,
+			targetType: match.targetType,
+			targetId: match.targetId,
+			position: match.position,
+			surroundingText: mentionSnippet(scene.bodyMd, match.position, match.length)
+		}));
+
+		// The watermark is the context's load time, so "indexed against the
+		// names as of then"; a later body save or flagged name change moves past
+		// it and the reconcile sweep catches it.
+		await tx.execute(
+			sql`update scenes set mentions_indexed_at = ${shared.loadedAt} where id = ${scene.id}`
+		);
+		// Whether the Assistant reads this scene's story. Restoring a story or
+		// unmuting it marks what it mentions, so a change made while it was out
+		// of reach needs no mark. The share lock waits for a restore or mute in
+		// flight, so the mark and that change cannot miss each other. A trashed
+		// universe still marks: nothing in it is read until it is restored, and
+		// the restore then has nothing left to mark.
 		const [reach] = await tx
-			.select({
-				reads: sql<boolean>`${stories.deletedAt} is null and ${universes.deletedAt} is null and ${storyAssistantOn()}`
-			})
+			.select({ reads: sql<boolean>`${stories.deletedAt} is null and ${storyAssistantOn()}` })
 			.from(stories)
-			.innerJoin(universes, eq(universes.id, stories.universeId))
-			.where(eq(stories.id, scene.storyId))
+			.where(eq(stories.id, head.storyId))
 			.for('share');
-		const previous = await tx
-			.delete(entityMentions)
-			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)))
-			.returning({
-				targetType: entityMentions.targetType,
-				targetId: entityMentions.targetId,
-				surroundingText: entityMentions.surroundingText
-			});
+		const previous = await clear().returning({
+			targetType: entityMentions.targetType,
+			targetId: entityMentions.targetId,
+			position: entityMentions.position,
+			surroundingText: entityMentions.surroundingText
+		});
 		if (rows.length > 0) await tx.insert(entityMentions).values(rows);
 		if (reach?.reads) await markEntitiesStale(tx, changedTargets(previous, rows));
 		return { ok: true as const, count: found.length };

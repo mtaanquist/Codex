@@ -1461,6 +1461,37 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Review follow-ups: mention index and stale marks (2026-11-19).
+      A mention rebuild now reads the scene body under the scene's row lock,
+      in the transaction that writes the index, so a save landing between
+      the read and the stamp can no longer leave old text stamped current,
+      and a trashed scene restored meanwhile is indexed rather than stamped
+      empty (#1073, #1128, #1112). The rebuild locks the scene before its
+      mention rows, but the story purge deleted mentions before scenes, a
+      real deadlock the two-connection test reproduced (the story itself was
+      not the problem); the purge, and Delete forever on a scene, now lock
+      the scene rows first, lowest id first (#1095). Passages are compared in
+      reading order, so swapping two paragraphs that mention a character
+      marks the arc, while text added above only shifts positions and does
+      not (#1070, #1119). A reorder marks only what the scenes outside the
+      longest run that kept its relative order mention, so moving one scene
+      to the end marks one scene's characters, not the story's (#1087). A
+      story rename marks its scenes' entities for arcs and enrich, a
+      character rename marks its arc, and a scene rename now marks enrich
+      too: passages are labelled with story and scene titles, and the
+      request hash still skips an unchanged request. This reverses the
+      earlier call that renames were not worth a paid re-read (#1069,
+      #1096). Restoring a universe no longer marks the whole universe: the
+      rebuild keeps marking while the universe is in the trash (nothing in
+      it is read until the restore), so the restore has nothing left to
+      mark; a trashed or muted story still skips marks and is marked on
+      restore or unmute (#1107). The enrich request hash leaves out whether a
+      summary is still wanted, so a read that staged a summary does not make
+      the next unchanged read a paid call; entities hashed with a summary
+      known get one re-read the next time they are marked (#1086). An entity
+      deleted while an enrich pass runs is passed over instead of failing the
+      pass (#1072).
+
 - [x] Summaries and scene-change follow-ups (#1071, #1111, #1114, #1120,
       2026-11-19). A summary is now stamped with the updated_at it was built
       from (the guarded write already proves the row still has it), not a

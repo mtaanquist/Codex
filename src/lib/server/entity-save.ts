@@ -11,6 +11,7 @@ import {
 	ownsStoryInUniverse
 } from './entity-lookups';
 import { characterStoryNotes, loreStoryNotes, placeStoryNotes } from './db/schema';
+import { markEntitiesStale } from './scene-lifecycle.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
 import type { ActionFailure } from './action-result.ts';
 
@@ -168,6 +169,12 @@ export async function saveEntity(
 		});
 		if (save.storyId !== undefined) {
 			await rows.upsertNotes(tx, entity.id, save.storyId, save.storyNotesMd ?? '');
+		}
+		// A character's arc names them.
+		if (kind === 'character' && name !== entity.name) {
+			await markEntitiesStale(tx, [{ targetType: 'character', targetId: entity.id }], {
+				enrich: false
+			});
 		}
 	});
 	return { ok: true, universeId: entity.universeId, mentionsAffected };

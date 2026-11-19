@@ -1070,8 +1070,13 @@ calls the gateway, which proxies through the egress guard.
   every entity in a universe whose passages changed since its
   `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
   entity when a reindex changes its passages, so status changes and reorders
-  do not count and an alias that links older scenes does), and a job naming a character rewrites that
-  character's arc (`arc_summary_md`) instead. Marks are coarse (any passage),
+  do not count and an alias that links older scenes does; renaming a scene
+  or story marks what its scenes mention, since passages are labelled with
+  both), and a job naming a character rewrites that
+  character's arc (`arc_summary_md`) instead. Arcs are also marked by a
+  character rename and by a reorder, for what the scenes that moved relative
+  to the others mention. Restoring a universe marks nothing: rebuilds keep
+  marking while it is in the trash. Marks are coarse (any passage),
   while enrich sends at most 16 passages and an arc the first passage of each
   scene without a summary, so each watermark is stored with a hash of the
   request it was written from (`assistant_enriched_input`,

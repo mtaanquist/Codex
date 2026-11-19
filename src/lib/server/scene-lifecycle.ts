@@ -129,22 +129,20 @@ export async function markChapterSummariesStale(tx: Database, chapterIds: string
  * arc was written or an entity read. */
 export const STALE_MARK_BEFORE = new Date('2000-01-01T00:00:00Z');
 
-/** Marks what these scenes (or this story's or universe's scenes) mention for
+/** Marks what these scenes (or this story's scenes) mention for
  * a fresh look: the characters' arcs show as out of date, and with `enrich` the
  * entities are read again on the next enrich pass. Call it before mention rows
  * are deleted, since it reads them. */
 export async function markMentionsStale(
 	tx: Database,
-	source: { sceneIds: string[] } | { storyId: string } | { universeId: string },
+	source: { sceneIds: string[] } | { storyId: string },
 	opts: { enrich?: boolean } = {}
 ): Promise<void> {
 	if ('sceneIds' in source && !source.sceneIds.length) return;
 	const from =
 		'sceneIds' in source
 			? sql`m.source_id in ${source.sceneIds}`
-			: 'storyId' in source
-				? sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`
-				: sql`m.source_id in (select s.id from scenes s join stories st on st.id = s.story_id where st.universe_id = ${source.universeId})`;
+			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
 	await markStale(
 		tx,
 		(type) =>
@@ -153,11 +151,12 @@ export async function markMentionsStale(
 	);
 }
 
-/** Marks these entities as markMentionsStale does, arcs and enrichment both:
- * what the Assistant reads about them changed. */
+/** Marks these entities as markMentionsStale does, arcs and enrichment both
+ * unless `enrich` is false: what the Assistant reads about them changed. */
 export async function markEntitiesStale(
 	tx: Database,
-	targets: { targetType: EntityType; targetId: string }[]
+	targets: { targetType: EntityType; targetId: string }[],
+	opts: { enrich?: boolean } = {}
 ): Promise<void> {
 	await markStale(
 		tx,
@@ -165,7 +164,7 @@ export async function markEntitiesStale(
 			const ids = targets.filter((t) => t.targetType === type).map((t) => t.targetId);
 			return ids.length ? sql`${ids}` : null;
 		},
-		true
+		opts.enrich ?? true
 	);
 }
 
@@ -271,6 +270,8 @@ export async function destroyScene(
 	const scene = await ownedScene(db, userId, sceneId, { deleted: true });
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
+		// The scene row before its mentions, the order a mention rebuild takes.
+		await tx.select({ id: scenes.id }).from(scenes).where(eq(scenes.id, scene.id)).for('update');
 		// Threads before suggestions: a suggestion's discussion thread
 		// references it.
 		const threadRows = await tx

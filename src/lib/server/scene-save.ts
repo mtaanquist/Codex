@@ -51,8 +51,10 @@ export async function saveSceneBody(
 				conflict: { bodyMd: current.bodyMd, title: current.title }
 			};
 		}
-		// Arcs name the scenes they retell.
-		if (current.title !== save.title) await markMentionsStale(tx, { sceneIds: [sceneId] });
+		// Arcs and enrich passages name the scenes they quote.
+		if (current.title !== save.title) {
+			await markMentionsStale(tx, { sceneIds: [sceneId] }, { enrich: true });
+		}
 		const count = wordCount(save.bodyMd);
 		// An idle editor keeps resending the same text. History already ends on
 		// it and the anchors have nothing to move through, so only a new title
