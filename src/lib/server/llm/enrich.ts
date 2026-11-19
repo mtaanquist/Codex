@@ -168,28 +168,28 @@ async function enrichRead(
 		snippetLine(a, universeWide)
 	);
 
+	const fields = {
+		kind,
+		name: entity.name,
+		aliases: entity.aliases ?? [],
+		details: entity.details ?? [],
+		summaryMd: entity.summaryMd
+	};
+	const hasSummary = await summarySuggestionClosed(db, {
+		ownerId: opts.userId,
+		kind,
+		entityId: opts.entityId,
+		summaryMd: entity.summaryMd
+	});
 	const messages: ChatMessage[] = [
-		{
-			role: 'user',
-			content: buildEnrichMessage(
-				{
-					kind,
-					name: entity.name,
-					aliases: entity.aliases ?? [],
-					details: entity.details ?? [],
-					summaryMd: entity.summaryMd,
-					hasSummary: await summarySuggestionClosed(db, {
-						ownerId: opts.userId,
-						kind,
-						entityId: opts.entityId,
-						summaryMd: entity.summaryMd
-					})
-				},
-				snippets
-			)
-		}
+		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary }, snippets) }
 	];
-	const input = requestHash(messages);
+	// Hashed as if no summary were known: a read that stages a summary would
+	// otherwise change the next request, and an unchanged passage set would be
+	// sent again just to be told not to propose one.
+	const input = requestHash([
+		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
+	]);
 	if (opts.unlessInput && input === opts.unlessInput) {
 		return { suggestions: [], input, unchanged: true };
 	}
@@ -348,13 +348,16 @@ export async function enrichUniverse(
 		const table = entityTable(entity.type);
 		// As text, so the check below compares to the microsecond; a JS Date
 		// keeps only milliseconds, and marks land often.
-		const [{ before, lastInput }] = await db
+		const [last] = await db
 			.select({
 				before: sql<string | null>`${table.assistantEnrichedAt}::text`,
 				lastInput: table.assistantEnrichedInput
 			})
 			.from(table)
 			.where(eq(table.id, entity.id));
+		// Deleted since the pass listed it: nothing left to read.
+		if (!last) continue;
+		const { before, lastInput } = last;
 		try {
 			const read = await enrichRead(
 				db,

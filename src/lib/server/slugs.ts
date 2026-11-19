@@ -43,9 +43,11 @@ export async function uniqueSlug(
  * slug meanwhile; it then comes back under a fresh one picked from its name,
  * the same as a rename. Retries once if a concurrent write takes that pick.
  *
- * Its scenes are older than the arcs and enrich marks written while it was in
- * the trash, so what they mention is marked for a fresh look in the same
- * transaction: restored content never looks current to the Assistant. Each
+ * A restored story's scenes are older than the arcs and enrich marks written
+ * while it was in the trash, so what they mention is marked for a fresh look
+ * in the same transaction: restored content never looks current to the
+ * Assistant. A universe needs no mark: nothing in it was read while it was in
+ * the trash, and mention rebuilds kept marking what changed meanwhile. Each
  * attempt is its own transaction, since a unique violation aborts the one it
  * hits. The row is locked before the entities, as everywhere else.
  */
@@ -67,7 +69,6 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 			? tx.update(universes).set(values).where(eq(universes.id, id))
 			: tx.update(stories).set(values).where(eq(stories.id, id));
 	};
-	const source = table === 'universes' ? { universeId: id } : { storyId: id };
 	const fallback = table === 'universes' ? 'universe' : 'story';
 	const fresh = () => uniqueSlug(db, table, row.ownerId, row.name, fallback);
 	const attempts = [undefined, fresh, fresh];
@@ -76,7 +77,7 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 			const slug = pick && (await pick());
 			await db.transaction(async (tx) => {
 				await revive(tx, slug);
-				await markMentionsStale(tx, source, { enrich: true });
+				if (table === 'stories') await markMentionsStale(tx, { storyId: id }, { enrich: true });
 			});
 			return;
 		} catch (err) {
