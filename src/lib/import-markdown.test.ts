@@ -113,6 +113,23 @@ describe('parseStoryZip', () => {
 		]);
 	});
 
+	it('reads an archive saved with Windows line endings as plain newlines', () => {
+		const plan = parseStoryZip(
+			zip({
+				'halden/story.md': '---\r\ntitle: "Halden"\r\n---\r\nThe description.\r\n',
+				'halden/unfiled/01-loose-end.md':
+					'---\r\ntitle: "Loose end"\r\nstatus: "final"\r\n---\r\nOne.\r\n\r\nTwo.\r\n',
+				'halden/notes/lore/the-toll.md':
+					'---\r\nname: "The Toll"\r\nkind: "lore"\r\n---\r\nSteep.\r\nVery.'
+			})
+		);
+		expect(plan.story.title).toBe('Halden');
+		expect(plan.story.descriptionMd).toBe('The description.');
+		expect(plan.unfiled).toEqual([{ title: 'Loose end', status: 'final', bodyMd: 'One.\n\nTwo.' }]);
+		expect(plan.notes).toEqual([{ kind: 'lore', name: 'The Toll', notesMd: 'Steep.\nVery.' }]);
+		expect(plan.problems).toEqual([]);
+	});
+
 	it('flags unknown statuses as problems and starts those scenes as drafts', () => {
 		const plan = parseStoryZip(full());
 		expect(plan.chapters[0].scenes[1].status).toBeNull();

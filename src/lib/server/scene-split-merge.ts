@@ -5,10 +5,11 @@ import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { textHash } from '#lib/text-hash';
+import { lfOffset, toLf } from '#lib/line-endings';
 import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
-import { storyIsLive } from './universe-scope.ts';
+import { inLiveStory, storyIsLive } from './universe-scope.ts';
 import { copiedSummaryStamp, summaryIsCurrent } from './summary-currency.ts';
 
 // Splitting and merging scenes. Both run in one transaction and record a
@@ -35,22 +36,28 @@ export async function splitScene(
 	const expected = baseHash ?? textHash(owned.bodyMd);
 
 	return await db.transaction(async (tx) => {
-		// Lock the scene before anything shifts and cut the text as it is under
-		// the lock, so an autosave that lands meanwhile is never replaced.
-		const [scene] = await tx
-			.select()
-			.from(scenes)
-			.where(and(eq(scenes.id, sceneId), isNull(scenes.deletedAt)))
-			.for('update');
+		// Cut the text as it is under the lock, so an autosave that lands
+		// meanwhile is never replaced.
+		const scene = await lockStoryScenes(tx, owned.storyId, sceneId);
 		if (!scene) return GONE;
-		if (textHash(scene.bodyMd) !== expected) {
+		// The editor reads \r\n as one newline, so its offset, fingerprint,
+		// and marker anchors all count in the newline text; a body imported
+		// with \r\n line breaks is cut, and stored, in that text. An offset
+		// placed in the stored text itself (the Assistant's) maps across.
+		const body = toLf(scene.bodyMd);
+		let at: number;
+		if (textHash(scene.bodyMd) === expected) {
+			at = Number.isInteger(offset) ? lfOffset(scene.bodyMd, offset) : offset;
+		} else if (body !== scene.bodyMd && textHash(body) === expected) {
+			at = offset;
+		} else {
 			return {
 				ok: false as const,
 				code: 'conflict' as const,
 				reason: 'The scene changed before it could be split. Check the text and try again.'
 			};
 		}
-		if (!Number.isInteger(offset) || offset <= 0 || offset >= scene.bodyMd.length) {
+		if (!Number.isInteger(at) || at <= 0 || at >= body.length) {
 			return {
 				ok: false as const,
 				code: 'invalid' as const,
@@ -60,8 +67,8 @@ export async function splitScene(
 
 		// Split exactly at the offset for the marker maths, then tidy the seam:
 		// the head sheds trailing blank space, the tail its leading blank space.
-		const rawHead = scene.bodyMd.slice(0, offset);
-		const rawTail = scene.bodyMd.slice(offset);
+		const rawHead = body.slice(0, at);
+		const rawTail = body.slice(at);
 		const head = rawHead.replace(/\s+$/, '');
 		const tailShift = rawTail.length - rawTail.replace(/^\s+/, '').length;
 		const tail = rawTail.slice(tailShift);
@@ -85,20 +92,21 @@ export async function splitScene(
 			.set({ bodyMd: head, wordCount: wordCount(head) })
 			.where(eq(scenes.id, scene.id));
 
-		// Markers from the cut onward move with their text; one straddling
-		// the cut stays behind, clamped to the first half.
+		// Markers whose text starts in the second half move with it (one
+		// starting in the seam's blank space has none in the first half); one
+		// straddling the cut stays behind, clamped to the first half.
 		const markers = await tx.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, scene.id));
 		for (const marker of markers) {
 			// An unanchored marker has nothing to move with; it stays put.
 			if (marker.anchorStart === null || marker.anchorEnd === null) continue;
-			if (marker.anchorStart >= offset) {
-				const start = Math.max(0, marker.anchorStart - offset - tailShift);
+			if (marker.anchorStart >= head.length) {
+				const start = Math.max(0, marker.anchorStart - at - tailShift);
 				await tx
 					.update(sceneMarkers)
 					.set({
 						sceneId: created,
 						anchorStart: Math.min(start, tail.length),
-						anchorEnd: Math.min(Math.max(start, marker.anchorEnd - offset - tailShift), tail.length)
+						anchorEnd: Math.min(Math.max(start, marker.anchorEnd - at - tailShift), tail.length)
 					})
 					.where(eq(sceneMarkers.id, marker.id));
 			} else if (marker.anchorEnd > head.length) {
@@ -117,9 +125,36 @@ export async function splitScene(
 
 const GONE = { ok: false, code: 'not_found', reason: 'That scene no longer exists.' } as const;
 
-// Inserts a scene directly after `source` (locked by the caller), shifting
-// the later scenes of its story and chapter down one. The shifted scenes keep
-// both timestamps: the writer did not change them. Returns the new id.
+// Locks every scene row of the story, lowest id first like mergeScenes, then
+// reads the scene. Inserting a scene shifts the later ones, so the whole story
+// is held: two splits in one story then take turns rather than handing out the
+// same position, and the order rows are locked in cannot deadlock a merge.
+// Returns null when the scene, or its story, is gone by then.
+async function lockStoryScenes(tx: Database, storyId: string, sceneId: string) {
+	await tx
+		.select({ id: scenes.id })
+		.from(scenes)
+		.where(eq(scenes.storyId, storyId))
+		.orderBy(asc(scenes.id))
+		.for('update');
+	// A fresh read, so it sees what a split that held the lock before us did.
+	const [scene] = await tx
+		.select()
+		.from(scenes)
+		.where(
+			and(
+				eq(scenes.id, sceneId),
+				eq(scenes.storyId, storyId),
+				isNull(scenes.deletedAt),
+				inLiveStory(scenes.storyId)
+			)
+		);
+	return scene ?? null;
+}
+
+// Inserts a scene directly after `source` (its story's scenes locked by the
+// caller), shifting the later scenes of its story and chapter down one. The
+// shifted scenes keep both timestamps: the writer did not change them. Returns the new id.
 async function makeRoomAfter(
 	tx: Database,
 	source: typeof scenes.$inferSelect,
@@ -217,17 +252,14 @@ export async function duplicateScene(
 	userId: string,
 	sceneId: string
 ): Promise<{ ok: true; newSceneId: string } | ActionFailure> {
-	if (!(await ownedScene(db, userId, sceneId))) return GONE;
+	const owned = await ownedScene(db, userId, sceneId);
+	if (!owned) return GONE;
 
 	const stamp = new Date();
 	return await db.transaction(async (tx) => {
-		// Lock the source and copy it as it is under the lock, so an autosave
-		// that lands meanwhile is in the copy.
-		const [scene] = await tx
-			.select()
-			.from(scenes)
-			.where(and(eq(scenes.id, sceneId), isNull(scenes.deletedAt)))
-			.for('update');
+		// Copy the source as it is under the lock, so an autosave that lands
+		// meanwhile is in the copy.
+		const scene = await lockStoryScenes(tx, owned.storyId, sceneId);
 		if (!scene) return GONE;
 
 		const created = await makeRoomAfter(tx, scene, {
