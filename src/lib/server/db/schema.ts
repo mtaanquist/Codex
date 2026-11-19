@@ -1,4 +1,5 @@
 import {
+	type AnyPgColumn,
 	bigint,
 	boolean,
 	check,
@@ -20,6 +21,7 @@ import {
 import { sql } from 'drizzle-orm';
 import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
 import type { DraftContent } from '../../drafts.ts';
+import type { ChatAttachment, ChatModelSettings } from '../../assistant-chat.ts';
 import { randomCoverColor } from '../../entity-color.ts';
 import { NOTIFICATION_KINDS, type NotificationPayload } from '../../notifications.ts';
 import { SCENE_STATUSES } from '../../scene-status.ts';
@@ -1267,6 +1269,13 @@ export const reviewSuggestions = pgTable(
 		rangeStart: integer('range_start').notNull(),
 		rangeEnd: integer('range_end').notNull(),
 		replacement: text('replacement').notNull().default(''),
+		// The Assistant's pattern note this edit is one instance of, so the
+		// writer can work through the note's fixes in order. The note may sit on
+		// another scene of the same story (a chapter-wide pattern). Deleting the
+		// note leaves the edit standing on its own.
+		patternThreadId: uuid('pattern_thread_id').references((): AnyPgColumn => reviewThreads.id, {
+			onDelete: 'set null'
+		}),
 		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
 			.notNull()
 			.default('pending'),
@@ -1279,7 +1288,8 @@ export const reviewSuggestions = pgTable(
 	(table) => [
 		index('review_suggestions_scene_idx').on(table.sceneId),
 		index('review_suggestions_story_idx').on(table.storyId),
-		index('review_suggestions_base_revision_idx').on(table.baseRevisionId)
+		index('review_suggestions_base_revision_idx').on(table.baseRevisionId),
+		index('review_suggestions_pattern_thread_idx').on(table.patternThreadId)
 	]
 );
 
@@ -1329,6 +1339,9 @@ export const assistantChats = pgTable(
 			.references(() => users.id)
 			.notNull(),
 		title: text('title').notNull().default(''),
+		// The model and effort the writer picked for this chat from the composer's
+		// model chip; null runs on the story's or account's default.
+		settings: jsonb('settings').$type<ChatModelSettings>(),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
@@ -1449,8 +1462,35 @@ export type ReviewFailure = {
 // show progress and a retry after a worker restart can pick up where it left
 // off. completed holds the scene ids already handled (reviewed or failed), so
 // the retry skips them.
+// One unit of the pattern pass (a chapter, or the whole book) as a run records
+// it: whether the survey ran, and for each pattern it found, its note and the
+// scenes whose fixes have been staged, so a resumed run neither re-sends the
+// text nor stages a scene twice.
+export type PatternUnitState = {
+	key: string;
+	surveyed: boolean;
+	patterns: {
+		name: string;
+		description: string;
+		sceneIds: string[];
+		examples: string[];
+		threadId?: string;
+		noteBody?: string;
+		applied: string[];
+	}[];
+	// A survey that goes part by part (the whole book, chapter by chapter):
+	// how many parts are done and what they found, so a stopped run resumes
+	// from the next part rather than paying for the earlier ones again.
+	partial?: {
+		parts: number;
+		found: { name: string; description: string; sceneIds: string[]; examples: string[] }[];
+	};
+};
+
 export type ReviewRunState = {
-	phase: 'summaries' | 'scenes' | 'consistency' | 'done';
+	phase: 'summaries' | 'patterns' | 'scenes' | 'consistency' | 'done';
+	// The pattern pass's progress, unit by unit (see PatternUnitState).
+	patterns?: PatternUnitState[];
 	// What the run was over (mode and target, see reviewScopeKey), so a later
 	// run over the same scope can carry on from a capped one.
 	scope?: string;
@@ -1519,6 +1559,8 @@ export const assistantJobSpend = pgTable('assistant_job_spend', {
 // decided across reloads and the revert knows which scenes to merge back.
 export type AssistantChatMeta = {
 	reference?: { sceneId: string; text: string };
+	// What the writer attached to a user turn; see #lib/assistant-chat.
+	attachments?: ChatAttachment[];
 	proposals?: {
 		sceneId: string;
 		sceneTitle: string | null;

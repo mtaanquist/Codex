@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
 	assistantGate,
+	chatModelInfo,
 	modelContextWindow,
 	pickModel,
 	type ResolvedConfig,
 	type StoredAccountConfig,
-	type StoredStoryOverride
+	type StoredStoryOverride,
+	withRoleOverride
 } from './config';
 
 function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfig {
@@ -146,5 +148,75 @@ describe('the suggested model', () => {
 
 	it('leaves a provider without a verified id and no picks with no model', () => {
 		expect(pickModel(resolved({ provider: 'gemini' }), 'chat')).toBe('');
+	});
+});
+
+describe('withRoleOverride', () => {
+	it('lays a chat model and effort over the role on Claude', () => {
+		const config = resolved({
+			provider: 'anthropic',
+			models: { chat: 'claude-sonnet-5', reviewer: 'claude-sonnet-5' }
+		});
+		const out = withRoleOverride(config, 'chat', { model: 'claude-opus-5', effort: 'high' });
+		expect(pickModel(out, 'chat')).toBe('claude-opus-5');
+		expect(out.tuning.chat?.effort).toBe('high');
+		expect(pickModel(out, 'reviewer')).toBe('claude-sonnet-5');
+	});
+
+	it('drops the effort on any other provider', () => {
+		const config = resolved({ provider: 'custom', models: { chat: 'local' } });
+		const out = withRoleOverride(config, 'chat', { effort: 'high' });
+		expect(out).toBe(config);
+	});
+
+	it('drops the effort on a Claude model that does not take one', () => {
+		const config = resolved({ provider: 'anthropic', models: { chat: 'claude-sonnet-4-5' } });
+		expect(withRoleOverride(config, 'chat', { effort: 'high' })).toBe(config);
+		const out = withRoleOverride(config, 'chat', { model: 'claude-haiku-4-5', effort: 'high' });
+		expect(out.tuning.chat?.effort).toBeUndefined();
+	});
+
+	it("drops the account's tuning when the chat picks another model", () => {
+		const config = resolved({
+			provider: 'anthropic',
+			models: { chat: 'claude-opus-5' },
+			tuning: { chat: { effort: 'high', temperature: 0.5, maxTokens: 300 } }
+		});
+		const out = withRoleOverride(config, 'chat', { model: 'claude-haiku-4-5' });
+		expect(out.tuning.chat).toEqual({});
+		expect(config.tuning.chat?.effort).toBe('high');
+		expect(chatModelInfo(out).effort).toBeNull();
+	});
+
+	it("keeps the role's tuning when the picked model is its own", () => {
+		const config = resolved({
+			provider: 'anthropic',
+			models: { chat: 'claude-opus-5' },
+			tuning: { chat: { temperature: 0.5 } }
+		});
+		const out = withRoleOverride(config, 'chat', { model: 'claude-opus-5', effort: 'low' });
+		expect(out.tuning.chat).toEqual({ temperature: 0.5, effort: 'low' });
+	});
+
+	it('leaves the config alone without a setting', () => {
+		const config = resolved();
+		expect(withRoleOverride(config, 'chat', {})).toBe(config);
+		expect(withRoleOverride(config, 'chat', undefined)).toBe(config);
+	});
+});
+
+describe('chatModelInfo', () => {
+	it('reports the chat model and its default effort on Claude', () => {
+		expect(
+			chatModelInfo(resolved({ provider: 'anthropic', models: { chat: 'claude-sonnet-5' } }))
+		).toEqual({ model: 'claude-sonnet-5', effort: 'medium', claude: true });
+	});
+
+	it('reports no effort elsewhere', () => {
+		expect(chatModelInfo(resolved({ models: { chat: 'local' } }))).toEqual({
+			model: 'local',
+			effort: null,
+			claude: false
+		});
 	});
 });

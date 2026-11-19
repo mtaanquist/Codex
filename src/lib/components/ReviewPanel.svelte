@@ -40,7 +40,9 @@
 		onAccepted = null,
 		assistant = null,
 		onAssistantReply = null,
-		onClearReviews = null
+		onClearReviews = null,
+		patternCounts = new Map(),
+		onWorkThrough = null
 	}: {
 		scene: { id: string; bodyMd: string };
 		threads: ReviewThread[];
@@ -67,6 +69,9 @@
 		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
 		// Opens the story-wide clear dialog (author only, when there are notes).
 		onClearReviews?: (() => void) | null;
+		// Pending edits per Assistant pattern note, and the guided pass over them.
+		patternCounts?: Map<string, number>;
+		onWorkThrough?: ((threadId: string) => void) | null;
 	} = $props();
 
 	const nComments = $derived(threads.filter((t) => t.resolvedAt === null).length);
@@ -270,6 +275,8 @@
 						onFocus={setFocused}
 						{assistant}
 						{onAssistantReply}
+						patternCount={patternCounts.get(card.thread.id) ?? 0}
+						{onWorkThrough}
 					/>
 				{:else}
 					<ReviewSuggestionCard

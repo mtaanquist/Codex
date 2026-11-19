@@ -60,13 +60,13 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 
 	await gotoReady(page, `/universes/${universeId}/insights`);
 	const panel = page.locator('.assistant');
-	const picker = panel.locator('.chat-picker-btn');
+	const picker = panel.locator('.chat-title');
 	// The most recent chat opens.
 	await expect(picker).toHaveText('Who is Marra?');
 	await expect(panel.locator('.chat-scroll')).toContainText('Marra is a ferrywoman.');
 
 	// The list shows both, newest first; a search narrows it.
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	const list = page.getByRole('dialog', { name: 'Your chats' });
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?', 'About the harbour']);
 	// Arrow keys move between the search box and the rows.
@@ -93,15 +93,15 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 	await expect(panel.locator('.chat-scroll')).not.toContainText('harbour freezes');
 
 	// Deleting a chat removes it from the list, and it stays gone on a reload.
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	await list.locator('.chat-row', { hasText: 'About the harbour' }).click();
-	await panel.getByRole('button', { name: 'More actions' }).click();
-	await page.getByRole('menuitem', { name: 'Delete chat' }).click();
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await panel.getByRole('option', { name: /Delete chat/ }).click();
 	await confirmPrompt(page, 'Delete chat');
 	await expect(picker).toHaveText('New chat');
 	await page.reload();
 	await expect(picker).toHaveText('Who is Marra?');
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	await expect(list.locator('.chat-row-title')).toHaveText(['Who is Marra?']);
 });
 
@@ -159,7 +159,7 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	await expect(page.locator('.story-title')).toHaveText('Ashfall');
 	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	const panel = page.locator('.assistant');
-	const picker = panel.locator('.chat-picker-btn');
+	const picker = panel.locator('.chat-title');
 	await expect(async () => {
 		await tab.click();
 		await expect(picker).toHaveText('Ash questions', { timeout: 2000 });
@@ -171,7 +171,7 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	await expect(page.locator('.story-title')).toHaveText('Birchwood');
 	await expect(picker).toHaveText('New chat');
 	await expect(panel.locator('.chat-scroll')).not.toContainText('ash falls');
-	await picker.click();
+	await panel.getByRole('button', { name: 'Chat history' }).click();
 	await expect(
 		page.getByRole('dialog', { name: 'Your chats' }).locator('.chat-row-title')
 	).toHaveCount(0);
@@ -179,7 +179,7 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 
 // Signs in as the Assistant account, starts a story in a fresh universe, and
 // opens the Assistant tab on a new chat.
-async function freshStoryPanel(page: Page, label: string) {
+async function freshStoryPanel(page: Page, label: string, storyTitle = 'Cinders') {
 	await gotoReady(page, '/login');
 	await page.getByLabel('Email').fill('assistant-e2e@example.com');
 	await page.getByLabel('Password').fill('e2e-password');
@@ -193,13 +193,13 @@ async function freshStoryPanel(page: Page, label: string) {
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
 	await gotoReady(page, '/');
 	await startStoryInUniverse(page, name);
-	await page.getByLabel('New story').fill('Cinders');
+	await page.getByLabel('New story').fill(storyTitle);
 	await page.getByRole('button', { name: 'Create story' }).click();
-	await expect(page.locator('.story-title')).toHaveText('Cinders');
+	await expect(page.locator('.story-title')).toHaveText(storyTitle);
 
 	const tab = page.locator('.right-head .seg-btn', { hasText: 'Assistant' });
 	const panel = page.locator('.assistant');
-	const picker = panel.locator('.chat-picker-btn');
+	const picker = panel.locator('.chat-title');
 	await expect(async () => {
 		await tab.click();
 		await expect(picker).toHaveText('New chat', { timeout: 2000 });
@@ -229,8 +229,8 @@ test('a failed catch-up in a new chat leaves the next question in a new chat', a
 			body: `data: ${JSON.stringify({ type: 'error', message: 'The endpoint failed.' })}\n\n`
 		});
 	});
-	await panel.getByRole('button', { name: 'More actions' }).click();
-	await page.getByRole('menuitem', { name: 'Catch me up' }).click();
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await panel.getByRole('option', { name: /Catch me up/ }).click();
 	await expect(panel.locator('.chat-scroll')).toContainText('The endpoint failed.');
 	await expect(picker).toHaveText('New chat');
 
@@ -292,9 +292,246 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 	await expect(picker).toHaveText('Who lit the fire?');
 });
 
+// The model chip picks a model for this chat only: it rides with the chat's
+// messages, and a new chat starts on the default again.
+test('the model chip sets the model for one chat', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Model');
+	await page.route('**/api/assistant/models', (route) =>
+		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
+	);
+	const settings: unknown[] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		settings.push((route.request().postDataJSON() as { settings?: unknown }).settings);
+		await route.fulfill({
+			status: 200,
+			headers: { 'content-type': 'text/event-stream' },
+			body: `data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+
+	const chip = panel.getByRole('button', { name: /Model for this chat/ });
+	const menu = page.getByRole('menu', { name: 'Model for this chat' });
+	// The chip toggles its menu.
+	await chip.click();
+	await expect(menu).toBeVisible();
+	await chip.click();
+	await expect(menu).toHaveCount(0);
+	await chip.click();
+	await expect(menu.getByRole('menuitemradio', { name: /Default/ })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await menu.getByRole('menuitemradio', { name: 'small-model' }).click();
+	await expect(menu).toHaveCount(0);
+	await expect(chip).toContainText('small-model');
+
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('Who lit the fire?');
+	await composer.press('Enter');
+	await expect.poll(() => settings.length).toBe(1);
+	expect(settings[0]).toEqual({ model: 'small-model' });
+
+	await panel.getByRole('button', { name: 'New chat' }).click();
+	await expect(chip).not.toContainText('small-model');
+});
+
+// Context from the + button: a story opens its own options, the pick shows as
+// a chip, goes with the next message only, and stays on that message.
+test('context added from the picker goes with the next message', async ({ page }) => {
+	const title = `Ember ${Date.now()}`;
+	const { panel } = await freshStoryPanel(page, 'Context', title);
+	const posted: { attachments?: unknown }[][] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as { messages: { attachments?: unknown }[] };
+		posted.push(body.messages);
+		const first = posted.length === 1;
+		const attachments = body.messages.at(-1)?.attachments as { id: string }[] | undefined;
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				// The whole book was sent, cut to fit.
+				...(first && attachments
+					? { 'x-chat-attachments': `story:${attachments[0].id}:book!` }
+					: {})
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'Read it.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+
+	await panel.getByRole('button', { name: 'Add context' }).click();
+	const search = page.getByLabel('Search for context to add');
+	await expect(search).toBeFocused();
+	await search.fill(title);
+	await expect(page.getByRole('option', { name: new RegExp(title) })).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('option', { name: /Outline and summaries/ })).toBeVisible();
+	await page.getByRole('option', { name: /Whole book/ }).click();
+	const chip = panel.locator('.composer .context-chip');
+	await expect(chip).toHaveText(new RegExp(`${title} \\(whole book\\)`));
+
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('What is this book about?');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.user .msg-attachment')).toHaveText(
+		`${title} (whole book) (shortened)`
+	);
+	await expect(chip).toHaveCount(0);
+	expect(posted[0].at(-1)?.attachments).toEqual([
+		expect.objectContaining({ kind: 'story', depth: 'book', label: title })
+	]);
+
+	await composer.fill('And the ending?');
+	await composer.press('Enter');
+	await expect.poll(() => posted.length).toBe(2);
+	expect(posted[1].at(-1)?.attachments).toBeUndefined();
+});
+
+test('the command menu and Tab keep a draft, and a refused send comes back', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Draft');
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+
+	// A command from the menu leaves the draft alone; one that takes input
+	// goes in front of it.
+	await composer.fill('Mira');
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await page.getByRole('option', { name: /Add context/ }).click();
+	await page.keyboard.press('Escape');
+	await expect(composer).toHaveValue('Mira');
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await page.getByRole('option', { name: /Character or place sheet/ }).click();
+	await expect(composer).toHaveValue('/who Mira');
+
+	// Tab completes a typed command without running it.
+	await composer.fill('/mu');
+	await composer.press('Tab');
+	await expect(composer).toHaveValue('/mute');
+	await expect(panel.getByRole('button', { name: 'Chat commands' })).toBeVisible();
+
+	// A send the server turns away goes back in the chat box.
+	await page.route('**/api/assistant/chat', (route) =>
+		route.fulfill({
+			status: 429,
+			contentType: 'application/json',
+			body: JSON.stringify({ message: 'Too many Assistant requests in a short time.' })
+		})
+	);
+	await composer.fill('Where does it end?');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message was not sent. Too many Assistant requests'
+	);
+	await expect(composer).toHaveValue('Where does it end?');
+	await expect(panel.locator('.msg.user')).toHaveCount(0);
+
+	// So does one that never reaches the server.
+	await page.unroute('**/api/assistant/chat');
+	await page.route('**/api/assistant/chat', (route) => route.abort('internetdisconnected'));
+	await composer.fill('And the middle?');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('And the middle?');
+	await expect(panel.locator('.msg.user')).toHaveCount(0);
+
+	// A /rewrite that cannot go ahead keeps the line.
+	await composer.fill('/rewrite cut the adverbs');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText('to use /rewrite');
+	await expect(composer).toHaveValue('/rewrite cut the adverbs');
+});
+
+// A model that could not be saved does not stay on the chip, and a starter
+// suggestion leaves a typed draft in the chat box.
+test('a failed model save reverts the chip, and a suggestion keeps the draft', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Revert');
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+
+	await page.route('**/api/assistant/chat', (route) =>
+		route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': '00000000-0000-4000-8000-000000000001',
+				'x-chat-title': 'Suggested'
+			},
+			body: `data: ${JSON.stringify({ type: 'done' })}\n\n`
+		})
+	);
+	await composer.fill('My own question');
+	await panel.locator('.suggest-chip').first().click();
+	await expect(panel.locator('.msg.user')).toHaveCount(1);
+	await expect(composer).toHaveValue('My own question');
+
+	await page.route('**/api/assistant/models', (route) =>
+		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
+	);
+	await page.route('**/api/assistant/chats/*', (route) =>
+		route.request().method() === 'PATCH' ? route.fulfill({ status: 500 }) : route.continue()
+	);
+	const chip = panel.getByRole('button', { name: /Model for this chat/ });
+	await chip.click();
+	await page
+		.getByRole('menu', { name: 'Model for this chat' })
+		.getByRole('menuitemradio', { name: 'small-model' })
+		.click();
+	await expect(page.getByText('Could not save the model')).toBeVisible();
+	await expect(chip).not.toContainText('small-model');
+});
+
+// A model picked in a new chat is saved to the chat a catch-up starts, and the
+// command menu's headings and options do not share ids.
+test('a catch-up keeps the model picked for a new chat', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Recap model');
+	await page.route('**/api/assistant/models', (route) =>
+		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
+	);
+	const recapId = '00000000-0000-4000-8000-000000000002';
+	await page.route('**/api/assistant/recap', (route) =>
+		route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': recapId,
+				'x-chat-created': '1',
+				'x-chat-title': 'Catch%20me%20up'
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'So far...' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		})
+	);
+	const patched: { url: string; body: unknown }[] = [];
+	await page.route('**/api/assistant/chats/*', (route) => {
+		if (route.request().method() !== 'PATCH') return route.continue();
+		patched.push({ url: route.request().url(), body: route.request().postDataJSON() });
+		return route.fulfill({ json: { ok: true } });
+	});
+
+	const chip = panel.getByRole('button', { name: /Model for this chat/ });
+	await chip.click();
+	await page
+		.getByRole('menu', { name: 'Model for this chat' })
+		.getByRole('menuitemradio', { name: 'small-model' })
+		.click();
+
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	const duplicates = await panel.evaluate((root) => {
+		const ids = [...root.querySelectorAll('[id]')].map((el) => el.id);
+		return ids.filter((id, i) => ids.indexOf(id) !== i);
+	});
+	expect(duplicates).toEqual([]);
+	await panel.getByRole('option', { name: /Catch me up/ }).click();
+	await expect(panel.locator('.chat-scroll')).toContainText('So far...');
+	await expect.poll(() => patched.length).toBe(1);
+	expect(patched[0].url).toContain(recapId);
+	expect(patched[0].body).toEqual({ settings: { model: 'small-model' } });
+	await expect(chip).toContainText('small-model');
+});
+
 // A reply the server did not store stays on screen, with a note when some of
-// it arrived, and the next question does not send it back as part of the
-// chat: a stream that ends in an error partway, one that closes without
+// it arrived (which can still be inserted), and the next question does not
+// send it back as part of the chat: a stream that ends in an error partway, one that closes without
 // saying it finished, and an error before any text.
 const UNFINISHED = [
 	{
@@ -303,12 +540,14 @@ const UNFINISHED = [
 			{ type: 'token', text: 'The boat is at' },
 			{ type: 'error', message: 'The connection closed before the reply finished.' }
 		],
-		shows: 'This reply was not saved.'
+		shows: 'This reply was not saved.',
+		insertable: true
 	},
 	{
 		name: 'closes without finishing',
 		frames: [{ type: 'token', text: 'The boat is at' }],
-		shows: 'This reply was not saved.'
+		shows: 'This reply was not saved.',
+		insertable: true
 	},
 	{
 		name: 'finishes but fails to save',
@@ -317,12 +556,14 @@ const UNFINISHED = [
 			{ type: 'done' },
 			{ type: 'error', message: 'The reply could not be saved.' }
 		],
-		shows: 'This reply was not saved.'
+		shows: 'This reply was not saved.',
+		insertable: true
 	},
 	{
 		name: 'fails before any text',
 		frames: [{ type: 'error', message: 'The connection closed before the reply finished.' }],
-		shows: 'The connection closed before the reply finished.'
+		shows: 'The connection closed before the reply finished.',
+		insertable: false
 	}
 ];
 
@@ -365,12 +606,12 @@ for (const unfinished of UNFINISHED) {
 		const chat = panel.locator('.chat-scroll');
 		await expect(chat).toContainText(unfinished.shows);
 		const insert = panel.getByRole('button', { name: 'Insert at cursor' });
-		await expect(insert).toHaveCount(0);
+		await expect(insert).toHaveCount(unfinished.insertable ? 1 : 0);
 
 		await composer.fill('Where is the boat?');
 		await composer.press('Enter');
 		await expect(chat).toContainText('The boat is at the quay.');
-		await expect(insert).toHaveCount(1);
+		await expect(insert).toHaveCount(unfinished.insertable ? 2 : 1);
 		expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
 	});
 }

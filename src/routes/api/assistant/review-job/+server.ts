@@ -5,9 +5,9 @@ import {
 	requireAssistantUniverse
 } from '#lib/server/llm/assistant-route';
 import { queueAssistantReview } from '#lib/server/jobs';
-import { parseCategories } from '#lib/review-shape';
+import { parseCategories, parsePatternScope, runPatternScope } from '#lib/review-shape';
 import { db } from '#lib/server/db';
-import { estimateStoryReview } from '#lib/server/llm/estimate';
+import { estimateStoryReview, wholeBookCheck } from '#lib/server/llm/estimate';
 import { AssistantDisabledError } from '#lib/server/llm/gateway';
 
 // Queues a background Assistant review (it fans over many scenes, too long for a
@@ -23,8 +23,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		universeId?: unknown;
 		chapterId?: unknown;
 		categories?: unknown;
+		patterns?: unknown;
 		mode?: unknown;
 		estimate?: unknown;
+		wholeBook?: unknown;
 	}>(request, locals);
 	const mode = payload.mode === 'continuity' ? 'continuity' : 'full';
 
@@ -33,6 +35,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// the per-scene copyedit pass only, so the continuity mode and the
 	// whole-universe scope are refused here rather than answered with a figure
 	// for something else.
+	// Whether the whole-book pattern pass can be offered for this story: it reads
+	// the scenes and counts them, and contacts no endpoint.
+	if (payload.wholeBook === true) {
+		const story = await requireAssistantStory(userId, payload.storyId);
+		const wholeBook = await wholeBookCheck(db, { userId, storyId: story.id });
+		return new Response(JSON.stringify({ wholeBook }), {
+			headers: { 'content-type': 'application/json' }
+		});
+	}
+
 	if (payload.estimate === true) {
 		if (mode === 'continuity' || typeof payload.universeId === 'string') {
 			error(400, 'An estimate is not available for this review type.');
@@ -43,7 +55,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				userId,
 				storyId: story.id,
 				chapterId: typeof payload.chapterId === 'string' ? payload.chapterId : undefined,
-				categories: parseCategories(payload.categories)
+				categories: parseCategories(payload.categories),
+				patterns: parsePatternScope(payload.patterns)
 			});
 			return new Response(JSON.stringify(estimate), {
 				headers: { 'content-type': 'application/json' }
@@ -76,8 +89,15 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	} else {
 		const chapterId = typeof payload.chapterId === 'string' ? payload.chapterId : undefined;
 		const categories = parseCategories(payload.categories);
+		const patterns = runPatternScope(categories, parsePatternScope(payload.patterns), chapterId);
 		const story = await requireAssistantStory(userId, payload.storyId);
-		jobId = await queueAssistantReview({ userId, storyId: story.id, chapterId, categories });
+		jobId = await queueAssistantReview({
+			userId,
+			storyId: story.id,
+			chapterId,
+			categories,
+			...(patterns ? { patterns } : {})
+		});
 	}
 	if (jobId === 'coalesced') {
 		error(

@@ -525,6 +525,7 @@ review_suggestions (
   range_end          int not null,           -- == range_start for a pure insertion
   replacement        text not null default '', -- '' for a pure deletion
   status             text not null default 'pending',  -- 'pending' | 'accepted' | 'rejected'
+  pattern_thread_id  uuid references review_threads(id) on delete set null,  -- the Assistant pattern note this edit fixes
   decided_by_user_id uuid references users(id),
   decided_at         timestamptz,
   created_at         timestamptz not null

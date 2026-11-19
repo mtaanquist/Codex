@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_chats" ADD COLUMN "settings" jsonb;
