@@ -15,6 +15,7 @@
 		type MarkVisibility
 	} from '#lib/editor';
 	import { mentionExtensions, type MentionEntity } from '#lib/editor-mentions';
+	import { pausedExtension } from '#lib/editor-paused';
 	import {
 		buildReviewMarks,
 		removeReviewMarks,
@@ -59,7 +60,8 @@
 		viewMenu,
 		onStartComment,
 		onStartSuggest,
-		onStatus = () => {}
+		onStatus = () => {},
+		paused = false
 	}: {
 		scene: { id: string; title: string | null; bodyMd: string };
 		chapterTitle: string;
@@ -89,6 +91,9 @@
 		onStartSuggest: (sel: { start: number; end: number; text: string }) => void;
 		// Save feedback for the app bar, same contract as SceneEditor's.
 		onStatus?: (status: SaveStatus) => void;
+		// Set while the page saves and then replaces the scene (a merge or
+		// duplicate); the editor takes no typing until it is done.
+		paused?: boolean;
 	} = $props();
 
 	// Autosave fires on a pause, not every keystroke; revisions coalesce a burst.
@@ -127,7 +132,7 @@
 
 	// Swap in the newer text; the edits made here since are dropped.
 	function loadNewer() {
-		if (!view || !conflict) return;
+		if (!view || !conflict || paused) return;
 		const newer = conflict.bodyMd;
 		saver.adopt(newer);
 		appliedBody = newer;
@@ -136,11 +141,20 @@
 	}
 
 	function keepMine() {
-		if (!conflict) return;
+		if (!conflict || paused) return;
 		saver.keepMine(conflict.bodyMd);
 		void autosave.flush();
 	}
 	const scheduleSave = autosave.schedule;
+
+	// Same contract as SceneEditor's, so the page can land pending saves before
+	// an action that reads the stored text.
+	export async function flushSave(): Promise<void> {
+		await autosave.flush();
+	}
+	export function isDirty(): boolean {
+		return autosave.hasUnsaved();
+	}
 
 	// View toggles, mirrored locally and persisted for the user the same way the
 	// Write editor does, so the choice carries between the two.
@@ -150,6 +164,7 @@
 	let commands = $state<MarkVisibility>(commandMarkers);
 	const nonPrintingCompartment = new Compartment();
 	const alignmentCompartment = new Compartment();
+	const pausedCompartment = new Compartment();
 
 	function toggleNonPrinting() {
 		nonPrinting = toggleNonPrintingMarks(nonPrinting);
@@ -318,6 +333,11 @@
 		if (!view) return;
 		view.dispatch({ effects: alignmentCompartment.reconfigure(extension) });
 	});
+	$effect(() => {
+		const extension = pausedExtension(paused);
+		if (!view) return;
+		view.dispatch({ effects: pausedCompartment.reconfigure(extension) });
+	});
 
 	// Bring the focused passage into view when focus arrives from the panel/nav.
 	// A whole-scene comment has no anchor, so take the reader to the scene start.
@@ -357,6 +377,7 @@
 							alignment: alignmentCompartment
 						}
 					}),
+					pausedCompartment.of(pausedExtension(paused)),
 					mentionExtensions(entities, {
 						storyMembers: mentionMembers,
 						pins: mentionPins,
