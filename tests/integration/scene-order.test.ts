@@ -136,7 +136,8 @@ describe('applySceneOrder', () => {
 		}
 	});
 
-	it('leaves chapter summaries alone when no scene changes chapter', async () => {
+	// A chapter summary reads its scenes in order (#1146).
+	it("marks only the reordered chapter's summary when scenes swap inside it", async () => {
 		await pool.query(
 			`update chapters set summary_md = 'S', summary_generated_at = updated_at where story_id = $1`,
 			[storyId]
@@ -150,12 +151,19 @@ describe('applySceneOrder', () => {
 		});
 		expect(result.ok).toBe(true);
 		const rows = await db
-			.select({ generatedAt: chapters.summaryGeneratedAt, updatedAt: chapters.updatedAt })
+			.select({
+				id: chapters.id,
+				generatedAt: chapters.summaryGeneratedAt,
+				updatedAt: chapters.updatedAt
+			})
 			.from(chapters)
 			.where(eq(chapters.storyId, storyId));
-		for (const row of rows) {
-			expect(row.generatedAt!.getTime()).toBe(row.updatedAt.getTime());
-		}
+		const current = (id: string) => {
+			const row = rows.find((r) => r.id === id)!;
+			return row.generatedAt!.getTime() >= row.updatedAt.getTime();
+		};
+		expect(current(chapterA)).toBe(false);
+		expect(current(chapterB)).toBe(true);
 	});
 
 	it('rejects an order that drops a scene', async () => {

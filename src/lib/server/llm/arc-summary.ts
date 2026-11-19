@@ -79,6 +79,21 @@ async function arcScenes(
 	return { scenes: out, storyIds: [...storyIds] };
 }
 
+// The request an arc refresh would send for this character as things stand,
+// with its fingerprint and the stories it reads; null when no live scene the
+// Assistant reads mentions them.
+export async function arcRequest(
+	db: Database,
+	character: { id: string; name: string; universeId: string }
+): Promise<{ messages: ChatMessage[]; input: string; storyIds: string[] } | null> {
+	const { scenes: found, storyIds } = await arcScenes(db, character.id, character.universeId);
+	if (found.length === 0) return null;
+	const messages: ChatMessage[] = [
+		{ role: 'user', content: buildArcMessage(character.name, sampleEvenly(found, MAX_ARC_SCENES)) }
+	];
+	return { messages, input: requestHash(messages), storyIds };
+}
+
 // Whether a cached arc is out of date: something it reads was marked since it
 // was written (see markStale in scene-lifecycle): a passage that mentions the
 // character changed, a new summary was written for a scene that does, or such a
@@ -140,8 +155,8 @@ export async function summariseCharacterArc(
 
 	// A real time, so any mark set while the model writes stands apart from it.
 	const startedAt = await dbNow(db);
-	const { scenes: found, storyIds } = await arcScenes(db, character.id, character.universeId);
-	if (found.length === 0) {
+	const request = await arcRequest(db, character);
+	if (!request) {
 		// Nothing left to retell (scenes deleted, or only in muted stories), so an
 		// earlier arc goes too rather than lingering in the context.
 		await db
@@ -156,10 +171,7 @@ export async function summariseCharacterArc(
 		return { outcome: 'empty' };
 	}
 
-	const messages: ChatMessage[] = [
-		{ role: 'user', content: buildArcMessage(character.name, sampleEvenly(found, MAX_ARC_SCENES)) }
-	];
-	const input = requestHash(messages);
+	const { messages, input, storyIds } = request;
 	// An arc marked out of date by a change it does not read (a passage past
 	// the first mention, a scene outside the sample) would be written from the
 	// same request, so it is only marked current. A current arc is rewritten
