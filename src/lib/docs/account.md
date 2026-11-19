@@ -203,7 +203,8 @@ Your words are sent only to the endpoint you set here.
   stop it, before the endpoint reports its token counts, Codex estimates them
   from what had arrived. Those rows say "estimated", and the 30-day total says
   how many it includes. A request you stopped can cost more than its estimate.
-  With other providers such a request shows "token counts not reported".
+  With other providers, a stopped or failed chat reply shows "token counts
+  not reported", and a failed background request is not listed.
 - **Spend cap**: a request that fails partway is counted from what had
   arrived, or at its reply limit if its thinking was not shown, and the run's
   notice marks the amount as estimated. If the endpoint leaves out the

@@ -916,7 +916,7 @@ export type StoryReviewResult = {
 	total: number;
 	// Set when the run stopped at a scene boundary because it had spent the
 	// account's ceiling; a distinct outcome from a failure or a cancellation.
-	// spentUsd is what it had spent when it stopped, an upper bound when
+	// spentUsd is what it had spent when it stopped, approximate when
 	// spentEstimated is set.
 	capped?: boolean;
 	spentUsd?: number;
