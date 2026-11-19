@@ -53,6 +53,19 @@ afterAll(async () => {
 	await pool.end();
 });
 
+// Waits until some statement in this database is blocked on a lock.
+async function waitForLockWait() {
+	for (let i = 0; i < 100; i++) {
+		const { rows } = await pool.query(
+			`select count(*)::int as n from pg_stat_activity
+			 where datname = current_database() and wait_event_type = 'Lock'`
+		);
+		if (rows[0].n > 0) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	throw new Error('nothing blocked');
+}
+
 async function makeScene(globalPosition: number, bodyMd: string, title: string | null = null) {
 	const [scene] = await db
 		.insert(scenes)
@@ -288,6 +301,26 @@ describe('mergeScenes', () => {
 			.from(scenes)
 			.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
 		expect(trashed).toHaveLength(1);
+	});
+
+	it('keeps a save that lands while the merge waits on a scene', async () => {
+		const a = await makeScene(1, 'One.');
+		const b = await makeScene(2, 'Two.');
+		// An autosave holds b's row; the merge starts and has to wait for it.
+		const holder = await pool.connect();
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [b.id]);
+			const merging = mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+			await waitForLockWait();
+			await holder.query('update scenes set body_md = $1 where id = $2', ['Two, revised.', b.id]);
+			await holder.query('commit');
+			expect((await merging).ok).toBe(true);
+		} finally {
+			holder.release();
+		}
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('One.\n\nTwo, revised.');
 	});
 
 	it('moves markers along with each merged body', async () => {
