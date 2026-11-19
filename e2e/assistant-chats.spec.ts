@@ -375,10 +375,11 @@ for (const unfinished of UNFINISHED) {
 	});
 }
 
-// A command's help text and a reply stopped before any text are not part of
-// the chat the next question sends.
-test('help text and a stopped empty reply are not sent back', async ({ page }) => {
-	const { panel } = await freshStoryPanel(page, 'Stopped empty');
+// A command's help text is not part of the chat the next question sends, and a
+// command typed while a reply is on its way waits, so the reply cannot land in
+// the command's message.
+test('help text is not sent back, and waits while a reply is on its way', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Help');
 	const sent: { role: string; content: string }[][] = [];
 	let release = () => {};
 	await page.route('**/api/assistant/chat', async (route) => {
@@ -388,18 +389,13 @@ test('help text and a stopped empty reply are not sent back', async ({ page }) =
 			messages: { role: string; content: string }[];
 		};
 		sent.push(body.messages);
-		if (sent.length === 1) {
-			// Held until the writer stops it.
-			await new Promise<void>((resolve) => (release = resolve));
-			await route.abort().catch(() => {});
-			return;
-		}
+		await new Promise<void>((resolve) => (release = resolve));
 		await route.fulfill({
 			status: 200,
 			headers: {
 				'content-type': 'text/event-stream',
 				'x-chat-id': body.chatId ?? body.newChatId ?? '',
-				'x-chat-created': '0',
+				'x-chat-created': sent.length === 1 ? '1' : '0',
 				'x-chat-title': encodeURIComponent('Where is the boat?')
 			},
 			body:
@@ -416,12 +412,11 @@ test('help text and a stopped empty reply are not sent back', async ({ page }) =
 	await composer.fill('Where is the boat?');
 	await composer.press('Enter');
 	await expect.poll(() => sent.length).toBe(1);
-	await panel.getByRole('button', { name: 'Stop generating' }).click();
-	release();
-
-	await composer.fill('Where is the boat?');
-	await composer.press('Enter');
-	await expect(chat).toContainText('At the quay.');
 	expect(sent[0].some((m) => m.content.includes('Commands you can type here'))).toBe(false);
-	expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
+	await composer.fill('/who');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('/who');
+	release();
+	await expect(chat).toContainText('At the quay.');
+	await expect(chat).not.toContainText('Name who to look up');
 });
