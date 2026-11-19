@@ -1,6 +1,7 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { isSceneStatus, type SceneStatus } from './scene-status';
 import { UUID_BODY } from './slug';
+import { toLf } from './line-endings';
 
 // Parses our own story export zip back into a plan the importer can write:
 // story metadata, chapters and scenes in NN- prefix order, story notes, and
@@ -185,7 +186,9 @@ export function parseStoryZip(bytes: Uint8Array): ImportPlan {
 	if (skippedDrafts) {
 		problems.push('The saved drafts in this archive were not imported, only the working draft.');
 	}
-	const read = (path: string) => strFromU8(entries[path]);
+	// An archive edited on Windows may carry \r\n line breaks; the editor and
+	// the front matter parser count a line break as one \n.
+	const read = (path: string) => toLf(strFromU8(entries[path]));
 
 	const storyDoc = parseFrontMatter(read(storyPath));
 	const story = {

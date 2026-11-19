@@ -1461,6 +1461,28 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 3 of staging/review-follow-ups: CRLF splits
+      and split locking (2026-11-19). The Codex archive import kept \r\n
+      line breaks (and so missed front matter, whose first line read
+      `---\r`); it now reads every text file through toLf
+      (`src/lib/line-endings.ts`, shared with the document importer). A
+      body already stored with \r\n could never be split from the editor:
+      CodeMirror reads it with plain newlines, so the fingerprint never
+      matched. splitScene now also accepts the fingerprint of the newline
+      text and cuts that text, storing both halves with plain newlines;
+      an offset placed in the stored text (the Assistant's locate) maps
+      across with lfOffset. Marker anchors on such a body already count in
+      the editor's newline text, since only the editor creates them, so
+      they need no mapping. Split and duplicate now lock every scene row of
+      the story, lowest id first like mergeScenes, then re-read the scene
+      with inLiveStory: two splits in one story could hand out the same
+      global_position (an UPDATE's snapshot misses a row the other split
+      inserted), and locking in heap order could deadlock a merge. Rows of
+      trashed scenes are locked too, since the shift moves them as well. A
+      marker starting in the seam's blank space and running past the cut
+      ended up inverted in the first half; one starting at or after the end
+      of the trimmed first half now moves to the new scene with its text.
+
 - [x] Staging review round 3, spend wording and help links
       (staging/review-follow-ups, 2026-11-19). Notices and the review modal
       said a run with estimated counts spent "up to" an amount, but only a
