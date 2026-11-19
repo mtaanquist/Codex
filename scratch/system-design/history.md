@@ -1461,6 +1461,21 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 2 of staging/review-follow-ups: split,
+      duplicate and chapter marks (2026-11-19). Writer trust: splitScene
+      read the body outside its transaction and wrote the head over the
+      row with no lock, so an autosave landing in between was dropped from
+      the live scene. It now locks the scene first and cuts the text read
+      under the lock, refusing with a conflict when that text no longer
+      matches the fingerprint of the text the offset was placed in (the
+      editor sends it; the Assistant's passage path uses the text the locate
+      read). duplicateScene locks its source the same way. Duplicating a
+      scene into a chapter, and adding a draft scene back into one, now mark
+      the chapter summary stale. trashScene marks the chapter the trash
+      update returns rather than one read before the transaction. The scenes
+      a split or duplicate shifts keep touched_at as well as updated_at
+      (keepTimestamps, shared with deleteChapter).
+
 - [x] Staging review round 1, jobs and billing (staging/review-follow-ups,
       2026-11-19). A refused arc settles as failed with a "declined" notice
       instead of being retried (and billed) by pg-boss; the review, summary,

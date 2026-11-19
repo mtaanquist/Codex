@@ -31,7 +31,8 @@ export type SceneSaveResult =
 // The autosave write for one scene. The check, the update and the revision
 // share one transaction under the scene's row lock, so two tabs cannot
 // interleave and History always ends on the stored text. The row lock comes
-// before recordRevision's advisory lock, the same order split and merge use.
+// before recordRevision's advisory lock, the same order split and merge use:
+// both lock their scenes first and work on the text as read under the lock.
 export async function saveSceneBody(
 	db: Database,
 	sceneId: string,

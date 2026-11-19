@@ -4,7 +4,15 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { sceneMarkers, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	chapters,
+	sceneMarkers,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
+import { textHash } from '../../src/lib/text-hash';
 import {
 	duplicateScene,
 	locateSplitInStory,
@@ -46,7 +54,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-	await pool.query('truncate table scene_markers, scenes cascade');
+	await pool.query('truncate table scene_markers, scenes, chapters cascade');
 });
 
 afterAll(async () => {
@@ -168,6 +176,46 @@ describe('splitScene', () => {
 			await pool.query('truncate table scene_markers, scenes cascade');
 		}
 	});
+
+	it('refuses to split when a save lands while the split waits on the scene', async () => {
+		const scene = await makeScene(1, 'First half stays. Second half moves.');
+		// An autosave holds the row; the split starts and has to wait for it.
+		const holder = await pool.connect();
+		let result;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [scene.id]);
+			const splitting = splitScene(db, ownerId, scene.id, 'First half stays. '.length);
+			await waitForLockWait();
+			await holder.query('update scenes set body_md = $1 where id = $2', [
+				'A new opening. First half stays. Second half moves.',
+				scene.id
+			]);
+			await holder.query('commit');
+			result = await splitting;
+		} finally {
+			holder.release();
+		}
+		expect(result).toMatchObject({ ok: false, code: 'conflict' });
+		const rows = await db.select().from(scenes).where(eq(scenes.storyId, storyId));
+		expect(rows.map((row) => row.bodyMd)).toEqual([
+			'A new opening. First half stays. Second half moves.'
+		]);
+	});
+
+	it('refuses to split text other than the text the cut was placed in', async () => {
+		const body = 'First half stays. Second half moves.';
+		const scene = await makeScene(1, body);
+		const cut = 'First half stays. '.length;
+		expect(
+			await splitScene(db, ownerId, scene.id, cut, textHash('Some older text here.'))
+		).toMatchObject({ ok: false, code: 'conflict' });
+		const [kept] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+		expect(kept.bodyMd).toBe(body);
+		expect(await splitScene(db, ownerId, scene.id, cut, textHash(body))).toMatchObject({
+			ok: true
+		});
+	});
 });
 
 describe('duplicateScene', () => {
@@ -270,6 +318,48 @@ describe('duplicateScene', () => {
 		if (!result.ok) return;
 		const [copy] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
 		expect(copy.title).toBeNull();
+	});
+
+	it('copies a save that lands while the duplicate waits on the scene', async () => {
+		const scene = await makeScene(1, 'Old text.');
+		const holder = await pool.connect();
+		let result;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [scene.id]);
+			const duplicating = duplicateScene(db, ownerId, scene.id);
+			await waitForLockWait();
+			await holder.query('update scenes set body_md = $1 where id = $2', ['New text.', scene.id]);
+			await holder.query('commit');
+			result = await duplicating;
+		} finally {
+			holder.release();
+		}
+		if (!result.ok) throw new Error('duplicate failed');
+		const [copy] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+		expect(copy.bodyMd).toBe('New text.');
+	});
+
+	it('marks the chapter summary out of date when the copy joins the chapter', async () => {
+		const stamp = new Date('2026-11-01T10:00:00Z');
+		const [chapter] = await db
+			.insert(chapters)
+			.values({
+				storyId,
+				position: 1,
+				summaryMd: 'From the Assistant',
+				summaryGeneratedAt: stamp,
+				updatedAt: stamp
+			})
+			.returning();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, chapterId: chapter.id, positionInChapter: 1, globalPosition: 1 })
+			.returning();
+		const result = await duplicateScene(db, ownerId, scene.id);
+		expect(result.ok).toBe(true);
+		const [after] = await db.select().from(chapters).where(eq(chapters.id, chapter.id));
+		expect(after.summaryGeneratedAt!.getTime()).toBeLessThan(after.updatedAt.getTime());
 	});
 
 	it('refuses a foreign scene and a missing scene', async () => {
@@ -393,7 +483,8 @@ describe('locateSplitInStory', () => {
 		expect(await locateSplitInStory(db, ownerId, scene.id, 'MIDCUT')).toEqual({
 			ok: true,
 			sceneId: scene.id,
-			offset: BODY.indexOf('MIDCUT')
+			offset: BODY.indexOf('MIDCUT'),
+			baseHash: textHash(BODY)
 		});
 	});
 

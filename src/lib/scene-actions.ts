@@ -22,10 +22,13 @@ export async function duplicateScene(storyId: string, sceneId: string) {
 	);
 }
 
-// Splits a scene at a character offset, or before an exact passage (the
-// Assistant's proposals); the server re-locates the passage against the
-// stored text, so flush any pending autosave first.
-export async function splitScene(sceneId: string, at: { offset: number } | { before: string }) {
+// Splits a scene at a character offset in the text baseHash fingerprints, or
+// before an exact passage (the Assistant's proposals); the server re-locates
+// the passage against the stored text, so flush any pending autosave first.
+export async function splitScene(
+	sceneId: string,
+	at: { offset: number; baseHash: string } | { before: string }
+) {
 	return await post<{ newSceneId: string; splitSceneId: string }>(
 		`/api/scenes/${sceneId}/split`,
 		at,

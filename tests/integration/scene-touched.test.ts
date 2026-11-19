@@ -26,6 +26,7 @@ const { setSceneStatus } = await import('../../src/lib/server/scene-status');
 const { trashScene, restoreScene, deleteChapter } =
 	await import('../../src/lib/server/scene-lifecycle');
 const { applySceneOrder } = await import('../../src/lib/server/scene-order');
+const { duplicateScene, splitScene } = await import('../../src/lib/server/scene-split-merge');
 
 let ownerId: string;
 let storyId: string;
@@ -156,6 +157,15 @@ describe('scene touched_at', () => {
 		expect(result.ok).toBe(true);
 		expect((await lastTouchedScene(db, storyId))?.id).toBe(third.id);
 		expect(await touchedAt(firstId)).toBe('2026-01-03T00:00:00.000Z');
+		expect(await touchedAt(secondId)).toBe('2026-01-02T00:00:00.000Z');
+	});
+
+	it('does not touch the scenes a split or a duplicate shifts along', async () => {
+		// The second scene sits after the first, so both operations on the
+		// first shift it down one place.
+		await pool.query('update scenes set body_md = $1 where id = $2', ['One. More.', firstId]);
+		expect(await splitScene(db, ownerId, firstId, 'One. '.length)).toMatchObject({ ok: true });
+		expect(await duplicateScene(db, ownerId, firstId)).toMatchObject({ ok: true });
 		expect(await touchedAt(secondId)).toBe('2026-01-02T00:00:00.000Z');
 	});
 

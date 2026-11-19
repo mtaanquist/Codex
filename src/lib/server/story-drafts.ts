@@ -20,6 +20,7 @@ import {
 } from './db/schema.ts';
 import type { ActionFailure } from './action-result.ts';
 import { recordRevision } from './revisions.ts';
+import { markChapterSummariesStale } from './scene-lifecycle.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { uniqueSlug } from './slugs.ts';
 import { isSerializationFailure, isUniqueViolation } from './db-errors.ts';
@@ -623,6 +624,9 @@ export async function restoreDraftScene(
 			})
 			.returning({ id: scenes.id });
 		await recordRevision(tx, 'scene', created.id, saved.bodyMd, 'restore', { label });
+		// The added scene's summary may be current, but its chapter now holds
+		// one more scene.
+		if (chapterId) await markChapterSummariesStale(tx, [chapterId]);
 		return { ok: true as const, sceneId: created.id, created: true };
 	});
 }

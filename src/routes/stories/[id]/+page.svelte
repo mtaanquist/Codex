@@ -504,7 +504,10 @@
 			// The offset must point into the stored text, so the pending autosave
 			// lands first.
 			if (!(await flushEditors())) return alert(SAVE_FAILED);
-			const result = await splitSceneAction(sceneId, { offset: cursor.offset });
+			const result = await splitSceneAction(sceneId, {
+				offset: cursor.offset,
+				baseHash: cursor.baseHash
+			});
 			if (!result.ok) return alert(result.message);
 			await openChangedScene(result.newSceneId);
 		});
