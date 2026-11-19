@@ -6,7 +6,13 @@ import {
 	assistantChatSummaries,
 	type AssistantChatMeta
 } from '../db/schema';
-import type { ChatSummary } from '../../assistant-chat.ts';
+import {
+	readChatSettings,
+	type ChatModelInfo,
+	type ChatModelSettings,
+	type ChatSummary
+} from '../../assistant-chat.ts';
+import { chatModelInfo, resolveLlmConfig } from './config';
 import { isUuid } from '../../slug.ts';
 import { estimateTokens } from './context/assemble';
 import { CHAT_BUDGET_TOKENS } from './context/budgets';
@@ -75,12 +81,18 @@ export async function getChat(
 	db: Database,
 	userId: string,
 	chatId: string
-): Promise<{ id: string; title: string; scope: ChatScope } | null> {
+): Promise<{
+	id: string;
+	title: string;
+	scope: ChatScope;
+	settings: ChatModelSettings;
+} | null> {
 	if (!isUuid(chatId)) return null;
 	const [row] = await db
 		.select({
 			id: assistantChats.id,
 			title: assistantChats.title,
+			settings: assistantChats.settings,
 			storyId: assistantChats.storyId,
 			universeId: assistantChats.universeId
 		})
@@ -90,8 +102,31 @@ export async function getChat(
 	return {
 		id: row.id,
 		title: row.title,
-		scope: row.storyId ? { storyId: row.storyId } : { universeId: row.universeId! }
+		scope: row.storyId ? { storyId: row.storyId } : { universeId: row.universeId! },
+		settings: readChatSettings(row.settings)
 	};
+}
+
+// Saves the model and effort picked for a chat; an empty setting clears it.
+// Only writes when the value changed, so a send that carries the same setting
+// as last time costs no write.
+export async function setChatSettings(
+	db: Database,
+	userId: string,
+	chatId: string,
+	settings: ChatModelSettings
+): Promise<void> {
+	const value = Object.keys(settings).length > 0 ? settings : null;
+	await db
+		.update(assistantChats)
+		.set({ settings: value })
+		.where(
+			and(
+				eq(assistantChats.id, chatId),
+				eq(assistantChats.userId, userId),
+				sql`${assistantChats.settings} is distinct from ${value === null ? null : JSON.stringify(value)}::jsonb`
+			)
+		);
 }
 
 function sameScope(a: ChatScope, b: ChatScope): boolean {
@@ -154,18 +189,37 @@ export async function loadAssistantChat(
 	chatId: string | null;
 	messages: StoredChatMessage[];
 	summarised: boolean;
+	settings: ChatModelSettings;
+	model: ChatModelInfo;
 }> {
-	const chats = await listChats(db, userId, scope);
+	const [chats, model] = await Promise.all([
+		listChats(db, userId, scope),
+		// The chip is a convenience: a config that cannot be read (a key that no
+		// longer decrypts) must not take the page down with it.
+		resolveLlmConfig(db, userId, 'storyId' in scope ? scope.storyId : undefined).then(
+			(resolved) => chatModelInfo(resolved.config),
+			(): ChatModelInfo => ({ model: '', effort: null, claude: false })
+		)
+	]);
 	const current = chats[0];
-	if (!current) return { chats, chatId: null, messages: [], summarised: false };
-	const [messages, [summary]] = await Promise.all([
+	if (!current)
+		return { chats, chatId: null, messages: [], summarised: false, settings: {}, model };
+	const [messages, [summary], chat] = await Promise.all([
 		listChat(db, userId, current.id),
 		db
 			.select({ id: assistantChatSummaries.id })
 			.from(assistantChatSummaries)
-			.where(eq(assistantChatSummaries.chatId, current.id))
+			.where(eq(assistantChatSummaries.chatId, current.id)),
+		getChat(db, userId, current.id)
 	]);
-	return { chats, chatId: current.id, messages, summarised: Boolean(summary) };
+	return {
+		chats,
+		chatId: current.id,
+		messages,
+		summarised: Boolean(summary),
+		settings: chat?.settings ?? {},
+		model
+	};
 }
 
 export async function listChat(

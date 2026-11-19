@@ -1,7 +1,7 @@
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assistantReviewRuns, scenes, type ReviewRunState } from './db/schema.ts';
-import { parseCategories, type ReviewCategory } from '../review-shape.ts';
+import { parseCategories, type PatternScope, type ReviewCategory } from '../review-shape.ts';
 
 // Progress storage for the background review job. The job writes its state as
 // it advances (one row per pg-boss job id), so the status endpoint can report
@@ -21,6 +21,7 @@ type ScopeInput = {
 	chapterId?: string;
 	categories?: ReviewCategory[];
 	mode?: 'full' | 'continuity';
+	patterns?: PatternScope;
 };
 
 function scopeTarget(input: ScopeInput): string {
@@ -35,7 +36,10 @@ export function reviewScopeKey(input: ScopeInput): string {
 	const target = scopeTarget(input);
 	if (input.mode === 'continuity') return `continuity:${target}`;
 	const categories = parseCategories(input.categories);
-	return `full:${target}:${categories.length ? categories.join('+') : 'general'}`;
+	const base = `full:${target}:${categories.length ? categories.join('+') : 'general'}`;
+	// A pattern pass is part of what the run does, so it is its own scope; a run
+	// without one keeps the key it always had.
+	return input.patterns ? `${base}:patterns-${input.patterns}` : base;
 }
 
 // LEGACY, remove with the legacy queues (#1041): the key a copyedit had before
@@ -213,6 +217,9 @@ async function carryForward(
 		failures: state.failures.filter((failure) => failure.sceneId && !redo.has(failure.sceneId)),
 		...(Object.keys(reviewedAt).length ? { reviewedAt } : {}),
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
+		// The pattern pass's surveys, notes, and fixed scenes, so a continued run
+		// neither pays for them again nor raises the same habits twice.
+		...(state.patterns ? { patterns: state.patterns } : {}),
 		capped: false,
 		spentUsd: 0,
 		carriedForward: true

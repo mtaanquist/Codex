@@ -36,7 +36,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	pool: pg.Pool;
 };
 const { resetRateLimits } = await import('#lib/server/rate-limit');
-const { saveAccountLlmConfig, saveStoryLlmOverride } =
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const { deleteChat, listChat, listChats, resolveChat } =
 	await import('../../src/lib/server/llm/chat-history');
@@ -50,6 +50,8 @@ const {
 const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
+const modelsRoute = await import('../../src/routes/api/assistant/models/+server');
+const contextRoute = await import('../../src/routes/api/assistant/context/+server');
 
 let userId: string;
 let universeId: string;
@@ -566,6 +568,176 @@ describe('chats over the endpoints', () => {
 		expect(await listChats(db, userId, { storyId })).toHaveLength(1);
 	});
 
+	it('runs a chat on its own model and keeps that choice with the chat', async () => {
+		const models: string[] = [];
+		providerSlot.current = {
+			...streamingProvider(async function* () {
+				yield { type: 'token', text: 'Answer.' };
+				yield { type: 'done' };
+			}),
+			chatStream: (req) => {
+				models.push(req.model);
+				return (async function* (): AsyncIterable<StreamEvent> {
+					yield { type: 'token', text: 'Answer.' };
+					yield { type: 'done' };
+				})();
+			},
+			async respond(req) {
+				models.push(req.model);
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Hi.' }],
+				settings: { model: 'other-model', effort: 'bogus' }
+			})
+		).text();
+		expect(models.at(-1)).toBe('other-model');
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
+		// A send without a setting (an older client) leaves the stored choice
+		// alone and runs on it.
+		models.length = 0;
+		await (
+			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Again.' }] })
+		).text();
+		expect(models.at(-1)).toBe('other-model');
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
+		// Anything but a settings object leaves it alone too.
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Third.' }],
+				settings: null
+			})
+		).text();
+		expect(models.at(-1)).toBe('other-model');
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
+		// Picking Default in the chip clears it, and the next send runs on the default.
+		const patch = async (body: unknown) =>
+			chatsRoute.PATCH({
+				params: { id: chatId },
+				request: new Request('http://localhost', {
+					method: 'PATCH',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(body)
+				}),
+				locals: { user: { id: userId } }
+			} as unknown as Parameters<typeof chatsRoute.PATCH>[0]);
+		// Clearing takes an explicit {}.
+		await expectStatus(patch({}), 400);
+		const patched = await patch({ settings: {} });
+		expect(patched.status).toBe(200);
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({});
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Once more.' }],
+				settings: {}
+			})
+		).text();
+		expect(models.at(-1)).toBe('chat-model');
+	});
+
+	it('sends attachments with the newest message only, and stores them with it', async () => {
+		const sent: string[][] = [];
+		const answer = async function* (): AsyncIterable<StreamEvent> {
+			yield { type: 'token', text: 'Answer.' };
+			yield { type: 'done' };
+		};
+		providerSlot.current = {
+			...streamingProvider(answer),
+			chatStream: (req) => {
+				sent.push(req.messages.filter((m) => m.role === 'user').map((m) => m.content));
+				return answer();
+			},
+			async respond(req) {
+				sent.push(req.messages.filter((m) => m.role === 'user').map((m) => m.content));
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+		const attachment = { kind: 'scene', id: sceneId, label: 'Scene 1' };
+		// Gone since it was picked: left out, and the header says which were sent.
+		const gone = { kind: 'note', id: '11111111-1111-4111-8111-111111111111', label: 'Old' };
+		const first = await chatPost({
+			storyId,
+			chatId,
+			messages: [{ role: 'user', content: 'Where to cut?', attachments: [attachment, gone] }]
+		});
+		await first.text();
+		expect(first.headers.get('x-chat-attachments')).toBe(`scene:${sceneId}`);
+		expect(sent.at(-1)!.at(-1)).toContain('The first half ends here.');
+		expect((await listChat(db, userId, chatId))[0].meta).toEqual({ attachments: [attachment] });
+
+		// The next message names the earlier attachment but does not send it again.
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [
+					{ role: 'user', content: 'Where to cut?', attachments: [attachment] },
+					{ role: 'assistant', content: 'Answer.' },
+					{ role: 'user', content: 'And then?' }
+				]
+			})
+		).text();
+		const last = sent.at(-1)!;
+		expect(last[0]).toContain('(The writer attached scene "Scene 1" to this message.)');
+		// A message without attachments says nothing about them.
+		expect(
+			(
+				await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })
+			).headers.get('x-chat-attachments')
+		).toBeNull();
+		expect(last.join('\n')).not.toContain('The first half ends here.');
+	});
+
+	it('drops a new chat again when a step before its first turn fails', async () => {
+		// A stored key that no longer decrypts makes the config unreadable.
+		await pool.query(
+			`update users set llm_config = llm_config || '{"apiKeyEnc":"not-a-secret"}'::jsonb where id = $1`,
+			[userId]
+		);
+		const before = (await listChats(db, userId, { storyId })).length;
+		await expect(
+			chatPost({
+				storyId,
+				newChatId: '22222222-2222-4222-8222-222222222222',
+				messages: [{ role: 'user', content: 'Hi.' }]
+			})
+		).rejects.toThrow();
+		expect(await listChats(db, userId, { storyId })).toHaveLength(before);
+	});
+
+	it("refuses to save the model on another writer's chat", async () => {
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'O', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await expectStatus(
+			Promise.resolve(
+				chatsRoute.PATCH({
+					params: { id: chatId },
+					request: new Request('http://localhost', {
+						method: 'PATCH',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ settings: { model: 'x' } })
+					}),
+					locals: { user: { id: other.id } }
+				} as unknown as Parameters<typeof chatsRoute.PATCH>[0])
+			),
+			404
+		);
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({});
+	});
+
 	it('loads and deletes a chat', async () => {
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })
@@ -576,10 +748,75 @@ describe('chats over the endpoints', () => {
 				{ role: 'user', content: 'Hi.', meta: null },
 				{ role: 'assistant', content: 'Answer.', meta: null }
 			],
-			summarised: false
+			summarised: false,
+			settings: {}
 		});
 		expect((await onChat('DELETE', chatId)).status).toBe(200);
 		expect(await listChats(db, userId, { storyId })).toEqual([]);
+	});
+});
+
+describe('the model list', () => {
+	function getModels() {
+		return modelsRoute.GET({
+			locals: { user: { id: userId } }
+		} as unknown as Parameters<typeof modelsRoute.GET>[0]) as Promise<Response>;
+	}
+
+	it("lists the endpoint's models with the ones already set", async () => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {}),
+			async listModels() {
+				return [{ id: 'b-model' }, { id: 'a-model' }];
+			}
+		};
+		expect(await (await getModels()).json()).toEqual({
+			models: ['a-model', 'b-model', 'chat-model'],
+			complete: true
+		});
+	});
+
+	it('still offers the models already set when the endpoint cannot list them', async () => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {}),
+			async listModels() {
+				throw new Error('no listing');
+			}
+		};
+		expect(await (await getModels()).json()).toEqual({ models: ['chat-model'], complete: false });
+	});
+
+	it('refuses while the Assistant is off', async () => {
+		await configure(false);
+		await expectStatus(getModels(), 403);
+	});
+});
+
+describe('the context picker', () => {
+	function getContext(query: string) {
+		return contextRoute.GET({
+			url: new URL(`http://localhost/api/assistant/context?${query}`),
+			locals: { user: { id: userId } }
+		} as unknown as Parameters<typeof contextRoute.GET>[0]) as Promise<Response>;
+	}
+
+	it('searches the library and prices the whole book on the chat model', async () => {
+		const found = await (await getContext('q=Scene')).json();
+		expect(found.items.map((item: { label: string }) => item.label)).toEqual(['Scene 1']);
+		expect((await (await getContext(`storyId=${storyId}`)).json()).usd).toBeNull();
+		await saveModelPricing(db, userId, { 'chat-model': { prompt: 0.001, completion: 0.002 } });
+		const priced = await (await getContext(`storyId=${storyId}&model=chat-model`)).json();
+		expect(priced.usd).toBeCloseTo(priced.tokens * 0.001);
+	});
+
+	it("refuses a story that is not a story, or not the writer's", async () => {
+		await expectStatus(getContext('storyId=nope'), 404);
+		await expectStatus(getContext('storyId=11111111-1111-4111-8111-111111111111'), 404);
+	});
+
+	it('refuses while the Assistant is off', async () => {
+		await configure(false);
+		await expectStatus(getContext('q='), 403);
 	});
 });
 

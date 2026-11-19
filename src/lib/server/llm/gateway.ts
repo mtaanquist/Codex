@@ -7,6 +7,7 @@ import {
 	resolveLlmConfig,
 	roleExtraParams,
 	roleMaxTokens,
+	withRoleOverride,
 	type AssistantRole,
 	type EffortLevel,
 	type ResolvedConfig,
@@ -47,6 +48,7 @@ import {
 	billedUsage
 } from './providers/types.ts';
 import type { SpendMeter } from './spend.ts';
+import type { ChatModelSettings } from '../../assistant-chat.ts';
 
 // Adds one request's reported counts to a running total, so a caller can price
 // a whole agentic turn. Undefined stays undefined until something is reported.
@@ -160,6 +162,8 @@ export type GatewayRequest = {
 	// derived from storyId's own universe on the story-focused surfaces.
 	universeId?: string;
 	role: AssistantRole;
+	// A chat's own model and effort for this role (the composer's model chip).
+	override?: ChatModelSettings;
 	messages: ChatMessage[];
 	// Offer the read/write tools this turn. Requires a story context and an
 	// endpoint that can call tools; off for plain continuation/co-author turns.
@@ -355,7 +359,8 @@ async function webSearchAllowed(
 }
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
-	const resolved = await resolveLlmConfig(db, req.userId, req.storyId);
+	const base = await resolveLlmConfig(db, req.userId, req.storyId);
+	const resolved = { ...base, config: withRoleOverride(base.config, req.role, req.override) };
 	// The backstop gate: surfaces check this before calling, but a background
 	// caller might not, so refuse here too. surfacesEnabled is account-on and
 	// this story not muted.
@@ -615,7 +620,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				calls > p.toolBudget
 					? { result: 'Tool-call budget reached; answer with what you have.', staged: false }
 					: await dispatchToolCall(p.toolContext!, call);
-			if (outcome.note) notes += 1;
+			notes += outcome.noteCount ?? (outcome.note ? 1 : 0);
 			if (outcome.surface) {
 				surfaces.push({ type: 'proposal', proposal: outcome.surface.proposal });
 			}

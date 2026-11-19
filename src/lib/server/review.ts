@@ -317,6 +317,35 @@ async function assistantThreadExists(
 	return Boolean(row);
 }
 
+// The Assistant's open whole-scene note on a scene that begins with this text,
+// for a pattern note retried with the same comment: the retry adds its edits
+// to the note rather than opening a second one.
+export async function openAssistantNote(
+	db: Database,
+	sceneId: string,
+	opening: string
+): Promise<string | null> {
+	const [row] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+		.where(
+			and(
+				eq(reviewThreads.sceneId, sceneId),
+				isNull(reviewThreads.suggestionId),
+				isNull(reviewThreads.resolvedAt),
+				isNull(reviewThreads.anchorStart),
+				eq(reviewComments.assistant, true),
+				sql`starts_with(${reviewComments.bodyMd}, ${opening})`,
+				// The note's own opening comment, not a reply in its thread.
+				sql`not exists (select 1 from ${reviewComments} as earlier where earlier.thread_id = ${reviewThreads.id} and earlier.created_at < ${reviewComments.createdAt})`
+			)
+		)
+		.orderBy(asc(reviewThreads.createdAt))
+		.limit(1);
+	return row?.id ?? null;
+}
+
 // Opens a thread with its first comment. A null anchor is a whole-scene
 // comment; a range must be a real selection inside the current text.
 export async function createThread(
@@ -645,10 +674,29 @@ export async function createSuggestion(
 		author: ThreadAuthor;
 		range: { start: number; end: number };
 		replacement: string;
+		// The Assistant's pattern note this edit is an instance of. It must be a
+		// standalone thread of the same story; it may sit on another scene.
+		patternThreadId?: string;
+		// The text the range was found on, where the caller located it on its
+		// own copy of the scene: refused when the scene no longer has it there.
+		original?: string;
 	}
 ): Promise<{ ok: true; suggestionId: string } | { ok: false; reason: string }> {
 	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
 		return { ok: false, reason: 'That suggestion is too long.' };
+	}
+	if (input.patternThreadId) {
+		const [note] = await db
+			.select({ id: reviewThreads.id })
+			.from(reviewThreads)
+			.where(
+				and(
+					eq(reviewThreads.id, input.patternThreadId),
+					eq(reviewThreads.storyId, input.storyId),
+					isNull(reviewThreads.suggestionId)
+				)
+			);
+		if (!note) return { ok: false, reason: 'That pattern note does not exist.' };
 	}
 	const [scene] = await db
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
@@ -663,6 +711,12 @@ export async function createSuggestion(
 	}
 	if (start < 0 || end > scene.bodyMd.length || start > end) {
 		return { ok: false, reason: 'That selection no longer matches the text.' };
+	}
+	if (input.original !== undefined && scene.bodyMd.slice(start, end) !== input.original) {
+		return {
+			ok: false,
+			reason: 'The scene changed while this was staged; find the passage again.'
+		};
 	}
 	if (scene.bodyMd.slice(start, end) === input.replacement) {
 		return { ok: false, reason: 'That suggestion changes nothing.' };
@@ -696,8 +750,15 @@ export async function createSuggestion(
 		}
 	}
 
-	const [row] = await db.transaction(async (tx) => {
+	const rows = await db.transaction(async (tx) => {
 		await sceneRevisionLock(tx, scene.id);
+		// A save between the read above and the lock moves the text under the
+		// range, so the range is pinned only to the body it was checked on.
+		const [current] = await tx
+			.select({ bodyMd: scenes.bodyMd })
+			.from(scenes)
+			.where(eq(scenes.id, scene.id));
+		if (current?.bodyMd !== scene.bodyMd) return [];
 		const baseRevisionId = await ensureBaseRevision(tx, scene.id, scene.bodyMd);
 		return await tx
 			.insert(reviewSuggestions)
@@ -708,10 +769,18 @@ export async function createSuggestion(
 				baseRevisionId,
 				rangeStart: start,
 				rangeEnd: end,
-				replacement: input.replacement
+				replacement: input.replacement,
+				patternThreadId: input.patternThreadId ?? null
 			})
 			.returning({ id: reviewSuggestions.id });
 	});
+	const [row] = rows;
+	if (!row) {
+		return {
+			ok: false,
+			reason: 'The scene changed while this was staged; find the passage again.'
+		};
+	}
 	return { ok: true, suggestionId: row.id };
 }
 
@@ -734,6 +803,8 @@ export type SuggestionView = {
 	// been rewritten, which also blocks accepting it.
 	anchor: { start: number; end: number } | null;
 	anchorLost: boolean;
+	// The Assistant pattern note this edit belongs to, if any.
+	patternThreadId: string | null;
 	createdAt: Date;
 	decidedAt: Date | null;
 };
@@ -858,10 +929,66 @@ export async function listSuggestions(
 			status: row.suggestion.status,
 			anchor,
 			anchorLost: row.suggestion.status === 'pending' && anchor === null,
+			patternThreadId: row.suggestion.patternThreadId,
 			createdAt: row.suggestion.createdAt,
 			decidedAt: row.suggestion.decidedAt
 		};
 	});
+}
+
+// An accepted Assistant edit that belongs to a pattern note, with where its
+// new text now sits in the scene (a deletion is the point where the text was
+// taken out), for the re-read after an accept. Null unless the story is the
+// owner's, the suggestion is accepted, and it is linked to a note; spot is null
+// when the change can no longer be found in the current text.
+export async function acceptedPatternEdit(
+	db: Database,
+	userId: string,
+	suggestionId: string
+): Promise<{
+	storyId: string;
+	sceneId: string;
+	patternThreadId: string;
+	replacement: string;
+	bodyMd: string;
+	sceneTitle: string | null;
+	spot: { start: number; end: number } | null;
+} | null> {
+	const [row] = await db
+		.select({
+			suggestion: reviewSuggestions,
+			baseBody: revisions.bodyMd,
+			bodyMd: scenes.bodyMd,
+			sceneTitle: scenes.title
+		})
+		.from(reviewSuggestions)
+		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
+		.innerJoin(revisions, eq(reviewSuggestions.baseRevisionId, revisions.id))
+		.innerJoin(stories, eq(reviewSuggestions.storyId, stories.id))
+		.where(and(eq(reviewSuggestions.id, suggestionId), eq(stories.ownerId, userId), storyIsLive()));
+	const suggestion = row?.suggestion;
+	if (!suggestion || suggestion.status !== 'accepted' || !suggestion.patternThreadId) return null;
+	// The new text sits where the original was, so either edge of the original
+	// can place it; whichever edge still lies in unchanged text is used, and the
+	// replacement must be found right there.
+	const mapper = createAnchorMapper();
+	const length = suggestion.replacement.length;
+	const holds = (start: number) =>
+		start >= 0 && row.bodyMd.slice(start, start + length) === suggestion.replacement;
+	const before = mapper.point(row.baseBody, row.bodyMd, suggestion.rangeStart);
+	const after = mapper.point(row.baseBody, row.bodyMd, suggestion.rangeEnd);
+	let spot: { start: number; end: number } | null = null;
+	if (before !== null && holds(before)) spot = { start: before, end: before + length };
+	else if (after !== null && holds(after - length)) spot = { start: after - length, end: after };
+	return {
+		storyId: suggestion.storyId,
+		sceneId: suggestion.sceneId,
+		patternThreadId: suggestion.patternThreadId,
+		replacement: suggestion.replacement,
+		bodyMd: row.bodyMd,
+		sceneTitle: row.sceneTitle,
+		spot
+	};
 }
 
 // Revises the replacement text of the Assistant's own pending suggestion -
@@ -901,12 +1028,17 @@ export async function updateAssistantSuggestion(
 // a revision and leaving the mention index to the caller's enqueue. A
 // passage that was edited since, even inside it, cannot be accepted, only
 // rejected.
+//
+// override is the owner's own wording, accepted in place of the proposed
+// replacement (the guided pass's Edit). The suggestion then records the text
+// that was applied.
 export async function decideSuggestion(
 	db: Database,
 	userId: string,
 	storyId: string,
 	suggestionId: string,
-	accept: boolean
+	accept: boolean,
+	override?: string
 ): Promise<
 	| { ok: true; sceneId: string | null; bodyMd: string | null; baseHash: string | null }
 	| { ok: false; reason: string }
@@ -935,6 +1067,20 @@ export async function decideSuggestion(
 	if (row.suggestion.status !== 'pending') {
 		return { ok: false, reason: 'That suggestion was already decided.' };
 	}
+	if (override !== undefined) {
+		// Rewording is the guided pass's Edit, on a pattern note's own edits; any
+		// other suggestion is taken or left as its author proposed it.
+		if (!row.suggestion.patternThreadId) {
+			return { ok: false, reason: 'Only the edits of a pattern note can be reworded here.' };
+		}
+		if (override.length > MAX_REPLACEMENT_LENGTH) {
+			return { ok: false, reason: 'That suggestion is too long.' };
+		}
+		if (!override.trim() && row.suggestion.replacement !== '') {
+			return { ok: false, reason: 'Write the wording to use, or skip this change.' };
+		}
+	}
+	const replacement = accept && override !== undefined ? override : row.suggestion.replacement;
 
 	if (!accept) {
 		await db
@@ -973,14 +1119,12 @@ export async function decideSuggestion(
 				};
 			}
 			const newBody =
-				scene.bodyMd.slice(0, anchor.start) +
-				row.suggestion.replacement +
-				scene.bodyMd.slice(anchor.end);
+				scene.bodyMd.slice(0, anchor.start) + replacement + scene.bodyMd.slice(anchor.end);
 			// Guard the status inside the transaction so two decisions cannot
 			// both apply; the loser matches no pending row and changes nothing.
 			const decided = await tx
 				.update(reviewSuggestions)
-				.set({ status: 'accepted', decidedByUserId: userId, decidedAt: sql`now()` })
+				.set({ status: 'accepted', decidedByUserId: userId, decidedAt: sql`now()`, replacement })
 				.where(and(eq(reviewSuggestions.id, suggestionId), eq(reviewSuggestions.status, 'pending')))
 				.returning({ id: reviewSuggestions.id });
 			if (decided.length === 0)

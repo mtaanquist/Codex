@@ -3,7 +3,12 @@ import type { Database } from '../auth.ts';
 import { stories, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
-import { normaliseProviderId, providerPreset, type ProviderId } from './providers/presets.ts';
+import {
+	adapterKind,
+	normaliseProviderId,
+	providerPreset,
+	type ProviderId
+} from './providers/presets.ts';
 import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
 import { markMentionsStale } from '../scene-lifecycle.ts';
@@ -12,6 +17,8 @@ import {
 	EFFORT_LEVELS,
 	MAX_REPLY_TOKENS,
 	MAX_TEMPERATURE,
+	claudeEffort,
+	modelTakesEffort,
 	resolveRoleModel,
 	type AssistantRole,
 	type EffortLevel,
@@ -19,6 +26,7 @@ import {
 	type RoleTuning,
 	type TuningMap
 } from '../../assistant-tuning.ts';
+import type { ChatModelInfo, ChatModelSettings } from '../../assistant-chat.ts';
 
 // The Assistant's per-account and per-story configuration. The reserved
 // users.llm_config and stories.llm_config jsonb columns hold this; both are
@@ -431,6 +439,48 @@ export async function resolveLlmConfig(
 // The model a role runs on; see resolveRoleModel for the order.
 export function pickModel(config: ResolvedConfig, role: AssistantRole): string {
 	return resolveRoleModel(config.models, role, suggestedModel(config.provider, role));
+}
+
+// A chat's own model and effort (the composer's model chip) laid over a role.
+// Effort is a Claude setting, so any other provider or model drops it.
+export function withRoleOverride(
+	config: ResolvedConfig,
+	role: AssistantRole,
+	override: ChatModelSettings | undefined
+): ResolvedConfig {
+	const model = override?.model;
+	const models = model ? { ...config.models, [role]: model } : config.models;
+	// Only a Claude model that takes an effort level gets one; others reject it,
+	// so a model picked for the chat also drops the account's effort for it.
+	const takesEffort =
+		adapterKind(config.provider) === 'anthropic' &&
+		modelTakesEffort(resolveRoleModel(models, role, suggestedModel(config.provider, role)));
+	const effort = takesEffort ? override?.effort : undefined;
+	if (!model && !effort) return config;
+	// The role's tuning (output cap, temperature, extra parameters) was set for
+	// its own model, so another model starts from the defaults.
+	const swapped = model !== undefined && model !== pickModel(config, role);
+	let roleTuning = swapped ? {} : config.tuning[role];
+	if (effort) roleTuning = { ...roleTuning, effort };
+	else if (!takesEffort && roleTuning?.effort) {
+		roleTuning = { ...roleTuning };
+		delete roleTuning.effort;
+	}
+	return { ...config, models, tuning: { ...config.tuning, [role]: roleTuning } };
+}
+
+// What the composer's model chip shows when a chat has no setting of its own.
+export function chatModelInfo(config: ResolvedConfig): ChatModelInfo {
+	const model = pickModel(config, 'chat');
+	const claude = adapterKind(config.provider) === 'anthropic';
+	return {
+		model,
+		effort:
+			claude && modelTakesEffort(model)
+				? (claudeEffort('chat', model, config.tuning.chat) ?? null)
+				: null,
+		claude
+	};
 }
 
 // The context window of the model this role runs on, in tokens; undefined when

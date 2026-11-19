@@ -548,6 +548,10 @@
 .rv-actions form {
 	display: contents;
 }
+/* The guided pass's entry on a pattern note, above its reply box. */
+.rv-work-through {
+	margin-bottom: 10px;
+}
 
 .rv-status {
 	display: inline-flex;

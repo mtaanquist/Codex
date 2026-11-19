@@ -342,14 +342,40 @@ The tab, from the prototype:
   consistent so far?". These are starting points, not a fixed menu; they
   seed the three surfaces (a question, a co-author nudge, a continuity
   review).
-- An "Ask about your story..." input with a send control.
+- A composer (#1171): one bordered box with the text field and a row of
+  controls under it. The slash button opens the command menu, every chat
+  action in sections (Chat, Write, Review, Look up, Upkeep, Model) with a
+  filter; typing "/" in the field opens the same list, and each entry is
+  also a typed `/command` (`#lib/assistant-slash` is the one list). The
+  model chip shows the model and effort the chat runs on and opens a picker
+  (the endpoint's listed models plus any already set); the choice belongs to
+  the chat (`assistant_chats.settings`, migration 0087) and rides with each
+  message, laid over the chat role's model by `withRoleOverride`. Effort is
+  only offered on Claude models that take it. The quoted passage from "Ask
+  the Assistant about this" sits in the row as a chip with an x. The header
+  is the chat's title, a clock button for the chat list, and a new chat
+  button; muting moved into the command menu.
+- Context chips (#1172): the + button (or `/context`) opens a picker that
+  searches the writer's whole library (any universe; stories the Assistant
+  is muted on are left out) for scenes, chapters, entities, notes and
+  stories. A story offers its outline and summaries, the whole book (with
+  its word count and, where the endpoint reports prices, what sending it
+  costs), or one chapter or scene. Picks ride on the next user turn as
+  `attachments` (kind, id, label; kept in the turn's meta), the server reads
+  each by id and owner (`#lib/server/llm/attachments.ts`), cuts them to
+  their own budget (40% of the window, no ceiling, small ones whole and the
+  large ones to equal shares), and folds them into the newest turn after
+  the transcript is fitted. Earlier turns only name their attachments, so a
+  book is sent once, not with every later message. A cut attachment is
+  marked shortened on the stored turn and its chip says so.
 
 The chat is sync and streaming. It is the home of:
 
 - the rubber-duck role (user-driven, no automatic context injection beyond
   what the writer references),
-- "reference in chat" (pull the current selection, scene, or an entity into
-  the conversation as context the writer then asks about),
+- "reference in chat" (pull the current selection into the conversation,
+  and scenes, chapters, entities, notes or stories through the context
+  picker, as context the writer then asks about),
 - questions about the world: relationships, entities, "what happened to
   X", grounded in the universe data (see "Grounding"),
 - tool-driven actions like "using the scene 'Session template' make one for
@@ -359,8 +385,8 @@ The chat is sync and streaming. It is the home of:
 Persistence: chats are stored per scope (story or universe) and user, any
 number of them (`assistant_chats`, with turns in `assistant_chat_messages`;
 issue #985, migration 0080). The panel opens the most recently used chat; a
-picker at the top lists the scope's chats newest first, searchable by title,
-and the + (or `/new`) starts a new one, which the server creates on its first
+clock button at the top lists the scope's chats newest first, searchable by
+title, and the new chat button (or `/new`) starts a new one, which the server creates on its first
 message and names after it (`x-chat-id` on the response tells the panel the
 id). "Delete chat" removes one with its turns and summary. Titles are not
 editable yet.
@@ -1063,6 +1089,47 @@ calls the gateway, which proxies through the egress guard.
   nothing now stages nothing (the old design had the model leave an "everything
   holds together" comment on the first scene); the job's notification already
   reports that it found no continuity issues.
+
+- [built] One theme per note (#1131): the review prompt asks for one comment
+  per theme, so a recurring pattern, a pacing observation, and an overall
+  impression arrive as separate notes the writer can resolve on their own. A
+  pattern note opens with "Pattern note (<the pattern>):".
+- [built] Pattern notes and the guided pass (#1132): `leave_pattern_note`
+  stages a whole-scene note and the edits that fix each instance in one call,
+  linked through `review_suggestions.pattern_thread_id` (nullable, set null
+  when the note is deleted). Edits that do not locate are reported back; a
+  retry with the same comment adds to the open note. It is left out of the
+  minimal tool profile, and the prompt only mentions it when it is offered.
+  "Work through this" on the note walks its pending edits in reading order
+  (client state in `ReviewWorkspace`, `PatternPass.svelte`): Accept, Edit (an
+  owner override on accept, recorded as the applied replacement), Skip, Stop.
+  After an accept, `/api/assistant/pattern-reread` sends the changed paragraph
+  and one either side with the note, offers only `suggest_edit` held to that
+  window (`ToolScope.editWindow`) and linked to the note
+  (`ToolScope.patternThreadId`), so a follow-up becomes the next step.
+- [built] Chapter pattern pass (#1136), opt-in from the review modal
+  (`patterns: 'chapter'` on the review job; part of the run's scope key). Runs
+  before the scene loop (`pattern-pass.ts`): stage A surveys each chapter with
+  two or more scenes (story frame only, the prose in chunks of the survey
+  budget, one corrective retry) for up to 5 recurring habits as JSON; stage B
+  creates one whole-scene note per pattern on its first scene and, per scene
+  it names, one request offering only `suggest_edit` linked to the note
+  (`ToolScope.patternThreadId`). Survey results, note ids, and applied scenes
+  live in `ReviewRunState.patterns`, so a resumed run neither re-surveys nor
+  repeats a scene. Open pattern notes are handed to the survey (not reported
+  again) and to each scene review as prior notes. The estimate prices the
+  survey only; the apply stage is listed as unknown.
+- [built] Whole-book pattern pass (#1137): `patterns: 'book'` on a
+  whole-story review (a chapter review asking for it runs the chapter pass,
+  `runPatternScope`). `planBookPass` lists the book in reading order under
+  chapter headings and checks the survey against 80% of the reviewer's known
+  window (`wholeBookFit`): it fits and goes in one request (up to 8
+  patterns), or it goes chapter by chapter, each survey handed the patterns
+  found so far (name and description) and merged by name. An unknown window
+  is not offered in the modal (`{ wholeBook: true }` on the review-job
+  endpoint answers the check without contacting the endpoint). Notes name
+  the chapters. A survey retry relies on the Anthropic adapter's existing
+  cache of the last user block, so no adapter change was needed.
 
 ### Background jobs - sequencing steps 4 and 7
 

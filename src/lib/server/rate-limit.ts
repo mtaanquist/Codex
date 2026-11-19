@@ -50,6 +50,9 @@ const UPLOAD_PER_MINUTE = 60;
 // The writer pays their own provider, so this is not a cost cap; it bounds how
 // many long-lived Assistant streams one account can open on the single process.
 const ASSISTANT_PER_MINUTE = 60;
+// Lookups that call no model (the context picker's search), one per keystroke
+// at worst, so they get their own bucket rather than eat the chat's.
+const LOOKUP_PER_MINUTE = 300;
 
 // The autosave budget: scene, entity, and note saves all draw on it per user.
 export function writeLimit(userId: string, now: number = Date.now()): RateLimitResult {
@@ -64,6 +67,11 @@ export function uploadLimit(userId: string, now: number = Date.now()): RateLimit
 // The Assistant budget: chat and other generation turns per user.
 export function assistantLimit(userId: string, now: number = Date.now()): RateLimitResult {
 	return rateLimit(`assistant:${userId}`, ASSISTANT_PER_MINUTE, 60 * 1000, now);
+}
+
+// The lookup budget: the Assistant's searches that call no model, per user.
+export function lookupLimit(userId: string, now: number = Date.now()): RateLimitResult {
+	return rateLimit(`lookup:${userId}`, LOOKUP_PER_MINUTE, 60 * 1000, now);
 }
 
 // The export budget: requesting an account, story, or universe export per user.

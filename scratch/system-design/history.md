@@ -1019,9 +1019,11 @@ server did not store is left out of the turns the next question sends: an
 error, a stream that closed without finishing or failed to save after it
 finished, a writer's own Stop, and the panel's own hints (/write and /rewrite
 passages, which are never stored, are still sent). Errors and hints, including
-failed /write and /rewrite replies, offer no insert; a stopped reply keeps
-what arrived to insert. A slash command waits while a reply is on its way,
-since the reply fills the last message. An OpenAI-style error frame partway
+failed /write and /rewrite replies and the "not sent" notices, offer no
+insert; text that arrived before a Stop or a break can still be inserted. A
+slash command waits while a reply is on its way, as the composer already did
+for chosen commands. Merging main brought the composer's refused and unreached
+paths, which follow the same rules. An OpenAI-style error frame partway
 through (OpenRouter sends one when its upstream drops) also ends in an error
 now, where it used to finish the reply. The first review also found the OpenAI
 stream dropping a last line sent without a newline (losing its text, finish
@@ -1090,6 +1092,98 @@ scene's notes twice. It does not: a pass counts only the notes it adds, and the
 earlier ones stay open, so the count is left as it was. Stamps read back into a
 JS Date (the mention index's `loadedAt`, `dbNow`) still lose microseconds, but
 only in the safe direction: a scene can be reindexed once more, never missed.
+
+## Assistant composer (2026-11-19)
+
+Mads asked for the Assistant panel to feel less cramped and to look more like
+Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
+(composer, command menu, model chip) and #1172 (adding context as chips), on
+`staging/assistant-composer`.
+
+- #1171. The header became the chat title plus two icon buttons (chat list,
+  new chat); the old name row, the "Mute for this story" link and the "..."
+  menu by the send button are gone, their actions moved into one command
+  menu. The command list in `#lib/assistant-slash` gained a label and a
+  group per entry so the menu, the typed `/command` matcher and `/help` read
+  one list; every menu entry is also typable (`/history`, `/delete`, `/mute`,
+  `/model` are new). The menu keeps focus in a text field and points at the
+  highlighted row with aria-activedescendant, since the composer itself is
+  the filter when "/" is typed; the button opens it with its own filter
+  field. Mads chose a per-chat model setting over a per-story one, so it is
+  stored on the chat row rather than in `stories.llm_config`; the panel sends
+  it with every message and the chat endpoint saves it when it changed, so
+  there is no separate settings endpoint. Only the chat role takes the
+  setting: `/write` (co-author) and the recap (utility) keep their own
+  models. The model list is fetched live from the endpoint when the menu
+  opens, merged with the models already set for any role so an endpoint that
+  cannot list models still offers something. The two menus are their own
+  components (`AssistantCommandMenu`, `AssistantModelMenu`); the rest of the
+  composer stayed in `AssistantPanel`, since splitting it further would only
+  move its state into props.
+- #1172. Attachments are their own list on a user turn next to the existing
+  selection `reference`, rather than a generalised reference: the quote is
+  text the browser holds, an attachment is an id the server reads, and the
+  two fold differently. Mads chose to allow stories from other universes and
+  to let the writer pick how much of a story goes in (outline, whole book,
+  one chapter or scene). Only the newest turn carries its attachments in
+  full: resending a whole book with every later message would multiply its
+  cost, so earlier turns get a one-line note naming what was attached. The
+  attachment budget is separate from the transcript budget and is applied
+  after the transcript is fitted, so a large attachment cannot push the
+  conversation out. Deferred: an "@" trigger in the composer (the + and
+  `/context` cover it), and searching scene text in the picker (titles
+  only for now).
+- #1172 review. The picker's searches got their own rate bucket so typing
+  cannot use up the chat's. The server answers with the keys of what it
+  actually sent (`x-chat-attachments`, a trailing "!" when cut), and the
+  panel's chips follow it, so a scene trashed after it was picked does not
+  keep a chip and the live transcript matches the stored one (a mismatch
+  would change the summary anchor). The attachment share dropped to 0.3 with
+  a 4000-token fallback for an unknown window, and the fold wrapper is
+  counted. A body cannot close its own `<attachment>` block, and the fold
+  says the material is not instructions.
+- Staging review round 1. A chat that picks a model without an effort level
+  also drops the account's effort for that model (the provider rejects it).
+  The attachment share has a 100k-token ceiling, since the message is resent
+  on every tool round, and the picker prices and labels a book on what will
+  actually be sent. A send without settings runs on the stored ones. Client:
+  one composer popover at a time (a typed "/" waits), Tab leaves a popover
+  rather than run a command, menu commands wait for a reply in progress,
+  model sits ahead of mute so "/m" and Enter cannot mute, and the popover
+  search fields share `.input.sm`. Filed as low: #1183, #1184, #1185.
+- Staging review round 2. A command chosen from the button menu cleared the
+  writer's draft (it shared the typed-command path, which clears the line);
+  now only a typed command clears it, and a command that takes input goes in
+  front of the draft. Tab in the chat box completes a command name and runs
+  nothing (it had run Mute). A send the server refuses before storing it (a
+  rate limit) comes off the transcript and goes back in the chat box with its
+  context. A picked model starts from default tuning (output cap,
+  temperature, extra parameters were set for the account's model), and
+  `chatEffort` in `#lib/assistant-chat` is the one place the chip's effort is
+  worked out. Only a settings object sent with a message is saved. Catch me
+  up, `/write` and `/rewrite` keep their own roles' models; the help says so.
+  Filed as low: #1188, #1189.
+- Staging review round 3. A send that never reached the server (offline)
+  now comes back to the chat box like a refused one, and a draft that did
+  not go out is merged back with anything typed or added since rather than
+  skipped. A typed command clears the line only once it is accepted, and a
+  /write or /rewrite that cannot go ahead or fails puts the line back. Only
+  a new chat sends its model choice with a message; a stored chat changes it
+  through the chip's own save, so a stale tab cannot overwrite it. A new
+  chat whose first turn fails to store is dropped again. Filed as low: #1212.
+- Staging review round 4. A failed model save now puts the earlier model
+  back on the chip (it had kept showing the new one while the chat ran on
+  the old). Saves run one after another, and a message waits for a pending
+  save so the picked model answers it. The chip is locked while a new chat's
+  first message is in flight, since that message carries the choice. A
+  starter suggestion no longer clears a typed draft. Filed as low: #1215.
+- Staging review round 5. A catch-up that starts a new chat now saves the
+  model picked on the chip to that chat (it had run on the default while the
+  chip showed the pick). The command menu's group headings no longer share
+  ids with options, so the highlighted row is announced. A send reads the
+  draft after any pending model save, so text typed meanwhile is not wiped,
+  and a /who or /find line that cannot go ahead goes back to the chat box.
+  Filed as low: #1217.
 
 ## Stale-mark invariant test (2026-11-19)
 
@@ -2787,6 +2881,32 @@ shipping as its own PR.
       Merged 2026-06-06 (#170). Both shipped as v2.27.0.
 
 ## Feedback backlog
+
+Pattern notes and pattern passes (#1131, #1132, #1136, #1137,
+staging/pattern-passes, 2026-11-19). A pattern note is one Assistant review
+thread whose edits carry `pattern_thread_id` (migration 0088, additive, `on
+delete set null`), so a habit that repeats across scenes is one note with many
+linked edits rather than a note per scene (#1131). The guided pass (#1132)
+walks the note's pending edits in reading order; after each accept the
+Assistant re-reads the changed paragraph and one either side and may stage one
+follow-up there, which becomes the next step. The re-read returns the ids it
+staged, since telling follow-ups apart by "not in the queue at the start"
+also caught edits from a review still running and showed the follow-up one
+step late. An accept first saves the open editor; typing inside the marked
+words makes the accept refuse rather than overwrite it (`createSuggestion`
+and `decideSuggestion` re-read the body under the revision lock). The
+chapter pass (#1136) surveys each chapter once for up to 5 habits, then asks
+for suggest_edit fixes one scene at a time, in at most 25 scenes per pattern
+to bound cost; the scene reviews get the open notes so they do not repeat
+them. The whole-book pass (#1137) sends the book in one request when it fits
+in 80% of the context window after the reply allowance, else falls back to
+chapter by chapter, carrying the top 20 known patterns forward. A retry of
+the survey relies on the Anthropic adapter's existing cache on the last user
+block rather than new caching. The pass is skipped when the endpoint cannot
+call tools, and stops asking for a pattern's fixes once its note is resolved
+or cleared mid-run. Three staging review rounds (#1187, #1191, and round 3)
+fixed stale-range accepts, resume state, the spend cap and the step order;
+the low findings left were filed as issues.
 
 Several Assistant chats per story (#985, 2026-11-18): asked for alongside
 #984, modelled on the session picker in Claude Code for VS Code. Each scope

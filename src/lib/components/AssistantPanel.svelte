@@ -1,5 +1,10 @@
 <script lang="ts" module>
-	import type { ChatSummary } from '#lib/assistant-chat';
+	import type {
+		ChatAttachment,
+		ChatModelInfo,
+		ChatModelSettings,
+		ChatSummary
+	} from '#lib/assistant-chat';
 	import type { SplitProposal } from './AssistantProposal.svelte';
 
 	export type StopReason = 'context' | 'budget';
@@ -8,6 +13,7 @@
 		content: string;
 		meta: {
 			reference?: { sceneId: string; text: string };
+			attachments?: ChatAttachment[];
 			proposals?: Omit<SplitProposal, 'confirming' | 'error'>[];
 			stopped?: StopReason;
 		} | null;
@@ -19,6 +25,8 @@
 		chatId: string | null;
 		messages: StoredChatTurn[];
 		summarised: boolean;
+		settings: ChatModelSettings;
+		model: ChatModelInfo;
 	};
 </script>
 
@@ -46,6 +54,11 @@
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyMarkdown } from '#lib/markdown';
 	import {
+		attachmentKey,
+		attachmentLabel,
+		chatEffort,
+		MAX_ATTACHMENTS,
+		type AttachmentKind,
 		CHAT_MISSING,
 		CHAT_WINDOW_TURNS,
 		chatTitle,
@@ -56,11 +69,22 @@
 	import { relativeShort } from '#lib/format';
 	import { now } from '#lib/now.svelte';
 	import { page } from '$app/state';
-	import { commandsForScope, matchSlash, slashName, slashArgs } from '#lib/assistant-slash';
+	import {
+		commandsForScope,
+		matchCommands,
+		SLASH_COMMANDS,
+		matchSlash,
+		slashName,
+		slashArgs,
+		type SlashCommand
+	} from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal from './AssistantProposal.svelte';
+	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
+	import AssistantModelMenu, { EFFORT_LABELS } from './AssistantModelMenu.svelte';
+	import AssistantContextPicker from './AssistantContextPicker.svelte';
+	import type { IconName } from './Icon.svelte';
 	import { dismiss } from '#lib/dismiss';
-	import { menu } from '#lib/menu';
 
 	let {
 		scope,
@@ -125,19 +149,28 @@
 	} = $props();
 
 	type ChatReference = { sceneId: string; text: string };
+	const ATTACHMENT_ICONS: Record<AttachmentKind, IconName> = {
+		scene: 'scene',
+		chapter: 'chapter',
+		entity: 'user',
+		note: 'note',
+		story: 'book'
+	};
 	type Message = {
 		role: 'user' | 'assistant';
 		content: string;
 		reference?: ChatReference;
+		attachments?: ChatAttachment[];
 		proposals?: SplitProposal[];
 		// The reply was cut short; a note under it says why.
 		stopped?: StopReason;
 		// The server did not store this reply, so it is not sent back as history.
 		unsaved?: boolean;
-		// An error or a hint rather than the Assistant's writing, or a reply that
-		// broke off: it cannot be inserted.
+		// An error or a hint rather than the Assistant's writing: it cannot be
+		// inserted.
 		notice?: boolean;
-		// Why a reply with some text broke off; a note under it says so.
+		// Why a reply with some text broke off; a note under it says so. What
+		// arrived can still be inserted.
 		failed?: string;
 		// A /rewrite reply: its affordance replaces the selection rather than
 		// inserting at the cursor.
@@ -174,6 +207,7 @@
 			role: m.role,
 			content: m.content,
 			reference: m.meta?.reference,
+			attachments: m.meta?.attachments,
 			proposals: m.meta?.proposals?.map((p) => ({ ...p })),
 			stopped: m.meta?.stopped
 		}));
@@ -201,6 +235,14 @@
 		nextChatMayExist = false;
 	}
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
+	// The model and effort this chat runs on, from the model chip; empty runs on
+	// the default. Sent with every message, and stored on the chat by the server.
+	// svelte-ignore state_referenced_locally
+	let chatSettings = $state<ChatModelSettings>(chat?.settings ?? {});
+	// svelte-ignore state_referenced_locally
+	const modelInfo: ChatModelInfo = chat?.model ?? { model: '', effort: null, claude: false };
+	const chipModel = $derived(chatSettings.model ?? modelInfo.model);
+	const chipEffort = $derived(chatEffort(chatSettings, modelInfo));
 	let input = $state('');
 	let busy = $state(false);
 	// An earlier chat is loading; nothing is sent until it is in place, or the
@@ -321,13 +363,15 @@
 	// writer's turn before the reply (a chat message), so a chat it starts is
 	// kept whatever happens to the reply; otherwise (a recap) the server drops
 	// the new chat again unless a reply is stored, so the panel only adopts it
-	// then. Returns 'gone' when the open chat no longer exists.
+	// then. Returns 'gone' when the open chat no longer exists, and 'refused'
+	// when the server turned the request away before storing anything (a rate
+	// limit, a setting, a bad request), with the reason in the reply.
 	async function streamInto(
 		url: string,
 		payload: object,
 		title: string,
 		storesTurnFirst: boolean
-	): Promise<'gone' | void> {
+	): Promise<'gone' | 'refused' | 'unreached' | void> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
@@ -338,6 +382,15 @@
 		// A chat message is stored before its reply, so a stopped send leaves its
 		// turn in the chat the next send reuses.
 		if (creating && storesTurnFirst) nextChatMayExist = true;
+		let reached = false;
+		// A chat this request started without the chip's choice (a recap) is
+		// given it once adopted, so the chip and the chat agree.
+		const adopt = (id: string) => {
+			noteChatUsed(id, storedTitle);
+			if (creating && !('settings' in payload) && Object.keys(chatSettings).length > 0) {
+				saveSettings($state.snapshot(chatSettings), {});
+			}
+		};
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
@@ -345,7 +398,9 @@
 				body: JSON.stringify({ ...payload, chatId, ...(chatId ? {} : { newChatId: nextChatId }) }),
 				signal: controller.signal
 			});
+			reached = true;
 			if (response.headers.get('x-chat-summarised') === '1') olderSummarised = true;
+			applyAttached(response.headers.get('x-chat-attachments'));
 			const storedIn = response.headers.get('x-chat-id');
 			const serverTitle = response.headers.get('x-chat-title');
 			if (serverTitle) storedTitle = decodeURIComponent(serverTitle);
@@ -353,20 +408,27 @@
 			// is kept whatever happens to this reply.
 			const existed = response.headers.get('x-chat-created') === '0';
 			if (response.ok && storedIn) {
-				if (storesTurnFirst || existed || chatId === storedIn) noteChatUsed(storedIn, storedTitle);
+				if (storesTurnFirst || existed || chatId === storedIn) adopt(storedIn);
 				else startedIn = storedIn;
 			}
-			if (response.status === 404 && (await errorMessage(response)) === CHAT_MISSING) {
+			const failure = response.ok ? '' : await errorMessage(response);
+			if (response.status === 404 && failure === CHAT_MISSING) {
 				// The open chat was deleted elsewhere (another tab).
 				const gone = chatId;
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
 				freshChatId();
+				chatSettings = {};
 				messages = [
 					{ role: 'assistant', content: 'This chat was deleted.', unsaved: true, notice: true }
 				];
 				olderSummarised = false;
 				return 'gone';
+			}
+			if (response.status >= 400 && response.status < 500) {
+				appendToReply(failure || 'The Assistant could not take that request.');
+				markUnsaved(true);
+				return 'refused';
 			}
 			if (!response.ok || !response.body) {
 				appendToReply(
@@ -401,30 +463,34 @@
 				!streamError &&
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
-			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
+			if (startedIn && stored) adopt(startedIn);
 			if (reply?.role === 'assistant' && !stored) {
+				// Not stored, so not sent back. Text that broke off can still be
+				// inserted; an error in its place cannot.
 				reply.unsaved = true;
-				reply.notice = true;
-				if (reply.content.trim() === '')
+				if (reply.content.trim() === '') {
 					reply.content = streamError || 'The Assistant did not return a response.';
-				else reply.failed = streamError || 'The connection closed before the reply finished.';
+					reply.notice = true;
+				} else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
 			const reply = messages[messages.length - 1];
 			if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
 				// A Stop or a dropped connection after done lands while the server
 				// stores the reply, which it still does.
-				if (startedIn) noteChatUsed(startedIn, storedTitle);
+				if (startedIn) adopt(startedIn);
 			} else if (controller.signal.aborted) {
 				// A writer's own Stop keeps what arrived to insert, but the server
 				// stored none of it.
 				markUnsaved(false);
 			} else if (reply?.role === 'assistant' && reply.content.trim() !== '') {
-				markUnsaved(true);
+				markUnsaved(false);
 				reply.failed = 'The connection to the Assistant was lost.';
 			} else {
 				appendToReply('Sorry, something went wrong reaching the Assistant.');
 				markUnsaved(true);
+				// No answer at all (offline, a dropped connection): nothing was stored.
+				if (!reached) return 'unreached';
 			}
 		} finally {
 			busy = false;
@@ -440,21 +506,41 @@
 	// this" on a selection; shown as a chip the writer can remove before sending.
 	let reference = $state<ChatReference | null>(null);
 
-	async function send(text?: string) {
-		const question = (text ?? input).trim();
-		if (!question) return;
+	// `typed` is the line as the writer typed it, when `text` was built from it
+	// (/who, /find); a send that does not go out puts that back.
+	async function send(text?: string, typed?: string) {
+		const line = (text ?? input).trim();
+		if (!line) return;
 		// A line that starts with "/" is a command, not a message to the model.
-		if (question.startsWith('/')) {
-			runSlashCommand(question);
+		if (line.startsWith('/')) {
+			// Commands wait for the reply in progress, and the line stays put.
+			if (busy || switching) return;
+			runSlashCommand(line);
 			return;
 		}
-		if (busy || switching) return;
-		input = '';
-		if (composer) composer.style.height = 'auto';
+		// A model just picked is saved before the message goes, so it answers;
+		// the draft is read after the wait, so nothing typed meanwhile is lost.
+		if (settingsSaving) await settingsSaving;
+		if (busy || switching) {
+			// A /who or /find line the chat box already gave up goes back.
+			if (typed) restoreDraft(typed, {});
+			return;
+		}
+		const question = (text ?? input).trim();
+		if (!question || question.startsWith('/')) return;
+		// Text passed in (a starter suggestion) leaves the writer's draft alone.
+		if (text === undefined) {
+			input = '';
+			if (composer) composer.style.height = 'auto';
+		}
 		const turn: Message = { role: 'user', content: question };
 		if (reference) {
 			turn.reference = reference;
 			reference = null;
+		}
+		if (attachments.length > 0) {
+			turn.attachments = attachments;
+			attachments = [];
 		}
 		// The turn the model answers, then an empty reply to stream into. The
 		// request carries a window of recent turns; older context lives in the
@@ -466,15 +552,38 @@
 			{
 				...scopeBody(),
 				...(isStory ? { sceneId } : {}),
-				// A reply that broke off was not saved, so the model does not see it either.
+				// A reply the server did not store is not sent back either.
 				messages: turns
 					.filter((m) => !m.unsaved && m.content.trim() !== '')
 					.slice(-CHAT_WINDOW_TURNS)
-					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
+					.map((m) => ({
+						role: m.role,
+						content: m.content,
+						reference: m.reference,
+						attachments: m.attachments
+					})),
+				// A stored chat keeps its choice through the chip's own save, so a
+				// stale tab cannot overwrite it; a new chat sends it to be stored.
+				...(chatId ? {} : { settings: $state.snapshot(chatSettings) })
 			},
 			chatTitle(question),
 			true
 		);
+		// Turned away before it was stored: the message comes off the transcript
+		// and goes back in the chat box, with what it carried.
+		if (outcome === 'refused' || outcome === 'unreached') {
+			const reply = messages[messages.length - 1];
+			messages = [
+				// The turn and its reply are the last two.
+				...messages.slice(0, -2),
+				{
+					role: 'assistant',
+					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
+					unsaved: true,
+					notice: true
+				}
+			];
+		}
 		// Not sent: start afresh, and put the question (and its passage) back so
 		// it need not be typed again.
 		if (outcome === 'gone') {
@@ -487,36 +596,85 @@
 					notice: true
 				}
 			];
-			if (turn.reference && !reference) reference = turn.reference;
-			if (!input.trim()) {
-				input = question;
-				if (composer) {
-					composer.value = question;
-					fit(composer);
-				}
-			}
+		}
+		if (outcome) restoreDraft(typed ?? question, turn);
+	}
+
+	// Puts a message that did not go out back in the chat box, alongside
+	// anything typed or added since: its text first, its context merged in.
+	function restoreDraft(
+		text: string,
+		turn: { reference?: ChatReference; attachments?: ChatAttachment[] }
+	) {
+		if (turn.reference && !reference) reference = turn.reference;
+		if (turn.attachments) {
+			const keys = new Set(attachments.map(attachmentKey));
+			const missing = turn.attachments.filter((a) => !keys.has(attachmentKey(a)));
+			attachments = [...missing, ...attachments].slice(0, MAX_ATTACHMENTS);
+		}
+		const current = input.trim();
+		if (current === text) return;
+		const value = current ? `${text}\n\n${current}` : text;
+		input = value;
+		if (composer) {
+			composer.value = value;
+			fit(composer);
 		}
 	}
 
-	function runSlashCommand(raw: string) {
-		// A reply in flight fills the last message, so nothing may be added after
-		// it until it ends.
-		if (busy || switching) return;
-		input = '';
-		if (composer) composer.style.height = 'auto';
-		slashSelected = 0;
+	// `typed` says the line came from the chat box, which it then clears; a
+	// command chosen from the menu leaves the writer's draft alone.
+	function runSlashCommand(raw: string, typed = true) {
+		commandSelected = 0;
 		const name = slashName(raw);
+		const story = SLASH_COMMANDS.find((c) => c.name === name)?.scope === 'story';
+		if (story && !isStory) {
+			assistantSay(`/${name} works in a story. Open a story to use it.`);
+			return;
+		}
+		if (typed) {
+			input = '';
+			if (composer) composer.style.height = 'auto';
+		}
+		// One popover at a time.
+		if (name === 'history' || name === 'model' || name === 'context') {
+			commandsOpen = false;
+			modelOpen = false;
+			contextOpen = false;
+		}
 		switch (name) {
+			case 'history':
+				pickerOpen = true;
+				chatQuery = '';
+				break;
+			case 'delete':
+				void deleteChat();
+				break;
+			case 'mute':
+				if (isStory) muteForm?.requestSubmit();
+				break;
+			case 'model':
+				modelOpen = true;
+				break;
+			case 'context':
+				contextOpen = true;
+				break;
 			// 'clear' is the command's old name, from before chats were kept.
 			case 'new':
 			case 'clear':
 				newChat();
 				break;
+			// A /write or /rewrite that cannot go ahead, or fails, puts the
+			// typed line back so the brief need not be typed again.
 			case 'write':
-				void coauthorDraft(slashArgs(raw));
+				void coauthorDraft(slashArgs(raw)).then((done) => {
+					if (!done && typed) restoreDraft(raw, {});
+				});
 				break;
 			case 'rewrite':
-				void rewriteSelection(slashArgs(raw));
+				void rewriteSelection(slashArgs(raw)).then((done) => {
+					if (!done && typed) restoreDraft(raw, {});
+				});
 				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
@@ -528,10 +686,10 @@
 				void continuityReview();
 				break;
 			case 'who':
-				askWho(slashArgs(raw));
+				askWho(slashArgs(raw), raw);
 				break;
 			case 'find':
-				askFind(slashArgs(raw));
+				askFind(slashArgs(raw), raw);
 				break;
 			case 'catchup':
 			case 'catch-up':
@@ -556,16 +714,34 @@
 		}
 	}
 
-	// Choosing a command from the hint menu. A command that takes arguments leaves
+	// Choosing a command from the menu. A command that takes arguments leaves
 	// "/name " in the composer to type the argument into; the rest run straightaway.
-	function chooseSlash(command: { name: string; args?: boolean }) {
+	// From the button menu the chat box may hold a draft, which is kept: a
+	// command that takes input puts its name in front of it.
+	function chooseCommand(command: SlashCommand) {
+		const fromMenu = commandsOpen;
+		commandsOpen = false;
+		commandSelected = 0;
+		// The filter field is about to go; commands that open something move
+		// focus on from here.
+		composer?.focus();
+		const draft = fromMenu ? input.trim() : '';
 		if (command.args) {
-			input = `/${command.name} `;
-			slashSelected = 0;
-			composer?.focus();
+			setComposer(`/${command.name} ${draft}`);
 			return;
 		}
-		runSlashCommand(`/${command.name}`);
+		// Like a typed command, it waits for the reply in progress.
+		if (busy || switching) {
+			if (draft) {
+				flashActivity(
+					'failed',
+					'Wait for the reply',
+					'Choose the command again when the reply has finished.'
+				);
+			} else setComposer(`/${command.name}`);
+			return;
+		}
+		runSlashCommand(`/${command.name}`, !fromMenu);
 	}
 
 	// A plain assistant message, for usage hints and command errors.
@@ -584,7 +760,7 @@
 			reference?: { kind: 'selection'; text: string };
 		},
 		opts: { rewrite?: boolean } = {}
-	) {
+	): Promise<boolean> {
 		busy = true;
 		const controller = new AbortController();
 		pending = controller;
@@ -596,25 +772,30 @@
 				signal: controller.signal
 			});
 			const reply = messages[messages.length - 1];
-			if (!(reply && reply.role === 'assistant')) return;
+			if (!(reply && reply.role === 'assistant')) return true;
 			if (!response.ok) {
-				reply.content = 'Sorry, the Assistant could not draft that passage. Try again.';
+				reply.content =
+					'Sorry, the Assistant could not draft that passage. The command is back in the chat box to try again.';
 				markUnsaved(true);
-				return;
+				return false;
 			}
 			const { text } = (await response.json()) as { text?: string };
 			reply.content = text?.trim() || 'The Assistant did not return a passage.';
 			if (!text?.trim()) markUnsaved(true);
 			else if (opts.rewrite) reply.rewrite = true;
+			return true;
 		} catch {
-			if (controller.signal.aborted) markUnsaved(false);
-			else {
-				const reply = messages[messages.length - 1];
-				if (reply && reply.role === 'assistant') {
-					reply.content = 'Sorry, something went wrong reaching the Assistant.';
-					markUnsaved(true);
-				}
+			if (controller.signal.aborted) {
+				markUnsaved(false);
+				return true;
 			}
+			const reply = messages[messages.length - 1];
+			if (reply && reply.role === 'assistant') {
+				reply.content =
+					'Sorry, something went wrong reaching the Assistant. The command is back in the chat box to try again.';
+				markUnsaved(true);
+			}
+			return false;
 		} finally {
 			busy = false;
 			pending = null;
@@ -624,50 +805,50 @@
 	// /write: draft a passage from a brief through the co-author endpoint (the same
 	// one the toolbar Write button uses), shown as a reply the writer can insert.
 	// Needs a story focus; the universe surface has no scene to draft into.
-	async function coauthorDraft(brief: string) {
+	async function coauthorDraft(brief: string): Promise<boolean> {
 		if (!('storyId' in scope)) {
 			assistantSay('Drafting needs an open story or scene. Open a story to use /write.');
-			return;
+			return false;
 		}
 		if (!brief) {
 			assistantSay('Add a brief after the command, like "/write a tense standoff at the gate".');
-			return;
+			return false;
 		}
-		if (busy || switching) return;
+		if (busy || switching) return false;
 		messages = [
 			...messages,
 			{ role: 'user', content: `/write ${brief}` },
 			{ role: 'assistant', content: '' }
 		];
-		await runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
+		return runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
 	}
 
 	// /rewrite: co-author a rewrite of the editor's current selection to an
 	// instruction. Needs an open scene editor and a live selection; the reply's
 	// affordance replaces the selection rather than inserting at the cursor.
-	async function rewriteSelection(how: string) {
+	async function rewriteSelection(how: string): Promise<boolean> {
 		if (!('storyId' in scope)) {
 			assistantSay('Rewriting needs an open scene. Open a scene to use /rewrite.');
-			return;
+			return false;
 		}
 		if (!getSelection) {
 			assistantSay('Open a scene in the editor to use /rewrite.');
-			return;
+			return false;
 		}
 		const selection = getSelection()?.trim();
 		if (!selection) {
 			assistantSay('Select the passage you want rewritten first, then type /rewrite.');
-			return;
+			return false;
 		}
 		if (!how) {
 			assistantSay('Say how to rewrite it, like "/rewrite tighten this and cut the adverbs".');
-			return;
+			return false;
 		}
-		if (busy || switching) return;
+		if (busy || switching) return false;
 		const ask: Message = { role: 'user', content: `/rewrite ${how}` };
 		if (sceneId) ask.reference = { sceneId, text: selection };
 		messages = [...messages, ask, { role: 'assistant', content: '' }];
-		await runCoauthor(
+		return runCoauthor(
 			{
 				storyId: scope.storyId,
 				sceneId,
@@ -720,34 +901,216 @@
 
 	// /who: show a character or place sheet inline, a templated chat send that
 	// leans on the tool-enabled chat (get_entity). Works in both scopes.
-	function askWho(who: string) {
+	function askWho(who: string, typed: string) {
 		if (!who) {
 			assistantSay('Name who to look up, like "/who Marra".');
 			return;
 		}
-		void send(`Show me a short sheet for ${who}: the key facts you have on them.`);
+		void send(`Show me a short sheet for ${who}: the key facts you have on them.`, typed);
 	}
 
 	// /find: search the universe and list hits, a templated send backed by the
 	// universe-scoped search_text tool. Works in both scopes.
-	function askFind(query: string) {
+	function askFind(query: string, typed: string) {
 		if (!query) {
 			assistantSay('Say what to search for, like "/find the obsidian coins".');
 			return;
 		}
 		void send(
-			`Search this universe for "${query}" and list what you find, with where each turns up.`
+			`Search this universe for "${query}" and list what you find, with where each turns up.`,
+			typed
 		);
 	}
 
-	// The hint menu: the matching commands while the composer holds a bare "/word",
-	// narrowed to this surface's scope.
-	let slashSelected = $state(0);
+	// The command menu. Typing "/word" in the composer opens it filtered by the
+	// word (Escape hides it until the word changes); the "/" button opens it with
+	// a filter field of its own. Either way the highlighted row is commandSelected.
+	let commandSelected = $state(0);
+	// The + context picker and the model menu, declared here because the
+	// typed-command menu stays shut while either is open.
+	let contextOpen = $state(false);
+	let modelOpen = $state(false);
+	let commandsOpen = $state(false);
+	let commandQuery = $state('');
+	let commandsTrigger = $state<HTMLButtonElement>();
+	let slashDismissed = $state<string | null>(null);
 	const slashMatches = $derived(matchSlash(input, !isStory));
-	const slashOpen = $derived(slashMatches.length > 0 && !busy);
+	// One popover at a time: a "/" typed while another is open waits for it.
+	const slashOpen = $derived(
+		!commandsOpen &&
+			!contextOpen &&
+			!modelOpen &&
+			slashMatches.length > 0 &&
+			!busy &&
+			slashDismissed !== input
+	);
+	const shownCommands = $derived(
+		commandsOpen ? matchCommands(commandQuery, !isStory) : slashOpen ? slashMatches : []
+	);
 	$effect(() => {
-		if (slashSelected >= slashMatches.length) slashSelected = 0;
+		if (commandSelected >= shownCommands.length) commandSelected = 0;
 	});
+	function toggleCommands() {
+		commandsOpen = !commandsOpen;
+		commandQuery = '';
+		commandSelected = 0;
+		if (commandsOpen) {
+			modelOpen = false;
+			contextOpen = false;
+		}
+	}
+	// The keys of whichever field drives the menu. True when the key was used.
+	function commandKey(event: KeyboardEvent): boolean {
+		const count = shownCommands.length;
+		if (event.key === 'ArrowDown' && count > 0) {
+			commandSelected = (commandSelected + 1) % count;
+		} else if (event.key === 'ArrowUp' && count > 0) {
+			commandSelected = (commandSelected - 1 + count) % count;
+		} else if (event.key === 'Enter' && !event.shiftKey && count > 0) {
+			chooseCommand(shownCommands[commandSelected]);
+		} else if (event.key === 'Tab' && !event.shiftKey && count > 0 && !commandsOpen) {
+			// Tab completes the name and runs nothing; once it is complete, Tab
+			// moves on as usual.
+			const command = shownCommands[commandSelected];
+			const done = `/${command.name}${command.args ? ' ' : ''}`;
+			if (input === done || input === `/${command.name}`) return false;
+			setComposer(done);
+		} else if (event.key === 'Escape') {
+			if (commandsOpen) {
+				commandsOpen = false;
+				commandsTrigger?.focus();
+			} else {
+				slashDismissed = input;
+			}
+			event.stopPropagation();
+		} else {
+			return false;
+		}
+		event.preventDefault();
+		return true;
+	}
+	// In the menu's own filter field Tab leaves the menu rather than run a
+	// command; only Enter or a click runs one.
+	function filterKeydown(event: KeyboardEvent) {
+		if (event.key === 'Tab') {
+			commandsTrigger?.focus();
+			commandsOpen = false;
+			return;
+		}
+		commandKey(event);
+	}
+
+	// A chat already stored keeps the new choice straightaway; a new chat
+	// sends it with its first message.
+	// Saves go one at a time, newest wins, so quick clicks cannot land out of
+	// order; while another chat loads the choice would go to the wrong one.
+	// A new chat's first message carries its choice, so the choice is locked
+	// until that message is stored. Saves run one after another so the newest
+	// lands last; if the newest fails, the earlier choice comes back.
+	let settingsSaving: Promise<void> | null = null;
+	const settingsLocked = $derived(switching || (busy && !chatId));
+	$effect(() => {
+		if (settingsLocked) modelOpen = false;
+	});
+	function changeSettings(next: ChatModelSettings) {
+		if (settingsLocked) return;
+		const previous = chatSettings;
+		chatSettings = next;
+		if (chatId) saveSettings(next, previous);
+	}
+	function saveSettings(next: ChatModelSettings, previous: ChatModelSettings) {
+		const savingFor = chatId;
+		const failed = () => {
+			if (settingsSaving !== saving) return;
+			if (chatId === savingFor) chatSettings = previous;
+			flashActivity(
+				'failed',
+				'Could not save the model',
+				'The chat keeps its earlier model. Try again in a moment.'
+			);
+		};
+		const saving: Promise<void> = (settingsSaving ?? Promise.resolve())
+			.then(() =>
+				fetch(`/api/assistant/chats/${savingFor}`, {
+					method: 'PATCH',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ settings: next })
+				})
+			)
+			.then((response) => {
+				if (!response.ok) failed();
+			})
+			.catch(failed)
+			.finally(() => {
+				if (settingsSaving === saving) settingsSaving = null;
+			});
+		settingsSaving = saving;
+	}
+
+	// What the next message carries as context, from the + button; chips in
+	// the composer until it is sent.
+	let attachments = $state<ChatAttachment[]>([]);
+	let contextTrigger = $state<HTMLButtonElement>();
+	const contextListId = `assistant-context-${newChatId().slice(0, 8)}`;
+	function addAttachment(attachment: ChatAttachment) {
+		contextOpen = false;
+		composer?.focus();
+		if (attachments.some((a) => attachmentKey(a) === attachmentKey(attachment))) {
+			flashActivity('done', 'Already added', `${attachmentLabel(attachment)} is already attached.`);
+			return;
+		}
+		if (attachments.length >= MAX_ATTACHMENTS) {
+			flashActivity(
+				'failed',
+				'Too much context',
+				`A message can carry up to ${MAX_ATTACHMENTS} items. Remove one first.`
+			);
+			return;
+		}
+		attachments = [...attachments, attachment];
+	}
+	function toggleContext() {
+		contextOpen = !contextOpen;
+		if (contextOpen) {
+			commandsOpen = false;
+			modelOpen = false;
+		}
+	}
+	// The server says which of the newest message's attachments it sent and
+	// which it had to cut; the chips follow, so they match what was stored.
+	function applyAttached(header: string | null) {
+		if (header === null) return;
+		const sent = new Map(
+			header
+				.split(',')
+				.filter(Boolean)
+				.map((key) => [key.replace(/!$/, ''), key.endsWith('!')])
+		);
+		const turn = messages.findLast((m) => m.role === 'user');
+		if (!turn?.attachments) return;
+		const kept = turn.attachments.filter((a) => sent.has(attachmentKey(a)));
+		for (const a of kept) {
+			if (sent.get(attachmentKey(a))) a.shortened = true;
+		}
+		const dropped = turn.attachments.length - kept.length;
+		turn.attachments = kept;
+		if (dropped > 0) {
+			flashActivity(
+				'failed',
+				'Context left out',
+				dropped === 1
+					? 'One attached item is gone or hidden from the Assistant, so it was not sent.'
+					: `${dropped} attached items are gone or hidden from the Assistant, so they were not sent.`
+			);
+		}
+	}
+
+	// The model menu, from the chip in the composer.
+	let modelTrigger = $state<HTMLButtonElement>();
+	const commandListId = `assistant-commands-${newChatId().slice(0, 8)}`;
+
+	// The mute switch is a form action; the command menu submits it.
+	let muteForm = $state<HTMLFormElement>();
 
 	// Intents raised by the editor menus or the command palette: the page has
 	// already switched the right pane here; the panel acts on the intent.
@@ -809,6 +1172,7 @@
 		freshChatId();
 		messages = [{ role: 'assistant', content: opening }];
 		olderSummarised = false;
+		chatSettings = {};
 		pickerOpen = false;
 		composer?.focus();
 	}
@@ -828,10 +1192,12 @@
 			const loaded = (await response.json()) as {
 				messages: StoredChatTurn[];
 				summarised: boolean;
+				settings: ChatModelSettings;
 			};
 			chatId = id;
 			messages = toMessages(loaded.messages);
 			olderSummarised = loaded.summarised;
+			chatSettings = loaded.settings ?? {};
 		} finally {
 			switching = false;
 			composer?.focus();
@@ -841,7 +1207,7 @@
 	// Delete the open chat for good, then start a new one.
 	let deleting = $state(false);
 	async function deleteChat() {
-		if (deleting || busy) return;
+		if (deleting || busy || switching) return;
 		if (!chatId) {
 			// A stopped first send may have stored its question; it goes too.
 			if (nextChatMayExist) {
@@ -859,7 +1225,7 @@
 		// The menu item that asked is gone by now, so focus goes back to the
 		// composer rather than being lost.
 		composer?.focus();
-		if (!ok || deleting || busy || !chatId) return;
+		if (!ok || deleting || busy || switching || !chatId) return;
 		deleting = true;
 		const id = chatId;
 		try {
@@ -869,8 +1235,8 @@
 				return;
 			}
 			chats = chats.filter((c) => c.id !== id);
+			// Like a new chat, the composer's draft (text, passage, context) stays.
 			newChat();
-			reference = null;
 		} finally {
 			deleting = false;
 		}
@@ -894,34 +1260,8 @@
 		if (pickerOpen) pickerSearch?.focus();
 	});
 
-	// The actions menu next to the send button; closes like the other inline
-	// menus, on an outside press or Escape.
-	let actionsOpen = $state(false);
-	let actionsTrigger = $state<HTMLButtonElement>();
-
-	function runAction(action: () => void) {
-		actionsOpen = false;
-		action();
-	}
-
 	function onKeydown(event: KeyboardEvent) {
-		if (slashOpen) {
-			if (event.key === 'ArrowDown') {
-				event.preventDefault();
-				slashSelected = Math.min(slashSelected + 1, slashMatches.length - 1);
-				return;
-			}
-			if (event.key === 'ArrowUp') {
-				event.preventDefault();
-				slashSelected = Math.max(slashSelected - 1, 0);
-				return;
-			}
-			if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
-				event.preventDefault();
-				chooseSlash(slashMatches[slashSelected]);
-				return;
-			}
-		}
+		if (slashOpen && commandKey(event)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			void send();
@@ -954,6 +1294,10 @@
 	function prefill(text: string) {
 		const value = withPrompt(input, lastPrompt, text);
 		lastPrompt = text;
+		setComposer(value);
+	}
+
+	function setComposer(value: string) {
 		input = value;
 		if (!composer) return;
 		composer.value = value;
@@ -964,7 +1308,7 @@
 
 	function fit(el: HTMLTextAreaElement) {
 		el.style.height = 'auto';
-		el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+		el.style.height = Math.min(el.scrollHeight, 160) + 'px';
 	}
 
 	function grow(event: Event) {
@@ -987,18 +1331,7 @@
 {:else}
 	<div class="assistant">
 		<div class="assistant-head">
-			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
-			<div class="head-actions">
-				{#if isStory}
-					<form method="POST" action="?/muteAssistant" use:enhance>
-						<button class="mute-link" type="submit" title="Hide the Assistant for this story">
-							Mute for this story
-						</button>
-					</form>
-				{/if}
-			</div>
-		</div>
-		<div class="chat-bar">
+			<span class="chat-title" title={currentTitle}>{currentTitle}</span>
 			<div
 				class="chat-picker-wrap"
 				use:dismiss={{
@@ -1009,17 +1342,16 @@
 			>
 				<button
 					bind:this={pickerTrigger}
-					class="chat-picker-btn"
+					class="icon-btn sm"
 					type="button"
-					title="Switch to an earlier chat"
-					aria-label="{currentTitle}, switch chat"
+					title="Chat history"
+					aria-label="Chat history"
 					aria-haspopup="dialog"
 					aria-expanded={pickerOpen}
 					disabled={busy || switching}
 					onclick={togglePicker}
 				>
-					<span class="chat-picker-title">{currentTitle}</span>
-					<Icon name="caret" size={12} />
+					<Icon name="clock" size={15} />
 				</button>
 				{#if pickerOpen}
 					<div
@@ -1031,7 +1363,7 @@
 					>
 						<input
 							bind:this={pickerSearch}
-							class="chat-search"
+							class="input sm"
 							type="search"
 							placeholder="Search chats"
 							aria-label="Search chats"
@@ -1067,8 +1399,11 @@
 				disabled={busy}
 				onclick={newChat}
 			>
-				<Icon name="plus" size={14} />
+				<Icon name="chat-new" size={15} />
 			</button>
+			{#if isStory}
+				<form bind:this={muteForm} method="POST" action="?/muteAssistant" use:enhance hidden></form>
+			{/if}
 		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
 			{#if olderSummarised}
@@ -1080,7 +1415,21 @@
 			{#each messages as message, index (index)}
 				{#if message.role === 'user'}
 					<div class="msg user">
-						{#if message.reference}
+						{#if message.attachments?.length}
+							<div class="msg-attachments">
+								{#each message.attachments as attachment (`${attachment.kind}-${attachment.id}-${attachment.depth}`)}
+									<span
+										class="msg-attachment"
+										title={attachment.shortened
+											? `${attachmentLabel(attachment)}: cut to fit what the model can read at once`
+											: attachmentLabel(attachment)}
+									>
+										<Icon name={ATTACHMENT_ICONS[attachment.kind]} size={11} />
+										{attachmentLabel(attachment)}{attachment.shortened ? ' (shortened)' : ''}
+									</span>
+								{/each}
+							</div>
+						{/if}{#if message.reference}
 							<div class="msg-ref">{message.reference.text}</div>
 						{/if}{message.content}
 					</div>
@@ -1156,132 +1505,194 @@
 			</div>
 		{/if}
 
-		{#if reference}
-			<div class="ref-chip" role="note">
-				<span class="ref-quote" title={reference.text}>{reference.text}</span>
-				<button
-					class="ref-x"
-					type="button"
-					title="Remove the reference"
-					aria-label="Remove the reference"
-					onclick={() => (reference = null)}
-				>
-					x
-				</button>
-			</div>
-		{/if}
-		{#if slashOpen}
-			<div class="slash-menu" role="listbox" aria-label="Commands">
-				{#each slashMatches as command, index (command.name)}
-					<button
-						class="slash-item"
-						class:active={index === slashSelected}
-						role="option"
-						aria-selected={index === slashSelected}
-						type="button"
-						onmouseenter={() => (slashSelected = index)}
-						onclick={() => chooseSlash(command)}
-					>
-						<span class="slash-name">/{command.name}</span>
-						<span class="slash-detail">{command.detail}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
-		<div class="composer">
-			<textarea
-				bind:this={composer}
-				rows="1"
-				placeholder="Ask about your story, or type / for commands..."
-				value={input}
-				oninput={grow}
-				onkeydown={onKeydown}></textarea>
-			<div
-				class="composer-menu-wrap"
-				use:dismiss={{
-					enabled: actionsOpen,
-					close: () => (actionsOpen = false),
-					refocus: () => actionsTrigger?.focus()
-				}}
-			>
-				<button
-					bind:this={actionsTrigger}
-					class="menu-btn"
-					type="button"
-					title="More actions"
-					aria-label="More actions"
-					aria-haspopup="menu"
-					aria-expanded={actionsOpen}
-					onclick={() => (actionsOpen = !actionsOpen)}
-				>
-					<Icon name="more" size={16} />
-				</button>
-				{#if actionsOpen}
-					<div
-						class="composer-menu popover"
-						role="menu"
-						use:menu={{
-							close: () => (actionsOpen = false),
-							refocus: () => actionsTrigger?.focus()
+		<!-- The dismiss area holds the menus and their triggers, so a press on a
+		     trigger toggles its menu rather than closing and reopening it. -->
+		<div
+			class="composer-wrap"
+			use:dismiss={{
+				enabled: commandsOpen || modelOpen || contextOpen,
+				close: () => {
+					commandsOpen = false;
+					modelOpen = false;
+					contextOpen = false;
+				},
+				refocus: () =>
+					(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus()
+			}}
+		>
+			{#if commandsOpen || slashOpen}
+				<div class="composer-pop">
+					<AssistantCommandMenu
+						id={commandListId}
+						commands={shownCommands}
+						selected={commandSelected}
+						onChoose={chooseCommand}
+						onHover={(index) => (commandSelected = index)}
+						filter={commandsOpen
+							? {
+									value: commandQuery,
+									onInput: (value) => {
+										commandQuery = value;
+										commandSelected = 0;
+									},
+									onKeydown: filterKeydown
+								}
+							: undefined}
+					/>
+				</div>
+			{/if}
+			{#if contextOpen}
+				<div class="composer-pop">
+					<AssistantContextPicker
+						id={contextListId}
+						model={chipModel || undefined}
+						onAdd={addAttachment}
+						onClose={() => {
+							contextTrigger?.focus();
+							contextOpen = false;
 						}}
-					>
-						{#if isStory}
+					/>
+				</div>
+			{/if}
+			{#if modelOpen}
+				<div class="composer-pop">
+					<AssistantModelMenu
+						info={modelInfo}
+						settings={chatSettings}
+						onChange={changeSettings}
+						close={() => (modelOpen = false)}
+						refocus={() => (modelTrigger ?? composer)?.focus()}
+					/>
+				</div>
+			{/if}
+			<div class="composer">
+				<textarea
+					bind:this={composer}
+					rows="1"
+					placeholder={isStory ? 'Ask about your story' : 'Ask about this universe'}
+					aria-label="Message the Assistant"
+					aria-controls={slashOpen ? commandListId : undefined}
+					aria-autocomplete="list"
+					aria-activedescendant={slashOpen && shownCommands[commandSelected]
+						? `${commandListId}-${shownCommands[commandSelected].name}`
+						: undefined}
+					value={input}
+					oninput={grow}
+					onkeydown={onKeydown}
+					onblur={() => (slashDismissed = input)}></textarea>
+				<div class="composer-row">
+					<div class="composer-tools">
+						<button
+							bind:this={contextTrigger}
+							class="icon-btn sm"
+							type="button"
+							title="Add context"
+							aria-label="Add context"
+							aria-haspopup="listbox"
+							aria-expanded={contextOpen}
+							onclick={toggleContext}
+						>
+							<Icon name="plus" size={15} />
+						</button>
+						<button
+							bind:this={commandsTrigger}
+							class="icon-btn sm"
+							type="button"
+							title="Chat commands (/)"
+							aria-label="Chat commands"
+							aria-haspopup="listbox"
+							aria-expanded={commandsOpen}
+							onclick={toggleCommands}
+						>
+							<Icon name="command" size={15} />
+						</button>
+						<button
+							bind:this={modelTrigger}
+							class="chip model-chip"
+							class:custom={chatSettings.model || chatSettings.effort}
+							type="button"
+							title="Model for this chat"
+							aria-label="Model for this chat, {chipModel || 'not set'}{chipEffort
+								? `, ${EFFORT_LABELS[chipEffort]} effort`
+								: ''}"
+							aria-haspopup="menu"
+							aria-expanded={modelOpen}
+							disabled={settingsLocked}
+							onclick={() => {
+								modelOpen = !modelOpen;
+								if (modelOpen) {
+									commandsOpen = false;
+									contextOpen = false;
+								}
+							}}
+						>
+							<span class="model-chip-name">{chipModel || 'Model'}</span>
+							{#if chipEffort}<span class="model-chip-effort">{EFFORT_LABELS[chipEffort]}</span
+								>{/if}
+						</button>
+						{#if reference}
+							<span class="chip context-chip" title={reference.text}>
+								<Icon name="quote" size={12} />
+								<span class="context-chip-label">{reference.text}</span>
+								<button
+									class="chip-x"
+									type="button"
+									title="Remove the passage"
+									aria-label="Remove the passage"
+									onclick={() => {
+										reference = null;
+										composer?.focus();
+									}}
+								>
+									x
+								</button>
+							</span>
+						{/if}
+						{#each attachments as attachment, index (`${attachment.kind}-${attachment.id}-${attachment.depth}`)}
+							<span class="chip context-chip" title={attachmentLabel(attachment)}>
+								<Icon name={ATTACHMENT_ICONS[attachment.kind]} size={12} />
+								<span class="context-chip-label">{attachmentLabel(attachment)}</span>
+								<button
+									class="chip-x"
+									type="button"
+									title="Remove {attachmentLabel(attachment)}"
+									aria-label="Remove {attachmentLabel(attachment)}"
+									onclick={() => {
+										attachments = attachments.filter((_, i) => i !== index);
+										composer?.focus();
+									}}
+								>
+									x
+								</button>
+							</span>
+						{/each}
+					</div>
+					<span class="composer-send">
+						{#if busy}
 							<button
-								class="menu-item"
+								class="icon-btn sm send-btn"
 								type="button"
-								role="menuitem"
-								disabled={busy}
-								title="Recap the story up to where you are"
-								onclick={() => runAction(() => void catchUp())}
+								title="Stop generating"
+								aria-label="Stop generating"
+								onclick={stop}
 							>
-								Catch me up
+								<span class="stop-glyph"></span>
 							</button>
+						{:else}
 							<button
-								class="menu-item"
+								class="icon-btn sm send-btn"
 								type="button"
-								role="menuitem"
-								disabled={summarising}
-								title="Draft and refresh scene and chapter summaries in the background"
-								onclick={() => runAction(() => void updateSummaries())}
+								disabled={!input.trim() || switching}
+								title="Send"
+								aria-label="Send"
+								onclick={() => send()}
 							>
-								{summarising ? 'Starting...' : 'Update summaries'}
+								<Icon name="send" size={15} />
 							</button>
 						{/if}
-						<button
-							class="menu-item danger"
-							type="button"
-							role="menuitem"
-							disabled={deleting || busy}
-							title="Delete this chat for good"
-							onclick={() => runAction(() => void deleteChat())}
-						>
-							Delete chat
-						</button>
-					</div>
-				{/if}
+					</span>
+				</div>
 			</div>
-			{#if busy}
-				<button
-					class="icon-btn"
-					type="button"
-					title="Stop generating"
-					aria-label="Stop generating"
-					onclick={stop}
-				>
-					<span class="stop-glyph"></span>
-				</button>
-			{:else}
-				<button
-					class="icon-btn"
-					type="button"
-					disabled={!input.trim() || switching}
-					title="Send"
-					aria-label="Send"
-					onclick={() => send()}
-				>
-					<Icon name="send" size={16} />
-				</button>
-			{/if}
 		</div>
 	</div>
 {/if}
@@ -1294,62 +1705,21 @@
 		height: 100%;
 		min-height: 0;
 	}
-	.chat-bar {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 10px;
-		border-bottom: 1px solid var(--border);
-	}
+	/* The chat list drops below the whole header, as wide as the panel. */
 	.chat-picker-wrap {
-		position: relative;
-		flex: 1;
-		min-width: 0;
-	}
-	.chat-picker-btn {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		width: 100%;
-		min-width: 0;
-		border: 0;
-		background: none;
-		padding: 4px 6px;
-		border-radius: 6px;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13px;
-		cursor: pointer;
-	}
-	.chat-picker-btn:hover:not(:disabled) {
-		background: var(--bg-hover);
-	}
-	.chat-picker-title {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		flex: none;
 	}
 	/* Skin from the shared .popover / .menu-item (menus.css); only the
 	   positioning and the list's own layout stay here. */
 	.chat-picker {
 		position: absolute;
 		top: calc(100% + 4px);
-		left: 0;
-		right: 0;
+		left: 8px;
+		right: 8px;
 		z-index: 30;
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-	}
-	.chat-search {
-		width: 100%;
-		font: inherit;
-		font-size: 13px;
-		padding: 6px 8px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-card);
-		color: var(--text);
 	}
 	.chat-list {
 		max-height: 320px;
@@ -1377,38 +1747,105 @@
 		color: var(--text-faint);
 	}
 	.assistant-head {
+		position: relative;
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 10px 14px;
+		gap: 2px;
+		padding: 6px 8px 6px 14px;
 		border-bottom: 1px solid var(--border);
 	}
-	.assistant-name {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
+	.chat-title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-base);
 		font-weight: 600;
-		color: var(--text-muted);
+		color: var(--text);
 	}
-	.head-actions {
+	/* The composer: one bordered box holding the text and a row of controls.
+	   The command and model menus open above it, as wide as the box. */
+	.composer-wrap {
+		position: relative;
+		padding: 8px 12px 12px;
+	}
+	.composer-pop {
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		bottom: calc(100% - 2px);
+		z-index: 60;
+	}
+	.composer {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+	}
+	.composer:focus-within {
+		border-color: var(--accent-line);
+	}
+	.composer textarea {
+		resize: none;
+		background: none;
+		border: 0;
+		padding: 10px 12px 4px;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: var(--text-base);
+		line-height: 1.45;
+		max-height: 160px;
+		outline: none;
+	}
+	.composer-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 4px;
+		padding: 4px 6px 6px;
+		border-top: 1px solid var(--border);
+	}
+	.composer-tools {
+		flex: 1;
+		min-width: 0;
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: flex-end;
 		align-items: center;
-		gap: 6px 12px;
+		gap: 4px;
 	}
-	.mute-link {
-		border: 0;
-		background: none;
-		padding: 0;
-		font-size: 12px;
-		color: var(--text-faint);
+	.composer-row .chip {
+		padding: 2px 8px;
+		font-size: var(--text-meta);
+		max-width: 100%;
+		min-width: 0;
+	}
+	.model-chip {
 		cursor: pointer;
 	}
-	.mute-link:hover {
-		color: var(--text);
-		text-decoration: underline;
+	.model-chip-name,
+	.context-chip-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.model-chip-name {
+		max-width: 16ch;
+	}
+	.context-chip-label {
+		max-width: 18ch;
+	}
+	.model-chip-effort {
+		color: var(--text-faint);
+	}
+	.model-chip.custom {
+		border-color: var(--accent-line);
+	}
+	.composer-send {
+		flex: none;
+	}
+	.send-btn:not(:disabled) {
+		color: var(--accent-ink);
 	}
 	.chat-scroll {
 		flex: 1;
@@ -1504,70 +1941,6 @@
 		border-color: var(--border-strong);
 		background: var(--bg-hover);
 	}
-	.slash-menu {
-		margin: 0 12px 6px;
-		border: 1px solid var(--border);
-		border-radius: 9px;
-		background: var(--bg-elevated);
-		box-shadow: var(--shadow);
-		padding: 5px;
-		display: flex;
-		flex-direction: column;
-	}
-	.slash-item {
-		display: flex;
-		align-items: baseline;
-		gap: 9px;
-		width: 100%;
-		text-align: left;
-		border: 0;
-		background: none;
-		color: var(--text);
-		font-family: var(--font-ui);
-		padding: 6px 8px;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-	.slash-item.active {
-		background: var(--bg-hover);
-	}
-	.slash-name {
-		flex: 0 0 auto;
-		font-family: var(--font-mono);
-		font-size: 12.5px;
-		font-weight: 550;
-	}
-	.slash-detail {
-		font-size: 12px;
-		color: var(--text-faint);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.composer {
-		border-top: 1px solid var(--border);
-		padding: 12px;
-		display: flex;
-		gap: 8px;
-		align-items: flex-end;
-	}
-	.composer textarea {
-		flex: 1;
-		resize: none;
-		background: var(--bg-inset);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 9px 11px;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13.5px;
-		line-height: 1.45;
-		max-height: 120px;
-		outline: none;
-	}
-	.composer textarea:focus {
-		border-color: var(--accent-line);
-	}
 	.msg-insert {
 		display: inline-flex;
 		align-items: center;
@@ -1588,6 +1961,26 @@
 		cursor: progress;
 		opacity: 0.6;
 	}
+	.msg-attachments {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-bottom: 6px;
+	}
+	.msg-attachment {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		max-width: 100%;
+		padding: 1px 7px;
+		border: 1px solid var(--accent-contrast);
+		border-radius: 99px;
+		font-size: var(--text-meta);
+		opacity: 0.85;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.msg-ref {
 		border-left: 2px solid var(--accent-contrast);
 		opacity: 0.85;
@@ -1600,67 +1993,7 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
-	.ref-chip {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-		margin: 0 12px;
-		padding: 7px 10px;
-		border: 1px solid var(--border);
-		border-left: 3px solid var(--accent);
-		border-radius: 8px;
-		background: var(--bg-card);
-		font-size: 12.5px;
-		color: var(--text-muted);
-	}
-	.ref-quote {
-		flex: 1;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-	.ref-x {
-		border: 0;
-		background: none;
-		color: var(--text-faint);
-		cursor: pointer;
-		font-size: 13px;
-		line-height: 1;
-		padding: 0 2px;
-	}
-	.ref-x:hover {
-		color: var(--text);
-	}
-	.composer-menu-wrap {
-		position: relative;
-		flex: none;
-	}
-	.menu-btn {
-		width: 36px;
-		height: 36px;
-		border-radius: 9px;
-		border: 1px solid var(--border);
-		background: var(--bg-card);
-		color: var(--text-muted);
-		display: grid;
-		place-items: center;
-		cursor: pointer;
-	}
-	.menu-btn:hover {
-		color: var(--text);
-		border-color: var(--border-strong);
-	}
-	/* Skin from the shared .popover / .menu-item (menus.css); only the
-	   positioning stays here. */
-	.composer-menu {
-		position: absolute;
-		bottom: 42px;
-		right: 0;
-		z-index: 60;
-		min-width: 190px;
-	}
+
 	.stop-glyph {
 		width: 11px;
 		height: 11px;

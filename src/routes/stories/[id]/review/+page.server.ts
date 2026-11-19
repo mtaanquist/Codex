@@ -236,7 +236,16 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const suggestionId = formText(data, 'suggestionId');
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
-		const result = await decideSuggestion(db, locals.user!.id, story.id, suggestionId, true);
+		// The guided pass's Edit sends the author's own wording to accept instead.
+		const override = data.has('replacement') ? formText(data, 'replacement') : undefined;
+		const result = await decideSuggestion(
+			db,
+			locals.user!.id,
+			story.id,
+			suggestionId,
+			true,
+			override
+		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		// The body changed; keep the mention index in step.
 		if (result.sceneId) await queueSceneMentions(result.sceneId);

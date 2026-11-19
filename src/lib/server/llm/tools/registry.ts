@@ -105,6 +105,43 @@ export const TOOLS: ToolDef[] = [
 	},
 	{
 		kind: 'write',
+		name: 'leave_pattern_note',
+		description:
+			'Leave a whole-scene note about a recurring pattern in the prose (an epithet habit, a pet phrase, filter verbs) together with the line edits that fix its instances. The note and every edit are staged in one call and linked, so the author can work through them in order. Edits whose passage is not found are reported back; to retry them, call this again with the same sceneId and comment and only those edits.',
+		parameters: obj(
+			{
+				sceneId: str('The scene id.'),
+				comment: str(
+					'The note, opening with "Pattern note (<the pattern>):" and saying what the pattern is and why it matters.'
+				),
+				edits: {
+					type: 'array',
+					description: 'One entry per instance you would change, in scene order.',
+					items: obj(
+						{
+							original: str('The exact existing text to replace (must occur once in the scene).'),
+							replacement: str(
+								'The proposed replacement text, as manuscript prose with *asterisks* only for italics.'
+							)
+						},
+						['original', 'replacement']
+					)
+				},
+				kept: {
+					type: 'array',
+					description:
+						'Optional: instances you left alone on purpose, such as one that helps the rhythm, and why.',
+					items: obj(
+						{ quote: str('The instance you kept.'), reason: str('Why it stays, in a few words.') },
+						['quote', 'reason']
+					)
+				}
+			},
+			['sceneId', 'comment', 'edits']
+		)
+	},
+	{
+		kind: 'write',
 		scoped: true,
 		name: 'reply_in_thread',
 		description:

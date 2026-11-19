@@ -13,7 +13,7 @@ import {
 	resolveChat,
 	type ChatScope
 } from './chat-history';
-import { CHAT_MISSING } from '#lib/assistant-chat';
+import { CHAT_MISSING, type ChatModelSettings } from '#lib/assistant-chat';
 import { isUuid } from '#lib/slug';
 import {
 	writerStopSignal,
@@ -129,10 +129,16 @@ export function assistantSseResponse(options: {
 	// Conversational turns run as 'chat'; the recap runs as 'utility'. Both land
 	// in the same stored conversation.
 	role: 'chat' | 'utility';
+	// The chat's own model and effort (the composer's model chip).
+	override?: ChatModelSettings;
 	enableTools: boolean;
 	messages: ChatMessage[];
 	// Older turns of this conversation were summarised; the panel shows a note.
 	summarised?: boolean;
+	// The newest message's attachments as sent, when it had any: their keys,
+	// with a trailing "!" on each one cut to fit. Ones left out (gone, trashed,
+	// muted) are missing, so the panel's chips can match what was stored.
+	attached?: string[];
 	errorMessage: string;
 }): Response {
 	const { request, userId, scope } = options;
@@ -153,6 +159,7 @@ export function assistantSseResponse(options: {
 					storyId,
 					universeId,
 					role: options.role,
+					override: options.override,
 					enableTools: options.enableTools,
 					messages: options.messages,
 					signal: requestSignal(request)
@@ -216,7 +223,8 @@ export function assistantSseResponse(options: {
 						'x-chat-created': options.chat.created ? '1' : '0'
 					}
 				: {}),
-			...(options.summarised ? { 'x-chat-summarised': '1' } : {})
+			...(options.summarised ? { 'x-chat-summarised': '1' } : {}),
+			...(options.attached ? { 'x-chat-attachments': options.attached.join(',') } : {})
 		}
 	});
 }

@@ -1,0 +1,3 @@
+ALTER TABLE "review_suggestions" ADD COLUMN "pattern_thread_id" uuid;--> statement-breakpoint
+ALTER TABLE "review_suggestions" ADD CONSTRAINT "review_suggestions_pattern_thread_id_review_threads_id_fk" FOREIGN KEY ("pattern_thread_id") REFERENCES "public"."review_threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "review_suggestions_pattern_thread_idx" ON "review_suggestions" USING btree ("pattern_thread_id");
