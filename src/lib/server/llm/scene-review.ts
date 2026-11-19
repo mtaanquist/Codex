@@ -1085,6 +1085,8 @@ export async function reviewStoryScenes(
 			run.state.phase = 'patterns';
 			run.state.patterns ??= [];
 			await run.save();
+			const notesBefore = notes;
+			const failuresBefore = [...failures];
 			try {
 				const pass = await runPatternPass(
 					db,
@@ -1094,7 +1096,11 @@ export async function reviewStoryScenes(
 						units,
 						budgetTokens: surveyBudgetTokens(modelContextWindow(resolved.config, 'reviewer')),
 						state: run.state.patterns,
-						save: run.save,
+						save: async (progress) => {
+							run.state.notes = notesBefore + progress.notes;
+							run.state.failures = [...failuresBefore, ...progress.failures];
+							await run.save();
+						},
 						meter,
 						signal: opts.signal
 					},

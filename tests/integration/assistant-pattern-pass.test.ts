@@ -47,7 +47,10 @@ const isApply = (m: ChatMessage[]) => asked(m).includes('apply stage of a patter
 // Answers the survey with one pattern across the chapter's first two scenes,
 // each apply turn with one suggest_edit for "sighed" in the scene it is shown
 // (then plain text), and every scene review with no notes.
-function patternProvider(onRequest?: (messages: ChatMessage[]) => void): {
+function patternProvider(
+	onRequest?: (messages: ChatMessage[]) => void,
+	opts: { editScene?: (shown: string) => string; failFor?: () => string } = {}
+): {
 	provider: Provider;
 	seen: ChatMessage[][];
 } {
@@ -78,7 +81,9 @@ function patternProvider(onRequest?: (messages: ChatMessage[]) => void): {
 				if (req.messages.some((m) => m.role === 'tool')) {
 					return { content: 'done', toolCalls: [], usage };
 				}
-				const sceneId = /\(id: ([0-9a-f-]{36})\)/.exec(asked(req.messages))![1];
+				const shown = /\(id: ([0-9a-f-]{36})\)/.exec(asked(req.messages))![1];
+				if (opts.failFor?.() === shown) throw new Error('Endpoint fell over.');
+				const sceneId = opts.editScene?.(shown) ?? shown;
 				return {
 					content: '',
 					toolCalls: [
@@ -284,5 +289,67 @@ describe('the chapter pattern pass', () => {
 		expect(result.capped).toBe(true);
 		expect(seen).toHaveLength(1);
 		expect(isSurvey(seen[0])).toBe(true);
+	});
+
+	it('continues a capped run under a new job without surveying again', async () => {
+		const capTo = async (spendCapUsd: number) => {
+			await saveAccountLlmConfig(db, userId, {
+				enabled: true,
+				assistantName: '',
+				persona: 'balanced',
+				endpoint: 'https://api.example.com/v1',
+				apiKey: 'sk',
+				models: { reviewer: MODEL },
+				toolCallBudget: 8,
+				spendCapUsd
+			});
+			await saveModelPricing(db, userId, { [MODEL]: { prompt: 0.001, completion: 0 } });
+		};
+		await capTo(0.5);
+		const first = patternProvider();
+		const capped = await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter', jobId: 'cap-1' },
+			{ provider: first.provider }
+		);
+		expect(capped.capped).toBe(true);
+
+		await capTo(100);
+		const second = patternProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter', jobId: 'cap-2' },
+			{ provider: second.provider }
+		);
+		expect(second.seen.some(isSurvey)).toBe(false);
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		expect(edits.map((e) => e.sceneId).sort()).toEqual([sceneIds[0], sceneIds[1]].sort());
+		const notes = await db
+			.select({ body: reviewComments.bodyMd })
+			.from(reviewComments)
+			.where(eq(reviewComments.assistant, true));
+		expect(notes.filter((n) => n.body.startsWith('Pattern note'))).toHaveLength(1);
+	});
+
+	it('records a failed fix and carries on with the next scene and the scene reviews', async () => {
+		const { provider, seen } = patternProvider(undefined, { failFor: () => sceneIds[0] });
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter' },
+			{ provider }
+		);
+		expect(result.failures.some((f) => f.sceneId === sceneIds[0])).toBe(true);
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[1]]);
+		const reviews = seen.filter((m) => !isSurvey(m) && !isApply(m));
+		for (const messages of reviews) expect(asked(messages)).toContain('Pattern note (Sighing)');
+	});
+
+	it('keeps each fix in the scene it was asked about', async () => {
+		const { provider } = patternProvider(undefined, { editScene: () => sceneIds[1] });
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'chapter' }, { provider });
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		// The apply turn for scene 1 aimed at scene 2 and was refused.
+		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[1]]);
 	});
 });

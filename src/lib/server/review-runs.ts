@@ -161,6 +161,9 @@ function carryForward(state: ReviewRunState, scope: string): ReviewRunState {
 		// price it lacked) say nothing about this one.
 		failures: state.failures.filter((failure) => failure.sceneId),
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
+		// The pattern pass's surveys, notes, and fixed scenes, so a continued run
+		// neither pays for them again nor raises the same habits twice.
+		...(state.patterns ? { patterns: state.patterns } : {}),
 		capped: false,
 		spentUsd: 0,
 		carriedForward: true

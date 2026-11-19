@@ -541,6 +541,12 @@ export function buildPatternSurveyMessage(
 }
 
 const MAX_PATTERN_EXAMPLES = 6;
+// Keeps a pattern's note well inside the comment length limit.
+const PATTERN_DESCRIPTION_CHARS = 600;
+const PATTERN_EXAMPLE_CHARS = 200;
+const PATTERN_PLACES = 20;
+const cut = (text: string, max: number) =>
+	text.length <= max ? text : text.slice(0, max).trimEnd() + '...';
 
 function shapePatterns(parsed: unknown[]): FoundPattern[] {
 	return parsed.flatMap((entry) => {
@@ -553,12 +559,13 @@ function shapePatterns(parsed: unknown[]): FoundPattern[] {
 		return [
 			{
 				name: name.trim(),
-				description: typeof description === 'string' ? description.trim() : '',
+				description:
+					typeof description === 'string' ? cut(description.trim(), PATTERN_DESCRIPTION_CHARS) : '',
 				sceneIds: [...new Set(ids)],
 				examples: Array.isArray(examples)
 					? examples
 							.filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
-							.map((e) => e.trim())
+							.map((e) => cut(e.trim(), PATTERN_EXAMPLE_CHARS))
 							.slice(0, MAX_PATTERN_EXAMPLES)
 					: []
 			}
@@ -613,7 +620,11 @@ export function patternNoteBody(
 	if (pattern.examples.length) {
 		lines.push('', `For example: ${pattern.examples.map((e) => `"${e}"`).join(', ')}.`);
 	}
-	if (where.places.length > 1) lines.push('', `${where.label}: ${where.places.join(', ')}.`);
+	if (where.places.length > 1) {
+		const shown = where.places.slice(0, PATTERN_PLACES);
+		const more = where.places.length - shown.length;
+		lines.push('', `${where.label}: ${shown.join(', ')}${more > 0 ? `, and ${more} more` : ''}.`);
+	}
 	return lines.join('\n');
 }
 

@@ -181,7 +181,9 @@ function noteWhere(pattern: PatternState, unit: PatternUnit) {
 	}
 	return {
 		label: 'Shows up in',
-		places: scenes.map((s, i) => (s.title ?? '').trim() || `Scene ${i + 1}`)
+		places: scenes.map(
+			(s) => (s.title ?? '').trim() || `Scene ${unit.scenes.indexOf(s) + 1} of the chapter`
+		)
 	};
 }
 
@@ -219,7 +221,9 @@ export async function runPatternPass(
 		units: PatternUnit[];
 		budgetTokens: number;
 		state: PatternUnitState[];
-		save: () => Promise<void>;
+		// Persists the run state, with the notes and failures counted so far, so
+		// a run that dies part-way does not lose what it already staged.
+		save: (progress: { notes: number; failures: ReviewFailure[] }) => Promise<void>;
 		meter?: SpendMeter;
 		signal?: AbortSignal;
 	},
@@ -237,6 +241,7 @@ export async function runPatternPass(
 	});
 	const system = frame ? buildSystemMessage(frame) : null;
 	const req = { ...opts, system };
+	const save = () => opts.save({ notes, failures });
 	const bodyChars = opts.budgetTokens * 4;
 
 	units: for (const unit of opts.units) {
@@ -265,14 +270,26 @@ export async function runPatternPass(
 				entry.patterns = [];
 			}
 			entry.surveyed = true;
-			await opts.save();
+			await save();
 		}
 
 		const byId = new Map(unit.scenes.map((s) => [s.id, s]));
 		for (const pattern of entry.patterns) {
 			if (!pattern.threadId) {
-				if (await ensureNote(db, opts.storyId, pattern, unit)) notes += 1;
-				await opts.save();
+				try {
+					if (await ensureNote(db, opts.storyId, pattern, unit)) notes += 1;
+				} catch (err) {
+					logEvent('error', 'assistant.patterns.note_failed', {
+						storyId: opts.storyId,
+						error: err instanceof Error ? err.message : String(err)
+					});
+				}
+				if (!pattern.threadId) {
+					failures.push({ message: `The note for "${pattern.name}" could not be left.` });
+					// Not retried: the scenes are marked so a resumed run moves on.
+					pattern.applied = [...pattern.sceneIds];
+				}
+				await save();
 				if (!pattern.threadId) continue;
 			}
 			for (const sceneId of pattern.sceneIds) {
@@ -288,31 +305,44 @@ export async function runPatternPass(
 					role: 'user',
 					content: buildPatternApplyMessage(pattern, scene, bodyChars)
 				};
-				const result = await completeDetailed(
-					db,
-					{
-						userId: opts.userId,
-						storyId: opts.storyId,
-						role: 'reviewer',
-						enableTools: true,
-						toolNames: ['suggest_edit'],
-						toolBudget: APPLY_TOOL_BUDGET,
-						toolScope: { patternThreadId: pattern.threadId, storyOnly: true },
-						messages: system ? [system, task] : [task],
-						meter: opts.meter,
-						signal: opts.signal
-					},
-					deps
-				);
-				notes += result.notes;
-				if (result.stopped) {
-					logEvent('info', 'assistant.patterns.stopped', {
-						storyId: opts.storyId,
-						stopped: result.stopped
+				try {
+					const result = await completeDetailed(
+						db,
+						{
+							userId: opts.userId,
+							storyId: opts.storyId,
+							role: 'reviewer',
+							enableTools: true,
+							toolNames: ['suggest_edit'],
+							toolBudget: APPLY_TOOL_BUDGET,
+							// Edits stay in the scene being fixed.
+							toolScope: {
+								patternThreadId: pattern.threadId,
+								editWindow: { sceneId, start: 0, end: Number.MAX_SAFE_INTEGER },
+								storyOnly: true
+							},
+							messages: system ? [system, task] : [task],
+							meter: opts.meter,
+							signal: opts.signal
+						},
+						deps
+					);
+					notes += result.notes;
+					if (result.stopped) {
+						logEvent('info', 'assistant.patterns.stopped', {
+							storyId: opts.storyId,
+							stopped: result.stopped
+						});
+					}
+				} catch (err) {
+					if (opts.signal?.aborted) throw err;
+					failures.push({
+						sceneId,
+						message: `The fixes for "${pattern.name}" could not be suggested here: ${err instanceof Error ? err.message : String(err)}`
 					});
 				}
 				pattern.applied.push(sceneId);
-				await opts.save();
+				await save();
 			}
 		}
 	}
