@@ -11,6 +11,12 @@ export function keepUpdatedAt() {
 	return { updatedAt: sql`${scenes.updatedAt}` };
 }
 
+// For the scenes a split, a duplicate or a deleted chapter only shifts along:
+// neither timestamp moves, since the writer did not change those scenes.
+export function keepTimestamps() {
+	return { ...keepUpdatedAt(), touchedAt: sql`${scenes.touchedAt}` };
+}
+
 // The owned-scene lookup shared by everything that reads or mutates a scene:
 // ownership flows through the story, and soft-deleted scenes and scenes in a
 // trashed universe are filtered by default so the trash check cannot be

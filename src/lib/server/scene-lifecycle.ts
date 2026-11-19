@@ -13,7 +13,7 @@ import {
 	stories
 } from './db/schema.ts';
 import type { EntityType } from './entity-lookups.ts';
-import { keepUpdatedAt, ownedScene } from './scene-access.ts';
+import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
@@ -97,12 +97,15 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
-		await tx
+		// The chapter as of the trash itself, not the read above: a move can
+		// land in between.
+		const [trashed] = await tx
 			.update(scenes)
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
-			.where(eq(scenes.id, scene.id));
+			.where(eq(scenes.id, scene.id))
+			.returning({ chapterId: scenes.chapterId });
 		await markMentionsStale(tx, { sceneIds: [scene.id] });
-		await markChapterSummariesStale(tx, scene.chapterId ? [scene.chapterId] : []);
+		await markChapterSummariesStale(tx, trashed?.chapterId ? [trashed.chapterId] : []);
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
@@ -391,13 +394,7 @@ export async function deleteChapter(
 	await db.transaction(async (tx) => {
 		await tx
 			.update(scenes)
-			// Not a change to the scenes themselves, so touched_at stays too.
-			.set({
-				chapterId: null,
-				positionInChapter: null,
-				...keepUpdatedAt(),
-				touchedAt: sql`${scenes.touchedAt}`
-			})
+			.set({ chapterId: null, positionInChapter: null, ...keepTimestamps() })
 			.where(eq(scenes.chapterId, chapter.id));
 		await lockStoryChapters(tx, chapter.storyId);
 		await tx.delete(chapters).where(eq(chapters.id, chapter.id));

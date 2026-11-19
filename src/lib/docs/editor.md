@@ -20,7 +20,7 @@ Right-click a chapter in the sidebar to rename it, move it up or down, or delete
 
 ## Splitting and merging scenes
 
-To split a scene in two, put the cursor where the break should go and press the split button in the toolbar (the page with the dashed line). Everything after the cursor moves into a new untitled scene directly after the current one. Marks move along with their text.
+To split a scene in two, put the cursor where the break should go and press the split button in the toolbar (the page with the dashed line). Everything after the cursor moves into a new untitled scene directly after the current one. Marks move along with their text. If the scene was changed somewhere else (in another tab, for example) just before the split, nothing is split and a message says so; check the text and try again.
 
 To merge scenes, right-click each scene in the sidebar and choose "Select for merging"; selected scenes show a coloured ring. With two or more selected, right-click any of them and choose "Merge". The scenes join in story order into the earliest one, with a blank line between them; that scene keeps its title. The others go to "Deleted scenes", so a merge can be undone by restoring them and removing the joined text.
 
