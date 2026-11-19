@@ -443,13 +443,12 @@
 	// ---- the guided pass over an Assistant pattern note ----
 	// Works through the note's pending edits in reading order, one at a time.
 	// done holds what this pass accepted or skipped (a skip leaves the edit
-	// pending); known is the queue as the pass started, so an edit that appears
-	// later is a follow-up from a re-read. currentId keeps the step on screen
-	// steady while the queue changes around it.
+	// pending); followUps are the edits a re-read staged. currentId keeps the
+	// step on screen steady while the queue changes around it.
 	const patternCounts = $derived(pendingPatternCounts(suggestions));
 	let pass = $state<{
 		threadId: string;
-		known: Set<string>;
+		followUps: SvelteSet<string>;
 		done: SvelteSet<string>;
 		currentId: string | null;
 		reread: 'idle' | 'running' | 'failed';
@@ -479,7 +478,7 @@
 		);
 		pass = {
 			threadId,
-			known: new Set(queue.map((s) => s.id)),
+			followUps: new SvelteSet(),
 			done: new SvelteSet(),
 			currentId: queue[0]?.id ?? null,
 			reread: 'idle'
@@ -519,12 +518,14 @@
 		accepted: { bodyMd: string; baseHash: string } | null,
 		replacement: string | undefined
 	) {
-		if (!pass) return;
+		// Folded into the open editor even if the pass was stopped meanwhile:
+		// the server has already applied it.
 		editorRef?.applyAccepted(
 			[id],
 			accepted,
 			replacement === undefined ? {} : { [id]: replacement }
 		);
+		if (!pass) return;
 		pass.done.add(id);
 		if (assistantSurfaces) void rereadAfter(id);
 	}
@@ -540,6 +541,7 @@
 		const token = ++rereadToken;
 		current.reread = 'running';
 		let ok: boolean;
+		let ids: string[] = [];
 		try {
 			const response = await fetch('/api/assistant/pattern-reread', {
 				method: 'POST',
@@ -547,12 +549,18 @@
 				body: JSON.stringify({ suggestionId })
 			});
 			ok = response.ok;
+			if (ok) ids = ((await response.json()) as { ids?: string[] }).ids ?? [];
 		} catch {
 			ok = false;
 		}
 		if (pass !== current) return;
 		if (ok) await refreshAll();
-		if (token === rereadToken) current.reread = ok ? 'idle' : 'failed';
+		for (const id of ids) current.followUps.add(id);
+		if (token !== rereadToken) return;
+		current.reread = ok ? 'idle' : 'failed';
+		// The follow-up is the next step, ahead of whatever the pass moved on to.
+		const next = ids.find((id) => passOpen.some((s) => s.id === id));
+		if (next) current.currentId = next;
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
@@ -729,7 +737,7 @@
 						scene={passScene}
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
-						followUp={passStep !== null && !pass.known.has(passStep.id)}
+						followUp={passStep !== null && pass.followUps.has(passStep.id)}
 						reread={pass.reread}
 						onAccepted={passAccepted}
 						onSkip={(id) => pass?.done.add(id)}

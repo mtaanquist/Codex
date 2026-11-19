@@ -49,7 +49,7 @@ const isApply = (m: ChatMessage[]) => asked(m).includes('apply stage of a patter
 // each apply turn with one suggest_edit for "sighed" in the scene it is shown
 // (then plain text), and every scene review with no notes.
 function patternProvider(
-	onRequest?: (messages: ChatMessage[]) => void,
+	onRequest?: (messages: ChatMessage[]) => void | Promise<unknown>,
 	opts: { editScene?: (shown: string) => string; failFor?: () => string } = {}
 ): {
 	provider: Provider;
@@ -62,7 +62,7 @@ function patternProvider(
 		},
 		async respond(req): Promise<ProviderResponse> {
 			seen.push(req.messages);
-			onRequest?.(req.messages);
+			await onRequest?.(req.messages);
 			const usage = { promptTokens: 1000, completionTokens: 0 };
 			if (isSurvey(req.messages)) {
 				return {
@@ -354,6 +354,19 @@ describe('the chapter pattern pass', () => {
 		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
 		// The apply turn for scene 1 aimed at scene 2 and was refused.
 		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[1]]);
+	});
+
+	it('stops asking for fixes once the writer resolves the note mid-run', async () => {
+		let applies = 0;
+		const { provider } = patternProvider(async (messages) => {
+			if (!isApply(messages) || messages.some((m) => m.role === 'tool')) return;
+			applies += 1;
+			// The writer resolves the note while the first fix is being asked for.
+			if (applies === 1) await db.update(reviewThreads).set({ resolvedAt: new Date() });
+		});
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'chapter' }, { provider });
+		// Two scenes carry the habit; the second is never asked about.
+		expect(applies).toBe(1);
 	});
 
 	it('gives no more fixes to a note the writer resolved before the run went on', async () => {

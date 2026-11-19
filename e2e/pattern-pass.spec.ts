@@ -11,6 +11,27 @@ import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 // edits are seeded straight into the database, so no model is needed; this
 // account has no Assistant set up, so no re-read runs after the accept.
 
+async function seedEdit(
+	pool: pg.Pool,
+	scene: { id: string; story_id: string; body_md: string },
+	threadId: string,
+	range: [number, number],
+	replacement: string
+): Promise<string> {
+	const revision = await pool.query<{ id: string }>(
+		`insert into revisions (entity_type, entity_id, body_md, reason)
+		 values ('scene', $1, $2, 'autosave') returning id`,
+		[scene.id, scene.body_md]
+	);
+	const edit = await pool.query<{ id: string }>(
+		`insert into review_suggestions
+		 (story_id, scene_id, assistant, base_revision_id, range_start, range_end, replacement, pattern_thread_id)
+		 values ($1, $2, true, $3, $4, $5, $6, $7) returning id`,
+		[scene.story_id, scene.id, revision.rows[0].id, range[0], range[1], replacement, threadId]
+	);
+	return edit.rows[0].id;
+}
+
 async function typeScene(page: Page, text: string, previous?: string) {
 	await page.getByRole('button', { name: 'New scene' }).click();
 	if (previous) await expect(page.locator('.cm-content')).not.toContainText(previous);
@@ -55,19 +76,7 @@ test('the author works through a pattern note across two scenes', async ({ page 
 			`insert into review_comments (thread_id, assistant, body_md) values ($1, true, $2)`,
 			[thread.rows[0].id, 'Pattern note (POV epithets): Kara is often called the elf.']
 		);
-		for (const scene of [one, two]) {
-			const revision = await pool.query<{ id: string }>(
-				`insert into revisions (entity_type, entity_id, body_md, reason)
-				 values ('scene', $1, $2, 'autosave') returning id`,
-				[scene.id, scene.body_md]
-			);
-			await pool.query(
-				`insert into review_suggestions
-				 (story_id, scene_id, assistant, base_revision_id, range_start, range_end, replacement, pattern_thread_id)
-				 values ($1, $2, true, $3, 0, 7, 'Kara', $4)`,
-				[scene.story_id, scene.id, revision.rows[0].id, thread.rows[0].id]
-			);
-		}
+		for (const scene of [one, two]) await seedEdit(pool, scene, thread.rows[0].id, [0, 7], 'Kara');
 	} finally {
 		await pool.end();
 	}
@@ -117,4 +126,81 @@ test('the author works through a pattern note across two scenes', async ({ page 
 	} finally {
 		await pool2.end();
 	}
+});
+
+test.describe('with the Assistant on', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	// After an accept the Assistant re-reads the spot and stages a follow-up in
+	// the same scene. The follow-up is the next step, even though the pass had
+	// already moved on to the next scene. The re-read is answered by the test.
+	test('a follow-up from the re-read comes next', async ({ page }) => {
+		await gotoReady(page, '/login');
+		await page.getByLabel('Email').fill('assistant-e2e@example.com');
+		await page.getByLabel('Password').fill('e2e-password');
+		await page.getByRole('button', { name: 'Sign in' }).click();
+		await expect(page).toHaveURL('/');
+
+		const name = `Follow-up ${Date.now()}`;
+		await pickFromLibraryMenu(page, 'New universe');
+		await page.getByLabel('New universe').fill(name);
+		await page.getByRole('button', { name: 'Create universe' }).click();
+		await gotoReady(page, '/');
+		await startStoryInUniverse(page, name);
+		await page.getByLabel('New story').fill('Epithets');
+		await page.getByRole('button', { name: 'Create story' }).click();
+		await page.getByRole('button', { name: 'New chapter' }).click();
+		const first = 'The elf crossed the ford.';
+		await typeScene(page, first);
+		await typeScene(page, 'The elf looked back.', first);
+		const storyPath = new URL(page.url()).pathname;
+
+		const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+		const scenesOf = async () =>
+			(
+				await pool.query<{ id: string; story_id: string; body_md: string }>(
+					`select s.id, s.story_id, s.body_md from scenes s join stories st on st.id = s.story_id
+					 join universes u on u.id = st.universe_id where u.name = $1 order by s.global_position`,
+					[name]
+				)
+			).rows;
+		try {
+			const [one, two] = await scenesOf();
+			const thread = await pool.query<{ id: string }>(
+				`insert into review_threads (story_id, scene_id) values ($1, $2) returning id`,
+				[one.story_id, one.id]
+			);
+			const threadId = thread.rows[0].id;
+			await pool.query(
+				`insert into review_comments (thread_id, assistant, body_md) values ($1, true, $2)`,
+				[threadId, 'Pattern note (POV epithets): Kara is often called the elf.']
+			);
+			for (const scene of [one, two]) await seedEdit(pool, scene, threadId, [0, 7], 'Kara');
+
+			await page.route('**/api/assistant/pattern-reread', async (route) => {
+				const [after] = await scenesOf();
+				const at = after.body_md.indexOf('ford');
+				const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river');
+				await route.fulfill({ json: { staged: 1, ids: [id] } });
+			});
+
+			await gotoReady(page, `${storyPath}/review?scene=${one.id}`);
+			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+			await note.getByRole('button', { name: 'Work through this (2)' }).click();
+			const pass = page.locator('.review-panel');
+			await expect(pass.locator('.pp-para')).toContainText('crossed the ford.');
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+
+			await expect(pass.getByText('Follow-up')).toBeVisible();
+			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
+			await expect(page.locator('.review-edit .cm-content')).toContainText('Kara crossed');
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			// Then on to the second scene.
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await expect(pass.getByText('Follow-up')).toHaveCount(0);
+		} finally {
+			await page.unrouteAll({ behavior: 'wait' });
+			await pool.end();
+		}
+	});
 });
