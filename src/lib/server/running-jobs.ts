@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import type { Database } from './auth.ts';
+import { isUuid } from '../slug.ts';
 import { chapters, characters, stories, universes } from './db/schema.ts';
 import {
 	ASSISTANT_ENRICH_QUEUE,
@@ -179,9 +180,10 @@ export async function stopAssistantJob(
 	userId: string,
 	jobId: string
 ): Promise<boolean> {
+	if (!isUuid(jobId)) return false;
 	const { rows } = await db.execute<{ name: string }>(sql`
 		select name from pgboss.job
-		where id::text = ${jobId}
+		where id = ${jobId}::uuid
 			and name in (
 				${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE}, ${ASSISTANT_ENRICH_QUEUE},
 				${LEGACY_ASSISTANT_REVIEW_QUEUE}, ${LEGACY_ASSISTANT_SUMMARIES_QUEUE}

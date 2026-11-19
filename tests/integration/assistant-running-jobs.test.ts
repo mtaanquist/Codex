@@ -314,5 +314,6 @@ describe('stopAssistantJob (#1045)', () => {
 		await boss.complete(ASSISTANT_ENRICH_QUEUE, id!);
 		expect(await stopAssistantJob(db, boss, userId, id!)).toBe(false);
 		expect(await stopAssistantJob(db, boss, userId, 'not-a-job')).toBe(false);
+		expect(await stopAssistantJob(db, boss, userId, randomUUID())).toBe(false);
 	});
 });

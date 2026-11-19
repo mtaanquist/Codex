@@ -2366,4 +2366,32 @@ describe('gateway refusal and paused turns (#1083)', () => {
 			{ type: 'error', message: 'The model declined to answer this request.' }
 		]);
 	});
+
+	it('keeps the text of a paused stream instead of discarding it', async () => {
+		await configure(true);
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'token', text: 'Partly there.' };
+				yield { type: 'done', finishReason: 'paused' };
+			},
+			async respond() {
+				return { content: '', toolCalls: [] };
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const events: StreamEvent[] = [];
+		for await (const event of stream(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider, http: noHttp }
+		)) {
+			events.push(event);
+		}
+		expect(events).toEqual([
+			{ type: 'token', text: 'Partly there.' },
+			{ type: 'done', finishReason: 'paused' }
+		]);
+	});
 });

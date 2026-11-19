@@ -638,9 +638,8 @@
 						placeholder="No cap"
 					/>
 					<p class="field-hint">
-						A background review or summary update stops after the next scene once it has spent this
-						much. Leave it empty for no cap. It only applies when your endpoint publishes prices for
-						the model.
+						A background run stops once it has spent about this much. Leave it empty for no cap.
+						<a href={resolve('/docs/[topic]', { topic: 'account' })}>How the cap works</a>
 					</p>
 				</div>
 				<div class="field">
