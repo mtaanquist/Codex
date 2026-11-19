@@ -19,6 +19,7 @@ import {
 	saveReviewRun
 } from '../review-runs.ts';
 import { needsSummary, summariseStory } from './summaries.ts';
+import { runPatternPass, type PatternUnit } from './pattern-pass.ts';
 import {
 	assembleContext,
 	assembleSceneDelta,
@@ -38,7 +39,12 @@ import {
 	type PriorNote,
 	type SurveyScene
 } from './prompts/review.ts';
-import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
+import {
+	coversProse,
+	isFullReview,
+	type PatternScope,
+	type ReviewCategory
+} from '../../review-shape.ts';
 import { summaryIsCurrent } from '../summary-currency.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig, type ResolvedConfig } from './config.ts';
@@ -65,6 +71,25 @@ const LEAN_REVIEW_TIERS = ['frame', 'summaries', 'scene-local'] as const;
 // marked as unable to call tools offers none.
 export function offersPatternTool(config: ResolvedConfig): boolean {
 	return config.toolProfile !== 'minimal' && config.supportsTools !== false;
+}
+
+// One pattern unit per chapter in scope (the unfiled scenes count as one), in
+// story order. A chapter of a single scene has nothing to recur across; its
+// scene review covers it.
+export function chapterPatternUnits(
+	targets: { id: string; title: string | null; chapterId: string | null; bodyMd: string }[]
+): PatternUnit[] {
+	const units = new Map<string, PatternUnit>();
+	for (const scene of targets) {
+		const key = scene.chapterId ?? 'unfiled';
+		let unit = units.get(key);
+		if (!unit) {
+			unit = { key, scope: 'chapter', scenes: [] };
+			units.set(key, unit);
+		}
+		unit.scenes.push({ id: scene.id, title: scene.title, bodyMd: scene.bodyMd });
+	}
+	return [...units.values()].filter((unit) => unit.scenes.length > 1);
 }
 
 export function reviewTiers(categories: ReviewCategory[]): readonly string[] | undefined {
@@ -222,6 +247,9 @@ export async function reviewOneScene(
 		// Whether leave_pattern_note is on offer; resolved from the account's
 		// tool profile when the caller has not.
 		patternTool?: boolean;
+		// Notes from the same run that cover this scene but sit elsewhere (a
+		// chapter pattern noted on another scene), carried like its own.
+		extraPrior?: PriorNote[];
 	},
 	deps: GatewayDeps = {}
 ): Promise<ScenePassResult> {
@@ -256,7 +284,13 @@ export async function reviewOneScene(
 			sceneTextIncluded = context.includedTiers.includes('scene-local');
 		}
 	}
-	const prior = await openAssistantNotes(db, opts.scene.id);
+	const own = await openAssistantNotes(db, opts.scene.id);
+	const prior = [
+		...own,
+		...(opts.extraPrior ?? []).filter(
+			(note) => !own.some((o) => o.kind === note.kind && o.body === note.body)
+		)
+	];
 	const task: ChatMessage = {
 		role: 'user',
 		content:
@@ -942,6 +976,8 @@ export async function reviewStoryScenes(
 		storyId: string;
 		chapterId?: string;
 		categories?: ReviewCategory[];
+		// The pattern pass to run before the scene reviews; none when unset.
+		patterns?: PatternScope;
 		jobId?: string;
 		signal?: AbortSignal;
 		// LEGACY (#1041): the categories a job queued before the upgrade
@@ -950,10 +986,12 @@ export async function reviewStoryScenes(
 	},
 	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
+	const patterns = coversProse(opts.categories ?? []) ? opts.patterns : undefined;
 	const scope = {
 		storyId: opts.storyId,
 		chapterId: opts.chapterId,
-		categories: opts.categories
+		categories: opts.categories,
+		patterns
 	};
 	const legacyScope = legacyReviewScopeKey(scope);
 	const run = await openRun(db, {
@@ -1004,7 +1042,12 @@ export async function reviewStoryScenes(
 	];
 	if (opts.chapterId) where.push(eq(scenes.chapterId, opts.chapterId));
 	const targets = await db
-		.select({ id: scenes.id, title: scenes.title })
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			chapterId: scenes.chapterId,
+			bodyMd: scenes.bodyMd
+		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(and(...where))
@@ -1032,7 +1075,57 @@ export async function reviewStoryScenes(
 	// would break on its first check anyway, and this way the outcome is capped
 	// rather than a review that reports nothing.
 	let capped = summaries.capped;
+
+	// The pattern pass runs before the scene reviews when the review covers the
+	// prose, so its notes reach each scene review as already said.
+	let scenePrior = new Map<string, PriorNote[]>();
+	if (!capped && patterns === 'chapter') {
+		const units = chapterPatternUnits(targets);
+		if (units.length) {
+			run.state.phase = 'patterns';
+			run.state.patterns ??= [];
+			await run.save();
+			const notesBefore = notes;
+			const failuresBefore = [...failures];
+			try {
+				const pass = await runPatternPass(
+					db,
+					{
+						userId: opts.userId,
+						storyId: opts.storyId,
+						units,
+						budgetTokens: surveyBudgetTokens(modelContextWindow(resolved.config, 'reviewer')),
+						state: run.state.patterns,
+						save: async (progress) => {
+							run.state.notes = notesBefore + progress.notes;
+							run.state.failures = [...failuresBefore, ...progress.failures];
+							await run.save();
+						},
+						meter,
+						signal: opts.signal
+					},
+					deps
+				);
+				notes += pass.notes;
+				failures.push(...pass.failures);
+				if (pass.capped) capped = true;
+				scenePrior = pass.prior;
+			} catch (err) {
+				if (opts.signal?.aborted) aborted = true;
+				else
+					failures.push({
+						message: `The search for repeated habits failed: ${failureMessage(err)}`
+					});
+			}
+			run.state.notes = notes;
+			run.state.failures = failures;
+			run.state.phase = 'scenes';
+			await run.save();
+		}
+	}
+
 	for (const scene of targets) {
+		if (aborted) break;
 		if (opts.signal?.aborted) {
 			aborted = true;
 			break;
@@ -1056,7 +1149,8 @@ export async function reviewStoryScenes(
 					storyFrame,
 					meter,
 					signal: opts.signal,
-					patternTool: offersPatternTool(resolved.config)
+					patternTool: offersPatternTool(resolved.config),
+					extraPrior: scenePrior.get(scene.id)
 				},
 				deps
 			);

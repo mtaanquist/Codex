@@ -8,7 +8,13 @@
 		startBackgroundReview,
 		type JobStartFailure
 	} from '#lib/assistant-actions';
-	import { REVIEW_CATEGORIES, type ReviewCategory, type ReviewLevel } from '#lib/review-shape';
+	import {
+		coversProse,
+		REVIEW_CATEGORIES,
+		type PatternScope,
+		type ReviewCategory,
+		type ReviewLevel
+	} from '#lib/review-shape';
 
 	// The review modal: pick a level (this scene, this chapter, the whole story)
 	// and which categories the Assistant should check, then start the review. The
@@ -63,7 +69,7 @@
 	// "no longer running" branch rather than reading as progress.
 	type Progress = {
 		state: string;
-		phase?: 'summaries' | 'scenes' | 'consistency' | 'done';
+		phase?: 'summaries' | 'patterns' | 'scenes' | 'consistency' | 'done';
 		// Why the run never started, shown under the notstarted heading. refused
 		// marks a server rejection, which is what a duplicate of a review already
 		// running comes back as.
@@ -114,6 +120,7 @@
 	// The done phase never reaches here: the finished branch above it catches it.
 	const PHASE_LABEL: Record<string, string> = {
 		summaries: 'Updating scene summaries',
+		patterns: 'Looking for habits that repeat across each chapter',
 		scenes: 'Reading the scenes',
 		consistency: 'Comparing the scenes to each other'
 	};
@@ -170,6 +177,9 @@
 		prose: false,
 		lore: false
 	});
+	// The pattern pass: one note per habit that repeats across a chapter, with
+	// the edits that fix it linked to the note.
+	let findPatterns = $state(false);
 
 	// Reset the form each time the modal opens, choosing the most specific level
 	// the context offers.
@@ -181,6 +191,7 @@
 			level = requested && available.includes(requested) ? requested : (available[0] ?? 'story');
 			general = true;
 			picked = { mechanics: false, prose: false, lore: false };
+			findPatterns = false;
 			runToken += 1;
 			progress = null;
 			estimate = null;
@@ -192,6 +203,10 @@
 	// The category set sent to the server: the exhaustive picks, or empty for the
 	// sparing general-notes pass.
 	const categories = $derived(REVIEW_CATEGORIES.filter((c) => picked[c]));
+	const patternsOffered = $derived(level !== 'scene' && coversProse(categories));
+	const patterns = $derived<PatternScope | undefined>(
+		patternsOffered && findPatterns ? 'chapter' : undefined
+	);
 
 	const CATEGORY_OPTIONS: { id: ReviewCategory; label: string }[] = [
 		{ id: 'mechanics', label: 'Spelling and grammar' },
@@ -221,6 +236,7 @@
 					storyId,
 					chapterId: level === 'chapter' ? chapterId : undefined,
 					categories,
+					patterns,
 					estimate: true
 				})
 			});
@@ -265,6 +281,7 @@
 				storyId,
 				chapterId,
 				categories,
+				patterns,
 				label: `"${chapterLabel(chapter)}"`,
 				reviewHref,
 				onJobId
@@ -273,6 +290,7 @@
 			await startBackgroundReview({
 				storyId,
 				categories,
+				patterns,
 				label: 'your story',
 				reviewHref,
 				onJobId
@@ -447,6 +465,20 @@
 								An exhaustive pass over the categories you picked.
 							{/if}
 						</p>
+						{#if patternsOffered}
+							<label class="choice">
+								<input type="checkbox" bind:checked={findPatterns} />
+								<span>
+									Look for habits that repeat across each chapter
+									<span class="choice-hint">
+										one note per habit, with the fixes linked to it.
+										<a href={resolve('/docs/[topic]', { topic: 'reviewing' })} target="_blank"
+											>How this works</a
+										>
+									</span>
+								</span>
+							</label>
+						{/if}
 					</fieldset>
 				{/if}
 			</div>

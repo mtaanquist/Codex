@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss';
 import { DATABASE_URL } from '$app/env/private';
 import type { EmailJob } from './token-email';
-import type { ReviewCategory } from '../review-shape';
+import type { PatternScope, ReviewCategory } from '../review-shape';
 import { db } from './db';
 import { markUniverseMentionsChanged } from './mentions.ts';
 
@@ -285,6 +285,8 @@ export async function queueAssistantReview(input: {
 	// mode, which runs the consistency pass alone.
 	categories: ReviewCategory[];
 	mode?: 'full' | 'continuity';
+	// The pattern pass to add before the scene reviews, if any.
+	patterns?: PatternScope;
 }): Promise<string | 'coalesced' | null> {
 	try {
 		const boss = await getBoss();

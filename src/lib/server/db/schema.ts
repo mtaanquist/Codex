@@ -1442,8 +1442,28 @@ export type ReviewFailure = {
 // show progress and a retry after a worker restart can pick up where it left
 // off. completed holds the scene ids already handled (reviewed or failed), so
 // the retry skips them.
+// One unit of the pattern pass (a chapter, or the whole book) as a run records
+// it: whether the survey ran, and for each pattern it found, its note and the
+// scenes whose fixes have been staged, so a resumed run neither re-sends the
+// text nor stages a scene twice.
+export type PatternUnitState = {
+	key: string;
+	surveyed: boolean;
+	patterns: {
+		name: string;
+		description: string;
+		sceneIds: string[];
+		examples: string[];
+		threadId?: string;
+		noteBody?: string;
+		applied: string[];
+	}[];
+};
+
 export type ReviewRunState = {
-	phase: 'summaries' | 'scenes' | 'consistency' | 'done';
+	phase: 'summaries' | 'patterns' | 'scenes' | 'consistency' | 'done';
+	// The pattern pass's progress, unit by unit (see PatternUnitState).
+	patterns?: PatternUnitState[];
 	// What the run was over (mode and target, see reviewScopeKey), so a later
 	// run over the same scope can carry on from a capped one.
 	scope?: string;

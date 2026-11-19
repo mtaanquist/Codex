@@ -1074,6 +1074,18 @@ calls the gateway, which proxies through the egress guard.
   and one either side with the note, offers only `suggest_edit` held to that
   window (`ToolScope.editWindow`) and linked to the note
   (`ToolScope.patternThreadId`), so a follow-up becomes the next step.
+- [built] Chapter pattern pass (#1136), opt-in from the review modal
+  (`patterns: 'chapter'` on the review job; part of the run's scope key). Runs
+  before the scene loop (`pattern-pass.ts`): stage A surveys each chapter with
+  two or more scenes (story frame only, the prose in chunks of the survey
+  budget, one corrective retry) for up to 5 recurring habits as JSON; stage B
+  creates one whole-scene note per pattern on its first scene and, per scene
+  it names, one request offering only `suggest_edit` linked to the note
+  (`ToolScope.patternThreadId`). Survey results, note ids, and applied scenes
+  live in `ReviewRunState.patterns`, so a resumed run neither re-surveys nor
+  repeats a scene. Open pattern notes are handed to the survey (not reported
+  again) and to each scene review as prior notes. The estimate prices the
+  survey only; the apply stage is listed as unknown.
 
 ### Background jobs - sequencing steps 4 and 7
 
