@@ -300,6 +300,16 @@ export const scenes = pgTable(
 			.notNull()
 			.defaultNow()
 			.$onUpdate(() => new Date()),
+		// When anything about the scene last changed, prose or not (a status, a
+		// move, the trash). The story card's edited time and the scene a story
+		// opens on read it; updated_at stays the prose clock the Assistant
+		// compares against. clock_timestamp(), not now(), so a later statement
+		// in the same transaction (the scene a split or merge acted on, after
+		// the scenes it shifted) reads as the later change.
+		touchedAt: timestamp('touched_at', { withTimezone: true })
+			.notNull()
+			.default(sql`clock_timestamp()`)
+			.$onUpdate(() => sql`clock_timestamp()`),
 		// When the mention index was last rebuilt for this scene. Null means never.
 		// The reconcile sweep re-indexes any scene whose body changed after this,
 		// or whose universe's mentions_changed_at is later, so a dropped rebuild
