@@ -362,7 +362,9 @@
 				chats = chats.filter((c) => c.id !== gone);
 				chatId = null;
 				freshChatId();
-				messages = [{ role: 'assistant', content: 'This chat was deleted.' }];
+				messages = [
+					{ role: 'assistant', content: 'This chat was deleted.', unsaved: true, notice: true }
+				];
 				olderSummarised = false;
 				return 'gone';
 			}
@@ -409,13 +411,14 @@
 			}
 		} catch {
 			const reply = messages[messages.length - 1];
-			if (controller.signal.aborted) {
-				// A Stop after done lands while the server stores the reply, which it
-				// still does. Before done, it keeps what arrived to insert, but the
-				// server stored none of it.
-				if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
-					if (startedIn) noteChatUsed(startedIn, storedTitle);
-				} else markUnsaved(false);
+			if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
+				// A Stop or a dropped connection after done lands while the server
+				// stores the reply, which it still does.
+				if (startedIn) noteChatUsed(startedIn, storedTitle);
+			} else if (controller.signal.aborted) {
+				// A writer's own Stop keeps what arrived to insert, but the server
+				// stored none of it.
+				markUnsaved(false);
 			} else if (reply?.role === 'assistant' && reply.content.trim() !== '') {
 				markUnsaved(true);
 				reply.failed = 'The connection to the Assistant was lost.';
@@ -479,7 +482,9 @@
 				{
 					role: 'assistant',
 					content:
-						'This chat was deleted. Your message was not sent; send it again to start a new chat.'
+						'This chat was deleted. Your message was not sent; send it again to start a new chat.',
+					unsaved: true,
+					notice: true
 				}
 			];
 			if (turn.reference && !reference) reference = turn.reference;
@@ -494,6 +499,9 @@
 	}
 
 	function runSlashCommand(raw: string) {
+		// A reply in flight fills the last message, so nothing may be added after
+		// it until it ends.
+		if (busy || switching) return;
 		input = '';
 		if (composer) composer.style.height = 'auto';
 		slashSelected = 0;
