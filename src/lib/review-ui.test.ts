@@ -11,6 +11,9 @@ import {
 	suggestionInFilter,
 	threadInFilter,
 	isWholeSceneNote,
+	patternName,
+	patternQueue,
+	pendingPatternCounts,
 	type MarkSuggestion,
 	type MarkThread,
 	type ReviewSuggestion,
@@ -251,5 +254,61 @@ describe('isWholeSceneNote', () => {
 
 	it('is false when no note matches the id', () => {
 		expect(isWholeSceneNote('x', [thread('t1', null)], [suggestion('s1', null)])).toBe(false);
+	});
+});
+
+describe('the guided pass over a pattern note', () => {
+	const edit = (
+		id: string,
+		sceneId: string,
+		start: number | null,
+		over: Partial<{ patternThreadId: string | null; status: string }> = {}
+	) => ({
+		id,
+		sceneId,
+		patternThreadId: 'note',
+		status: 'pending',
+		anchor: start === null ? null : { start, end: start + 1 },
+		...over
+	});
+
+	it('counts the pending edits of each note', () => {
+		const counts = pendingPatternCounts([
+			edit('a', 's1', 1),
+			edit('b', 's1', 2),
+			edit('c', 's1', 3, { status: 'accepted' }),
+			edit('d', 's1', 4, { patternThreadId: 'other' }),
+			edit('e', 's1', 5, { patternThreadId: null })
+		]);
+		expect(counts.get('note')).toBe(2);
+		expect(counts.get('other')).toBe(1);
+		expect(counts.size).toBe(2);
+	});
+
+	it('orders the queue by scene, then by position, lost anchors and unknown scenes last', () => {
+		const queue = patternQueue(
+			[
+				edit('late', 's2', 40),
+				edit('lost', 's1', null),
+				edit('early', 's2', 3),
+				edit('first', 's1', 10),
+				edit('trashed', 'gone', 0),
+				edit('decided', 's1', 0, { status: 'rejected' }),
+				edit('elsewhere', 's1', 1, { patternThreadId: 'other' })
+			],
+			'note',
+			['s1', 's2']
+		);
+		expect(queue.map((s) => s.id)).toEqual(['first', 'lost', 'early', 'late', 'trashed']);
+	});
+
+	it('names the pattern from its label, or from the first line', () => {
+		expect(patternName('Pattern note (POV epithets): Kara is often called the elf.')).toBe(
+			'POV epithets'
+		);
+		expect(patternName('The narration leans on "seemed".\nMore here.')).toBe(
+			'The narration leans on "seemed".'
+		);
+		expect(patternName('x'.repeat(80))).toBe(`${'x'.repeat(60)}...`);
 	});
 });

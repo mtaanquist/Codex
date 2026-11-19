@@ -26,6 +26,31 @@ export function isFullReview(categories: ReviewCategory[]): boolean {
 	return REVIEW_CATEGORIES.every((category) => categories.includes(category));
 }
 
+// The pattern pass a chapter or story review can add: look for habits that
+// repeat across each chapter, or across the whole book at once. Only offered
+// when the review covers the prose (see coversProse).
+export type PatternScope = 'chapter' | 'book';
+
+export function parsePatternScope(value: unknown): PatternScope | undefined {
+	return value === 'chapter' || value === 'book' ? value : undefined;
+}
+
+// The sparing general pass, or any pass with the prose category.
+export function coversProse(categories: ReviewCategory[]): boolean {
+	return categories.length === 0 || categories.includes('prose');
+}
+
+// The pattern pass a review actually runs: none unless it covers the prose,
+// and a chapter review looks at its chapter even when the whole book was asked.
+export function runPatternScope(
+	categories: ReviewCategory[],
+	patterns: PatternScope | undefined,
+	chapterId: string | undefined
+): PatternScope | undefined {
+	if (!patterns || !coversProse(categories)) return undefined;
+	return patterns === 'book' && chapterId ? 'chapter' : patterns;
+}
+
 // Human labels, used in the modal and in the review prompt's intro line.
 export const CATEGORY_LABELS: Record<ReviewCategory, string> = {
 	mechanics: 'spelling and grammar',

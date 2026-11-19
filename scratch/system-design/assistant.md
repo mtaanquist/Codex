@@ -1090,6 +1090,47 @@ calls the gateway, which proxies through the egress guard.
   holds together" comment on the first scene); the job's notification already
   reports that it found no continuity issues.
 
+- [built] One theme per note (#1131): the review prompt asks for one comment
+  per theme, so a recurring pattern, a pacing observation, and an overall
+  impression arrive as separate notes the writer can resolve on their own. A
+  pattern note opens with "Pattern note (<the pattern>):".
+- [built] Pattern notes and the guided pass (#1132): `leave_pattern_note`
+  stages a whole-scene note and the edits that fix each instance in one call,
+  linked through `review_suggestions.pattern_thread_id` (nullable, set null
+  when the note is deleted). Edits that do not locate are reported back; a
+  retry with the same comment adds to the open note. It is left out of the
+  minimal tool profile, and the prompt only mentions it when it is offered.
+  "Work through this" on the note walks its pending edits in reading order
+  (client state in `ReviewWorkspace`, `PatternPass.svelte`): Accept, Edit (an
+  owner override on accept, recorded as the applied replacement), Skip, Stop.
+  After an accept, `/api/assistant/pattern-reread` sends the changed paragraph
+  and one either side with the note, offers only `suggest_edit` held to that
+  window (`ToolScope.editWindow`) and linked to the note
+  (`ToolScope.patternThreadId`), so a follow-up becomes the next step.
+- [built] Chapter pattern pass (#1136), opt-in from the review modal
+  (`patterns: 'chapter'` on the review job; part of the run's scope key). Runs
+  before the scene loop (`pattern-pass.ts`): stage A surveys each chapter with
+  two or more scenes (story frame only, the prose in chunks of the survey
+  budget, one corrective retry) for up to 5 recurring habits as JSON; stage B
+  creates one whole-scene note per pattern on its first scene and, per scene
+  it names, one request offering only `suggest_edit` linked to the note
+  (`ToolScope.patternThreadId`). Survey results, note ids, and applied scenes
+  live in `ReviewRunState.patterns`, so a resumed run neither re-surveys nor
+  repeats a scene. Open pattern notes are handed to the survey (not reported
+  again) and to each scene review as prior notes. The estimate prices the
+  survey only; the apply stage is listed as unknown.
+- [built] Whole-book pattern pass (#1137): `patterns: 'book'` on a
+  whole-story review (a chapter review asking for it runs the chapter pass,
+  `runPatternScope`). `planBookPass` lists the book in reading order under
+  chapter headings and checks the survey against 80% of the reviewer's known
+  window (`wholeBookFit`): it fits and goes in one request (up to 8
+  patterns), or it goes chapter by chapter, each survey handed the patterns
+  found so far (name and description) and merged by name. An unknown window
+  is not offered in the modal (`{ wholeBook: true }` on the review-job
+  endpoint answers the check without contacting the endpoint). Notes name
+  the chapters. A survey retry relies on the Anthropic adapter's existing
+  cache of the last user block, so no adapter change was needed.
+
 ### Background jobs - sequencing steps 4 and 7
 
 - [built] pg-boss queues `assistant-review-v2`, `assistant-summaries-v2`, and

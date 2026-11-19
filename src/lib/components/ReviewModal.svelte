@@ -9,7 +9,13 @@
 		startBackgroundReview,
 		type JobStartFailure
 	} from '#lib/assistant-actions';
-	import { REVIEW_CATEGORIES, type ReviewCategory, type ReviewLevel } from '#lib/review-shape';
+	import {
+		coversProse,
+		REVIEW_CATEGORIES,
+		type PatternScope,
+		type ReviewCategory,
+		type ReviewLevel
+	} from '#lib/review-shape';
 
 	// The review modal: pick a level (this scene, this chapter, the whole story)
 	// and which categories the Assistant should check, then start the review. The
@@ -64,7 +70,7 @@
 	// "no longer running" branch rather than reading as progress.
 	type Progress = {
 		state: string;
-		phase?: 'summaries' | 'scenes' | 'consistency' | 'done';
+		phase?: 'summaries' | 'patterns' | 'scenes' | 'consistency' | 'done';
 		// Why the run never started, shown under the notstarted heading. refused
 		// marks a server rejection, which is what a duplicate of a review already
 		// running comes back as.
@@ -97,6 +103,7 @@
 		warnUsd: number;
 		capUsd?: number;
 		capEnforceable: boolean;
+		wholeBook?: 'fits' | 'chapters' | 'unavailable';
 	};
 
 	// The estimate is advisory: anything that does not carry the two figures the
@@ -116,6 +123,7 @@
 	// The done phase never reaches here: the finished branch above it catches it.
 	const PHASE_LABEL: Record<string, string> = {
 		summaries: 'Updating scene summaries',
+		patterns: 'Looking for habits that repeat in the prose',
 		scenes: 'Reading the scenes',
 		consistency: 'Comparing the scenes to each other'
 	};
@@ -172,6 +180,40 @@
 		prose: false,
 		lore: false
 	});
+	// The pattern pass: one note per habit that repeats across a chapter, with
+	// the edits that fix it linked to the note.
+	let findPatterns = $state(false);
+	// How far the pattern pass looks on a whole-story review, and whether the
+	// whole-book reach is offered for this story (asked when the modal opens).
+	let patternReach = $state<PatternScope>('chapter');
+	let wholeBook = $state<'fits' | 'chapters' | 'unavailable'>('unavailable');
+	let wholeBookToken = 0;
+	// The story the check last ran for, so it runs once per story per opening,
+	// and only when the pattern option is ticked on a whole-story review.
+	let checkedFor: string | null = null;
+	$effect(() => {
+		if (!reviewModal.open || level !== 'story' || !findPatterns) return;
+		if (checkedFor === storyId) return;
+		checkedFor = storyId;
+		void checkWholeBook(storyId);
+	});
+	async function checkWholeBook(forStory: string) {
+		const token = ++wholeBookToken;
+		wholeBook = 'unavailable';
+		try {
+			const response = await fetch('/api/assistant/review-job', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ storyId: forStory, wholeBook: true })
+			});
+			if (!response.ok) return;
+			const body = (await response.json()) as { wholeBook?: string };
+			if (token !== wholeBookToken) return;
+			if (body.wholeBook === 'fits' || body.wholeBook === 'chapters') wholeBook = body.wholeBook;
+		} catch {
+			// Not offered when the check fails; the chapter pass still is.
+		}
+	}
 
 	// Reset the form each time the modal opens, choosing the most specific level
 	// the context offers.
@@ -183,6 +225,10 @@
 			level = requested && available.includes(requested) ? requested : (available[0] ?? 'story');
 			general = true;
 			picked = { mechanics: false, prose: false, lore: false };
+			findPatterns = false;
+			patternReach = 'chapter';
+			wholeBook = 'unavailable';
+			checkedFor = null;
 			runToken += 1;
 			progress = null;
 			estimate = null;
@@ -194,6 +240,15 @@
 	// The category set sent to the server: the exhaustive picks, or empty for the
 	// sparing general-notes pass.
 	const categories = $derived(REVIEW_CATEGORIES.filter((c) => picked[c]));
+	const patternsOffered = $derived(level !== 'scene' && coversProse(categories));
+	const bookOffered = $derived(level === 'story' && wholeBook !== 'unavailable');
+	const patterns = $derived<PatternScope | undefined>(
+		patternsOffered && findPatterns
+			? bookOffered && patternReach === 'book'
+				? 'book'
+				: 'chapter'
+			: undefined
+	);
 
 	const CATEGORY_OPTIONS: { id: ReviewCategory; label: string }[] = [
 		{ id: 'mechanics', label: 'Spelling and grammar' },
@@ -223,6 +278,7 @@
 					storyId,
 					chapterId: level === 'chapter' ? chapterId : undefined,
 					categories,
+					patterns,
 					estimate: true
 				})
 			});
@@ -267,6 +323,7 @@
 				storyId,
 				chapterId,
 				categories,
+				patterns,
 				label: `"${chapterLabel(chapter)}"`,
 				reviewHref,
 				onJobId
@@ -275,6 +332,7 @@
 			await startBackgroundReview({
 				storyId,
 				categories,
+				patterns,
 				label: 'your story',
 				reviewHref,
 				onJobId
@@ -381,6 +439,12 @@
 								estimate.estTokens
 							)} tokens to send.
 						</p>
+						{#if estimate.wholeBook === 'chapters'}
+							<p class="rm-note">
+								The book is too long for your model to read at once, so it is read chapter by
+								chapter.
+							</p>
+						{/if}
 						{#if estimate.lines?.length}
 							<ul class="rm-lines">
 								{#each estimate.lines as line, i (i)}
@@ -453,6 +517,48 @@
 								An exhaustive pass over the categories you picked.
 							{/if}
 						</p>
+						{#if patternsOffered}
+							<label class="choice">
+								<input type="checkbox" bind:checked={findPatterns} />
+								<span>
+									Look for habits that repeat in the prose
+									<span class="choice-hint">
+										one note per habit, with the fixes linked to it.
+										<a href={resolve('/docs/[topic]', { topic: 'reviewing' })} target="_blank"
+											>How this works</a
+										>
+									</span>
+								</span>
+							</label>
+							{#if findPatterns && bookOffered}
+								<div class="rm-reach">
+									<label class="choice">
+										<input
+											type="radio"
+											name="pattern-reach"
+											value="chapter"
+											bind:group={patternReach}
+										/>
+										<span>Within each chapter</span>
+									</label>
+									<label class="choice">
+										<input
+											type="radio"
+											name="pattern-reach"
+											value="book"
+											bind:group={patternReach}
+										/>
+										<span>Across the whole book</span>
+									</label>
+									{#if patternReach === 'book' && wholeBook === 'chapters'}
+										<p class="rm-note">
+											The book is too long for your model to read at once, so it is read chapter by
+											chapter. A habit that shows only faintly in each chapter may be missed.
+										</p>
+									{/if}
+								</div>
+							{/if}
+						{/if}
 					</fieldset>
 				{/if}
 			</div>
@@ -485,6 +591,9 @@
 {/if}
 
 <style>
+	.rm-reach {
+		margin-left: 24px;
+	}
 	/* The overlay, panel, head and footer come from the modal primitive; what is
 	   left here is the shape of the two option groups. */
 	.rm-group {

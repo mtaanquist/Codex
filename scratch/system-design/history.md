@@ -2771,6 +2771,32 @@ shipping as its own PR.
 
 ## Feedback backlog
 
+Pattern notes and pattern passes (#1131, #1132, #1136, #1137,
+staging/pattern-passes, 2026-11-19). A pattern note is one Assistant review
+thread whose edits carry `pattern_thread_id` (migration 0088, additive, `on
+delete set null`), so a habit that repeats across scenes is one note with many
+linked edits rather than a note per scene (#1131). The guided pass (#1132)
+walks the note's pending edits in reading order; after each accept the
+Assistant re-reads the changed paragraph and one either side and may stage one
+follow-up there, which becomes the next step. The re-read returns the ids it
+staged, since telling follow-ups apart by "not in the queue at the start"
+also caught edits from a review still running and showed the follow-up one
+step late. An accept first saves the open editor; typing inside the marked
+words makes the accept refuse rather than overwrite it (`createSuggestion`
+and `decideSuggestion` re-read the body under the revision lock). The
+chapter pass (#1136) surveys each chapter once for up to 5 habits, then asks
+for suggest_edit fixes one scene at a time, in at most 25 scenes per pattern
+to bound cost; the scene reviews get the open notes so they do not repeat
+them. The whole-book pass (#1137) sends the book in one request when it fits
+in 80% of the context window after the reply allowance, else falls back to
+chapter by chapter, carrying the top 20 known patterns forward. A retry of
+the survey relies on the Anthropic adapter's existing cache on the last user
+block rather than new caching. The pass is skipped when the endpoint cannot
+call tools, and stops asking for a pattern's fixes once its note is resolved
+or cleared mid-run. Three staging review rounds (#1187, #1191, and round 3)
+fixed stale-range accepts, resume state, the spend cap and the step order;
+the low findings left were filed as issues.
+
 Several Assistant chats per story (#985, 2026-11-18): asked for alongside
 #984, modelled on the session picker in Claude Code for VS Code. Each scope
 (story or universe) and user had one transcript; now `assistant_chats` holds

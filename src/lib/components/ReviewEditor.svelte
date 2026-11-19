@@ -184,9 +184,12 @@
 	// fingerprint of the text it was applied to. When that was the text this
 	// editor last saved and the same change lands here, the next save builds on
 	// the new text; otherwise the save check reports the difference.
+	// replacements carries the author's own wording for an edit accepted with
+	// changes (the guided pass's Edit), keyed by suggestion id.
 	export function applyAccepted(
 		ids: string[],
-		accepted: { bodyMd: string; baseHash: string } | null = null
+		accepted: { bodyMd: string; baseHash: string } | null = null,
+		replacements: Record<string, string> = {}
 	) {
 		if (!view || !handle) return;
 		let applied = true;
@@ -200,13 +203,14 @@
 			// The server already holds this change, so it lands even while a
 			// merge or duplicate has typing paused; dropped, the next save
 			// would build on text the editor does not show.
+			const insert = replacements[id] ?? suggestion.replacement;
 			const tr = view.state.update({
-				changes: { from: a.start, to: a.end, insert: suggestion.replacement },
+				changes: { from: a.start, to: a.end, insert },
 				effects: removeReviewMarks.of([id]),
 				annotations: landsWhilePaused.of(true)
 			});
 			view.dispatch(tr);
-			if (!tr.docChanged && (a.start !== a.end || suggestion.replacement !== '')) applied = false;
+			if (!tr.docChanged && (a.start !== a.end || insert !== '')) applied = false;
 		}
 		if (applied && accepted) saver.rebase(accepted.bodyMd, accepted.baseHash);
 	}

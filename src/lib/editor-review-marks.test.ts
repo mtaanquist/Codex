@@ -76,6 +76,7 @@ function suggestion(over: Partial<ReviewSuggestion> = {}): ReviewSuggestion {
 		status: 'pending',
 		anchor: { start: 4, end: 7 },
 		anchorLost: false,
+		patternThreadId: null,
 		createdAt: '2026-01-01',
 		...over
 	};

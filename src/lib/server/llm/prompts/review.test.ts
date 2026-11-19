@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildConfirmMessage,
+	buildPatternApplyMessage,
+	buildPatternSurveyMessage,
+	buildRereadMessage,
 	buildReviewMessage,
 	buildSurveyMessage,
+	mergePatterns,
 	parseCandidates,
+	parsePatterns,
+	patternNoteBody,
+	splitPatternChunks,
 	splitSurveyChunks,
 	type SurveyScene
 } from './review';
@@ -104,6 +111,30 @@ describe('review categories', () => {
 		expect(message).toContain('filter verbs');
 		expect(message).not.toContain('Lore: contradictions');
 		expect(message).not.toContain('full copyedit');
+	});
+
+	it('asks for one comment per theme in the sparing and the exhaustive passes', () => {
+		for (const categories of [[], ['prose'], ['mechanics', 'prose', 'lore']] as const) {
+			const message = buildReviewMessage(scene, [], [...categories]);
+			expect(message).toContain('Leave one comment per theme.');
+			expect(message).toContain('Pattern note (');
+		}
+	});
+
+	it('steers a recurring pattern to leave_pattern_note only when it is offered', () => {
+		const withTool = buildReviewMessage(scene, [], [], true, true);
+		expect(withTool).toContain('use leave_pattern_note');
+		expect(withTool).toContain('list it under kept');
+		const without = buildReviewMessage(scene, [], [], true, false);
+		expect(without).not.toContain('leave_pattern_note');
+		expect(without).toContain('separate suggest_edit calls');
+	});
+
+	it('tells the sparing pass that splitting notes by theme is not padding', () => {
+		expect(buildReviewMessage(scene)).toContain('does not count against being sparing');
+		expect(buildReviewMessage(scene, [], ['prose'])).not.toContain(
+			'does not count against being sparing'
+		);
 	});
 
 	it('all three categories is the full pass and drops the sparing instruction', () => {
@@ -309,5 +340,131 @@ describe('parseCandidates', () => {
 		expect(parseCandidates(reply)).toEqual([
 			{ sceneIds: ['s1', 's2', 's3'], claim: 'Names drift.' }
 		]);
+	});
+});
+
+describe('buildRereadMessage', () => {
+	const base = {
+		sceneId: 's9',
+		sceneTitle: 'The Ford',
+		passage: 'Kara crossed. She looked back.',
+		changed: 'She',
+		note: 'Pattern note (POV epithets): the elf\nshows up often.'
+	};
+
+	it('carries the passage, the change, and the note quoted line by line', () => {
+		const message = buildRereadMessage(base);
+		expect(message).toContain('"The Ford" (id: s9)');
+		expect(message).toContain('now reads: "She"');
+		expect(message).toContain('> Pattern note (POV epithets): the elf\n> shows up often.');
+		expect(message.endsWith('Kara crossed. She looked back.')).toBe(true);
+	});
+
+	it('asks for at most one edit or the word fine', () => {
+		const message = buildRereadMessage(base);
+		expect(message).toContain('exactly one suggest_edit');
+		expect(message).toContain('"fine"');
+	});
+
+	it('says when the accepted change was a deletion', () => {
+		expect(buildRereadMessage({ ...base, changed: '' })).toContain('removed some text');
+	});
+});
+
+describe('pattern pass prompts', () => {
+	const scenes = [
+		{ id: 's1', title: 'Dawn', bodyMd: 'She sighed. She sighed again.', chapterTitle: 'One' },
+		{ id: 's2', title: null, bodyMd: 'He sighed.', chapterTitle: 'One' },
+		{ id: 's3', title: 'Dusk', bodyMd: 'They sighed.', chapterTitle: 'Two' }
+	];
+	const pattern = {
+		name: 'Sighing',
+		description: 'Characters sigh to show feeling.',
+		sceneIds: ['s1', 's2'],
+		examples: ['She sighed.']
+	};
+
+	it('lists each scene by id, with chapter headings only where chapters are given', () => {
+		const book = buildPatternSurveyMessage(scenes, { scope: 'book', cap: 8 });
+		expect(book).toContain('whole-book');
+		expect(book).toContain('at most 8');
+		expect(book.match(/^## /gm)).toHaveLength(2);
+		expect(book).toContain('### Untitled scene (id: s2)');
+		const chapter = buildPatternSurveyMessage(
+			scenes.map((s) => ({ id: s.id, title: s.title, bodyMd: s.bodyMd })),
+			{ scope: 'chapter', cap: 5 }
+		);
+		expect(chapter).not.toMatch(/^## /m);
+		expect(chapter).toContain('at most 5');
+	});
+
+	it('carries known patterns forward, names open ones to skip, and marks chunks', () => {
+		const message = buildPatternSurveyMessage(scenes, {
+			scope: 'book',
+			cap: 8,
+			known: [{ name: 'Sighing', description: 'sighs' }],
+			open: ['Weather openings'],
+			chunk: { index: 2, total: 3 }
+		});
+		expect(message).toContain('exactly the same name');
+		expect(message).toContain('- Sighing: sighs');
+		expect(message).toContain('- Weather openings');
+		expect(message).toContain('part 2 of 3');
+	});
+
+	it('splits the listing into chunks within the budget', () => {
+		const big = Array.from({ length: 6 }, (_, i) => ({
+			id: `b${i}`,
+			title: null,
+			bodyMd: 'word '.repeat(400)
+		}));
+		const chunks = splitPatternChunks(big, 1000);
+		expect(chunks.length).toBeGreaterThan(1);
+		expect(chunks.flat().map((s) => s.id)).toEqual(big.map((s) => s.id));
+	});
+
+	it('parses a pattern list leniently and drops entries with no name or scenes', () => {
+		const reply =
+			'Here you go:\n```json\n[{"name":" Sighing ","description":"d","sceneIds":["s1","s1","s2"],"examples":["a",""," b "]},{"name":"","sceneIds":["s1"]},{"name":"x","sceneIds":[]}]\n```';
+		expect(parsePatterns(reply)).toEqual([
+			{ name: 'Sighing', description: 'd', sceneIds: ['s1', 's2'], examples: ['a', 'b'] }
+		]);
+		expect(parsePatterns('[]')).toEqual([]);
+		expect(
+			parsePatterns('[{"name":"Odd (one)","sceneIds":["s1"]},{"name":"()","sceneIds":["s1"]}]')
+		).toEqual([{ name: 'Odd one', description: '', sceneIds: ['s1'], examples: [] }]);
+		expect(parsePatterns('no list here')).toBeNull();
+	});
+
+	it('merges the same pattern from several replies by name, ignoring case and spacing', () => {
+		const merged = mergePatterns([
+			[{ name: 'Sighing', description: '', sceneIds: ['s1'], examples: ['a'] }],
+			[
+				{ name: 'sighing ', description: 'later', sceneIds: ['s1', 's3'], examples: ['a', 'b'] },
+				{ name: 'Other', description: 'o', sceneIds: ['s2'], examples: [] }
+			]
+		]);
+		expect(merged).toEqual([
+			{ name: 'Sighing', description: 'later', sceneIds: ['s1', 's3'], examples: ['a', 'b'] },
+			{ name: 'Other', description: 'o', sceneIds: ['s2'], examples: [] }
+		]);
+	});
+
+	it('writes a note that names the pattern, an example, and where else it shows', () => {
+		const body = patternNoteBody(pattern, { label: 'Shows up in', places: ['Dawn', 'Scene 2'] });
+		expect(body.startsWith('Pattern note (Sighing): Characters sigh')).toBe(true);
+		expect(body).toContain('For example: "She sighed."');
+		expect(body).toContain('Shows up in: Dawn, Scene 2.');
+		expect(patternNoteBody(pattern, { label: 'Shows up in', places: ['Dawn'] })).not.toContain(
+			'Shows up in'
+		);
+	});
+
+	it('hands the apply stage one scene, cut to fit', () => {
+		const message = buildPatternApplyMessage(pattern, scenes[0], 12);
+		expect(message).toContain('Sighing: Characters sigh');
+		expect(message).toContain('(id: s1)');
+		expect(message).toContain('the rest of this scene is cut to fit');
+		expect(message).not.toContain('again');
 	});
 });

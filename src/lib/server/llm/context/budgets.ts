@@ -20,6 +20,9 @@ export function estimateTokens(text: string): number {
 	return tokensForChars(text.length);
 }
 
+// A provisional allowance for the persona system message a request carries.
+export const PERSONA_TOKENS = 120;
+
 export function tokensForChars(chars: number): number {
 	return Math.ceil(chars / 4);
 }
