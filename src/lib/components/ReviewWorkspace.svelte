@@ -380,9 +380,15 @@
 	// Both actions read the stored text, so the open editor's pending save
 	// lands first; a failed save stops the action.
 	const flushEditor = () => flushEditors(editorRef ? [editorRef] : []);
+	// A new scene (a duplicate) is picked only once the refresh has loaded
+	// it: picked before, the selection falls back to another scene for a
+	// moment and the editor mounts twice. One that already exists (a merge's
+	// survivor) is picked first, so the refresh does not fall back off a
+	// scene the merge trashed.
 	async function openChangedScene(sceneId: string) {
-		chosenSceneId = sceneId;
+		if (orderedScenes.some((scene) => scene.id === sceneId)) chosenSceneId = sceneId;
 		await refreshAll();
+		chosenSceneId = sceneId;
 		editorNonce++;
 	}
 

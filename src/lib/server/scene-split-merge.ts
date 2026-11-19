@@ -136,13 +136,16 @@ const GONE = { ok: false, code: 'not_found', reason: 'That scene no longer exist
 
 // Clamps a marker's range into [lo, hi]. One that covered only blank space
 // trimmed away would come out empty, which the editor cannot show; it takes
-// the nearest character instead.
-function clampAnchors(start: number, end: number, lo: number, hi: number) {
+// the nearest character instead, inside [lo, hi] when there is one and
+// otherwise anywhere in a body of `length` (a scene that was all blank).
+function clampAnchors(start: number, end: number, lo: number, hi: number, length = hi) {
 	let anchorStart = Math.min(Math.max(lo, start), hi);
 	let anchorEnd = Math.min(Math.max(anchorStart, end), hi);
 	if (anchorEnd === anchorStart) {
 		if (anchorStart < hi) anchorEnd = anchorStart + 1;
 		else if (anchorStart > lo) anchorStart = anchorStart - 1;
+		else if (anchorStart < length) anchorEnd = anchorStart + 1;
+		else if (anchorStart > 0) anchorStart = anchorStart - 1;
 	}
 	return { anchorStart, anchorEnd };
 }
@@ -398,18 +401,24 @@ export async function mergeScenes(
 		// Marker anchors count each \r\n as one character, as the editor
 		// does, so the bodies join, and are stored, with plain newlines.
 		const [target, ...rest] = rows;
-		let merged = toLf(target.bodyMd).replace(/\s+$/, '');
-		// The target's markers in its trimmed trailing blank space stay on its
-		// own text rather than run into the next scene's.
-		await moveAnchors(tx, target.id, target.id, 0, 0, merged.length);
+		const head = toLf(target.bodyMd).replace(/\s+$/, '');
+		let merged = head;
+		// Where each later scene's text lands in the merged body, for its markers.
+		const placed: { id: string; shift: number; lo: number; hi: number }[] = [];
 		for (const scene of rest) {
-			// Where this scene's text lands in the merged body, for its markers.
 			const base = merged === '' ? 0 : merged.length + 2;
 			const body = toLf(scene.bodyMd).replace(/\s+$/, '');
 			const lead = body.length - body.replace(/^\s+/, '').length;
 			const part = body.slice(lead);
 			merged = merged === '' ? part : `${merged}\n\n${part}`;
-			await moveAnchors(tx, scene.id, target.id, base - lead, base, base + part.length);
+			placed.push({ id: scene.id, shift: base - lead, lo: base, hi: base + part.length });
+		}
+		// The target's markers in its trimmed trailing blank space stay on its
+		// own text rather than run into the next scene's. Moved first, before
+		// the other scenes' markers join it.
+		await moveAnchors(tx, target.id, target.id, 0, 0, head.length, merged.length);
+		for (const scene of placed) {
+			await moveAnchors(tx, scene.id, target.id, scene.shift, scene.lo, scene.hi, merged.length);
 			// An unanchored marker has nothing to move with; it changes scene
 			// but keeps its null anchors.
 			await tx
@@ -451,14 +460,15 @@ export async function mergeScenes(
 }
 
 // Moves one scene's anchored markers onto `to`, shifted by `shift` and
-// clamped to [lo, hi] of the merged body.
+// clamped to [lo, hi] of the merged body, `length` characters long.
 async function moveAnchors(
 	tx: Database,
 	from: string,
 	to: string,
 	shift: number,
 	lo: number,
-	hi: number
+	hi: number,
+	length: number
 ) {
 	const markers = await tx
 		.select({
@@ -470,7 +480,13 @@ async function moveAnchors(
 		.where(and(eq(sceneMarkers.sceneId, from), isNotNull(sceneMarkers.anchorStart)));
 	for (const marker of markers) {
 		if (marker.anchorStart === null || marker.anchorEnd === null) continue;
-		const range = clampAnchors(marker.anchorStart + shift, marker.anchorEnd + shift, lo, hi);
+		const range = clampAnchors(
+			marker.anchorStart + shift,
+			marker.anchorEnd + shift,
+			lo,
+			hi,
+			length
+		);
 		const same = range.anchorStart === marker.anchorStart && range.anchorEnd === marker.anchorEnd;
 		if (from === to && same) continue;
 		await tx

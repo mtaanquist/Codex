@@ -15,7 +15,7 @@
 		type MarkVisibility
 	} from '#lib/editor';
 	import { mentionExtensions, type MentionEntity } from '#lib/editor-mentions';
-	import { pausedExtension } from '#lib/editor-paused';
+	import { landsWhilePaused, pausedExtension } from '#lib/editor-paused';
 	import {
 		buildReviewMarks,
 		removeReviewMarks,
@@ -197,10 +197,16 @@
 				applied = false;
 				continue;
 			}
-			view.dispatch({
+			// The server already holds this change, so it lands even while a
+			// merge or duplicate has typing paused; dropped, the next save
+			// would build on text the editor does not show.
+			const tr = view.state.update({
 				changes: { from: a.start, to: a.end, insert: suggestion.replacement },
-				effects: removeReviewMarks.of([id])
+				effects: removeReviewMarks.of([id]),
+				annotations: landsWhilePaused.of(true)
 			});
+			view.dispatch(tr);
+			if (!tr.docChanged && (a.start !== a.end || suggestion.replacement !== '')) applied = false;
 		}
 		if (applied && accepted) saver.rebase(accepted.bodyMd, accepted.baseHash);
 	}
@@ -308,11 +314,15 @@
 		if (incoming !== appliedBody) {
 			if (!autosave.isDirty()) {
 				if (view.state.doc.toString() !== incoming) {
+					// The server's own text, so it lands even while typing is paused.
 					view.dispatch({
-						changes: { from: 0, to: view.state.doc.length, insert: incoming }
+						changes: { from: 0, to: view.state.doc.length, insert: incoming },
+						annotations: landsWhilePaused.of(true)
 					});
 				}
-				saver.adopt(incoming);
+				// Only once the editor shows it, or the next save would build on
+				// text the writer never saw.
+				if (view.state.doc.toString() === incoming) saver.adopt(incoming);
 			}
 			// With unsaved edits the next save is refused as a conflict, and the
 			// banner lets the author choose.

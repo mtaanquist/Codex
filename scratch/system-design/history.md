@@ -1461,6 +1461,28 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 6 of staging/review-follow-ups: paused review
+      editor and history order (2026-11-19). While a review-centre merge or
+      duplicate had typing paused, the pause filter dropped an accepted
+      suggestion and the outside-text sync, but the saver still rebased onto
+      the stored text; a merge that then failed left the editor on the old
+      text with a matching base, and the next keystroke silently undid the
+      accept. Both dispatches carry the server's own text, so they are now
+      marked landsWhilePaused, and the saver only rebases or adopts once the
+      editor shows the text. Accept and Reject stay usable while paused.
+      saveSceneBody re-checks deleted_at and a live story under the row
+      lock, so a save queued behind a merge that trashed its scene gets the
+      404 instead of writing into the trash and showing "saved". Revision
+      rows are stamped with clock_timestamp() rather than the transaction
+      start, so a split or merge checkpoint that waited on the scene lock
+      sorts after the autosave it waited for, and a later autosave no longer
+      coalesces over the pre-split text. Merge widens the markers of a blank
+      first scene against the merged body instead of leaving them empty.
+      After a duplicate the review centre picks the new scene once the
+      refresh has loaded it, so the editor mounts once rather than briefly
+      showing another scene. The Write page's SceneEditor has no such
+      server-text path while paused (its Load newer is already refused).
+
 - [x] Staging review round 5 of staging/review-follow-ups: split and
       merge history, CRLF anchors (2026-11-19). Split and merge recorded
       their new text as an autosave, which rolls into the latest autosave
