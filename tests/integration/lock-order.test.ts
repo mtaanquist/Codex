@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -556,4 +557,76 @@ describe('lock order', () => {
 		process.stderr.write(`races ${points.length * RACERS.length} in ${Date.now() - t}ms\n`);
 		expect(problems).toEqual([]);
 	}, 900_000);
+});
+
+// A story with no scenes yet has no scene rows to lock, so these run on their
+// own seed: the story row still has to keep a scene create and another change
+// to the story apart.
+describe('lock order in a story with no scenes', () => {
+	async function emptyStory() {
+		await seed();
+		await db.delete(scenes).where(eq(scenes.storyId, S.story));
+	}
+
+	// Runs `first` in a transaction that stays open until `second` waits on it
+	// (or finishes), then commits it and lets `second` finish.
+	async function overlap(
+		first: (tx: Database) => Promise<unknown>,
+		second: () => Promise<unknown>
+	): Promise<unknown> {
+		const holder = await pool.connect();
+		const probe = await pool.connect();
+		try {
+			const holderPid = (await holder.query('select pg_backend_pid() as pid')).rows[0].pid;
+			let secondFailure: unknown = null;
+			let secondRun: Promise<unknown> = Promise.resolve();
+			await drizzle(holder, { schema }).transaction(async (tx) => {
+				await first(tx as unknown as Database);
+				let settled = false;
+				secondRun = second()
+					.catch((error) => (secondFailure = error))
+					.finally(() => (settled = true));
+				for (let i = 0; i < 100 && !settled; i++) {
+					const { rows } = await probe.query(
+						`select 1 from pg_stat_activity
+						 where datname = current_database() and $1 = any(pg_blocking_pids(pid))`,
+						[holderPid]
+					);
+					if (rows.length > 0) break;
+					await pause();
+				}
+			});
+			await secondRun;
+			return secondFailure;
+		} finally {
+			holder.release();
+			probe.release();
+		}
+	}
+
+	it('two scenes created at once get their own positions', async () => {
+		await emptyStory();
+		const failure = await overlap(
+			(tx) => createScene(tx, S.user, S.story, S.ch1),
+			() => createScene(opDb, S.user, S.story, S.ch1)
+		);
+		expect(failure).toBeNull();
+		expect(await sharedPositions()).toEqual([]);
+		const rows = await db.select({ id: scenes.id }).from(scenes).where(eq(scenes.storyId, S.story));
+		expect(rows).toHaveLength(2);
+	});
+
+	it('a chapter deleted while a scene is created in it keeps the scene', async () => {
+		await emptyStory();
+		const failure = await overlap(
+			(tx) => createScene(tx, S.user, S.story, S.ch1),
+			() => deleteChapter(opDb, S.user, S.ch1)
+		);
+		expect(failure).toBeNull();
+		const rows = await db
+			.select({ chapterId: scenes.chapterId })
+			.from(scenes)
+			.where(eq(scenes.storyId, S.story));
+		expect(rows).toEqual([{ chapterId: null }]);
+	});
 });

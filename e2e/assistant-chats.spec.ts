@@ -291,3 +291,30 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 	expect(ids[1]).toBe(ids[0]);
 	await expect(picker).toHaveText('Who lit the fire?');
 });
+
+// A reply that breaks off partway keeps its text on screen, with a note that
+// it was not saved.
+test('a reply that breaks off says so under its text', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Broken');
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as { newChatId?: string };
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': body.newChatId ?? '',
+				'x-chat-created': '1',
+				'x-chat-title': encodeURIComponent('Where is the boat?')
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'The boat is at' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'error', message: 'The endpoint closed the stream before the reply finished.' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('Where is the boat?');
+	await composer.press('Enter');
+	const chat = panel.locator('.chat-scroll');
+	await expect(chat).toContainText('The boat is at');
+	await expect(chat).toContainText('broke off before it finished, so it was not saved');
+});
