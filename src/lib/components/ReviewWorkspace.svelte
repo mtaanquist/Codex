@@ -747,7 +747,9 @@
 						onSkip={(id) => pass?.done.add(id)}
 						beforeAccept={flushEditor}
 						onStop={() => (pass = null)}
-						bind:held={pass.held}
+						onHeld={(held) => {
+							if (pass) pass.held = held;
+						}}
 					/>
 				{:else if selectedScene}
 					<ReviewPanel

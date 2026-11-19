@@ -21,7 +21,7 @@
 		onSkip,
 		beforeAccept,
 		onStop,
-		held = $bindable(false)
+		onHeld
 	}: {
 		note: ReviewThread;
 		// The current edit, or null when none is left.
@@ -44,9 +44,9 @@
 		// writer's latest text; false when that save failed.
 		beforeAccept: () => Promise<boolean>;
 		onStop: () => void;
-		// True while the writer is rewording or accepting the current edit, so
+		// Told whether the writer is rewording or accepting the current edit, so
 		// the workspace does not swap the step out from under them.
-		held?: boolean;
+		onHeld: (held: boolean) => void;
 	} = $props();
 
 	const name = $derived(patternName(note.comments[0]?.body ?? ''));
@@ -78,7 +78,7 @@
 	});
 
 	$effect(() => {
-		held = editing || busy;
+		onHeld(editing || busy);
 	});
 
 	function startEdit() {
