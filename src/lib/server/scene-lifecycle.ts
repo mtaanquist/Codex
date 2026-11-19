@@ -391,7 +391,13 @@ export async function deleteChapter(
 	await db.transaction(async (tx) => {
 		await tx
 			.update(scenes)
-			.set({ chapterId: null, positionInChapter: null, ...keepUpdatedAt() })
+			// Not a change to the scenes themselves, so touched_at stays too.
+			.set({
+				chapterId: null,
+				positionInChapter: null,
+				...keepUpdatedAt(),
+				touchedAt: sql`${scenes.touchedAt}`
+			})
 			.where(eq(scenes.chapterId, chapter.id));
 		await lockStoryChapters(tx, chapter.storyId);
 		await tx.delete(chapters).where(eq(chapters.id, chapter.id));

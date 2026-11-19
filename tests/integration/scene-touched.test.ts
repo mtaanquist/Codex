@@ -23,7 +23,8 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const dashboard = await import('../../src/routes/+page.server');
 const { lastTouchedScene } = await import('../../src/lib/server/scene-access');
 const { setSceneStatus } = await import('../../src/lib/server/scene-status');
-const { trashScene, restoreScene } = await import('../../src/lib/server/scene-lifecycle');
+const { trashScene, restoreScene, deleteChapter } =
+	await import('../../src/lib/server/scene-lifecycle');
 const { applySceneOrder } = await import('../../src/lib/server/scene-order');
 
 let ownerId: string;
@@ -140,4 +141,35 @@ describe('scene touched_at', () => {
 			.where(eq(scenes.id, third.id));
 		expect(kept.touchedAt!.toISOString()).toBe(LONG_AGO.toISOString());
 	});
+
+	it('touches only the scene the writer moved, not the ones it shifted', async () => {
+		const [third] = await db
+			.insert(scenes)
+			.values({ storyId, chapterId, positionInChapter: 3, globalPosition: 3, bodyMd: 'Three.' })
+			.returning({ id: scenes.id });
+		await pool.query('update scenes set touched_at = $1 where id = $2', [LONG_AGO, third.id]);
+		// The third scene moves to the front; the other two shift down one.
+		const result = await applySceneOrder(db, storyId, {
+			chapters: [{ id: chapterId, sceneIds: [third.id, firstId, secondId] }],
+			orphanSceneIds: []
+		});
+		expect(result.ok).toBe(true);
+		expect((await lastTouchedScene(db, storyId))?.id).toBe(third.id);
+		expect(await touchedAt(firstId)).toBe('2026-01-03T00:00:00.000Z');
+		expect(await touchedAt(secondId)).toBe('2026-01-02T00:00:00.000Z');
+	});
+
+	it('does not touch the scenes of a deleted chapter', async () => {
+		expect(await deleteChapter(db, ownerId, chapterId)).toBe(true);
+		expect(await touchedAt(firstId)).toBe('2026-01-03T00:00:00.000Z');
+		expect(await touchedAt(secondId)).toBe('2026-01-02T00:00:00.000Z');
+	});
 });
+
+async function touchedAt(id: string): Promise<string | undefined> {
+	const [row] = await db
+		.select({ touchedAt: scenes.touchedAt })
+		.from(scenes)
+		.where(eq(scenes.id, id));
+	return row.touchedAt?.toISOString();
+}
