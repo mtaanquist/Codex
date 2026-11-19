@@ -394,7 +394,7 @@ describe('rereadPatternEdit', () => {
 			{ content: 'One follow-up.' }
 		]);
 		const result = await rereadPatternEdit(db, { userId, suggestionId }, { provider });
-		expect(result).toEqual({ staged: 1 });
+		expect(result).toMatchObject({ staged: 1 });
 		expect(offered[0]).toEqual(['suggest_edit']);
 		const task = seen[0].filter((m) => m.role === 'user').at(-1)!.content;
 		expect(task).toContain('now reads: "She had seen"');
@@ -404,6 +404,7 @@ describe('rereadPatternEdit', () => {
 			(s) => s.status === 'pending'
 		);
 		expect(followUp?.patternThreadId).toBe(threadId);
+		expect(result).toEqual({ staged: 1, ids: [followUp!.id] });
 	});
 
 	it('stages at most one follow-up, and only once per accepted edit', async () => {
@@ -423,7 +424,7 @@ describe('rereadPatternEdit', () => {
 			},
 			{ content: 'done' }
 		]);
-		expect(await rereadPatternEdit(db, { userId, suggestionId }, { provider })).toEqual({
+		expect(await rereadPatternEdit(db, { userId, suggestionId }, { provider })).toMatchObject({
 			staged: 1
 		});
 		const calls = seen.length;
@@ -460,7 +461,7 @@ describe('rereadPatternEdit', () => {
 			{ content: 'fine' }
 		]);
 		const result = await rereadPatternEdit(db, { userId, suggestionId: row.id }, { provider });
-		expect(result).toEqual({ staged: 0 });
+		expect(result).toEqual({ staged: 0, ids: [] });
 		expect(
 			(await db.select().from(reviewSuggestions)).filter((s) => s.status === 'pending')
 		).toHaveLength(0);

@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '../auth';
-import { reviewComments } from '../db/schema';
+import { reviewComments, reviewSuggestions } from '../db/schema';
 import { acceptedPatternEdit } from '../review';
 import { paragraphWindow } from '#lib/paragraphs';
 import { assembleReviewReplyContext, buildSystemMessage } from './context/assemble';
@@ -28,7 +28,10 @@ const REREAD_TOOL_BUDGET = 3;
 const reread = new Set<string>();
 const REREAD_MEMORY = 5000;
 
-export type RereadResult = { staged: number } | { skipped: 'gone' | 'not-found' | 'done' };
+// ids are the follow-up edits this re-read staged, so the pass can show them
+// next rather than mistake them for edits from a review still running.
+export type RereadResult =
+	{ staged: number; ids: string[] } | { skipped: 'gone' | 'not-found' | 'done' };
 
 export async function rereadPatternEdit(
 	db: Database,
@@ -71,6 +74,20 @@ export async function rereadPatternEdit(
 		userId: input.userId,
 		storyId: edit.storyId
 	});
+	const pendingHere = async () =>
+		(
+			await db
+				.select({ id: reviewSuggestions.id })
+				.from(reviewSuggestions)
+				.where(
+					and(
+						eq(reviewSuggestions.patternThreadId, edit.patternThreadId),
+						eq(reviewSuggestions.sceneId, edit.sceneId),
+						eq(reviewSuggestions.status, 'pending')
+					)
+				)
+		).map((row) => row.id);
+	const before = new Set(await pendingHere());
 	// A re-read that fails can be asked for again.
 	const result = await completeDetailed(
 		db,
@@ -95,5 +112,7 @@ export async function rereadPatternEdit(
 		reread.delete(input.suggestionId);
 		throw err;
 	});
-	return { staged: result.notes };
+	if (!result.notes) return { staged: 0, ids: [] };
+	const ids = (await pendingHere()).filter((id) => !before.has(id));
+	return { staged: result.notes, ids };
 }

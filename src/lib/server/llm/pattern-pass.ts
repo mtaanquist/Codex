@@ -463,9 +463,21 @@ async function dropClosedNotes(db: Database, entry: PatternUnitState): Promise<v
 	const live = new Set(open.map((row) => row.id));
 	for (const pattern of entry.patterns) {
 		if (!pattern.threadId || live.has(pattern.threadId)) continue;
-		pattern.applied = [...pattern.sceneIds];
-		delete pattern.noteBody;
+		closePattern(pattern);
 	}
+}
+
+function closePattern(pattern: PatternState): void {
+	pattern.applied = [...pattern.sceneIds];
+	delete pattern.noteBody;
+}
+
+async function noteOpen(db: Database, threadId: string): Promise<boolean> {
+	const [row] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.where(and(eq(reviewThreads.id, threadId), isNull(reviewThreads.resolvedAt)));
+	return Boolean(row);
 }
 
 export async function runPatternPass(
@@ -563,6 +575,13 @@ export async function runPatternPass(
 				}
 				const scene = byId.get(sceneId);
 				if (!scene) continue;
+				// The writer may resolve or clear the note while its fixes are still
+				// being asked for; stop paying for a pattern nobody wants.
+				if (!(await noteOpen(db, pattern.threadId))) {
+					closePattern(pattern);
+					await save();
+					break;
+				}
 				const task: ChatMessage = {
 					role: 'user',
 					content: buildPatternApplyMessage(pattern, scene, bodyChars)
