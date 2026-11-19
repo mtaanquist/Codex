@@ -118,6 +118,9 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
  * stamp) is left alone. */
 export async function markChapterSummariesStale(tx: Database, chapterIds: string[]) {
 	if (!chapterIds.length) return;
+	// Lowest id first, the order moveChapter and deleteChapter lock in before
+	// they renumber, so a mark over several chapters cannot deadlock with them.
+	await tx.execute(sql`select id from chapters where id in ${chapterIds} order by id for update`);
 	await tx.execute(sql`
 		update chapters
 		set summary_generated_at = least(summary_generated_at, updated_at) - interval '1 millisecond'
@@ -338,6 +341,12 @@ export async function renameChapter(
 	return true;
 }
 
+// Renumbering updates chapters in position order; taking every row lowest id
+// first beforehand keeps the lock order markChapterSummariesStale uses.
+async function lockStoryChapters(tx: Database, storyId: string) {
+	await tx.execute(sql`select id from chapters where story_id = ${storyId} order by id for update`);
+}
+
 /** Swaps a chapter with its neighbour. A no-op at either end of the list. */
 export async function moveChapter(
 	db: Database,
@@ -359,6 +368,7 @@ export async function moveChapter(
 	// Renumber the whole list; stories are small enough that this costs nothing
 	// and it keeps positions compact.
 	await db.transaction(async (tx) => {
+		await lockStoryChapters(tx, chapter.storyId);
 		for (const [index, row] of list.entries()) {
 			await tx
 				.update(chapters)
@@ -383,6 +393,7 @@ export async function deleteChapter(
 			.update(scenes)
 			.set({ chapterId: null, positionInChapter: null, ...keepUpdatedAt() })
 			.where(eq(scenes.chapterId, chapter.id));
+		await lockStoryChapters(tx, chapter.storyId);
 		await tx.delete(chapters).where(eq(chapters.id, chapter.id));
 		const rest = await tx
 			.select({ id: chapters.id })
