@@ -150,6 +150,10 @@ async function readScene(id: string) {
 	return row;
 }
 
+// updated_at has millisecond precision: an edit in the same millisecond as
+// the summary would read as already summarised.
+const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
+
 describe('summariseStory', () => {
 	it('fills blank summaries, leaves hand-written ones, skips empty scenes, and drafts the chapter', async () => {
 		const before = await readScene(sceneAId);
@@ -192,6 +196,7 @@ describe('summariseStory', () => {
 		const first = await readScene(sceneAId);
 
 		// A writer edit bumps updated_at past the summary watermark.
+		await nextMillisecond();
 		await db
 			.update(scenes)
 			.set({ bodyMd: 'Alice met Bram, then ran.' })
@@ -308,9 +313,6 @@ describe('summariseStory', () => {
 // the next pass does not pay to summarise the same text again. A copy of a
 // stale summary stays stale and is refreshed.
 describe('copied summaries', () => {
-	// updated_at has millisecond precision: an edit in the same millisecond as
-	// the summary would read as already summarised.
-	const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
 	async function editSceneA() {
 		await nextMillisecond();
 		await db
@@ -350,6 +352,7 @@ describe('copied summaries', () => {
 
 	it('refreshes only the two halves of a split, not the scenes after it', async () => {
 		await summariseWithSceneAfterA();
+		await nextMillisecond();
 		const split = await splitScene(db, ownerId, sceneAId, 'Alice met Bram'.length);
 		if (!split.ok) throw new Error('split failed');
 		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
