@@ -22,12 +22,13 @@ export type SlashCommand = {
 // The menu's sections, in the order they show.
 export const ACTION_GROUPS: { id: ActionGroup; label: string }[] = [
 	{ id: 'context', label: 'Context' },
+	// Ahead of Chat, so "/m" and Enter switch the model rather than mute.
+	{ id: 'model', label: 'Model' },
 	{ id: 'chat', label: 'Chat' },
 	{ id: 'write', label: 'Write' },
 	{ id: 'review', label: 'Review' },
 	{ id: 'lookup', label: 'Look up' },
-	{ id: 'upkeep', label: 'Upkeep' },
-	{ id: 'model', label: 'Model' }
+	{ id: 'upkeep', label: 'Upkeep' }
 ];
 
 // Listed in ACTION_GROUPS order, so a filtered list keeps its sections together.
@@ -37,6 +38,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		label: 'Add context',
 		detail: 'Add a scene, chapter, character, note or story to your next message',
 		group: 'context',
+		scope: 'both'
+	},
+	{
+		name: 'model',
+		label: 'Switch model',
+		detail: 'Pick the model and effort for this chat',
+		group: 'model',
 		scope: 'both'
 	},
 	{
@@ -146,13 +154,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		label: 'Enrich entries',
 		detail: 'Suggest aliases and details for every entry in this universe',
 		group: 'upkeep',
-		scope: 'both'
-	},
-	{
-		name: 'model',
-		label: 'Switch model',
-		detail: 'Pick the model and effort for this chat',
-		group: 'model',
 		scope: 'both'
 	}
 ];

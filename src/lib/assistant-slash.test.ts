@@ -101,6 +101,10 @@ describe('matchCommands', () => {
 		expect(groups).toEqual([...groups].sort((a, b) => a - b));
 	});
 
+	it('offers the model before mute for "/m", so Enter does not mute', () => {
+		expect(matchCommands('m')[0].name).toBe('model');
+	});
+
 	it('lists every command for an empty query', () => {
 		expect(matchCommands('')).toEqual(SLASH_COMMANDS);
 	});

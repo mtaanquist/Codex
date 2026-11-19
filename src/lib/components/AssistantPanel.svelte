@@ -605,6 +605,12 @@
 			setComposer(`/${command.name} `);
 			return;
 		}
+		// Like a typed command, it waits for the reply in progress; the line
+		// stays in the composer to send when the reply is done.
+		if (busy || switching) {
+			setComposer(`/${command.name}`);
+			return;
+		}
 		runSlashCommand(`/${command.name}`);
 	}
 
@@ -780,13 +786,23 @@
 	// word (Escape hides it until the word changes); the "/" button opens it with
 	// a filter field of its own. Either way the highlighted row is commandSelected.
 	let commandSelected = $state(0);
+	// The + context picker and the model menu, declared here because the
+	// typed-command menu stays shut while either is open.
+	let contextOpen = $state(false);
+	let modelOpen = $state(false);
 	let commandsOpen = $state(false);
 	let commandQuery = $state('');
 	let commandsTrigger = $state<HTMLButtonElement>();
 	let slashDismissed = $state<string | null>(null);
 	const slashMatches = $derived(matchSlash(input, !isStory));
+	// One popover at a time: a "/" typed while another is open waits for it.
 	const slashOpen = $derived(
-		!commandsOpen && slashMatches.length > 0 && !busy && slashDismissed !== input
+		!commandsOpen &&
+			!contextOpen &&
+			!modelOpen &&
+			slashMatches.length > 0 &&
+			!busy &&
+			slashDismissed !== input
 	);
 	const shownCommands = $derived(
 		commandsOpen ? matchCommands(commandQuery, !isStory) : slashOpen ? slashMatches : []
@@ -826,8 +842,10 @@
 		event.preventDefault();
 		return true;
 	}
+	// In the menu's own filter field Tab leaves the menu rather than run a
+	// command; only Enter or a click runs one.
 	function filterKeydown(event: KeyboardEvent) {
-		if (event.key === 'Tab' && shownCommands.length === 0) {
+		if (event.key === 'Tab') {
 			commandsOpen = false;
 			return;
 		}
@@ -836,20 +854,26 @@
 
 	// A chat already stored keeps the new choice straightaway; a new chat
 	// sends it with its first message.
+	// Saves go one at a time, newest wins, so quick clicks cannot land out of
+	// order; while another chat loads the choice would go to the wrong one.
+	let settingsSave: AbortController | null = null;
 	function changeSettings(next: ChatModelSettings) {
+		if (switching) return;
 		chatSettings = next;
 		if (!chatId) return;
+		settingsSave?.abort();
+		settingsSave = new AbortController();
 		void fetch(`/api/assistant/chats/${chatId}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ settings: next })
+			body: JSON.stringify({ settings: next }),
+			signal: settingsSave.signal
 		}).catch(() => {});
 	}
 
 	// What the next message carries as context, from the + button; chips in
 	// the composer until it is sent.
 	let attachments = $state<ChatAttachment[]>([]);
-	let contextOpen = $state(false);
 	let contextTrigger = $state<HTMLButtonElement>();
 	const contextListId = `assistant-context-${newChatId().slice(0, 8)}`;
 	function addAttachment(attachment: ChatAttachment) {
@@ -906,7 +930,6 @@
 	}
 
 	// The model menu, from the chip in the composer.
-	let modelOpen = $state(false);
 	let modelTrigger = $state<HTMLButtonElement>();
 	const commandListId = `assistant-commands-${newChatId().slice(0, 8)}`;
 
@@ -1008,7 +1031,7 @@
 	// Delete the open chat for good, then start a new one.
 	let deleting = $state(false);
 	async function deleteChat() {
-		if (deleting || busy) return;
+		if (deleting || busy || switching) return;
 		if (!chatId) {
 			// A stopped first send may have stored its question; it goes too.
 			if (nextChatMayExist) {
@@ -1026,7 +1049,7 @@
 		// The menu item that asked is gone by now, so focus goes back to the
 		// composer rather than being lost.
 		composer?.focus();
-		if (!ok || deleting || busy || !chatId) return;
+		if (!ok || deleting || busy || switching || !chatId) return;
 		deleting = true;
 		const id = chatId;
 		try {
@@ -1036,9 +1059,8 @@
 				return;
 			}
 			chats = chats.filter((c) => c.id !== id);
+			// Like a new chat, the composer's draft (text, passage, context) stays.
 			newChat();
-			reference = null;
-			attachments = [];
 		} finally {
 			deleting = false;
 		}
@@ -1165,7 +1187,7 @@
 					>
 						<input
 							bind:this={pickerSearch}
-							class="chat-search"
+							class="input sm"
 							type="search"
 							placeholder="Search chats"
 							aria-label="Search chats"
@@ -1342,8 +1364,9 @@
 				<div class="composer-pop">
 					<AssistantContextPicker
 						id={contextListId}
-						model={chatSettings.model}
+						model={chipModel || undefined}
 						onAdd={addAttachment}
+						onClose={() => (contextOpen = false)}
 					/>
 				</div>
 			{/if}
@@ -1379,7 +1402,7 @@
 							type="button"
 							title="Add context"
 							aria-label="Add context"
-							aria-haspopup="dialog"
+							aria-haspopup="listbox"
 							aria-expanded={contextOpen}
 							onclick={toggleContext}
 						>
@@ -1391,7 +1414,7 @@
 							type="button"
 							title="Chat commands (/)"
 							aria-label="Chat commands"
-							aria-haspopup="dialog"
+							aria-haspopup="listbox"
 							aria-expanded={commandsOpen}
 							onclick={toggleCommands}
 						>
@@ -1429,7 +1452,10 @@
 									type="button"
 									title="Remove the passage"
 									aria-label="Remove the passage"
-									onclick={() => (reference = null)}
+									onclick={() => {
+										reference = null;
+										composer?.focus();
+									}}
 								>
 									x
 								</button>
@@ -1444,7 +1470,10 @@
 									type="button"
 									title="Remove {attachmentLabel(attachment)}"
 									aria-label="Remove {attachmentLabel(attachment)}"
-									onclick={() => (attachments = attachments.filter((_, i) => i !== index))}
+									onclick={() => {
+										attachments = attachments.filter((_, i) => i !== index);
+										composer?.focus();
+									}}
 								>
 									x
 								</button>
@@ -1504,16 +1533,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-	}
-	.chat-search {
-		width: 100%;
-		font: inherit;
-		font-size: 13px;
-		padding: 6px 8px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-card);
-		color: var(--text);
 	}
 	.chat-list {
 		max-height: 320px;
@@ -1576,7 +1595,7 @@
 		flex-direction: column;
 		background: var(--bg-inset);
 		border: 1px solid var(--border);
-		border-radius: 10px;
+		border-radius: var(--radius);
 	}
 	.composer:focus-within {
 		border-color: var(--accent-line);

@@ -441,7 +441,9 @@ primitive's own class too, but do not copy the pattern.
   matching the row title),
   `.slider`. In a settings column a `.field` is a two-column setting row
   (see "Setting rows" above). `.input.short` caps a field for a short value (a display name,
-  a pen name, a handle) at 36ch instead of the full column. The focus ring
+  a pen name, a handle) at 36ch instead of the full column. `.input.sm` is the
+  compact field at the top of a popover (the chat list search, the command
+  menu filter, the context picker search). The focus ring
   (accent border plus `--accent-soft` glow) comes from the shared rule;
   never redefine it.
 - `.slider` (`primitives.css`) is a range input for a bounded value that is

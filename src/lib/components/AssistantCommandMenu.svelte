@@ -56,7 +56,7 @@
 	{#if filter}
 		<input
 			bind:this={filterField}
-			class="command-filter"
+			class="input sm"
 			type="text"
 			placeholder="Filter commands"
 			aria-label="Filter commands"
@@ -95,10 +95,11 @@
 					</div>
 				{/each}
 			</div>
-		{:else}
-			<p class="command-empty" role="status">No commands match.</p>
 		{/each}
 	</div>
+	{#if sections.length === 0}
+		<p class="command-empty" role="status">No commands match.</p>
+	{/if}
 </div>
 
 <style>
@@ -107,20 +108,6 @@
 		flex-direction: column;
 		gap: 4px;
 		max-height: min(360px, 60vh);
-	}
-	.command-filter {
-		width: 100%;
-		font: inherit;
-		font-size: var(--text-base);
-		padding: 6px 8px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-card);
-		color: var(--text);
-	}
-	.command-filter:focus {
-		outline: none;
-		border-color: var(--accent-line);
 	}
 	.command-list {
 		overflow-y: auto;

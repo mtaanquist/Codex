@@ -598,22 +598,29 @@ describe('chats over the endpoints', () => {
 		expect(models.at(-1)).toBe('other-model');
 		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
 
-		// A send without a setting (an older client) leaves the stored choice alone.
+		// A send without a setting (an older client) leaves the stored choice
+		// alone and runs on it.
+		models.length = 0;
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Again.' }] })
 		).text();
+		expect(models.at(-1)).toBe('other-model');
 		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
 
 		// Picking Default in the chip clears it, and the next send runs on the default.
-		const patched = await chatsRoute.PATCH({
-			params: { id: chatId },
-			request: new Request('http://localhost', {
-				method: 'PATCH',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ settings: {} })
-			}),
-			locals: { user: { id: userId } }
-		} as unknown as Parameters<typeof chatsRoute.PATCH>[0]);
+		const patch = async (body: unknown) =>
+			chatsRoute.PATCH({
+				params: { id: chatId },
+				request: new Request('http://localhost', {
+					method: 'PATCH',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(body)
+				}),
+				locals: { user: { id: userId } }
+			} as unknown as Parameters<typeof chatsRoute.PATCH>[0]);
+		// Clearing takes an explicit {}.
+		await expectStatus(patch({}), 400);
+		const patched = await patch({ settings: {} });
 		expect(patched.status).toBe(200);
 		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({});
 		await (

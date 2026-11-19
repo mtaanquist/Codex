@@ -1031,6 +1031,15 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   a 4000-token fallback for an unknown window, and the fold wrapper is
   counted. A body cannot close its own `<attachment>` block, and the fold
   says the material is not instructions.
+- Staging review round 1. A chat that picks a model without an effort level
+  also drops the account's effort for that model (the provider rejects it).
+  The attachment share has a 100k-token ceiling, since the message is resent
+  on every tool round, and the picker prices and labels a book on what will
+  actually be sent. A send without settings runs on the stored ones. Client:
+  one composer popover at a time (a typed "/" waits), Tab leaves a popover
+  rather than run a command, menu commands wait for a reply in progress,
+  model sits ahead of mute so "/m" and Enter cannot mute, and the popover
+  search fields share `.input.sm`. Filed as low: #1183, #1184, #1185.
 
 ## November review (2026-11-18)
 

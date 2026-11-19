@@ -176,6 +176,18 @@ describe('withRoleOverride', () => {
 		expect(out.tuning.chat?.effort).toBeUndefined();
 	});
 
+	it("drops the account's effort when the chat picks a model without one", () => {
+		const config = resolved({
+			provider: 'anthropic',
+			models: { chat: 'claude-opus-5' },
+			tuning: { chat: { effort: 'high', temperature: 0.5 } }
+		});
+		const out = withRoleOverride(config, 'chat', { model: 'claude-haiku-4-5' });
+		expect(out.tuning.chat).toEqual({ temperature: 0.5 });
+		expect(config.tuning.chat?.effort).toBe('high');
+		expect(chatModelInfo(out).effort).toBeNull();
+	});
+
 	it('leaves the config alone without a setting', () => {
 		const config = resolved();
 		expect(withRoleOverride(config, 'chat', {})).toBe(config);
