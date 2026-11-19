@@ -169,9 +169,12 @@
 	// fingerprint of the text it was applied to. When that was the text this
 	// editor last saved and the same change lands here, the next save builds on
 	// the new text; otherwise the save check reports the difference.
+	// replacements carries the author's own wording for an edit accepted with
+	// changes (the guided pass's Edit), keyed by suggestion id.
 	export function applyAccepted(
 		ids: string[],
-		accepted: { bodyMd: string; baseHash: string } | null = null
+		accepted: { bodyMd: string; baseHash: string } | null = null,
+		replacements: Record<string, string> = {}
 	) {
 		if (!view || !handle) return;
 		let applied = true;
@@ -183,7 +186,7 @@
 				continue;
 			}
 			view.dispatch({
-				changes: { from: a.start, to: a.end, insert: suggestion.replacement },
+				changes: { from: a.start, to: a.end, insert: replacements[id] ?? suggestion.replacement },
 				effects: removeReviewMarks.of([id])
 			});
 		}

@@ -16,11 +16,14 @@
 	import ReviewSurface from './ReviewSurface.svelte';
 	import ReviewEditor from './ReviewEditor.svelte';
 	import ReviewPanel from './ReviewPanel.svelte';
+	import PatternPass from './PatternPass.svelte';
 	import type { Composer } from './ReviewPanel.svelte';
 	import AssistantPanel, { type AssistantChatData } from './AssistantPanel.svelte';
 	import type { MentionEntity } from '#lib/editor-mentions';
 	import type { MarkVisibility } from '#lib/editor';
 	import {
+		patternQueue,
+		pendingPatternCounts,
 		suggestionInFilter,
 		threadInFilter,
 		type ReviewFilter,
@@ -403,6 +406,104 @@
 		void showPane('notes');
 	}
 
+	// ---- the guided pass over an Assistant pattern note ----
+	// Works through the note's pending edits in reading order, one at a time.
+	// done holds what this pass accepted or skipped (a skip leaves the edit
+	// pending); known is the queue as the pass started, so an edit that appears
+	// later is a follow-up from a re-read. currentId keeps the step on screen
+	// steady while the queue changes around it.
+	const patternCounts = $derived(pendingPatternCounts(suggestions));
+	let pass = $state<{
+		threadId: string;
+		known: Set<string>;
+		done: SvelteSet<string>;
+		currentId: string | null;
+		reread: 'idle' | 'running' | 'failed';
+	} | null>(null);
+	const passNote = $derived(pass ? (threads.find((t) => t.id === pass!.threadId) ?? null) : null);
+	const passOpen = $derived(
+		pass
+			? patternQueue(
+					suggestions,
+					pass.threadId,
+					orderedScenes.map((scene) => scene.id)
+				).filter((s) => !pass!.done.has(s.id))
+			: []
+	);
+	const passStep = $derived(
+		pass ? (passOpen.find((s) => s.id === pass!.currentId) ?? passOpen[0] ?? null) : null
+	);
+	const passScene = $derived(
+		passStep ? (orderedScenes.find((scene) => scene.id === passStep.sceneId) ?? null) : null
+	);
+
+	function startPass(threadId: string) {
+		const queue = patternQueue(
+			suggestions,
+			threadId,
+			orderedScenes.map((scene) => scene.id)
+		);
+		pass = {
+			threadId,
+			known: new Set(queue.map((s) => s.id)),
+			done: new SvelteSet(),
+			currentId: queue[0]?.id ?? null,
+			reread: 'idle'
+		};
+		composer = null;
+		chosenPanel = 'comments';
+	}
+
+	// Each new step opens its scene and points the manuscript at the change.
+	$effect(() => {
+		const step = passStep;
+		if (!pass || !step) return;
+		pass.currentId = step.id;
+		if (step.sceneId !== selectedSceneId) selectScene(step.sceneId);
+		focusedId = step.id;
+	});
+	// The note was cleared or deleted under the pass: nothing left to work.
+	$effect(() => {
+		if (pass && !passNote) pass = null;
+	});
+
+	function passAccepted(
+		id: string,
+		accepted: { bodyMd: string; baseHash: string } | null,
+		replacement: string | undefined
+	) {
+		if (!pass) return;
+		editorRef?.applyAccepted(
+			[id],
+			accepted,
+			replacement === undefined ? {} : { [id]: replacement }
+		);
+		pass.done.add(id);
+		if (assistantSurfaces) void rereadAfter(id);
+	}
+
+	// The Assistant re-reads the changed paragraph and its neighbours and may
+	// stage one follow-up edit on the same note, which the pass then reaches.
+	async function rereadAfter(suggestionId: string) {
+		const current = pass;
+		if (!current) return;
+		current.reread = 'running';
+		let ok: boolean;
+		try {
+			const response = await fetch('/api/assistant/pattern-reread', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ suggestionId })
+			});
+			ok = response.ok;
+		} catch {
+			ok = false;
+		}
+		if (pass !== current) return;
+		current.reread = ok ? 'idle' : 'failed';
+		if (ok) await refreshAll();
+	}
+
 	function startComment(sel: { start: number; end: number; text: string }) {
 		openComposer({
 			sceneId: selectedSceneId,
@@ -569,7 +670,20 @@
 			     which carries its own title. The props must not drift between the
 			     two - dropping onAccepted here once cost the author's live accept. -->
 			{#snippet commentsPanel()}
-				{#if selectedScene}
+				{#if pass && passNote}
+					<PatternPass
+						note={passNote}
+						step={passStep}
+						scene={passScene}
+						position={pass.done.size + 1}
+						total={pass.done.size + passOpen.length}
+						followUp={passStep !== null && !pass.known.has(passStep.id)}
+						reread={pass.reread}
+						onAccepted={passAccepted}
+						onSkip={(id) => pass?.done.add(id)}
+						onStop={() => (pass = null)}
+					/>
+				{:else if selectedScene}
 					<ReviewPanel
 						scene={selectedScene}
 						threads={sceneThreads}
@@ -592,6 +706,8 @@
 						onClearReviews={role === 'author' && storyId && totalNotes > 0
 							? () => (clearing = true)
 							: null}
+						{patternCounts}
+						onWorkThrough={role === 'author' && storyId ? startPass : null}
 					/>
 				{/if}
 			{/snippet}

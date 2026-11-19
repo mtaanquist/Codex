@@ -41,7 +41,7 @@ import {
 import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { summaryIsCurrent } from '../summary-currency.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
-import { modelContextWindow, resolveLlmConfig } from './config.ts';
+import { modelContextWindow, resolveLlmConfig, type ResolvedConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
 import { errorFields, logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
@@ -60,6 +60,12 @@ const FOCUSED_PASS_BUDGET = 64;
 // and saves the rest of the prefill. The sparing pass (no categories) can raise
 // anything, so it keeps the full stack.
 const LEAN_REVIEW_TIERS = ['frame', 'summaries', 'scene-local'] as const;
+
+// The minimal tool profile offers only the three basic tools, and an endpoint
+// marked as unable to call tools offers none.
+export function offersPatternTool(config: ResolvedConfig): boolean {
+	return config.toolProfile !== 'minimal' && config.supportsTools !== false;
+}
 
 export function reviewTiers(categories: ReviewCategory[]): readonly string[] | undefined {
 	if (categories.length === 0 || categories.includes('lore')) return undefined;
@@ -213,10 +219,16 @@ export async function reviewOneScene(
 		// Accumulates what this pass spends, for a run with a ceiling.
 		meter?: SpendMeter;
 		signal?: AbortSignal;
+		// Whether leave_pattern_note is on offer; resolved from the account's
+		// tool profile when the caller has not.
+		patternTool?: boolean;
 	},
 	deps: GatewayDeps = {}
 ): Promise<ScenePassResult> {
 	const categories = opts.categories ?? [];
+	const patternTool =
+		opts.patternTool ??
+		offersPatternTool((await resolveLlmConfig(db, opts.userId, opts.storyId)).config);
 	const includeTiers = reviewTiers(categories);
 	let system: ChatMessage | null = null;
 	let scenePrefix = '';
@@ -247,7 +259,9 @@ export async function reviewOneScene(
 	const prior = await openAssistantNotes(db, opts.scene.id);
 	const task: ChatMessage = {
 		role: 'user',
-		content: scenePrefix + buildReviewMessage(opts.scene, prior, categories, sceneTextIncluded)
+		content:
+			scenePrefix +
+			buildReviewMessage(opts.scene, prior, categories, sceneTextIncluded, patternTool)
 	};
 	const messages: ChatMessage[] = system ? [system, task] : [task];
 	const result = await completeDetailed(
@@ -1041,7 +1055,8 @@ export async function reviewStoryScenes(
 					categories: opts.categories,
 					storyFrame,
 					meter,
-					signal: opts.signal
+					signal: opts.signal,
+					patternTool: offersPatternTool(resolved.config)
 				},
 				deps
 			);

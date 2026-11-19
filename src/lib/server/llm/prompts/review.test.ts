@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildConfirmMessage,
+	buildRereadMessage,
 	buildReviewMessage,
 	buildSurveyMessage,
 	parseCandidates,
@@ -112,6 +113,15 @@ describe('review categories', () => {
 			expect(message).toContain('Leave one comment per theme.');
 			expect(message).toContain('Pattern note (');
 		}
+	});
+
+	it('steers a recurring pattern to leave_pattern_note only when it is offered', () => {
+		const withTool = buildReviewMessage(scene, [], [], true, true);
+		expect(withTool).toContain('use leave_pattern_note');
+		expect(withTool).toContain('list it under kept');
+		const without = buildReviewMessage(scene, [], [], true, false);
+		expect(without).not.toContain('leave_pattern_note');
+		expect(without).toContain('separate suggest_edit calls');
 	});
 
 	it('tells the sparing pass that splitting notes by theme is not padding', () => {
@@ -324,5 +334,33 @@ describe('parseCandidates', () => {
 		expect(parseCandidates(reply)).toEqual([
 			{ sceneIds: ['s1', 's2', 's3'], claim: 'Names drift.' }
 		]);
+	});
+});
+
+describe('buildRereadMessage', () => {
+	const base = {
+		sceneId: 's9',
+		sceneTitle: 'The Ford',
+		passage: 'Kara crossed. She looked back.',
+		changed: 'She',
+		note: 'Pattern note (POV epithets): the elf\nshows up often.'
+	};
+
+	it('carries the passage, the change, and the note quoted line by line', () => {
+		const message = buildRereadMessage(base);
+		expect(message).toContain('"The Ford" (id: s9)');
+		expect(message).toContain('now reads: "She"');
+		expect(message).toContain('> Pattern note (POV epithets): the elf\n> shows up often.');
+		expect(message.endsWith('Kara crossed. She looked back.')).toBe(true);
+	});
+
+	it('asks for at most one edit or the word fine', () => {
+		const message = buildRereadMessage(base);
+		expect(message).toContain('exactly one suggest_edit');
+		expect(message).toContain('"fine"');
+	});
+
+	it('says when the accepted change was a deletion', () => {
+		expect(buildRereadMessage({ ...base, changed: '' })).toContain('removed some text');
 	});
 });

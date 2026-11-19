@@ -17,7 +17,9 @@
 		focused,
 		onFocus,
 		assistant = null,
-		onAssistantReply = null
+		onAssistantReply = null,
+		patternCount = 0,
+		onWorkThrough = null
 	}: {
 		thread: ReviewThread;
 		// The anchored passage, sliced from the live scene text; null for a
@@ -31,6 +33,10 @@
 		// page, Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;
 		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
+		// The pending edits linked to this note when it is an Assistant pattern
+		// note, and the guided pass that works through them (author only).
+		patternCount?: number;
+		onWorkThrough?: ((threadId: string) => void) | null;
 	} = $props();
 
 	const author = $derived(threadAuthor(thread));
@@ -130,6 +136,17 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+		{#if open && role === 'author' && root?.isAssistant && patternCount > 0 && onWorkThrough}
+			<div class="rv-actions rv-work-through">
+				<button
+					class="btn btn-sm btn-secondary"
+					type="button"
+					onclick={() => onWorkThrough(thread.id)}
+				>
+					<Icon name="suggest" size={13} /> Work through this ({patternCount})
+				</button>
+			</div>
+		{/if}
 		{#if open}
 			<ReviewReplyForm
 				action="?/reply"
