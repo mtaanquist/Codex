@@ -1461,6 +1461,20 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 2, Assistant help text, paused streams and stop
+      lookup (staging/review-follow-ups, 2026-11-19). The account help said a
+      capped run "never goes over"; the cap is checked between steps and web
+      search fees are not counted, so the text now says the last step can take
+      it a little over, and names /enrich and character arcs as capped too.
+      The in-app hint is one line with a link to the help. A paused plain
+      chat stream had become an error on this branch, discarding a reply the
+      writer paid for; it now ends as done and keeps the text (resuming needs
+      the raw blocks the stream does not carry). jobRunSignal returns a
+      release, called through withJobRunSignal once the work returns, so the
+      abort pg-boss sends on normal completion no longer triggers a job lookup.
+      stopAssistantJob rejects a non-uuid id up front and compares id as a
+      uuid, so the lookup can use the primary key.
+
 - [x] Staging review round 1, jobs and billing (staging/review-follow-ups,
       2026-11-19). A refused arc settles as failed with a "declined" notice
       instead of being retried (and billed) by pg-boss; the review, summary,
