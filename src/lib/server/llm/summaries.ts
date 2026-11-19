@@ -2,7 +2,12 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { errorFields, logEvent } from '../log.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
-import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import {
+	AssistantDisabledError,
+	completeDetailed,
+	NoModelError,
+	type GatewayDeps
+} from './gateway.ts';
 import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
 import { resolveLlmConfig } from './config.ts';
 import { SpendMeter } from './spend.ts';
@@ -17,9 +22,11 @@ import { summaryIsCurrent } from '../summary-currency.ts';
 // writer to accept: a summary is generated metadata, not authored prose, so it
 // is written directly - but it never overwrites a summary the writer wrote by
 // hand (see needsSummary), and it leaves the row's updated_at alone so a summary
-// write does not register as an edit or look stale on the next run. The write
-// only lands if the row is as it was read before the model call, so a summary
-// typed or an edit made while the model was writing is kept.
+// write does not register as an edit. The write only lands if the row is as it
+// was read before the model call, so a summary typed or an edit made while the
+// model was writing is kept. It is stamped with that same updated_at rather
+// than a clock reading, so currency (see summary-currency.ts) compares one
+// column with a copy of itself and no two clocks are ever compared.
 
 const MAX_SUMMARY_TOKENS = 200;
 
@@ -34,6 +41,13 @@ export type SummaryResult = {
 	// Why a cap that was set could not be enforced. Only reported when the run
 	// metered itself; a caller that passed its own meter reads it from that.
 	capNotApplied?: string;
+	// Summaries written but not saved because the row changed while the model
+	// was writing; the next run looks at them again.
+	changed?: number;
+	// Set when the pass stopped because no model is chosen, or the Assistant
+	// is turned off: every later call would be refused the same way.
+	noModel?: boolean;
+	disabled?: boolean;
 };
 
 function blank(value: string | null): boolean {
@@ -108,6 +122,16 @@ export async function summariseStory(
 	let chaptersWritten = 0;
 	let failed = 0;
 	let capped = false;
+	let changed = 0;
+	let noModel = false;
+	let disabled = false;
+	// The gate refusal ends the pass; anything else is one item's failure.
+	const stopsPass = (err: unknown): boolean => {
+		if (err instanceof NoModelError) noModel = true;
+		else if (err instanceof AssistantDisabledError) disabled = true;
+		else return false;
+		return true;
+	};
 	// Chapters whose scenes changed this run, so their summary is now stale even
 	// if the chapter row itself was not edited.
 	const touchedChapters = new Set<string>();
@@ -122,7 +146,8 @@ export async function summariseStory(
 			summaryGeneratedAt: scenes.summaryGeneratedAt,
 			updatedAt: scenes.updatedAt,
 			// As text, so the write below compares to the microsecond.
-			updatedAtText: sql<string>`${scenes.updatedAt}::text`
+			updatedAtText: sql<string>`${scenes.updatedAt}::text`,
+			generatedAtText: sql<string | null>`${scenes.summaryGeneratedAt}::text`
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
@@ -171,13 +196,13 @@ export async function summariseStory(
 			const stored = await db.transaction(async (tx) => {
 				// Raw SQL so updated_at's $onUpdate does not fire. A scene edited, or
 				// given a summary, since it was read keeps what it has; the next run
-				// looks at it again. The stamp comes from the app clock, the one that
-				// sets updated_at, since the two are compared.
+				// looks at it again.
 				const { rows } = await tx.execute(sql`
-					update scenes set summary_md = ${text}, summary_generated_at = ${new Date()}
+					update scenes set summary_md = ${text}, summary_generated_at = updated_at
 					where id = ${scene.id}
 						and updated_at = ${scene.updatedAtText}::timestamptz
 						and summary_md is not distinct from ${scene.summaryMd}
+						and summary_generated_at is not distinct from ${scene.generatedAtText}::timestamptz
 						and deleted_at is null
 					returning id
 				`);
@@ -186,10 +211,14 @@ export async function summariseStory(
 				await markMentionsStale(tx, { sceneIds: [scene.id] });
 				return true;
 			});
-			if (!stored) continue;
+			if (!stored) {
+				changed += 1;
+				continue;
+			}
 			written += 1;
 			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {
+			if (stopsPass(err)) break;
 			logEvent('error', 'summaries.scene_failed', { sceneId: scene.id, ...errorFields(err) });
 			failed += 1;
 		}
@@ -202,7 +231,8 @@ export async function summariseStory(
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
 			updatedAt: chapters.updatedAt,
-			updatedAtText: sql<string>`${chapters.updatedAt}::text`
+			updatedAtText: sql<string>`${chapters.updatedAt}::text`,
+			generatedAtText: sql<string | null>`${chapters.summaryGeneratedAt}::text`
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
@@ -235,7 +265,7 @@ export async function summariseStory(
 		}
 	}
 
-	for (const chapter of chapterRows) {
+	for (const chapter of noModel || disabled ? [] : chapterRows) {
 		if (meter.capReached) {
 			capped = true;
 			break;
@@ -270,16 +300,21 @@ export async function summariseStory(
 				deps
 			);
 			if (!text) continue;
-			// As for scenes: only over the chapter as it was read.
+			// As for scenes: only over the chapter as it was read. The stamp check
+			// also catches a scene trashed or restored meanwhile (see
+			// markChapterSummariesStale).
 			const { rows } = await db.execute(sql`
-				update chapters set summary_md = ${text}, summary_generated_at = ${new Date()}
+				update chapters set summary_md = ${text}, summary_generated_at = updated_at
 				where id = ${chapter.id}
 					and updated_at = ${chapter.updatedAtText}::timestamptz
 					and summary_md is not distinct from ${chapter.summaryMd}
+					and summary_generated_at is not distinct from ${chapter.generatedAtText}::timestamptz
 				returning id
 			`);
 			if (rows.length > 0) chaptersWritten += 1;
+			else changed += 1;
 		} catch (err) {
+			if (stopsPass(err)) break;
 			logEvent('error', 'summaries.chapter_failed', { chapterId: chapter.id, ...errorFields(err) });
 			failed += 1;
 		}
@@ -290,6 +325,9 @@ export async function summariseStory(
 		chapters: chaptersWritten,
 		failed,
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(changed ? { changed } : {}),
+		...(noModel ? { noModel: true } : {}),
+		...(disabled ? { disabled: true } : {}),
 		...(ownMeter && meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
 }
