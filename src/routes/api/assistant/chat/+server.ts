@@ -8,16 +8,34 @@ import {
 	requireAssistantUniverse,
 	requireChat
 } from '#lib/server/llm/assistant-route';
-import { CHAT_MISSING, chatTitle } from '#lib/assistant-chat';
+import {
+	CHAT_MISSING,
+	attachmentKey,
+	chatTitle,
+	readAttachments,
+	readChatSettings,
+	type ChatAttachment
+} from '#lib/assistant-chat';
+import { foldAttachments, noteAttachments, resolveAttachments } from '#lib/server/llm/attachments';
 import {
 	assembleContext,
 	buildSystemMessage,
 	type AssembleOptions
 } from '#lib/server/llm/context/assemble';
-import { appendChat, type ChatScope } from '#lib/server/llm/chat-history';
+import {
+	appendChat,
+	dropChatIfEmpty,
+	getChat,
+	setChatSettings,
+	type ChatScope
+} from '#lib/server/llm/chat-history';
 import { fitChatWithSummary } from '#lib/server/llm/chat-summary';
-import { chatBudgetTokens, contextBudgetTokens } from '#lib/server/llm/context/budgets';
-import { modelContextWindow, resolveLlmConfig } from '#lib/server/llm/config';
+import {
+	attachmentBudgetTokens,
+	chatBudgetTokens,
+	contextBudgetTokens
+} from '#lib/server/llm/context/budgets';
+import { modelContextWindow, resolveLlmConfig, withRoleOverride } from '#lib/server/llm/config';
 import {
 	foldReference,
 	readReference,
@@ -38,7 +56,12 @@ import type { ChatMessage } from '#lib/server/llm/providers/types';
 // disables this even though its tab stays visible to un-mute, so the gate is
 // re-checked here.
 
-type Turn = { role: 'user' | 'assistant'; content: string; reference: ChatReference | null };
+type Turn = {
+	role: 'user' | 'assistant';
+	content: string;
+	reference: ChatReference | null;
+	attachments: ChatAttachment[];
+};
 
 // A single turn's text; far beyond any real message, in line with the other
 // surfaces' input caps.
@@ -59,7 +82,9 @@ function readTurns(raw: unknown): Turn[] {
 			if (content.length > MAX_TURN_CHARS) error(400, 'That message is too long.');
 			const reference =
 				role === 'user' ? readReference((item as { reference?: unknown }).reference) : null;
-			turns.push({ role, content, reference });
+			const attachments =
+				role === 'user' ? readAttachments((item as { attachments?: unknown }).attachments) : [];
+			turns.push({ role, content, reference, attachments });
 		}
 	}
 	if (turns.length === 0) error(400, 'Send at least one message.');
@@ -75,7 +100,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		chatId?: unknown;
 		newChatId?: unknown;
 		messages?: unknown;
+		settings?: unknown;
 	}>(request, locals);
+	let settings = readChatSettings(payload.settings);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const turns = readTurns(payload.messages);
 
@@ -104,24 +131,57 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.newChatId
 	);
 	const chatId = chat.id;
-	if (newest.role === 'user') {
-		const stored = await appendChat(db, userId, scope, chatId, {
-			role: 'user',
-			content: newest.content,
-			meta: newest.reference ? { reference: newest.reference } : null
-		});
-		if (!stored) error(404, CHAT_MISSING);
+	// A new chat is created before its first turn is stored; if a step in
+	// between fails (a key that no longer decrypts, a failed read), it goes
+	// again rather than sit empty in the chat list.
+	let contextWindow: number | undefined;
+	let attached: Awaited<ReturnType<typeof resolveAttachments>>;
+	try {
+		// Only a settings object is saved (an empty one clears the choice); a send
+		// without one, or with anything else, runs on the stored choice.
+		const raw = payload.settings;
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+			await setChatSettings(db, userId, chatId, settings);
+		} else settings = (await getChat(db, userId, chatId))?.settings ?? {};
+
+		// Every budget scales with the context window of the model this chat runs on.
+		const resolved = await resolveLlmConfig(
+			db,
+			userId,
+			'storyId' in scope ? scope.storyId : undefined
+		);
+		contextWindow = modelContextWindow(withRoleOverride(resolved.config, 'chat', settings), 'chat');
+
+		// What the writer attached to the newest message, read by id and cut to
+		// fit. The stored turn keeps which ones were cut, for its chips.
+		attached =
+			newest.role === 'user'
+				? await resolveAttachments(
+						db,
+						userId,
+						newest.attachments,
+						attachmentBudgetTokens(contextWindow)
+					)
+				: [];
+		if (newest.role === 'user') {
+			const meta = {
+				...(newest.reference ? { reference: newest.reference } : {}),
+				...(attached.length > 0 ? { attachments: attached.map((item) => item.attachment) } : {})
+			};
+			const stored = await appendChat(db, userId, scope, chatId, {
+				role: 'user',
+				content: newest.content,
+				meta: Object.keys(meta).length > 0 ? meta : null
+			});
+			if (!stored) error(404, CHAT_MISSING);
+		}
+	} catch (err) {
+		if (chat.created) await dropChatIfEmpty(db, chatId).catch(() => {});
+		throw err;
 	}
 
 	// The assembled world rides as a system message after the gateway's persona
 	// message; null when the scope is empty or not owned (already checked).
-	// Both budgets scale with the Rubber duck model's context window.
-	const resolved = await resolveLlmConfig(
-		db,
-		userId,
-		'storyId' in scope ? scope.storyId : undefined
-	);
-	const contextWindow = modelContextWindow(resolved.config, 'chat');
 	const context = await assembleContext(db, {
 		...assembleOptions,
 		budgetTokens: contextBudgetTokens(contextWindow)
@@ -134,16 +194,30 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		userId,
 		scope,
 		chatId,
-		turns: turns.map((turn) => ({
-			role: turn.role,
-			content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
-		})),
+		turns: turns.map((turn, index) => {
+			const content = turn.reference ? foldReference(turn.content, turn.reference) : turn.content;
+			// Earlier attachments are named, not sent again.
+			return {
+				role: turn.role,
+				content: index < turns.length - 1 ? noteAttachments(content, turn.attachments) : content
+			};
+		}),
 		budgetTokens: chatBudgetTokens(contextWindow),
 		signal: requestSignal(request)
 	});
+	// The attachments go into the newest turn after the transcript is fitted:
+	// they have a budget of their own, and must not push earlier turns out.
+	const last = fitted.messages[fitted.messages.length - 1];
+	const fittedMessages =
+		attached.length > 0 && last?.role === 'user'
+			? [
+					...fitted.messages.slice(0, -1),
+					{ ...last, content: foldAttachments(last.content, attached) }
+				]
+			: fitted.messages;
 	const messages: ChatMessage[] = context
-		? [buildSystemMessage(context, { tools: true }), ...fitted.messages]
-		: fitted.messages;
+		? [buildSystemMessage(context, { tools: true }), ...fittedMessages]
+		: fittedMessages;
 
 	return assistantSseResponse({
 		request,
@@ -151,9 +225,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		scope,
 		chat,
 		role: 'chat',
+		override: settings,
 		enableTools: true,
 		messages,
 		summarised: fitted.summarised,
+		attached:
+			newest.role === 'user' && newest.attachments.length > 0
+				? attached.map(
+						(item) => attachmentKey(item.attachment) + (item.attachment.shortened ? '!' : '')
+					)
+				: undefined,
 		errorMessage: 'The Assistant could not complete that request.'
 	});
 };

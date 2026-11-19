@@ -20,6 +20,7 @@ import {
 import { sql } from 'drizzle-orm';
 import type { EntityDetail, EntitySnapshot } from '../../entity-snapshot.ts';
 import type { DraftContent } from '../../drafts.ts';
+import type { ChatAttachment, ChatModelSettings } from '../../assistant-chat.ts';
 import { randomCoverColor } from '../../entity-color.ts';
 import { NOTIFICATION_KINDS, type NotificationPayload } from '../../notifications.ts';
 import { SCENE_STATUSES } from '../../scene-status.ts';
@@ -1329,6 +1330,9 @@ export const assistantChats = pgTable(
 			.references(() => users.id)
 			.notNull(),
 		title: text('title').notNull().default(''),
+		// The model and effort the writer picked for this chat from the composer's
+		// model chip; null runs on the story's or account's default.
+		settings: jsonb('settings').$type<ChatModelSettings>(),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
@@ -1519,6 +1523,8 @@ export const assistantJobSpend = pgTable('assistant_job_spend', {
 // decided across reloads and the revert knows which scenes to merge back.
 export type AssistantChatMeta = {
 	reference?: { sceneId: string; text: string };
+	// What the writer attached to a user turn; see #lib/assistant-chat.
+	attachments?: ChatAttachment[];
 	proposals?: {
 		sceneId: string;
 		sceneTitle: string | null;
