@@ -90,7 +90,16 @@ function focusInstruction(categories: ReviewCategory[]): string {
 // through on its own. A model told to be sparing otherwise crams a pattern, a
 // pacing note, and an overall verdict into one whole-scene comment.
 const ONE_THEME_PER_NOTE =
-	'Leave one comment per theme. Never combine a recurring pattern, a pacing or structure observation, and an overall impression in one comment; each is its own leave_comment call. When a comment describes a recurring pattern, open it with "Pattern note (<the pattern>):" and give the line edits for it as separate suggest_edit calls.';
+	'Leave one comment per theme. Never combine a recurring pattern, a pacing or structure observation, and an overall impression in one comment; each is its own leave_comment call.';
+
+// How a recurring pattern is handed back. With leave_pattern_note on offer the
+// note and its fixes stage together and linked, which the writer then works
+// through in order; without it (the minimal tool profile) the note and its
+// edits go separately.
+const PATTERN_WITH_TOOL =
+	'For a recurring pattern (an epithet habit, a pet phrase, filter verbs), use leave_pattern_note: one call with a note opening "Pattern note (<the pattern>):" and an edit for every instance you would change. Keep some variety on purpose: leave an instance alone where it helps the rhythm or clarity, and list it under kept with the reason. A pacing or structure observation is not a pattern; use leave_comment for it.';
+const PATTERN_WITHOUT_TOOL =
+	'When a comment describes a recurring pattern, open it with "Pattern note (<the pattern>):" and give the line edits for it as separate suggest_edit calls.';
 
 // sceneTextIncluded says whether the caller put the scene's prose in the
 // request already (the scene-local tier survived the budget). A weak model
@@ -100,7 +109,8 @@ export function buildReviewMessage(
 	scene: { id: string; title: string | null },
 	prior: PriorNote[] = [],
 	categories: ReviewCategory[] = [],
-	sceneTextIncluded = false
+	sceneTextIncluded = false,
+	patternTool = false
 ): string {
 	const title = (scene.title ?? '').trim() || 'this scene';
 	const sparing = categories.length === 0;
@@ -112,6 +122,7 @@ export function buildReviewMessage(
 		'- leave_comment for an observation about continuity, characterisation, pacing, or clarity; quote the passage you mean.',
 		"- suggest_edit for a concrete line edit: replace an exact passage with an improved version, keeping the change minimal and faithful to the author's voice.",
 		ONE_THEME_PER_NOTE,
+		patternTool ? PATTERN_WITH_TOOL : PATTERN_WITHOUT_TOOL,
 		sparing
 			? 'Be specific and sparing; a few high-value notes beat many shallow ones. Splitting your observations into one comment per theme does not count against being sparing. Check the scene against the established world and entity details in your context. Do not rewrite the scene wholesale or change the meaning of the prose.'
 			: focusInstruction(categories)
@@ -366,3 +377,34 @@ export function parseCandidates(reply: string): ContinuityCandidate[] | null {
 // The corrective turn after an unparseable survey reply.
 export const SURVEY_RETRY_MESSAGE =
 	'That reply could not be read. Send the same findings again as a JSON array and nothing else: no prose, no code fence. Each entry is {"sceneIds": ["..."], "claim": "..."}. Reply with [] if you found nothing.';
+
+// The re-read after the writer accepts one fix from a pattern note: the changed
+// paragraph and its neighbours, the note it came from, and a brief to check how
+// the passage reads now, the way an editor rereads after a change. At most one
+// follow-up edit, inside the passage shown.
+export function buildRereadMessage(input: {
+	sceneId: string;
+	sceneTitle: string | null;
+	passage: string;
+	changed: string;
+	note: string;
+}): string {
+	const title = (input.sceneTitle ?? '').trim() || 'this scene';
+	const changed = input.changed.trim()
+		? `The writer just accepted this change, which now reads: "${input.changed.trim()}".`
+		: 'The writer just accepted a change that removed some text here.';
+	return [
+		`You are re-reading a passage of the scene "${title}" (id: ${input.sceneId}) after a fix from one of your pattern notes was accepted.`,
+		changed,
+		'The pattern note it came from:',
+		input.note
+			.trim()
+			.split('\n')
+			.map((line) => `> ${line}`)
+			.join('\n'),
+		'Read the passage below as it stands now and check how it reads after the change: a pronoun that has become ambiguous (two people it could mean), the same name repeated too close together, or a rhythm that now trips. Keeping some variety is fine; do not undo the pattern fix or chase every remaining instance.',
+		'If something now reads badly, stage exactly one suggest_edit inside this passage that fixes it. If it reads well, reply with the single word "fine" and stage nothing. The passage is all you need; do not call any other tool.',
+		'The passage:',
+		input.passage
+	].join('\n');
+}

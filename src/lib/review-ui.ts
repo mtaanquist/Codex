@@ -91,6 +91,8 @@ export type ReviewSuggestion = {
 	status: 'pending' | 'accepted' | 'rejected';
 	anchor: { start: number; end: number } | null;
 	anchorLost: boolean;
+	// The Assistant pattern note this edit belongs to, if any.
+	patternThreadId: string | null;
 	createdAt: Date | string;
 };
 
@@ -356,4 +358,52 @@ export function isWholeSceneNote(
 		threads.some((thread) => thread.id === id && !thread.anchor) ||
 		suggestions.some((suggestion) => suggestion.id === id && !suggestion.anchor)
 	);
+}
+
+// ---- the guided pass over a pattern note ----
+
+// How many pending edits each pattern note still has, keyed by the note's
+// thread id; a note with none left offers no pass.
+export function pendingPatternCounts(
+	suggestions: { patternThreadId: string | null; status: string }[]
+): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const suggestion of suggestions) {
+		if (!suggestion.patternThreadId || suggestion.status !== 'pending') continue;
+		counts.set(suggestion.patternThreadId, (counts.get(suggestion.patternThreadId) ?? 0) + 1);
+	}
+	return counts;
+}
+
+// The pending edits of one pattern note in reading order: by the scene's place
+// in the story, then by where the edit sits in the scene. An edit whose passage
+// was rewritten (no anchor) goes last in its scene; a scene not in the order
+// (in the deleted list) goes last of all.
+export function patternQueue<
+	S extends {
+		id: string;
+		sceneId: string;
+		patternThreadId: string | null;
+		status: string;
+		anchor: { start: number; end: number } | null;
+	}
+>(suggestions: S[], threadId: string, sceneOrder: string[]): S[] {
+	const rank = new Map(sceneOrder.map((id, i) => [id, i]));
+	const sceneRank = (s: S) => rank.get(s.sceneId) ?? sceneOrder.length;
+	return suggestions
+		.filter((s) => s.patternThreadId === threadId && s.status === 'pending')
+		.sort(
+			(a, b) =>
+				sceneRank(a) - sceneRank(b) ||
+				(a.anchor?.start ?? Number.MAX_SAFE_INTEGER) - (b.anchor?.start ?? Number.MAX_SAFE_INTEGER)
+		);
+}
+
+// The note's name for the pass header: the label in its opening
+// "Pattern note (...):", or the start of its first line.
+export function patternName(body: string): string {
+	const labelled = /^\s*pattern note\s*\(([^)]+)\)/i.exec(body);
+	if (labelled) return labelled[1].trim();
+	const line = body.trim().split('\n')[0] ?? '';
+	return line.length > 60 ? `${line.slice(0, 60).trimEnd()}...` : line;
 }

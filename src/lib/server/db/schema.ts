@@ -1,4 +1,5 @@
 import {
+	type AnyPgColumn,
 	bigint,
 	boolean,
 	check,
@@ -1256,6 +1257,13 @@ export const reviewSuggestions = pgTable(
 		rangeStart: integer('range_start').notNull(),
 		rangeEnd: integer('range_end').notNull(),
 		replacement: text('replacement').notNull().default(''),
+		// The Assistant's pattern note this edit is one instance of, so the
+		// writer can work through the note's fixes in order. The note may sit on
+		// another scene of the same story (a chapter-wide pattern). Deleting the
+		// note leaves the edit standing on its own.
+		patternThreadId: uuid('pattern_thread_id').references((): AnyPgColumn => reviewThreads.id, {
+			onDelete: 'set null'
+		}),
 		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
 			.notNull()
 			.default('pending'),
@@ -1268,7 +1276,8 @@ export const reviewSuggestions = pgTable(
 	(table) => [
 		index('review_suggestions_scene_idx').on(table.sceneId),
 		index('review_suggestions_story_idx').on(table.storyId),
-		index('review_suggestions_base_revision_idx').on(table.baseRevisionId)
+		index('review_suggestions_base_revision_idx').on(table.baseRevisionId),
+		index('review_suggestions_pattern_thread_idx').on(table.patternThreadId)
 	]
 );
 

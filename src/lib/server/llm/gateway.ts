@@ -578,7 +578,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				calls > p.toolBudget
 					? { result: 'Tool-call budget reached; answer with what you have.', staged: false }
 					: await dispatchToolCall(p.toolContext!, call);
-			if (outcome.note) notes += 1;
+			notes += outcome.noteCount ?? (outcome.note ? 1 : 0);
 			if (outcome.surface) {
 				surfaces.push({ type: 'proposal', proposal: outcome.surface.proposal });
 			}

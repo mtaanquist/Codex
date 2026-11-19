@@ -1061,6 +1061,19 @@ calls the gateway, which proxies through the egress guard.
   per theme, so a recurring pattern, a pacing observation, and an overall
   impression arrive as separate notes the writer can resolve on their own. A
   pattern note opens with "Pattern note (<the pattern>):".
+- [built] Pattern notes and the guided pass (#1132): `leave_pattern_note`
+  stages a whole-scene note and the edits that fix each instance in one call,
+  linked through `review_suggestions.pattern_thread_id` (nullable, set null
+  when the note is deleted). Edits that do not locate are reported back; a
+  retry with the same comment adds to the open note. It is left out of the
+  minimal tool profile, and the prompt only mentions it when it is offered.
+  "Work through this" on the note walks its pending edits in reading order
+  (client state in `ReviewWorkspace`, `PatternPass.svelte`): Accept, Edit (an
+  owner override on accept, recorded as the applied replacement), Skip, Stop.
+  After an accept, `/api/assistant/pattern-reread` sends the changed paragraph
+  and one either side with the note, offers only `suggest_edit` held to that
+  window (`ToolScope.editWindow`) and linked to the note
+  (`ToolScope.patternThreadId`), so a follow-up becomes the next step.
 
 ### Background jobs - sequencing steps 4 and 7
 

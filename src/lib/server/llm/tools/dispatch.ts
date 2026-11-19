@@ -8,6 +8,7 @@ import {
 	addComment,
 	createSuggestion,
 	createThread,
+	openAssistantNote,
 	updateAssistantSuggestion
 } from '../../review.ts';
 import { locateSplitBefore } from '#lib/scene-split-locate';
@@ -35,7 +36,20 @@ export type ToolScope = {
 	// where the reply is posted somewhere a guest reviewer can read it, so an
 	// injected instruction cannot pull in stories the guest was never shown.
 	storyOnly?: boolean;
+	// Link every suggest_edit this turn stages to this pattern note (the
+	// chapter pattern pass and the re-read after an accept).
+	patternThreadId?: string;
+	// Refuse a suggest_edit outside this stretch of this scene (the re-read
+	// after an accept looks at one paragraph and its neighbours).
+	editWindow?: { sceneId: string; start: number; end: number };
+	// The most suggest_edit calls that may stage in this turn (the re-read stages
+	// at most one follow-up).
+	maxEdits?: number;
 };
+
+// Edits staged so far per turn, for ToolScope.maxEdits. The gateway builds one
+// context per turn and reuses it across the rounds of the tool loop.
+const stagedEdits = new WeakMap<ToolContext, number>();
 
 export type ToolContext = {
 	db: Database;
@@ -65,6 +79,9 @@ export type ToolOutcome = {
 	// a comment). The review runs tally these from the agent loop rather than
 	// counting rows before and after.
 	note?: boolean;
+	// How many notes the call staged, when one call stages several (a pattern
+	// note with its edits); counts in place of note.
+	noteCount?: number;
 	// A staged action the surface should show alongside the reply (a proposal
 	// card with a confirm button); the gateway forwards it on the stream.
 	surface?: { type: 'proposal'; proposal: SplitProposal };
@@ -158,6 +175,19 @@ export async function dispatchToolCall(
 					comment: asString(args.comment),
 					quote: typeof args.quote === 'string' ? args.quote : undefined
 				});
+			case 'leave_pattern_note':
+				return leavePatternNote(ctx, {
+					sceneId: asString(args.sceneId),
+					comment: asString(args.comment),
+					edits: asList(args.edits).map((edit) => ({
+						original: asString(edit.original),
+						replacement: asString(edit.replacement)
+					})),
+					kept: asList(args.kept).map((entry) => ({
+						quote: asString(entry.quote),
+						reason: asString(entry.reason)
+					}))
+				});
 			case 'propose_scene_split':
 				return proposeSceneSplit(ctx, {
 					sceneId: asString(args.sceneId),
@@ -184,6 +214,13 @@ export async function dispatchToolCall(
 
 function asString(value: unknown): string {
 	return typeof value === 'string' ? value : '';
+}
+
+function asList(value: unknown): Record<string, unknown>[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter(
+		(entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object'
+	);
 }
 
 // An owner-scoped scene fetch shared by the read and write handlers. Scoped to
@@ -316,6 +353,17 @@ async function suggestEdit(
 	input: { sceneId: string; original: string; replacement: string }
 ): Promise<ToolOutcome> {
 	if (!input.original) return { result: 'Provide the exact text to replace.', staged: false };
+	const limit = ctx.scope?.maxEdits;
+	if (limit !== undefined && (stagedEdits.get(ctx) ?? 0) >= limit) {
+		return {
+			result: `Only ${limit} edit${limit === 1 ? '' : 's'} may be staged in this turn; answer now.`,
+			staged: false
+		};
+	}
+	const window = ctx.scope?.editWindow;
+	if (window && window.sceneId !== input.sceneId) {
+		return { result: 'Only the passage under review can be edited in this turn.', staged: false };
+	}
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
 	// Tolerates a quote echoed back with the quotes or whitespace reshaped, but
@@ -330,6 +378,12 @@ async function suggestEdit(
 			staged: false
 		};
 	}
+	if (window && (found.start < window.start || found.end > window.end)) {
+		return {
+			result: 'That passage is outside the paragraphs under review; leave it alone.',
+			staged: false
+		};
+	}
 	const result = await createSuggestion(ctx.db, {
 		// The loaded scene's own story, so a cross-story pass attributes the
 		// suggestion to the right book, not the surface it was launched from.
@@ -337,9 +391,11 @@ async function suggestEdit(
 		sceneId: input.sceneId,
 		author: { assistant: true },
 		range: { start: found.start, end: found.end },
-		replacement: input.replacement
+		replacement: input.replacement,
+		patternThreadId: ctx.scope?.patternThreadId
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
+	if (limit !== undefined) stagedEdits.set(ctx, (stagedEdits.get(ctx) ?? 0) + 1);
 	return {
 		result: `Staged a suggested edit (id ${result.suggestionId}). The author will accept or reject it; nothing has changed yet.`,
 		staged: true,
@@ -438,4 +494,94 @@ async function leaveComment(
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
 	return { result: 'Staged a review comment for the author.', staged: true, note: true };
+}
+
+// The longest original echoed back in a report on edits that did not land.
+const REPORT_QUOTE = 80;
+
+// A pattern note and the edits that fix its instances, staged together and
+// linked, so the writer can work through them in order (the guided pass). The
+// note stages even when some edits do not locate; those are reported back so
+// the model can retry them. A retry with the same comment adds to the open
+// note rather than opening a second one.
+async function leavePatternNote(
+	ctx: ToolContext,
+	input: {
+		sceneId: string;
+		comment: string;
+		edits: { original: string; replacement: string }[];
+		kept: { quote: string; reason: string }[];
+	}
+): Promise<ToolOutcome> {
+	const comment = input.comment.trim();
+	if (!comment) return { result: 'Provide the note text.', staged: false };
+	if (!input.edits.length) {
+		return {
+			result: 'Give at least one edit. For an observation with no line edits, use leave_comment.',
+			staged: false
+		};
+	}
+	const scene = await loadScene(ctx, input.sceneId);
+	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
+
+	// Only a pattern note is extended by a retry; any other opening always starts
+	// a note of its own.
+	let threadId = comment.startsWith('Pattern note')
+		? await openAssistantNote(ctx.db, scene.id, comment)
+		: null;
+	let staged = 0;
+	if (!threadId) {
+		const kept = input.kept.filter((entry) => entry.quote.trim());
+		const body = kept.length
+			? `${comment}\n\nLeft as is on purpose:\n${kept
+					.map((entry) => `- "${entry.quote.trim()}": ${entry.reason.trim()}`)
+					.join('\n')}`
+			: comment;
+		const created = await createThread(ctx.db, {
+			storyId: scene.storyId,
+			sceneId: scene.id,
+			anchor: null,
+			author: { assistant: true },
+			body
+		});
+		if (!created.ok) return { result: created.reason, staged: false };
+		threadId = created.threadId;
+		staged += 1;
+	}
+
+	const missed: string[] = [];
+	let edits = 0;
+	for (const edit of input.edits) {
+		const quote = edit.original.trim().slice(0, REPORT_QUOTE);
+		if (!edit.original) continue;
+		const found = locateQuote(scene.bodyMd, edit.original);
+		if (!found.ok) {
+			missed.push(
+				`- "${quote}": ${found.reason === 'ambiguous' ? 'appears more than once; include more surrounding text' : 'not found in the scene'}`
+			);
+			continue;
+		}
+		const result = await createSuggestion(ctx.db, {
+			storyId: scene.storyId,
+			sceneId: scene.id,
+			author: { assistant: true },
+			range: { start: found.start, end: found.end },
+			replacement: edit.replacement,
+			patternThreadId: threadId
+		});
+		if (result.ok) edits += 1;
+		else missed.push(`- "${quote}": ${result.reason}`);
+	}
+	staged += edits;
+	const lines = [
+		`Staged the pattern note with ${edits} linked edit${edits === 1 ? '' : 's'}. The author decides on each; nothing has changed yet.`
+	];
+	if (missed.length) {
+		lines.push(
+			'These edits were not staged:',
+			...missed,
+			'To retry them, call leave_pattern_note again with the same sceneId and comment and only those edits, corrected.'
+		);
+	}
+	return { result: lines.join('\n'), staged: staged > 0, note: staged > 0, noteCount: staged };
 }
