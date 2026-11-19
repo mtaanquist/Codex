@@ -3,7 +3,8 @@ import {
 	CAP_NOT_APPLIED_MESSAGE,
 	CAP_NOT_APPLIED_NO_USAGE_MESSAGE,
 	SpendMeter,
-	requestCostUsd
+	requestCostUsd,
+	spentFields
 } from './spend';
 
 const pricing = { priced: { prompt: 0.001, completion: 0.002 } };
@@ -83,5 +84,64 @@ describe('SpendMeter', () => {
 		meter.record('priced', undefined);
 		meter.record('other', { promptTokens: 1, completionTokens: 1 });
 		expect(meter.notAppliedMessage).toBe(CAP_NOT_APPLIED_MESSAGE);
+	});
+
+	it('still meters an estimate, and says the total includes one (#1116)', () => {
+		const meter = new SpendMeter({ pricing, capUsd: 1 });
+		meter.record('priced', { promptTokens: 100, completionTokens: 10 });
+		expect(meter.spentEstimated).toBe(false);
+		expect(spentFields(meter)).toEqual({ spentUsd: meter.spentUsd });
+		meter.record('priced', { promptTokens: 100, completionTokens: 400, estimated: true });
+		expect(meter.spentUsd).toBeCloseTo(0.2 + 0.8 + 0.02, 10);
+		expect(meter.capReached).toBe(true);
+		expect(spentFields(meter)).toEqual({ spentUsd: meter.spentUsd, spentEstimated: true });
+	});
+
+	it('says the cap was not fully applied when one request reported no counts (#1125)', () => {
+		expect(CAP_NOT_APPLIED_NO_USAGE_MESSAGE).toMatch(/for every request/);
+		expect(CAP_NOT_APPLIED_NO_USAGE_MESSAGE).toMatch(/not be fully applied/);
+	});
+});
+
+describe('SpendMeter carried across attempts (#1117)', () => {
+	it('starts from what an earlier attempt spent', () => {
+		const meter = new SpendMeter({ pricing, capUsd: 1, spentUsd: 0.95 });
+		expect(meter.capReached).toBe(false);
+		meter.record('priced', { promptTokens: 100, completionTokens: 0 });
+		expect(meter.spentUsd).toBeCloseTo(1.05, 6);
+		expect(meter.capReached).toBe(true);
+	});
+
+	it('is at the ceiling from the start when an earlier attempt spent it', () => {
+		expect(new SpendMeter({ pricing, capUsd: 1, spentUsd: 1 }).capReached).toBe(true);
+	});
+
+	it('hands each new total to persist, in order', async () => {
+		const saved: number[] = [];
+		const meter = new SpendMeter({
+			pricing,
+			capUsd: 10,
+			persist: async (usd) => {
+				await new Promise((resolve) => setTimeout(resolve, saved.length ? 0 : 5));
+				saved.push(usd);
+			}
+		});
+		meter.record('priced', { promptTokens: 100, completionTokens: 0 });
+		meter.record('priced', { promptTokens: 100, completionTokens: 0 });
+		await meter.flush();
+		expect(saved.map((n) => Math.round(n * 1000) / 1000)).toEqual([0.1, 0.2]);
+	});
+
+	it('keeps metering when a write fails', async () => {
+		const meter = new SpendMeter({
+			pricing,
+			capUsd: 10,
+			persist: async () => {
+				throw new Error('db down');
+			}
+		});
+		meter.record('priced', { promptTokens: 100, completionTokens: 0 });
+		await expect(meter.flush()).resolves.toBeUndefined();
+		expect(meter.spentUsd).toBeCloseTo(0.1, 6);
 	});
 });

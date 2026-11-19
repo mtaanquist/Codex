@@ -1,6 +1,6 @@
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
-import { assistantReviewRuns, type ReviewRunState } from './db/schema.ts';
+import { assistantReviewRuns, scenes, type ReviewRunState } from './db/schema.ts';
 import { parseCategories, type PatternScope, type ReviewCategory } from '../review-shape.ts';
 
 // Progress storage for the background review job. The job writes its state as
@@ -47,6 +47,16 @@ export function reviewScopeKey(input: ScopeInput): string {
 // be continued (see adoptCappedRun). A continuity key did not change.
 export function legacyReviewScopeKey(input: ScopeInput): string | null {
 	return input.mode === 'continuity' ? null : `full:${scopeTarget(input)}`;
+}
+
+// The earlier progress of a review could not be read. The review does not
+// start over in its place (that would bill every scene again); the attempt
+// fails so pg-boss can retry it.
+export class ReviewRunLoadError extends Error {
+	constructor(cause: unknown) {
+		super('Could not read the earlier progress of this review. Try again in a moment.', { cause });
+		this.name = 'ReviewRunLoadError';
+	}
 }
 
 export function emptyReviewRun(): ReviewRunState {
@@ -109,13 +119,32 @@ export async function adoptCappedRun(
 	}
 ): Promise<ReviewRunState | null> {
 	const row = await newestRun(db, opts.userId, opts.scope);
-	if (row) return resumable(row.state) ? carryForward(row.state, opts.scope) : null;
+	if (row) return resumable(row.state) ? carryForward(db, row.state, opts.scope) : null;
 	if (!opts.legacy) return null;
 	const legacy = await newestRun(db, opts.userId, opts.legacy.scope);
 	if (!legacy || !resumable(legacy.state)) return null;
 	const checked = await opts.legacy.jobCategories(legacy.jobId);
 	if (!checked || !sameCategories(checked, opts.legacy.categories)) return null;
-	return carryForward(legacy.state, opts.scope);
+	return carryForward(db, legacy.state, opts.scope);
+}
+
+// The completed scenes edited since their pass read them. A scene with no
+// recorded time (a row saved before they were kept) is taken as unedited.
+async function editedSince(
+	db: Database,
+	state: ReviewRunState,
+	ids: string[]
+): Promise<Set<string>> {
+	const stamps = state.reviewedAt ?? {};
+	const stamped = ids.filter((id) => stamps[id]);
+	if (stamped.length === 0) return new Set();
+	const rows = await db
+		.select({ id: scenes.id, updatedAt: scenes.updatedAt })
+		.from(scenes)
+		.where(inArray(scenes.id, stamped));
+	return new Set(
+		rows.filter((row) => row.updatedAt > new Date(stamps[row.id])).map((row) => row.id)
+	);
 }
 
 async function newestRun(
@@ -149,17 +178,34 @@ function sameCategories(a: ReviewCategory[], b: ReviewCategory[]): boolean {
 	return parseCategories(a).join('+') === parseCategories(b).join('+');
 }
 
-function carryForward(state: ReviewRunState, scope: string): ReviewRunState {
+// A failed scene, and one the writer edited since its pass, leave the completed
+// list so the continuation reviews them again; their counts and messages go
+// with them. Notes the earlier pass left stay on the scene, and the next pass
+// is shown them so it does not repeat them.
+async function carryForward(
+	db: Database,
+	state: ReviewRunState,
+	scope: string
+): Promise<ReviewRunState> {
+	const failedScenes = new Set(state.failedScenes ?? []);
+	const kept = state.completed.filter((id) => !failedScenes.has(id));
+	const edited = await editedSince(db, state, kept);
+	const redo = new Set([...failedScenes, ...edited]);
+	const reviewedAt = Object.fromEntries(
+		Object.entries(state.reviewedAt ?? {}).filter(([id]) => !redo.has(id))
+	);
 	return {
 		...emptyReviewRun(),
 		scope,
-		completed: state.completed,
-		reviewed: state.reviewed,
-		failed: state.failed,
+		completed: kept.filter((id) => !edited.has(id)),
+		reviewed: Math.max(0, state.reviewed - edited.size),
+		failed: Math.max(0, state.failed - failedScenes.size),
 		notes: state.notes,
-		// Scene failures only: the earlier run's own messages (a cap it hit, a
-		// price it lacked) say nothing about this one.
-		failures: state.failures.filter((failure) => failure.sceneId),
+		// Scene failures only, for the scenes that stay done: the earlier run's
+		// own messages (a cap it hit, a price it lacked) say nothing about this
+		// one.
+		failures: state.failures.filter((failure) => failure.sceneId && !redo.has(failure.sceneId)),
+		...(Object.keys(reviewedAt).length ? { reviewedAt } : {}),
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
 		// The pattern pass's surveys, notes, and fixed scenes, so a continued run
 		// neither pays for them again nor raises the same habits twice.

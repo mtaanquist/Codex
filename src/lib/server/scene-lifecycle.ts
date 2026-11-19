@@ -13,7 +13,7 @@ import {
 	stories
 } from './db/schema.ts';
 import type { EntityType } from './entity-lookups.ts';
-import { keepUpdatedAt, ownedScene } from './scene-access.ts';
+import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { storyIsLive } from './universe-scope.ts';
 
 // Scene trash and chapter management. A deleted scene keeps its row (and its
@@ -97,11 +97,15 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
-		await tx
+		// The chapter as of the trash itself, not the read above: a move can
+		// land in between.
+		const [trashed] = await tx
 			.update(scenes)
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
-			.where(eq(scenes.id, scene.id));
+			.where(eq(scenes.id, scene.id))
+			.returning({ chapterId: scenes.chapterId });
 		await markMentionsStale(tx, { sceneIds: [scene.id] });
+		await markChapterSummariesStale(tx, trashed?.chapterId ? [trashed.chapterId] : []);
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
@@ -109,26 +113,42 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	return true;
 }
 
+/** Marks these chapters' Assistant summaries out of date, for a change to
+ * which scenes they hold that leaves every scene's own summary current (the
+ * trash, a restore). The stamp goes behind updated_at, so the next pass
+ * rewrites the summary, and moves on every mark, so a pass already writing
+ * from the old scenes does not save over it. A summary the writer wrote (no
+ * stamp) is left alone. */
+export async function markChapterSummariesStale(tx: Database, chapterIds: string[]) {
+	if (!chapterIds.length) return;
+	// Lowest id first, the order moveChapter and deleteChapter lock in before
+	// they renumber, so a mark over several chapters cannot deadlock with them.
+	await tx.execute(sql`select id from chapters where id in ${chapterIds} order by id for update`);
+	await tx.execute(sql`
+		update chapters
+		set summary_generated_at = least(summary_generated_at, updated_at) - interval '1 millisecond'
+		where id in ${chapterIds} and summary_generated_at is not null
+	`);
+}
+
 /** A watermark before this is a mark set by markStale below, not a time an
  * arc was written or an entity read. */
 export const STALE_MARK_BEFORE = new Date('2000-01-01T00:00:00Z');
 
-/** Marks what these scenes (or this story's or universe's scenes) mention for
+/** Marks what these scenes (or this story's scenes) mention for
  * a fresh look: the characters' arcs show as out of date, and with `enrich` the
  * entities are read again on the next enrich pass. Call it before mention rows
  * are deleted, since it reads them. */
 export async function markMentionsStale(
 	tx: Database,
-	source: { sceneIds: string[] } | { storyId: string } | { universeId: string },
+	source: { sceneIds: string[] } | { storyId: string },
 	opts: { enrich?: boolean } = {}
 ): Promise<void> {
 	if ('sceneIds' in source && !source.sceneIds.length) return;
 	const from =
 		'sceneIds' in source
 			? sql`m.source_id in ${source.sceneIds}`
-			: 'storyId' in source
-				? sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`
-				: sql`m.source_id in (select s.id from scenes s join stories st on st.id = s.story_id where st.universe_id = ${source.universeId})`;
+			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
 	await markStale(
 		tx,
 		(type) =>
@@ -137,11 +157,12 @@ export async function markMentionsStale(
 	);
 }
 
-/** Marks these entities as markMentionsStale does, arcs and enrichment both:
- * what the Assistant reads about them changed. */
+/** Marks these entities as markMentionsStale does, arcs and enrichment both
+ * unless `enrich` is false: what the Assistant reads about them changed. */
 export async function markEntitiesStale(
 	tx: Database,
-	targets: { targetType: EntityType; targetId: string }[]
+	targets: { targetType: EntityType; targetId: string }[],
+	opts: { enrich?: boolean } = {}
 ): Promise<void> {
 	await markStale(
 		tx,
@@ -149,7 +170,7 @@ export async function markEntitiesStale(
 			const ids = targets.filter((t) => t.targetType === type).map((t) => t.targetId);
 			return ids.length ? sql`${ids}` : null;
 		},
-		true
+		opts.enrich ?? true
 	);
 }
 
@@ -240,6 +261,7 @@ export async function restoreScene(
 				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${scene.storyId})`
 			})
 			.where(eq(scenes.id, scene.id));
+		if (chapterId) await markChapterSummariesStale(tx, [chapterId]);
 	});
 	return true;
 }
@@ -254,6 +276,8 @@ export async function destroyScene(
 	const scene = await ownedScene(db, userId, sceneId, { deleted: true });
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
+		// The scene row before its mentions, the order a mention rebuild takes.
+		await tx.select({ id: scenes.id }).from(scenes).where(eq(scenes.id, scene.id)).for('update');
 		// Threads before suggestions: a suggestion's discussion thread
 		// references it.
 		const threadRows = await tx
@@ -320,6 +344,12 @@ export async function renameChapter(
 	return true;
 }
 
+// Renumbering updates chapters in position order; taking every row lowest id
+// first beforehand keeps the lock order markChapterSummariesStale uses.
+async function lockStoryChapters(tx: Database, storyId: string) {
+	await tx.execute(sql`select id from chapters where story_id = ${storyId} order by id for update`);
+}
+
 /** Swaps a chapter with its neighbour. A no-op at either end of the list. */
 export async function moveChapter(
 	db: Database,
@@ -341,6 +371,7 @@ export async function moveChapter(
 	// Renumber the whole list; stories are small enough that this costs nothing
 	// and it keeps positions compact.
 	await db.transaction(async (tx) => {
+		await lockStoryChapters(tx, chapter.storyId);
 		for (const [index, row] of list.entries()) {
 			await tx
 				.update(chapters)
@@ -363,8 +394,9 @@ export async function deleteChapter(
 	await db.transaction(async (tx) => {
 		await tx
 			.update(scenes)
-			.set({ chapterId: null, positionInChapter: null, ...keepUpdatedAt() })
+			.set({ chapterId: null, positionInChapter: null, ...keepTimestamps() })
 			.where(eq(scenes.chapterId, chapter.id));
+		await lockStoryChapters(tx, chapter.storyId);
 		await tx.delete(chapters).where(eq(chapters.id, chapter.id));
 		const rest = await tx
 			.select({ id: chapters.id })

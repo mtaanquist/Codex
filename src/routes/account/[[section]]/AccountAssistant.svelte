@@ -6,9 +6,10 @@
 	import { enhance } from '#lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
 	import { askConfirm } from '#lib/confirm.svelte';
-	import { formatDateTime, formatNumber, pluralSuffix } from '#lib/format';
+	import { formatDateTime, formatNumber, pluralSuffix, spentPhrase } from '#lib/format';
 	import { resolveRoleModel, type AssistantRole } from '#lib/assistant-tuning';
 	import FormStatus from '#lib/components/FormStatus.svelte';
+	import HelpLink from '#lib/components/HelpLink.svelte';
 	import RoleTuningModal from '#lib/components/RoleTuningModal.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -637,9 +638,8 @@
 						placeholder="No cap"
 					/>
 					<p class="field-hint">
-						A background review or summary update stops after the next scene once it has spent this
-						much. Leave it empty for no cap. It only applies when your endpoint publishes prices for
-						the model.
+						A background run stops once it has spent about this much. Leave it empty for no cap.
+						<a href={resolve('/docs/[topic]', { topic: 'account' })}>How the cap works</a>
 					</p>
 				</div>
 				<div class="field">
@@ -835,7 +835,9 @@
 	<div class="admin-block" id="assistant-usage">
 		<div class="settings-group">
 			<header class="settings-group-header">
-				<h2 class="settings-group-title">Usage</h2>
+				<h2 class="settings-group-title">
+					Usage <HelpLink topic="account" label="usage and cost" />
+				</h2>
 				<p class="settings-group-subtitle">
 					Every request the assistant sends to your endpoint, with the token counts it reported.
 					Costs are estimates, shown when your endpoint publishes prices.
@@ -849,8 +851,17 @@
 						Last 30 days: {data.assistantUsage.totals.requests} request{pluralSuffix(
 							data.assistantUsage.totals.requests
 						)}, {formatNumber(data.assistantUsage.totals.promptTokens)} tokens sent,
-						{formatNumber(data.assistantUsage.totals.completionTokens)} received{#if usageTotalCost !== null},
-							about ${usageTotalCost.toFixed(2)}{/if}.
+						{formatNumber(data.assistantUsage.totals.completionTokens)} received{#if data.assistantUsage.totals.webSearchRequests > 0},
+							{data.assistantUsage.totals.webSearchRequests} web search{data.assistantUsage.totals
+								.webSearchRequests === 1
+								? ''
+								: 'es'}{/if}{#if usageTotalCost !== null},
+							{spentPhrase(usageTotalCost)}{/if}.
+						{#if data.assistantUsage.totals.estimatedRequests > 0}
+							Includes {data.assistantUsage.totals.estimatedRequests} estimated request{pluralSuffix(
+								data.assistantUsage.totals.estimatedRequests
+							)}.
+						{/if}
 					</p>
 				{/if}
 				<div>
@@ -864,12 +875,17 @@
 									{#if entry.promptTokens !== null || entry.completionTokens !== null}
 										- {formatNumber(entry.promptTokens ?? 0)} in / {formatNumber(
 											entry.completionTokens ?? 0
-										)} out
+										)} out{#if entry.estimated}, estimated{/if}
 									{:else}
 										- token counts not reported
 									{/if}
+									{#if entry.webSearchRequests}
+										- {entry.webSearchRequests} web search{entry.webSearchRequests === 1
+											? ''
+											: 'es'}
+									{/if}
 									{#if cost !== null}
-										- about ${cost.toFixed(4)}
+										- {spentPhrase(cost, false, 4)}
 									{/if}
 								</div>
 							</div>

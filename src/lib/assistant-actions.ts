@@ -84,7 +84,9 @@ export type JobStartFailure = {
 export type JobIdHandler = (jobId: string | null, failure?: JobStartFailure) => void;
 
 // Posts to a job endpoint and tracks the queued job to completion in the
-// activity center, flashing a failure card if the request never lands. The
+// activity center, flashing a failure card if the request never lands. A 409
+// means the same job is already queued or running: the card for that job is
+// picked up instead. The
 // caller supplies the endpoint, its payload, the activity labels, and the
 // fallback messages for a network blip and a server rejection.
 async function launchJob(opts: {
@@ -112,6 +114,13 @@ async function launchJob(opts: {
 	if (!response.ok) {
 		const message = await apiErrorMessage(response, opts.startFallback);
 		opts.onJobId?.(null, { reason: 'rejected', status: response.status, message });
+		if (response.status === 409) {
+			// The request joined a job that is already queued or running, so its own
+			// card is shown rather than a failure.
+			flashActivity('done', 'Already running', message);
+			void resumeRunningJobs();
+			return;
+		}
 		flashActivity('failed', opts.failLabel, message);
 		return;
 	}

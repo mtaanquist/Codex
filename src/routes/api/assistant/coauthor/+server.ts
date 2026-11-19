@@ -2,6 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantStory,
 	throwAssistantError
 } from '#lib/server/llm/assistant-route';
@@ -56,7 +57,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			enableTools: false,
 			messages,
 			maxTokens: MAX_COAUTHOR_TOKENS,
-			signal: request.signal
+			signal: requestSignal(request)
 		});
 	} catch (err) {
 		throwAssistantError(err, 'The Assistant could not draft that passage.');

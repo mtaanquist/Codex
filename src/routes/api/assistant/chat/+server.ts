@@ -3,6 +3,7 @@ import { db } from '#lib/server/db';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantStory,
 	requireAssistantUniverse,
 	requireChat
@@ -138,7 +139,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			content: turn.reference ? foldReference(turn.content, turn.reference) : turn.content
 		})),
 		budgetTokens: chatBudgetTokens(contextWindow),
-		signal: request.signal
+		signal: requestSignal(request)
 	});
 	const messages: ChatMessage[] = context
 		? [buildSystemMessage(context, { tools: true }), ...fitted.messages]

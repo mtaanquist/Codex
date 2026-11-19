@@ -84,15 +84,17 @@ contacts a model on its own.
   lookup per scene, so raise it if replies say they ran out of lookups. Lower
   it if your endpoint charges per request. It also applies to reviews. With
   Fewer tools picked, the Assistant gets half this number.
-- **Spend cap per background run**: the most one background review, or one
-  summary update, may spend before it stops. It checks between scenes, so it
-  never stops half way through one, and it tells you how far it got and what it
-  spent. A stopped summary update picks up where it left off when you run it
+- **Spend cap per background run**: the most one background review, summary
+  update, pass suggesting details for the entries, or character arc may spend before it stops. It checks
+  between steps (a scene, an entry), so it never stops half way through one, and
+  the last step can take it a little over the cap. It tells you how far it got
+  and what it spent. A stopped summary update picks up where it left off when you run it
   again. To carry on with a review, either raise the cap and run it again, or run the same review again as it is: a run over the same
   scope (the same chapter, or the same whole story) skips the scenes the stopped
   run already read and starts from a fresh budget. Leave the box empty for no cap.
   This needs your endpoint to publish prices for the model; without a price the
   run says the cap could not be applied rather than stopping or ignoring it.
+  See Usage and cost, below, for how requests are counted.
 - **Warn above**: before a chapter or whole-story review starts, the review window
   shows what it will send and, where a price is known, what that costs. Above this
   figure it asks you to confirm again. Leave the box empty for the default of
@@ -189,14 +191,32 @@ contacts a model on its own.
   the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
-  are known, an estimated cost shows too. With the Claude provider, repeated
-  context (your world details, earlier turns) is cached by the API and billed
-  far cheaper on reuse; the log counts cached tokens as sent, so the estimate
-  errs on the high side. The list shows 50 requests at a time;
+  are known, an estimated cost shows too. The list shows 50 requests at a time;
   use Older and Newer to page through the rest. Only counts are kept; the text
-  itself is never stored in this log.
+  itself is never stored in this log. See Usage and cost, below.
 
 Your words are sent only to the endpoint you set here.
+
+### Usage and cost
+
+- **Estimated rows**: with the Claude provider, when a request fails, or you
+  stop it, before the endpoint reports its token counts, Codex estimates them
+  from what had arrived. Those rows say "estimated", and the 30-day total says
+  how many it includes. A request you stopped can cost more than its estimate.
+  With other providers, a stopped or failed chat reply shows "token counts
+  not reported", and a failed background request is not listed.
+- **Spend cap**: a request that fails partway is counted from what had
+  arrived, or at its reply limit if its thinking was not shown, and the run's
+  notice marks the amount as estimated. If the endpoint leaves out the
+  token counts for any request, that request cannot be priced, and the run says
+  the cap could not be fully applied.
+- **Cached context**: with the Claude provider, repeated context (your world
+  details, earlier turns) is cached by the API and billed far cheaper on reuse.
+  The cost in the list counts cached tokens at the full price, so it errs on
+  the high side.
+- **Web searches**: with the Claude provider, the list shows how many web
+  searches a request ran. Claude charges for each search on top of tokens; that
+  fee is not in the cost shown here or counted by the spend cap.
 
 ### Which model to pick for each role
 
@@ -252,7 +272,7 @@ To switch the theme without leaving the page you are on, open your account menu
 Under Library, choose how the library page shows your stories: Covers shows each
 story as a book cover, No covers shows the same cards without the cover, and
 Table lists your stories in rows with their status, word count, chapters, and
-when you last edited them. The switch above the stories on the library page
+when you last changed anything in them. The switch above the stories on the library page
 changes the same setting.
 
 ## Editor
