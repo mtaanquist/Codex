@@ -1,6 +1,7 @@
 // An Assistant summary is current while the row has not changed since it was
-// written: summary_generated_at at or after updated_at. The summary job
-// refreshes one that is not.
+// written: summary_generated_at at or after updated_at. The summary job stamps
+// it with the updated_at it read, never a clock, so the comparison does not
+// depend on which clock set updated_at. The job refreshes one that is not.
 export function summaryIsCurrent(generatedAt: Date | null, updatedAt: Date): boolean {
 	return generatedAt !== null && generatedAt.getTime() >= updatedAt.getTime();
 }

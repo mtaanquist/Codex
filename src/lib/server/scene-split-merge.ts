@@ -4,7 +4,7 @@ import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { keepUpdatedAt, ownedScene } from './scene-access.ts';
-import { markMentionsStale } from './scene-lifecycle.ts';
+import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { storyIsLive } from './universe-scope.ts';
@@ -278,6 +278,7 @@ export async function mergeScenes(
 		.select({
 			id: scenes.id,
 			storyId: scenes.storyId,
+			chapterId: scenes.chapterId,
 			bodyMd: scenes.bodyMd,
 			globalPosition: scenes.globalPosition
 		})
@@ -338,6 +339,10 @@ export async function mergeScenes(
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(inArray(scenes.id, restIds));
 		await markMentionsStale(tx, { sceneIds: restIds });
+		// The merged scenes leave their chapters, even when the target keeps a
+		// summary the writer wrote and so is not summarised again.
+		const chapterIds = rows.map((scene) => scene.chapterId).filter((id) => id !== null);
+		await markChapterSummariesStale(tx, [...new Set(chapterIds)]);
 		await tx
 			.delete(entityMentions)
 			.where(

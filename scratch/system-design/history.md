@@ -1492,6 +1492,29 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       deleted while an enrich pass runs is passed over instead of failing the
       pass (#1072).
 
+- [x] Summaries and scene-change follow-ups (#1071, #1111, #1114, #1120,
+      2026-11-19). A summary is now stamped with the updated_at it was built
+      from (the guarded write already proves the row still has it), not a
+      clock reading, so currency compares a column with a copy of itself;
+      inserts set updated_at on the database clock and saves on the app
+      clock, and either could be ahead. The title-only save moved to the app
+      clock like every other update. The guarded write also checks the old
+      stamp, so trashing, restoring or merging a scene marks its chapter's
+      summary stale (stamp moved just behind updated_at, a new value each
+      time) and a pass already writing from the old scenes does not save
+      over the mark. Moves between chapters still leave the chapter summary
+      as it is (scene-order.ts was in another lane; see #1100). The pass now
+      stops at the first no-model or turned-off refusal and the notice says
+      so, settled as failed like enrich, and a pass whose every write lost
+      to an edit says that instead of "found nothing". New
+      scenes.touched_at (clock_timestamp(), bumped by every Drizzle update
+      through $onUpdate and by the reorder for the rows it moved) drives the
+      library's edited time and the scene a story opens on, so a status
+      change, move or restore counts as editing the story while updated_at
+      stays the prose clock. clock_timestamp() so the scene a split or
+      merge acted on reads later than the scenes it shifted in the same
+      transaction. Migration 0084 backfills it from updated_at.
+
 - [x] Staging review round 8 (#1122, 2026-11-18). The output-cap floor
       from round 6 also applied to a finished reply without an output count,
       so a compatible endpoint that omits it booked every thinking request at

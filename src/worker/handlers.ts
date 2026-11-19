@@ -542,9 +542,17 @@ export function createHandlers(deps: WorkerDeps) {
 				const result = await services.summariseStory(db, { userId, storyId, signal: job.signal });
 				const written = result.scenes + result.chapters;
 				const href = `/stories/${storyId}`;
+				const after =
+					written > 0 ? `, after ${written} ${written === 1 ? 'summary' : 'summaries'}` : '';
 				let title: string;
-				if (written === 0 && result.failed > 0) {
+				if (result.noModel) {
+					title = `No model is chosen for the Assistant, so it stopped summarising "${story.title}"${after}. ${PICK_MODEL}, then run it again.`;
+				} else if (result.disabled) {
+					title = `The Assistant is turned off, so it stopped summarising "${story.title}"${after}. Switch it back on in your settings, then run it again.`;
+				} else if (written === 0 && result.failed > 0) {
 					title = `The Assistant could not summarise "${story.title}". Check the endpoint in your settings.`;
+				} else if (written === 0 && result.changed) {
+					title = `"${story.title}" changed while the Assistant was summarising it, so nothing was saved. Run it again to bring the summaries up to date.`;
 				} else if (written === 0) {
 					title = `The Assistant found nothing to summarise in "${story.title}".`;
 				} else {
@@ -562,8 +570,16 @@ export function createHandlers(deps: WorkerDeps) {
 					storyId,
 					scenes: result.scenes,
 					chapters: result.chapters,
-					failed: result.failed
+					failed: result.failed,
+					...(result.changed ? { changed: result.changed } : {}),
+					...(result.noModel ? { noModel: true } : {}),
+					...(result.disabled ? { disabled: true } : {})
 				});
+				// Settled as failed, as an enrich pass that stops the same way is: a
+				// retry would be refused again.
+				if (result.noModel || result.disabled) {
+					await boss.complete(job.name, job, { failed: true });
+				}
 			}
 		},
 

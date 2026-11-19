@@ -102,11 +102,27 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(eq(scenes.id, scene.id));
 		await markMentionsStale(tx, { sceneIds: [scene.id] });
+		await markChapterSummariesStale(tx, scene.chapterId ? [scene.chapterId] : []);
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 	});
 	return true;
+}
+
+/** Marks these chapters' Assistant summaries out of date, for a change to
+ * which scenes they hold that leaves every scene's own summary current (the
+ * trash, a restore). The stamp goes behind updated_at, so the next pass
+ * rewrites the summary, and moves on every mark, so a pass already writing
+ * from the old scenes does not save over it. A summary the writer wrote (no
+ * stamp) is left alone. */
+export async function markChapterSummariesStale(tx: Database, chapterIds: string[]) {
+	if (!chapterIds.length) return;
+	await tx.execute(sql`
+		update chapters
+		set summary_generated_at = least(summary_generated_at, updated_at) - interval '1 millisecond'
+		where id in ${chapterIds} and summary_generated_at is not null
+	`);
 }
 
 /** A watermark before this is a mark set by markStale below, not a time an
@@ -239,6 +255,7 @@ export async function restoreScene(
 				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${scene.storyId})`
 			})
 			.where(eq(scenes.id, scene.id));
+		if (chapterId) await markChapterSummariesStale(tx, [chapterId]);
 	});
 	return true;
 }
