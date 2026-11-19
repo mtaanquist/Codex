@@ -131,10 +131,10 @@ test('the author works through a pattern note across two scenes', async ({ page 
 test.describe('with the Assistant on', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	// After an accept the Assistant re-reads the spot and stages a follow-up in
-	// the same scene. The follow-up is the next step, even though the pass had
-	// already moved on to the next scene. The re-read is answered by the test.
-	test('a follow-up from the re-read comes next', async ({ page }) => {
+	// A note with the same edit in two scenes, and the re-read after an accept
+	// answered by the test: it stages a follow-up on "ford" in the first scene
+	// once `release` resolves.
+	async function openPass(page: Page, release: Promise<void> = Promise.resolve()) {
 		await gotoReady(page, '/login');
 		await page.getByLabel('Email').fill('assistant-e2e@example.com');
 		await page.getByLabel('Password').fill('e2e-password');
@@ -164,33 +164,46 @@ test.describe('with the Assistant on', () => {
 					[name]
 				)
 			).rows;
+		const [one, two] = await scenesOf();
+		const thread = await pool.query<{ id: string }>(
+			`insert into review_threads (story_id, scene_id) values ($1, $2) returning id`,
+			[one.story_id, one.id]
+		);
+		const threadId = thread.rows[0].id;
+		await pool.query(
+			`insert into review_comments (thread_id, assistant, body_md) values ($1, true, $2)`,
+			[threadId, 'Pattern note (POV epithets): Kara is often called the elf.']
+		);
+		for (const scene of [one, two]) await seedEdit(pool, scene, threadId, [0, 7], 'Kara');
+
+		await page.route('**/api/assistant/pattern-reread', async (route) => {
+			await release;
+			const [after] = await scenesOf();
+			const at = after.body_md.indexOf('ford');
+			const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river');
+			await route.fulfill({ json: { staged: 1, ids: [id] } });
+		});
+
+		await gotoReady(page, `${storyPath}/review?scene=${one.id}`);
+		const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+		await note.getByRole('button', { name: 'Work through this (2)' }).click();
+		const pass = page.locator('.review-panel');
+		await expect(pass.locator('.pp-para')).toContainText('crossed the ford.');
+		return {
+			pass,
+			done: async () => {
+				await page.unrouteAll({ behavior: 'wait' });
+				await pool.end();
+			}
+		};
+	}
+
+	// The follow-up is the next step, even though the pass had already moved
+	// on to the next scene.
+	test('a follow-up from the re-read comes next', async ({ page }) => {
+		const { pass, done } = await openPass(page);
 		try {
-			const [one, two] = await scenesOf();
-			const thread = await pool.query<{ id: string }>(
-				`insert into review_threads (story_id, scene_id) values ($1, $2) returning id`,
-				[one.story_id, one.id]
-			);
-			const threadId = thread.rows[0].id;
-			await pool.query(
-				`insert into review_comments (thread_id, assistant, body_md) values ($1, true, $2)`,
-				[threadId, 'Pattern note (POV epithets): Kara is often called the elf.']
-			);
-			for (const scene of [one, two]) await seedEdit(pool, scene, threadId, [0, 7], 'Kara');
-
-			await page.route('**/api/assistant/pattern-reread', async (route) => {
-				const [after] = await scenesOf();
-				const at = after.body_md.indexOf('ford');
-				const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river');
-				await route.fulfill({ json: { staged: 1, ids: [id] } });
-			});
-
-			await gotoReady(page, `${storyPath}/review?scene=${one.id}`);
-			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
-			await note.getByRole('button', { name: 'Work through this (2)' }).click();
-			const pass = page.locator('.review-panel');
-			await expect(pass.locator('.pp-para')).toContainText('crossed the ford.');
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
-
 			await expect(pass.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
 			await expect(page.locator('.review-edit .cm-content')).toContainText('Kara crossed');
@@ -199,8 +212,28 @@ test.describe('with the Assistant on', () => {
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
 			await expect(pass.getByText('Follow-up')).toHaveCount(0);
 		} finally {
-			await page.unrouteAll({ behavior: 'wait' });
-			await pool.end();
+			await done();
+		}
+	});
+
+	// A follow-up that arrives while the writer rewords the next step waits
+	// until that step is done, so the wording being typed is kept.
+	test('a follow-up does not take over a step being reworded', async ({ page }) => {
+		let release!: () => void;
+		const { pass, done } = await openPass(page, new Promise<void>((r) => (release = r)));
+		try {
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await pass.getByRole('button', { name: 'Edit' }).click();
+			await pass.getByLabel('Your wording').fill('Kara alone');
+			release();
+			await expect(pass.getByText('Re-reading the last change...')).toHaveCount(0);
+			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone');
+			await pass.getByRole('button', { name: 'Accept my wording' }).click();
+			await expect(pass.getByText('Follow-up')).toBeVisible();
+			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
+		} finally {
+			await done();
 		}
 	});
 });
