@@ -44,6 +44,7 @@ Stack: SvelteKit and TypeScript, Drizzle on Postgres, a pg-boss worker for backg
 - `main` is the working branch. Feature work happens on `feat/<name>` (or `fix/`, `chore/`, `ci/`) branched off `main`, merged back by squash after every CI check passes. GitHub auto-deletes merged head branches.
 - When several PRs need to land together (a milestone), open a `staging/<short-name>` branch off `main`, target its PRs at it, and merge it to `main` in one PR when the set is done. Create one only when it is needed.
 - Roadmap steps release as their own version (the roadmap says which). Release flow, in order: bump the version on a branch (`npm version X.Y.Z --no-git-tag-version`, commit), PR to `main`, squash-merge after checks, verify `origin/main` actually moved (`git log origin/main --oneline` after a fetch), then tag `vX.Y.Z` on `origin/main` and publish a GitHub release. From an environment that cannot push tags (remote sessions), the tag and release step is the Release workflow instead: dispatch it with the version, and it tags `main`, publishes the release, and kicks the image build.
+- After a release, point `tests/integration/upgrade/previous-release.json` at it (the version and its number of migrations) in the next branch, and update `seed.sql` there if a column it writes was changed by that release.
 - Never pipe `gh` merge or check commands through `tail`/`head`: the pipe masks exit codes, and that has shipped a mistagged release before. Use `gh pr checks <ref> --watch` bare and read the result.
 
 ## Working approach

@@ -982,6 +982,20 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Upgrade-path test (2026-11-19)
+
+Several findings were data or jobs left by the previous version, while the
+suite starts from an empty, fully migrated database. #1196 added
+`tests/integration/upgrade-path.test.ts`: a database of its own is migrated
+only as far as the last release (`upgrade/previous-release.json`), seeded with
+that release's row shapes in plain SQL (`upgrade/seed.sql`: CRLF bodies, a
+writer's own summary, a capped review under the old scope key, arcs and reads
+current at the time, a trashed universe), migrated to head, then opened,
+summarised, enriched, continued, exported, saved and restored. Nothing may be
+lost or asked of the model again. Pending jobs on the legacy queues are not in
+the fixture: pg-boss creates its own schema when the worker starts, outside the
+migrations. The release flow in `CLAUDE.md` now refreshes the fixture.
+
 ## Stream transcripts (2026-11-19)
 
 Stream handling and spend metering drew a finding nearly every review round,
