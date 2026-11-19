@@ -374,3 +374,54 @@ for (const unfinished of UNFINISHED) {
 		expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
 	});
 }
+
+// A command's help text and a reply stopped before any text are not part of
+// the chat the next question sends.
+test('help text and a stopped empty reply are not sent back', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Stopped empty');
+	const sent: { role: string; content: string }[][] = [];
+	let release = () => {};
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as {
+			newChatId?: string;
+			chatId?: string;
+			messages: { role: string; content: string }[];
+		};
+		sent.push(body.messages);
+		if (sent.length === 1) {
+			// Held until the writer stops it.
+			await new Promise<void>((resolve) => (release = resolve));
+			await route.abort().catch(() => {});
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': body.chatId ?? body.newChatId ?? '',
+				'x-chat-created': '0',
+				'x-chat-title': encodeURIComponent('Where is the boat?')
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'At the quay.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	const chat = panel.locator('.chat-scroll');
+	await composer.fill('/help');
+	await composer.press('Enter');
+	await expect(chat).toContainText('Commands you can type here');
+
+	await composer.fill('Where is the boat?');
+	await composer.press('Enter');
+	await expect.poll(() => sent.length).toBe(1);
+	await panel.getByRole('button', { name: 'Stop generating' }).click();
+	release();
+
+	await composer.fill('Where is the boat?');
+	await composer.press('Enter');
+	await expect(chat).toContainText('At the quay.');
+	expect(sent[0].some((m) => m.content.includes('Commands you can type here'))).toBe(false);
+	expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
+});
