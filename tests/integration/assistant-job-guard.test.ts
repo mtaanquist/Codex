@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { PgBoss, type JobWithMetadata } from 'pg-boss';
-import { jobRunSignal, shouldNotifyWriter } from '../../src/worker/job-guard';
+import { jobRunSignal, shouldNotifyWriter, withJobRunSignal } from '../../src/worker/job-guard';
 import { stoppedByWriter } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -82,7 +82,7 @@ describe('jobRunSignal', () => {
 	// The run signal once the job's own signal aborts.
 	async function abortedRun(job: JobWithMetadata) {
 		const controller = new AbortController();
-		const signal = jobRunSignal(boss, QUEUE, { ...job, signal: controller.signal });
+		const { signal } = jobRunSignal(boss, QUEUE, { ...job, signal: controller.signal });
 		expect(signal.aborted).toBe(false);
 		controller.abort();
 		await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
@@ -104,5 +104,21 @@ describe('jobRunSignal', () => {
 	it('does not call a worker shutdown a writer stop', async () => {
 		const job = await startRun();
 		expect(stoppedByWriter(await abortedRun(job))).toBe(false);
+	});
+
+	it('skips the job lookup once the work has returned', async () => {
+		let lookups = 0;
+		const counting = { getJobById: async () => (lookups++, null) };
+		const controller = new AbortController();
+		const job = { id: 'job-1', name: QUEUE, signal: controller.signal };
+		let runSignal: AbortSignal | undefined;
+		await withJobRunSignal(counting, job, async (signal) => {
+			runSignal = signal;
+		});
+		// pg-boss aborts the job's signal when it completes normally.
+		controller.abort();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(lookups).toBe(0);
+		expect(runSignal?.aborted).toBe(false);
 	});
 });

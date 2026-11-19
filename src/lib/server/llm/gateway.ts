@@ -673,14 +673,11 @@ export async function* stream(
 				usage = event.usage;
 				continue;
 			}
-			// A declined or paused reply is not a finished one, so it ends as an
-			// error and the caller does not keep it.
+			// A declined reply ends as an error and the caller does not keep it. A
+			// paused one ends as done: the stream cannot resume it, and its text was
+			// paid for, so the writer keeps what arrived.
 			if (event.type === 'done' && event.finishReason === 'refusal') {
 				yield { type: 'error', message: REFUSED_STREAM_MESSAGE };
-				return;
-			}
-			if (event.type === 'done' && event.finishReason === 'paused') {
-				yield { type: 'error', message: PAUSED_MESSAGE };
 				return;
 			}
 			yield event;

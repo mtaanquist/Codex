@@ -62,7 +62,7 @@ import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.t
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { storyIsLive } from '../lib/server/universe-scope.ts';
-import { jobRunSignal, shouldNotifyWriter } from './job-guard.ts';
+import { shouldNotifyWriter, withJobRunSignal } from './job-guard.ts';
 import { spentPhrase } from '../lib/format.ts';
 
 // The job handlers, kept apart from index.ts (which owns the pg-boss
@@ -194,12 +194,14 @@ export function createHandlers(deps: WorkerDeps) {
 		const href = `/universes/${universeId}/plan?entity=${characterId}`;
 		let title: string;
 		try {
-			const result = await services.summariseCharacterArc(db, {
-				userId,
-				characterId,
-				jobId: job.id,
-				signal: jobRunSignal(boss, job.name, job)
-			});
+			const result = await withJobRunSignal(boss, job, (signal) =>
+				services.summariseCharacterArc(db, {
+					userId,
+					characterId,
+					jobId: job.id,
+					signal
+				})
+			);
 			if (result.outcome === 'missing') {
 				logEvent('warn', 'assistant.arc_skipped', { characterId, userId, reason: 'not owner' });
 				return;
@@ -414,12 +416,14 @@ export function createHandlers(deps: WorkerDeps) {
 					const href = `/universes/${universeId}/plan`;
 					let title: string;
 					try {
-						const result = await services.reviewUniverseContinuity(db, {
-							userId,
-							universeId,
-							jobId: job.id,
-							signal: jobRunSignal(boss, job.name, job)
-						});
+						const result = await withJobRunSignal(boss, job, (signal) =>
+							services.reviewUniverseContinuity(db, {
+								userId,
+								universeId,
+								jobId: job.id,
+								signal
+							})
+						);
 						if (!result.ran) {
 							title = `There was nothing to compare for continuity in "${universe.name}".`;
 						} else if (result.notes === 0) {
@@ -472,12 +476,14 @@ export function createHandlers(deps: WorkerDeps) {
 				if (mode === 'continuity') {
 					let title: string;
 					try {
-						const result = await services.reviewStoryContinuity(db, {
-							userId,
-							storyId,
-							jobId: job.id,
-							signal: jobRunSignal(boss, job.name, job)
-						});
+						const result = await withJobRunSignal(boss, job, (signal) =>
+							services.reviewStoryContinuity(db, {
+								userId,
+								storyId,
+								jobId: job.id,
+								signal
+							})
+						);
 						// The capped wording replaces the outcome line, so it is built
 						// before the suffixes rather than over the top of them.
 						if (result.capped) {
@@ -509,15 +515,17 @@ export function createHandlers(deps: WorkerDeps) {
 				let title: string;
 				let done: Record<string, number | boolean>;
 				try {
-					const result = await services.reviewStoryScenes(db, {
-						userId,
-						storyId,
-						chapterId,
-						categories,
-						jobId: job.id,
-						signal: jobRunSignal(boss, job.name, job),
-						legacyJobCategories
-					});
+					const result = await withJobRunSignal(boss, job, (signal) =>
+						services.reviewStoryScenes(db, {
+							userId,
+							storyId,
+							chapterId,
+							categories,
+							jobId: job.id,
+							signal,
+							legacyJobCategories
+						})
+					);
 					const problem = firstFailure(result.failures);
 					if (result.capped) {
 						title = `The review of "${story.title}" stopped after ${result.reviewed} of ${result.total} scenes at ${spentPhrase(result.spentUsd ?? 0, result.spentEstimated)}. Raise the cap in settings or run the review again to continue.`;
@@ -572,12 +580,14 @@ export function createHandlers(deps: WorkerDeps) {
 					});
 					continue;
 				}
-				const result = await services.summariseStory(db, {
-					userId,
-					storyId,
-					jobId: job.id,
-					signal: jobRunSignal(boss, job.name, job)
-				});
+				const result = await withJobRunSignal(boss, job, (signal) =>
+					services.summariseStory(db, {
+						userId,
+						storyId,
+						jobId: job.id,
+						signal
+					})
+				);
 				const written = result.scenes + result.chapters;
 				const href = `/stories/${storyId}`;
 				const after =
@@ -650,12 +660,14 @@ export function createHandlers(deps: WorkerDeps) {
 					});
 					continue;
 				}
-				const result = await services.enrichUniverse(db, {
-					userId,
-					universeId,
-					jobId: job.id,
-					signal: jobRunSignal(boss, job.name, job)
-				});
+				const result = await withJobRunSignal(boss, job, (signal) =>
+					services.enrichUniverse(db, {
+						userId,
+						universeId,
+						jobId: job.id,
+						signal
+					})
+				);
 				const href = `/universes/${universeId}/plan`;
 				const name = universe.name;
 				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
