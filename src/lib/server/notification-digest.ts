@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	notifications,
@@ -115,7 +115,9 @@ export async function applyReviewerOptOut(db: Database, token: string): Promise<
 	return updated.length > 0;
 }
 
-export type ReviewerDigest = { email: EmailMessage; reviewerId: string; upTo: Date };
+// upTo is the last digested reply's created_at as Postgres text, so the
+// watermark keeps its microseconds.
+export type ReviewerDigest = { email: EmailMessage; reviewerId: string; upTo: string };
 
 // Author replies for a guest reviewer (email, no account): everything the
 // story's owner wrote in threads this reviewer commented in since the last
@@ -137,11 +139,10 @@ export async function buildReviewerDigest(
 		.where(and(eq(reviewInvitations.id, reviewer.invitationId), isNull(stories.deletedAt)));
 	if (!invitation) return null;
 
-	const since = reviewer.lastNotifiedAt ?? reviewer.createdAt;
 	const replies = await db
 		.select({
 			body: reviewComments.bodyMd,
-			createdAt: reviewComments.createdAt,
+			createdAt: sql<string>`${reviewComments.createdAt}::text`,
 			authorName: users.displayName
 		})
 		.from(reviewComments)
@@ -150,7 +151,8 @@ export async function buildReviewerDigest(
 		.where(
 			and(
 				eq(reviewThreads.storyId, invitation.storyId),
-				gt(reviewComments.createdAt, since),
+				// Compared in SQL: a JS Date would drop the microseconds.
+				sql`${reviewComments.createdAt} > (select coalesce(${reviewers.lastNotifiedAt}, ${reviewers.createdAt}) from ${reviewers} where ${reviewers.id} = ${reviewerId})`,
 				inArray(
 					reviewComments.threadId,
 					db
@@ -189,13 +191,10 @@ export async function buildReviewerDigest(
 export async function markReviewerNotified(
 	db: Database,
 	reviewerId: string,
-	upTo: Date
+	upTo: string
 ): Promise<void> {
-	// upTo is the last digested comment's timestamp truncated to JS
-	// milliseconds, while Postgres keeps microseconds; one millisecond up
-	// keeps that comment out of the next digest.
 	await db
 		.update(reviewers)
-		.set({ lastNotifiedAt: new Date(upTo.getTime() + 1) })
+		.set({ lastNotifiedAt: sql`${upTo}::timestamptz` })
 		.where(eq(reviewers.id, reviewerId));
 }

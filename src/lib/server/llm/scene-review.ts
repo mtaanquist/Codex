@@ -1059,10 +1059,6 @@ export async function reviewStoryScenes(
 			);
 			notes += pass.notes;
 			reviewed += 1;
-			// So a continuation that reviews the scene again can drop its count.
-			if (pass.notes) {
-				run.state.notesByScene = { ...run.state.notesByScene, [scene.id]: pass.notes };
-			}
 			if (pass.stopped) {
 				failures.push({
 					sceneId: scene.id,

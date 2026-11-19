@@ -33,12 +33,17 @@ const oneClock = [
 	},
 	{
 		selector:
-			"CallExpression[callee.property.name=/^(set|values)$/] > ObjectExpression > Property > NewExpression[callee.name='Date'][arguments.length=0]",
+			"CallExpression[callee.property.name=/^(set|values)$/] > :matches(ObjectExpression, ArrayExpression) NewExpression[callee.name='Date'][arguments.length=0]",
 		message: appClockStamp
 	},
 	{
 		selector:
-			"Property[key.name='set'] > ObjectExpression > Property > NewExpression[callee.name='Date'][arguments.length=0]",
+			"Property[key.name='set'] > ObjectExpression NewExpression[callee.name='Date'][arguments.length=0]",
+		message: appClockStamp
+	},
+	{
+		selector:
+			"TaggedTemplateExpression[tag.name='sql'] NewExpression[callee.name='Date'][arguments.length=0]",
 		message: appClockStamp
 	}
 ];

@@ -992,11 +992,16 @@ the hook is app-side, and inserts already used `defaultNow()`), the remaining
 `new Date()` writes became `now()`, copies (duplicate, add back, new story from
 a draft) stamp with `dbNow`, and the review continuation stamps `reviewedAt`
 with `dbNowText` and compares it with `updated_at` in SQL at microsecond
-precision. An ESLint rule refuses `new Date()` in `.set`, `.values` and
-`$onUpdate` under `src/lib/server`; a `new Date()` held in a variable first is
-not caught, so the rule is in `design.md` too. A continued review also takes a
-redone scene's notes out of the count (`notesByScene`, absent on older rows,
-which keep the old count).
+precision. The reviewer email digest keeps its watermark as Postgres text for
+the same reason: a JS Date dropped the microseconds, so a reply in the same
+millisecond as the last digested one was never sent. An ESLint rule refuses
+`new Date()` in `.set`, `.values`, `sql` templates and `$onUpdate` under
+`src/lib/server`; a `new Date()` held in a variable first is not caught, so the
+rule is in `design.md` too. #1143 also said a continued review counts a redone
+scene's notes twice. It does not: a pass counts only the notes it adds, and the
+earlier ones stay open, so the count is left as it was. Stamps read back into a
+JS Date (the mention index's `loadedAt`, `dbNow`) still lose microseconds, but
+only in the safe direction: a scene can be reindexed once more, never missed.
 
 ## Stale-mark invariant test (2026-11-19)
 

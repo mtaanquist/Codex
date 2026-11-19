@@ -1480,9 +1480,6 @@ export type ReviewRunState = {
 	// were recorded.
 	reviewedAt?: Record<string, string>;
 	failedScenes?: string[];
-	// How many notes each scene's pass left, so a continuation that reviews a
-	// scene again takes its notes out of the count. Absent on older rows.
-	notesByScene?: Record<string, number>;
 };
 
 // The progress of one queued review, keyed by its pg-boss job id: what the

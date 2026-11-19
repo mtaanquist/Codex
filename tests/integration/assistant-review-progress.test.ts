@@ -318,8 +318,9 @@ describe('resuming a run', () => {
 	});
 
 	// #1143: the reviewed-at stamp and updated_at come from one clock and are
-	// compared at full precision, and a redone scene's notes leave the count.
-	it('reviews again a scene edited just after its pass, and drops its notes', async () => {
+	// compared at full precision. A redone scene's earlier notes stay in the
+	// count: they are still open, and the new pass only counts notes it adds.
+	it('reviews again a scene edited just after its pass, and keeps its notes', async () => {
 		const storyId = await seedStory(2);
 		const [first, second] = await sceneIds(storyId);
 		const { rows } = await pool.query<{ at: string }>(`select clock_timestamp()::text as at`);
@@ -344,7 +345,6 @@ describe('resuming a run', () => {
 				completed: [first, second],
 				reviewed: 2,
 				notes: 5,
-				notesByScene: { [first]: 2, [second]: 3 },
 				reviewedAt: { [first]: stamp, [second]: stamp }
 			}
 		});
@@ -353,7 +353,6 @@ describe('resuming a run', () => {
 
 		expect(adopted?.completed).toEqual([second]);
 		expect(adopted?.reviewed).toBe(1);
-		expect(adopted?.notes).toBe(3);
-		expect(adopted?.notesByScene).toEqual({ [second]: 3 });
+		expect(adopted?.notes).toBe(5);
 	});
 });

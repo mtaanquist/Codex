@@ -200,24 +200,18 @@ async function carryForward(
 	const reviewedAt = Object.fromEntries(
 		Object.entries(state.reviewedAt ?? {}).filter(([id]) => !redo.has(id))
 	);
-	const notesByScene = Object.fromEntries(
-		Object.entries(state.notesByScene ?? {}).filter(([id]) => !redo.has(id))
-	);
-	// The redone scenes' notes stay on them, but the new pass counts them again.
-	const redoneNotes = [...redo].reduce((sum, id) => sum + (state.notesByScene?.[id] ?? 0), 0);
 	return {
 		...emptyReviewRun(),
 		scope,
 		completed: kept.filter((id) => !edited.has(id)),
 		reviewed: Math.max(0, state.reviewed - edited.size),
 		failed: Math.max(0, state.failed - failedScenes.size),
-		notes: Math.max(0, state.notes - redoneNotes),
+		notes: state.notes,
 		// Scene failures only, for the scenes that stay done: the earlier run's
 		// own messages (a cap it hit, a price it lacked) say nothing about this
 		// one.
 		failures: state.failures.filter((failure) => failure.sceneId && !redo.has(failure.sceneId)),
 		...(Object.keys(reviewedAt).length ? { reviewedAt } : {}),
-		...(Object.keys(notesByScene).length ? { notesByScene } : {}),
 		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
 		capped: false,
 		spentUsd: 0,
