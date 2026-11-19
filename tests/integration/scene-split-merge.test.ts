@@ -664,6 +664,27 @@ describe('mergeScenes', () => {
 		expect(quoted).toEqual({ 'a-tail': '.', 'b-lead': 'T', 'b-tail': '.' });
 	});
 
+	it('keeps markers on a blank first scene visible in the merged text', async () => {
+		const a = await makeScene(1, '\n\n');
+		const b = await makeScene(2, 'Two two.');
+		await db.insert(sceneMarkers).values([
+			{ sceneId: a.id, ownerId, anchorStart: 0, anchorEnd: 2, bodyMd: 'blank' },
+			{ sceneId: a.id, ownerId, anchorStart: 0, anchorEnd: 0, bodyMd: 'empty' }
+		]);
+
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('Two two.');
+		const markers = await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, a.id));
+		expect(markers.map((marker) => [marker.bodyMd, marker.anchorStart, marker.anchorEnd])).toEqual(
+			expect.arrayContaining([
+				['blank', 0, 1],
+				['empty', 0, 1]
+			])
+		);
+	});
+
 	it('moves markers along with each merged body', async () => {
 		const a = await makeScene(1, 'One.');
 		const b = await makeScene(2, 'Two two.');

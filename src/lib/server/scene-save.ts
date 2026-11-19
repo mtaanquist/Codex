@@ -1,9 +1,10 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
 import { markMentionsStale } from './scene-lifecycle.ts';
+import { inLiveStory } from './universe-scope.ts';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 
@@ -42,7 +43,9 @@ export async function saveSceneBody(
 		const [current] = await tx
 			.select({ bodyMd: scenes.bodyMd, title: scenes.title })
 			.from(scenes)
-			.where(eq(scenes.id, sceneId))
+			// Checked again under the lock: a merge or trash that held it first
+			// may have binned the scene since the caller's ownership check.
+			.where(and(eq(scenes.id, sceneId), isNull(scenes.deletedAt), inLiveStory(scenes.storyId)))
 			.for('update');
 		if (!current) return { ok: false as const, missing: true as const };
 		const bodyChanged = current.bodyMd !== save.bodyMd;

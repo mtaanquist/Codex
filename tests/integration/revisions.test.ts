@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq, sql } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
@@ -152,6 +152,69 @@ describe('recordRevision', () => {
 		await recordRevision(db, 'scene', id, 'A.', 'checkpoint', { label: 'Mark' });
 		await recordRevision(db, 'scene', id, 'B.');
 		expect(await listRevisions(db, 'scene', id)).toHaveLength(3);
+	});
+	it('orders a checkpoint after an autosave that landed while its transaction waited', async () => {
+		// A split or merge opens its transaction, then waits for the scene lock
+		// while an autosave records the text from before. Its checkpoint must
+		// still sort after that autosave, so a later autosave does not coalesce
+		// over the text from before the split.
+		const id = randomUUID();
+		let resume!: () => void;
+		const autosaved = new Promise<void>((resolve) => (resume = resolve));
+		let started!: () => void;
+		const opened = new Promise<void>((resolve) => (started = resolve));
+		const split = db.transaction(async (tx) => {
+			await tx.execute(sql`select now()`);
+			started();
+			await autosaved;
+			await recordRevision(tx, 'scene', id, 'Head.', 'checkpoint', { label: 'Split' });
+		});
+		await opened;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await recordRevision(db, 'scene', id, 'Before the split.');
+		resume();
+		await split;
+		await recordRevision(db, 'scene', id, 'Head, typed on.');
+		const rows = await db
+			.select({ bodyMd: revisions.bodyMd, reason: revisions.reason })
+			.from(revisions)
+			.where(eq(revisions.entityId, id))
+			.orderBy(asc(revisions.createdAt));
+		expect(rows).toEqual([
+			{ bodyMd: 'Before the split.', reason: 'autosave' },
+			{ bodyMd: 'Head.', reason: 'checkpoint' },
+			{ bodyMd: 'Head, typed on.', reason: 'autosave' }
+		]);
+	});
+
+	it('orders a coalesced autosave after a checkpoint recorded while it waited', async () => {
+		const id = randomUUID();
+		await recordRevision(db, 'scene', id, 'A.');
+		let resume!: () => void;
+		const marked = new Promise<void>((resolve) => (resume = resolve));
+		let started!: () => void;
+		const opened = new Promise<void>((resolve) => (started = resolve));
+		const typing = db.transaction(async (tx) => {
+			await tx.execute(sql`select now()`);
+			started();
+			await marked;
+			await recordRevision(tx, 'scene', id, 'B.');
+		});
+		await opened;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await recordRevision(db, 'scene', id, 'A.', 'checkpoint', { label: 'Mark' });
+		resume();
+		await typing;
+		const rows = await db
+			.select({ bodyMd: revisions.bodyMd, reason: revisions.reason })
+			.from(revisions)
+			.where(eq(revisions.entityId, id))
+			.orderBy(asc(revisions.createdAt));
+		expect(rows).toEqual([
+			{ bodyMd: 'A.', reason: 'autosave' },
+			{ bodyMd: 'A.', reason: 'checkpoint' },
+			{ bodyMd: 'B.', reason: 'autosave' }
+		]);
 	});
 });
 
