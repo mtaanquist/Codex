@@ -425,4 +425,18 @@ test('the command menu and Tab keep a draft, and a refused send comes back', asy
 	);
 	await expect(composer).toHaveValue('Where does it end?');
 	await expect(panel.locator('.msg.user')).toHaveCount(0);
+
+	// So does one that never reaches the server.
+	await page.unroute('**/api/assistant/chat');
+	await page.route('**/api/assistant/chat', (route) => route.abort('internetdisconnected'));
+	await composer.fill('And the middle?');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('And the middle?');
+	await expect(panel.locator('.msg.user')).toHaveCount(0);
+
+	// A /rewrite that cannot go ahead keeps the line.
+	await composer.fill('/rewrite cut the adverbs');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText('to use /rewrite');
+	await expect(composer).toHaveValue('/rewrite cut the adverbs');
 });

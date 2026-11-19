@@ -22,7 +22,13 @@ import {
 	buildSystemMessage,
 	type AssembleOptions
 } from '#lib/server/llm/context/assemble';
-import { appendChat, getChat, setChatSettings, type ChatScope } from '#lib/server/llm/chat-history';
+import {
+	appendChat,
+	dropChatIfEmpty,
+	getChat,
+	setChatSettings,
+	type ChatScope
+} from '#lib/server/llm/chat-history';
 import { fitChatWithSummary } from '#lib/server/llm/chat-summary';
 import {
 	attachmentBudgetTokens,
@@ -125,46 +131,53 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.newChatId
 	);
 	const chatId = chat.id;
-	// Only a settings object is saved (an empty one clears the choice); a send
-	// without one, or with anything else, runs on the stored choice.
-	const raw = payload.settings;
-	if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-		await setChatSettings(db, userId, chatId, settings);
-	} else settings = (await getChat(db, userId, chatId))?.settings ?? {};
+	// A new chat is created before its first turn is stored; if a step in
+	// between fails (a key that no longer decrypts, a failed read), it goes
+	// again rather than sit empty in the chat list.
+	let contextWindow: number | undefined;
+	let attached: Awaited<ReturnType<typeof resolveAttachments>>;
+	try {
+		// Only a settings object is saved (an empty one clears the choice); a send
+		// without one, or with anything else, runs on the stored choice.
+		const raw = payload.settings;
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+			await setChatSettings(db, userId, chatId, settings);
+		} else settings = (await getChat(db, userId, chatId))?.settings ?? {};
 
-	// Every budget scales with the context window of the model this chat runs on.
-	const resolved = await resolveLlmConfig(
-		db,
-		userId,
-		'storyId' in scope ? scope.storyId : undefined
-	);
-	const contextWindow = modelContextWindow(
-		withRoleOverride(resolved.config, 'chat', settings),
-		'chat'
-	);
+		// Every budget scales with the context window of the model this chat runs on.
+		const resolved = await resolveLlmConfig(
+			db,
+			userId,
+			'storyId' in scope ? scope.storyId : undefined
+		);
+		contextWindow = modelContextWindow(withRoleOverride(resolved.config, 'chat', settings), 'chat');
 
-	// What the writer attached to the newest message, read by id and cut to
-	// fit. The stored turn keeps which ones were cut, for its chips.
-	const attached =
-		newest.role === 'user'
-			? await resolveAttachments(
-					db,
-					userId,
-					newest.attachments,
-					attachmentBudgetTokens(contextWindow)
-				)
-			: [];
-	if (newest.role === 'user') {
-		const meta = {
-			...(newest.reference ? { reference: newest.reference } : {}),
-			...(attached.length > 0 ? { attachments: attached.map((item) => item.attachment) } : {})
-		};
-		const stored = await appendChat(db, userId, scope, chatId, {
-			role: 'user',
-			content: newest.content,
-			meta: Object.keys(meta).length > 0 ? meta : null
-		});
-		if (!stored) error(404, CHAT_MISSING);
+		// What the writer attached to the newest message, read by id and cut to
+		// fit. The stored turn keeps which ones were cut, for its chips.
+		attached =
+			newest.role === 'user'
+				? await resolveAttachments(
+						db,
+						userId,
+						newest.attachments,
+						attachmentBudgetTokens(contextWindow)
+					)
+				: [];
+		if (newest.role === 'user') {
+			const meta = {
+				...(newest.reference ? { reference: newest.reference } : {}),
+				...(attached.length > 0 ? { attachments: attached.map((item) => item.attachment) } : {})
+			};
+			const stored = await appendChat(db, userId, scope, chatId, {
+				role: 'user',
+				content: newest.content,
+				meta: Object.keys(meta).length > 0 ? meta : null
+			});
+			if (!stored) error(404, CHAT_MISSING);
+		}
+	} catch (err) {
+		if (chat.created) await dropChatIfEmpty(db, chatId).catch(() => {});
+		throw err;
 	}
 
 	// The assembled world rides as a system message after the gateway's persona

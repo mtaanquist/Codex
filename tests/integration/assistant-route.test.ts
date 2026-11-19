@@ -699,6 +699,45 @@ describe('chats over the endpoints', () => {
 		expect(last.join('\n')).not.toContain('The first half ends here.');
 	});
 
+	it('drops a new chat again when a step before its first turn fails', async () => {
+		// A stored key that no longer decrypts makes the config unreadable.
+		await pool.query(
+			`update users set llm_config = llm_config || '{"apiKeyEnc":"not-a-secret"}'::jsonb where id = $1`,
+			[userId]
+		);
+		const before = (await listChats(db, userId, { storyId })).length;
+		await expect(
+			chatPost({
+				storyId,
+				newChatId: '22222222-2222-4222-8222-222222222222',
+				messages: [{ role: 'user', content: 'Hi.' }]
+			})
+		).rejects.toThrow();
+		expect(await listChats(db, userId, { storyId })).toHaveLength(before);
+	});
+
+	it("refuses to save the model on another writer's chat", async () => {
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'O', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await expectStatus(
+			Promise.resolve(
+				chatsRoute.PATCH({
+					params: { id: chatId },
+					request: new Request('http://localhost', {
+						method: 'PATCH',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ settings: { model: 'x' } })
+					}),
+					locals: { user: { id: other.id } }
+				} as unknown as Parameters<typeof chatsRoute.PATCH>[0])
+			),
+			404
+		);
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({});
+	});
+
 	it('loads and deletes a chat', async () => {
 		await (
 			await chatPost({ storyId, chatId, messages: [{ role: 'user', content: 'Hi.' }] })

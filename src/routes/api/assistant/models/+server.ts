@@ -13,7 +13,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 	rateLimitLookups(userId);
 	const layout = await assistantLayout(db, userId);
 	if (!layout.surfacesEnabled) error(403, 'The Assistant is off for this account.');
-	const { config } = await resolveLlmConfig(db, userId);
+	// A config that cannot be read (a key that no longer decrypts) lists nothing.
+	const config = await resolveLlmConfig(db, userId)
+		.then((resolved) => resolved.config)
+		.catch(() => null);
+	if (!config) return Response.json({ models: [], complete: false });
 	const listed = await listEndpointModels(
 		db,
 		{ endpoint: config.endpoint, apiKey: config.apiKey },
