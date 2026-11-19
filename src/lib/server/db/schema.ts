@@ -4,6 +4,7 @@ import {
 	check,
 	customType,
 	date,
+	doublePrecision,
 	index,
 	inet,
 	integer,
@@ -1456,6 +1457,12 @@ export type ReviewRunState = {
 	// Set when the run started from an earlier capped run's progress, so its
 	// completed list includes that run's scenes (see adoptCappedRun).
 	carriedForward?: boolean;
+	// When each scene's pass read it (ISO time), and the scenes whose pass
+	// failed. completed holds both kinds; a continuation reviews a failed scene,
+	// or one edited since its pass, again. Absent on rows saved before these
+	// were recorded.
+	reviewedAt?: Record<string, string>;
+	failedScenes?: string[];
 };
 
 // The progress of one queued review, keyed by its pg-boss job id: what the
@@ -1468,6 +1475,22 @@ export const assistantReviewRuns = pgTable('assistant_review_runs', {
 		.references(() => users.id, { onDelete: 'cascade' })
 		.notNull(),
 	state: jsonb('state').$type<ReviewRunState>().notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date())
+});
+
+// What one queued Assistant job has spent so far, keyed by its pg-boss job id,
+// so a retry of the same job (a worker that died, an expiry) carries on against
+// the ceiling instead of starting at zero. Written only when a cap is set, and
+// swept with the review run rows.
+export const assistantJobSpend = pgTable('assistant_job_spend', {
+	jobId: text('job_id').primaryKey(),
+	userId: uuid('user_id')
+		.references(() => users.id, { onDelete: 'cascade' })
+		.notNull(),
+	spentUsd: doublePrecision('spent_usd').notNull(),
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()
 		.defaultNow()

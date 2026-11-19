@@ -37,6 +37,9 @@
 							View <Icon name="arrow-out" size={11} />
 						</button>
 					{/if}
+					{#if item.stop && item.state === 'running'}
+						<button class="activity-link" type="button" onclick={item.stop}>Stop</button>
+					{/if}
 				</div>
 				<button
 					class="activity-x"

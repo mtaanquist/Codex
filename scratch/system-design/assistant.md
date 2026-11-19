@@ -784,7 +784,10 @@ it checks), so a run that stopped at the spend cap is picked up by the
 next run over that scope even though it arrives with a new job id; only the
 newest run over the scope is looked at, it is adopted only if it was capped
 (or was itself a continuation of a capped run that threw or was cancelled
-before it finished), and it starts again with the whole ceiling. A copyedit capped before the
+before it finished), and it starts again with the whole ceiling, minus the
+scenes whose pass failed and those edited since their pass read them, which
+are reviewed again. A failure to read or adopt the earlier run fails the
+attempt for pg-boss to retry rather than starting over. A copyedit capped before the
 categories joined the key is continued only when its job (still on the legacy
 queue) shows it checked the same categories; otherwise it starts over. The rows are
 disposable, and a daily worker sweep drops those older than 30 days. The
@@ -801,7 +804,11 @@ left, or its job moved to a retry or picked up again under a newer start time)
 sends no notification, so the writer hears once, from the run that finishes. The worker runs up to four Assistant jobs at once but one per writer
 (the job's pg-boss group), and every model request has a ten-minute idle
 timeout in the egress layer, so one writer's hung endpoint stalls only that
-writer's queue. Before it reviews
+writer's queue. A running job's activity card has a Stop button, which
+cancels the writer's own job (freeing its key at once); the worker aborts the
+run at its next heartbeat. Each job's spend is kept per pg-boss job id in
+`assistant_job_spend` while a cap is set, so a retry of the same job carries
+on against the ceiling instead of starting at zero. Before it reviews
 anything, a story-level pass refreshes scene summaries that are missing or
 stale (the `assistant-summaries` logic, called directly), since both the
 context assembly and the cross-scene pass read them.

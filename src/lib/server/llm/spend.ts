@@ -47,13 +47,26 @@ export function requestCostUsd(
 export class SpendMeter {
 	readonly capUsd: number | undefined;
 	private readonly pricing: ModelPricing | undefined;
-	private usd = 0;
+	private usd: number;
 	private unpriced = false;
 	private unreported = false;
+	private readonly persist: ((spentUsd: number) => Promise<void>) | undefined;
+	private saving: Promise<void> = Promise.resolve();
 
-	constructor(opts: { pricing?: ModelPricing; capUsd?: number }) {
+	// spentUsd seeds the meter with what an earlier attempt of the same job
+	// already spent, so a retry does not get the whole ceiling again. persist is
+	// handed the running total after every priced request; writes run one after
+	// another, and flush waits for the last.
+	constructor(opts: {
+		pricing?: ModelPricing;
+		capUsd?: number;
+		spentUsd?: number;
+		persist?: (spentUsd: number) => Promise<void>;
+	}) {
 		this.pricing = opts.pricing;
 		this.capUsd = opts.capUsd;
+		this.usd = opts.spentUsd ?? 0;
+		this.persist = opts.persist;
 	}
 
 	// One request's reported usage. A model with no price marks the run
@@ -75,6 +88,15 @@ export class SpendMeter {
 			return;
 		}
 		this.usd += cost;
+		if (this.persist) {
+			const persist = this.persist;
+			const total = this.usd;
+			this.saving = this.saving.then(() => persist(total)).catch(() => {});
+		}
+	}
+
+	flush(): Promise<void> {
+		return this.saving;
 	}
 
 	get spentUsd(): number {

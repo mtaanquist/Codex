@@ -31,7 +31,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
 
 const { summariseCharacterArc, arcIsStale, planArc, ArcStoryMutedError } =
 	await import('../../src/lib/server/llm/arc-summary');
-const { saveAccountLlmConfig, saveStoryLlmOverride } =
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 
@@ -50,7 +50,12 @@ const stubProvider: Provider = {
 		lastPrompt = JSON.stringify(req.messages);
 		calls += 1;
 		if (duringCall) await duringCall();
-		return { content: reply, toolCalls: [], finishReason: finish };
+		return {
+			content: reply,
+			toolCalls: [],
+			finishReason: finish,
+			usage: { promptTokens: 1000, completionTokens: 0 }
+		};
 	},
 	async listModels() {
 		return [];
@@ -83,7 +88,7 @@ beforeEach(async () => {
 	duringCall = null;
 	reply = 'Bram leaves the harbour and becomes a captain.';
 	await pool.query(
-		'truncate table entity_mentions, scenes, characters, stories, universes, users cascade'
+		'truncate table assistant_job_spend, entity_mentions, scenes, characters, stories, universes, users cascade'
 	);
 	const [owner] = await db
 		.insert(users)
@@ -333,6 +338,57 @@ describe('summariseCharacterArc', () => {
 		expect((await readArc(bram.id)).arcSummaryMd).toBe(
 			'Bram leaves the harbour and becomes a captain.'
 		);
+	});
+});
+
+describe('the arc job and the spend cap (#1105)', () => {
+	async function capAt(spendCapUsd: number) {
+		await saveAccountLlmConfig(db, ownerId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8,
+			spendCapUsd
+		});
+		// $1 a request: 1000 prompt tokens at $0.001.
+		await saveModelPricing(db, ownerId, { 'chat-model': { prompt: 0.001, completion: 0 } });
+	}
+
+	it('counts the request towards the job', async () => {
+		await capAt(5);
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		const result = await summariseCharacterArc(
+			db,
+			{ userId: ownerId, characterId: bram.id, jobId: 'arc-1' },
+			deps
+		);
+		expect(result.outcome).toBe('written');
+		const { rows } = await pool.query(
+			`select spent_usd from assistant_job_spend where job_id = 'arc-1'`
+		);
+		expect(rows[0].spent_usd).toBeCloseTo(1, 6);
+	});
+
+	it('asks nothing when earlier attempts of the job spent the ceiling', async () => {
+		await capAt(1);
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
+		await pool.query(
+			`insert into assistant_job_spend (job_id, user_id, spent_usd) values ('arc-2', $1, 1)`,
+			[ownerId]
+		);
+		const result = await summariseCharacterArc(
+			db,
+			{ userId: ownerId, characterId: bram.id, jobId: 'arc-2' },
+			deps
+		);
+		expect(result).toEqual({ outcome: 'capped', spentUsd: 1 });
+		expect(calls).toBe(0);
+		expect((await readArc(bram.id)).arcSummaryMd).toBeNull();
 	});
 });
 
