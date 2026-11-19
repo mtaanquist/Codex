@@ -1,0 +1,6 @@
+# about: Overloaded before the stream opened
+# outcome: retry
+# status: 529
+# content-type: application/json
+
+{"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}

@@ -288,10 +288,13 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			if (usage) yield { type: 'usage', usage };
 		}
 	}
-	// The stream ended without an explicit [DONE]; close it out anyway.
+	// The stream ended without [DONE]. A finish reason means the reply is
+	// whole; without one the connection dropped partway.
 	const tail = think.flush();
 	if (tail) yield { type: 'token', text: tail };
-	yield done();
+	if (finishReason) yield done();
+	else
+		yield { type: 'error', message: 'The endpoint closed the stream before the reply finished.' };
 }
 
 export const openaiProvider: Provider = {

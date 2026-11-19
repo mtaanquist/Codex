@@ -1173,7 +1173,7 @@ describe('anthropicProvider.chatStream', () => {
 		]);
 	});
 
-	it('closes the stream when it ends without message_stop', async () => {
+	it('ends a stream cut off before its stop reason with an error', async () => {
 		const frames = [
 			'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}\n'
 		];
@@ -1181,7 +1181,10 @@ describe('anthropicProvider.chatStream', () => {
 		const events = await drain(
 			anthropicProvider.chatStream({ model: 'claude-x', messages: [], maxTokens: 16 }, conn, http)
 		);
-		expect(events).toEqual([{ type: 'token', text: 'Hi' }, { type: 'done' }]);
+		expect(events).toEqual([
+			{ type: 'token', text: 'Hi' },
+			{ type: 'error', message: 'The endpoint closed the stream before the reply finished.' }
+		]);
 	});
 
 	it('surfaces a streamed error frame as an error event', async () => {
