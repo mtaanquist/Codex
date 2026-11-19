@@ -99,6 +99,18 @@ describe('scene touched_at', () => {
 		expect(row.updatedAt.toISOString()).toBe('2026-01-02T00:00:00.000Z');
 	});
 
+	it('reads a scene with no touched_at by its updated_at', async () => {
+		// Scenes from before the column existed have no touched_at.
+		await pool.query('update scenes set touched_at = null where id = $1', [secondId]);
+		expect((await lastTouchedScene(db, storyId))?.id).toBe(firstId);
+		await pool.query('update scenes set updated_at = $1 where id = $2', [
+			new Date('2026-01-04T00:00:00Z'),
+			secondId
+		]);
+		expect((await lastTouchedScene(db, storyId))?.id).toBe(secondId);
+		expect(new Date(await editedAt()).toISOString()).toBe('2026-01-04T00:00:00.000Z');
+	});
+
 	it('counts the trash and a restore as a change', async () => {
 		expect(await trashScene(db, ownerId, secondId)).toBe(true);
 		expect(await restoreScene(db, ownerId, secondId)).toBe(true);
@@ -121,11 +133,11 @@ describe('scene touched_at', () => {
 			.select({ touchedAt: scenes.touchedAt })
 			.from(scenes)
 			.where(eq(scenes.id, secondId));
-		expect(moved.touchedAt.getTime()).toBeGreaterThan(Date.parse('2026-02-01'));
+		expect(moved.touchedAt!.getTime()).toBeGreaterThan(Date.parse('2026-02-01'));
 		const [kept] = await db
 			.select({ touchedAt: scenes.touchedAt })
 			.from(scenes)
 			.where(eq(scenes.id, third.id));
-		expect(kept.touchedAt.toISOString()).toBe(LONG_AGO.toISOString());
+		expect(kept.touchedAt!.toISOString()).toBe(LONG_AGO.toISOString());
 	});
 });
