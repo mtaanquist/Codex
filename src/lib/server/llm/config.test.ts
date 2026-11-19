@@ -176,16 +176,26 @@ describe('withRoleOverride', () => {
 		expect(out.tuning.chat?.effort).toBeUndefined();
 	});
 
-	it("drops the account's effort when the chat picks a model without one", () => {
+	it("drops the account's tuning when the chat picks another model", () => {
 		const config = resolved({
 			provider: 'anthropic',
 			models: { chat: 'claude-opus-5' },
-			tuning: { chat: { effort: 'high', temperature: 0.5 } }
+			tuning: { chat: { effort: 'high', temperature: 0.5, maxTokens: 300 } }
 		});
 		const out = withRoleOverride(config, 'chat', { model: 'claude-haiku-4-5' });
-		expect(out.tuning.chat).toEqual({ temperature: 0.5 });
+		expect(out.tuning.chat).toEqual({});
 		expect(config.tuning.chat?.effort).toBe('high');
 		expect(chatModelInfo(out).effort).toBeNull();
+	});
+
+	it("keeps the role's tuning when the picked model is its own", () => {
+		const config = resolved({
+			provider: 'anthropic',
+			models: { chat: 'claude-opus-5' },
+			tuning: { chat: { temperature: 0.5 } }
+		});
+		const out = withRoleOverride(config, 'chat', { model: 'claude-opus-5', effort: 'low' });
+		expect(out.tuning.chat).toEqual({ temperature: 0.5, effort: 'low' });
 	});
 
 	it('leaves the config alone without a setting', () => {

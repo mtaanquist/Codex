@@ -44,7 +44,7 @@ On a story's plan, the panel talks about that story, and it shares the story's c
 
 The Assistant can read across every story in the universe, not just the one in front of you. So while you plan a new book you can ask it to check a detail, an event, or a character against the earlier ones, and it will find the scene it comes from and tell you where. Ask it to check continuity across the stories and it will look for facts, timelines, and character details that disagree between the books.
 
-If you do not want the Assistant on a particular story, open its panel and choose "Mute for this story" from the command menu (the slash button under the chat box); the panel stays so you can turn it back on, and the Assistant leaves that story's scenes out when it works across the universe. To turn the Assistant off everywhere, use the master switch on your account page.
+If you do not want the Assistant on a particular story, open its panel and choose "Mute for this story" from the command menu (the slash button at the bottom of the chat box); the panel stays so you can turn it back on, and the Assistant leaves that story's scenes out when it works across the universe. To turn the Assistant off everywhere, use the master switch on your account page.
 
 ## Relationships
 

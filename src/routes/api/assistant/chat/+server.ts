@@ -125,9 +125,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.newChatId
 	);
 	const chatId = chat.id;
-	// A client that sends no setting leaves the stored one alone, and runs on it.
-	if (payload.settings !== undefined) await setChatSettings(db, userId, chatId, settings);
-	else settings = (await getChat(db, userId, chatId))?.settings ?? {};
+	// Only a settings object is saved (an empty one clears the choice); a send
+	// without one, or with anything else, runs on the stored choice.
+	const raw = payload.settings;
+	if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+		await setChatSettings(db, userId, chatId, settings);
+	} else settings = (await getChat(db, userId, chatId))?.settings ?? {};
 
 	// Every budget scales with the context window of the model this chat runs on.
 	const resolved = await resolveLlmConfig(

@@ -388,3 +388,41 @@ test('context added from the picker goes with the next message', async ({ page }
 	await expect.poll(() => posted.length).toBe(2);
 	expect(posted[1].at(-1)?.attachments).toBeUndefined();
 });
+
+test('the command menu and Tab keep a draft, and a refused send comes back', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Draft');
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+
+	// A command from the menu leaves the draft alone; one that takes input
+	// goes in front of it.
+	await composer.fill('Mira');
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await page.getByRole('option', { name: /Add context/ }).click();
+	await page.keyboard.press('Escape');
+	await expect(composer).toHaveValue('Mira');
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	await page.getByRole('option', { name: /Character or place sheet/ }).click();
+	await expect(composer).toHaveValue('/who Mira');
+
+	// Tab completes a typed command without running it.
+	await composer.fill('/mu');
+	await composer.press('Tab');
+	await expect(composer).toHaveValue('/mute');
+	await expect(panel.getByRole('button', { name: 'Chat commands' })).toBeVisible();
+
+	// A send the server turns away goes back in the chat box.
+	await page.route('**/api/assistant/chat', (route) =>
+		route.fulfill({
+			status: 429,
+			contentType: 'application/json',
+			body: JSON.stringify({ message: 'Too many Assistant requests in a short time.' })
+		})
+	);
+	await composer.fill('Where does it end?');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message was not sent. Too many Assistant requests'
+	);
+	await expect(composer).toHaveValue('Where does it end?');
+	await expect(panel.locator('.msg.user')).toHaveCount(0);
+});

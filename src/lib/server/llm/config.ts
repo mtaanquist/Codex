@@ -457,7 +457,10 @@ export function withRoleOverride(
 		modelTakesEffort(resolveRoleModel(models, role, suggestedModel(config.provider, role)));
 	const effort = takesEffort ? override?.effort : undefined;
 	if (!model && !effort) return config;
-	let roleTuning = config.tuning[role];
+	// The role's tuning (output cap, temperature, extra parameters) was set for
+	// its own model, so another model starts from the defaults.
+	const swapped = model !== undefined && model !== pickModel(config, role);
+	let roleTuning = swapped ? {} : config.tuning[role];
 	if (effort) roleTuning = { ...roleTuning, effort };
 	else if (!takesEffort && roleTuning?.effort) {
 		roleTuning = { ...roleTuning };

@@ -5,7 +5,7 @@
 	// size, and its price where the endpoint reports one), or one of its chapters
 	// or scenes. Focus stays in the search field, which drives the list.
 	import type { AttachmentKind, ChatAttachment } from '#lib/assistant-chat';
-	import { formatNumber } from '#lib/format';
+	import { formatNumber, spentPhrase } from '#lib/format';
 	import Icon from './Icon.svelte';
 
 	type Item = { kind: AttachmentKind; id: string; label: string; sublabel: string | null };
@@ -139,7 +139,7 @@
 	function bookSize(c: StoryContents): string {
 		const words = `about ${formatNumber(c.words)} words${c.cut ? ', too long to send in full' : ''}`;
 		if (c.usd === null) return words;
-		const cost = c.usd < 0.01 ? 'under $0.01' : `about $${c.usd.toFixed(2)}`;
+		const cost = c.usd < 0.01 ? 'under $0.01' : spentPhrase(c.usd);
 		return `${words}, ${cost} each time it is sent`;
 	}
 

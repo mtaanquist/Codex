@@ -4,6 +4,7 @@ import {
 	chatTitle,
 	newChatId,
 	attachmentKey,
+	chatEffort,
 	attachmentLabel,
 	MAX_ATTACHMENTS,
 	readAttachments,
@@ -143,5 +144,18 @@ describe('attachmentKey', () => {
 		expect(attachmentKey({ kind: 'story', id, depth: 'book' })).not.toBe(
 			attachmentKey({ kind: 'story', id, depth: 'outline' })
 		);
+	});
+});
+
+describe('chatEffort', () => {
+	const info = { model: 'claude-opus-5', effort: 'high' as const, claude: true };
+	it("shows the account's effort on the account's model, and the default on another", () => {
+		expect(chatEffort({}, info)).toBe('high');
+		expect(chatEffort({ model: 'claude-sonnet-5' }, info)).toBe('medium');
+		expect(chatEffort({ model: 'claude-sonnet-5', effort: 'low' }, info)).toBe('low');
+	});
+	it('shows none where the model takes none', () => {
+		expect(chatEffort({ model: 'claude-haiku-4-5' }, info)).toBeNull();
+		expect(chatEffort({}, { model: 'local', effort: null, claude: false })).toBeNull();
 	});
 });

@@ -1040,6 +1040,18 @@ Claude Code's chat panel in VS Code, mostly the input bar. Issues #1171
   rather than run a command, menu commands wait for a reply in progress,
   model sits ahead of mute so "/m" and Enter cannot mute, and the popover
   search fields share `.input.sm`. Filed as low: #1183, #1184, #1185.
+- Staging review round 2. A command chosen from the button menu cleared the
+  writer's draft (it shared the typed-command path, which clears the line);
+  now only a typed command clears it, and a command that takes input goes in
+  front of the draft. Tab in the chat box completes a command name and runs
+  nothing (it had run Mute). A send the server refuses before storing it (a
+  rate limit) comes off the transcript and goes back in the chat box with its
+  context. A picked model starts from default tuning (output cap,
+  temperature, extra parameters were set for the account's model), and
+  `chatEffort` in `#lib/assistant-chat` is the one place the chip's effort is
+  worked out. Only a settings object sent with a message is saved. Catch me
+  up, `/write` and `/rewrite` keep their own roles' models; the help says so.
+  Filed as low: #1188, #1189.
 
 ## November review (2026-11-18)
 

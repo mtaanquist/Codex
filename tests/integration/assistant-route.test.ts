@@ -607,6 +607,18 @@ describe('chats over the endpoints', () => {
 		expect(models.at(-1)).toBe('other-model');
 		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
 
+		// Anything but a settings object leaves it alone too.
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [{ role: 'user', content: 'Third.' }],
+				settings: null
+			})
+		).text();
+		expect(models.at(-1)).toBe('other-model');
+		expect((await (await onChat('GET', chatId)).json()).settings).toEqual({ model: 'other-model' });
+
 		// Picking Default in the chip clears it, and the next send runs on the default.
 		const patch = async (body: unknown) =>
 			chatsRoute.PATCH({
