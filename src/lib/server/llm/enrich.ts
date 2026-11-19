@@ -251,7 +251,7 @@ export type UniverseEnrichResult = {
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
 	capped?: boolean;
 	spentUsd?: number;
-	// Set when spentUsd includes estimated counts, so it is an upper bound.
+	// Set when spentUsd includes estimated counts, not only reported ones.
 	spentEstimated?: boolean;
 	// Why a cap that was set could not be enforced.
 	capNotApplied?: string;

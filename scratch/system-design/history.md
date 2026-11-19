@@ -1483,6 +1483,17 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       ended up inverted in the first half; one starting at or after the end
       of the trimmed first half now moves to the new scene with its text.
 
+- [x] Staging review round 3, spend wording and help links
+      (staging/review-follow-ups, 2026-11-19). Notices and the review modal
+      said a run with estimated counts spent "up to" an amount, but only a
+      failed attempt whose thinking was hidden is metered at its output cap;
+      others count the characters that arrived, and a finished stream with
+      no usage report is estimated the same way. spentPhrase now says
+      "about $X (estimated)", matching the account page. The account help
+      no longer says a failed request is counted at the most it could have
+      cost, and names the details pass rather than `/enrich`. The capped
+      review modal links to the account help.
+
 - [x] Staging review round 2 of staging/review-follow-ups: split,
       duplicate and chapter marks (2026-11-19). Writer trust: splitScene
       read the body outside its transaction and wrote the head over the
