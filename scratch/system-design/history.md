@@ -1020,9 +1020,10 @@ error, a stream that closed without finishing or failed to save after it
 finished, a writer's own Stop, and the panel's own hints (/write and /rewrite
 passages, which are never stored, are still sent). Errors and hints, including
 failed /write and /rewrite replies, offer no insert; a stopped reply keeps
-what arrived to insert. An OpenAI-style error frame partway through
-(OpenRouter sends one when its upstream drops) also ends in an error now,
-where it used to finish the reply. The first review also found the OpenAI
+what arrived to insert. A slash command waits while a reply is on its way,
+since the reply fills the last message. An OpenAI-style error frame partway
+through (OpenRouter sends one when its upstream drops) also ends in an error
+now, where it used to finish the reply. The first review also found the OpenAI
 stream dropping a last line sent without a newline (losing its text, finish
 reason and usage); `no-final-newline.sse` covers it. The spend rule only bites
 where the body reported counts: the OpenAI stream sends usage only in its last
