@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -14,9 +14,11 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 // config helper loads (CI does not set it globally; each file that needs it does).
 process.env.APP_SECRET = process.env.APP_SECRET || 'llm-summaries-test-secret';
 
-const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
+const { saveAccountLlmConfig, saveStoryLlmOverride } =
+	await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
-const { duplicateScene, splitScene } = await import('../../src/lib/server/scene-split-merge');
+const { duplicateScene, mergeScenes, splitScene } =
+	await import('../../src/lib/server/scene-split-merge');
 const { setSceneStatus } = await import('../../src/lib/server/scene-status');
 const { trashScene, restoreScene, deleteChapter } =
 	await import('../../src/lib/server/scene-lifecycle');
@@ -450,5 +452,158 @@ describe('copied summaries', () => {
 		const again = await summariseStory(db, { userId: ownerId, storyId: copy.id }, deps);
 		expect(again.scenes).toBe(0);
 		expect(again.chapters).toBe(1);
+	});
+});
+
+async function readChapter(id: string) {
+	const [row] = await db
+		.select({
+			summaryMd: chapters.summaryMd,
+			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			updatedAt: chapters.updatedAt
+		})
+		.from(chapters)
+		.where(eq(chapters.id, id));
+	return row;
+}
+
+// The stamp is the updated_at the summary was built from, not a clock reading,
+// so a server clock that disagrees with the database's does not make a fresh
+// summary read as stale (or a stale one as fresh).
+describe('summary stamp', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('stamps each summary with the updated_at it was built from', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const a = await readScene(sceneAId);
+		expect(a.summaryGeneratedAt!.getTime()).toBe(a.updatedAt.getTime());
+		const chapter = await readChapter(chapterId);
+		expect(chapter.summaryGeneratedAt!.getTime()).toBe(chapter.updatedAt.getTime());
+	});
+
+	it('stays current when the app clock runs behind the database', async () => {
+		// The rows were inserted on the database clock; the app now reads an hour
+		// earlier.
+		vi.useFakeTimers({ toFake: ['Date'], now: Date.now() - 60 * 60 * 1000 });
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).scenes).toBe(1);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again).toMatchObject({ scenes: 0, chapters: 0 });
+	});
+});
+
+// A scene's own summary is current through the trash and back, so the scene
+// pass does not touch its chapter; the chapter is marked instead.
+describe('chapter summary after a change of scenes', () => {
+	beforeEach(async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+	});
+
+	it('refreshes the chapter summary after a scene is trashed', async () => {
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 0,
+			chapters: 1
+		});
+		expect(prompts.at(-1)).not.toContain('SUMMARY-1');
+	});
+
+	it('refreshes the chapter summary after a scene is restored', async () => {
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(await restoreScene(db, ownerId, sceneAId)).toBe(true);
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 0,
+			chapters: 1
+		});
+		expect(prompts.at(-1)).toContain('SUMMARY-1');
+	});
+
+	it('refreshes the chapter summary after a merge', async () => {
+		const merged = await mergeScenes(db, ownerId, storyId, [sceneBId, sceneCId]);
+		expect(merged.ok).toBe(true);
+		// B keeps the writer's own summary, so only the chapter is due.
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 0,
+			chapters: 1
+		});
+	});
+
+	it('leaves a chapter summary the writer wrote alone', async () => {
+		await pool.query(
+			`update chapters set summary_md = 'Mine.', summary_generated_at = null where id = $1`,
+			[chapterId]
+		);
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		expect(await readChapter(chapterId)).toMatchObject({
+			summaryMd: 'Mine.',
+			summaryGeneratedAt: null
+		});
+	});
+
+	it('refreshes the chapter on a later run when the run that refreshed its scene stopped first', async () => {
+		await nextMillisecond();
+		await db.update(scenes).set({ bodyMd: 'Alice ran.' }).where(eq(scenes.id, sceneAId));
+		// The first run took calls 1 and 2. Call 3 writes the scene summary;
+		// the chapter's, and any retry of it, fail.
+		duringCall = async (call) => {
+			if (call >= 4) throw new Error('unreachable');
+		};
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 1,
+			chapters: 0,
+			failed: 1
+		});
+		duringCall = null;
+		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
+			scenes: 0,
+			chapters: 1
+		});
+	});
+
+	it('does not mark a chapter current when a scene is restored while it is being written', async () => {
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		duringCall = async () => {
+			await restoreScene(db, ownerId, sceneAId);
+		};
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ chapters: 0, changed: 1 });
+		duringCall = null;
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+	});
+});
+
+describe('summary pass stops and reports', () => {
+	it('counts a summary not saved because the row changed', async () => {
+		duringCall = async (call) => {
+			if (call === 1) {
+				await db.update(scenes).set({ bodyMd: 'Changed.' }).where(eq(scenes.id, sceneAId));
+			}
+		};
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ scenes: 0, failed: 0, changed: 1 });
+	});
+
+	it('stops at once when no model is chosen', async () => {
+		await saveAccountLlmConfig(db, ownerId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: {},
+			toolCallBudget: 8
+		});
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ scenes: 0, chapters: 0, failed: 0, noModel: true });
+		expect(calls).toBe(0);
+	});
+
+	it('stops at once when the Assistant is turned off for the story', async () => {
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ scenes: 0, chapters: 0, failed: 0, disabled: true });
+		expect(calls).toBe(0);
 	});
 });

@@ -2,6 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantStory,
 	requireAssistantUniverse,
 	throwAssistantError
@@ -35,7 +36,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	let staged;
 	try {
-		staged = await enrichEntity(db, { userId, scope, entityId, signal: request.signal });
+		staged = await enrichEntity(db, { userId, scope, entityId, signal: requestSignal(request) });
 	} catch (err) {
 		throwAssistantError(err, 'The Assistant could not suggest anything for this entry.');
 	}

@@ -48,7 +48,11 @@ import {
 	JOB_HEARTBEAT_SECONDS
 } from './queues.ts';
 import { reviewScopeKey } from './review-runs.ts';
-import { findRunningAssistantJobs, type RunningAssistantJob } from './running-jobs.ts';
+import {
+	findRunningAssistantJobs,
+	stopAssistantJob,
+	type RunningAssistantJob
+} from './running-jobs.ts';
 import { errorFields, logEvent, redactEmail } from './log.ts';
 import type { ReviewRunState } from './db/schema.ts';
 
@@ -486,5 +490,19 @@ export async function listRunningAssistantJobs(userId: string): Promise<RunningA
 	} catch (error) {
 		logEvent('error', 'job.list_failed', { userId, ...errorFields(error) });
 		return [];
+	}
+}
+
+// Stops one of the signed-in writer's unsettled Assistant jobs (see
+// stopAssistantJob). Null when the queue could not be reached.
+export async function stopRunningAssistantJob(
+	userId: string,
+	jobId: string
+): Promise<boolean | null> {
+	try {
+		return await stopAssistantJob(db, await getBoss(), userId, jobId);
+	} catch (error) {
+		logEvent('error', 'job.stop_failed', { userId, jobId, ...errorFields(error) });
+		return null;
 	}
 }

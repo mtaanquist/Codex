@@ -1,9 +1,10 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
 import { markMentionsStale } from './scene-lifecycle.ts';
+import { inLiveStory } from './universe-scope.ts';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 
@@ -31,7 +32,8 @@ export type SceneSaveResult =
 // The autosave write for one scene. The check, the update and the revision
 // share one transaction under the scene's row lock, so two tabs cannot
 // interleave and History always ends on the stored text. The row lock comes
-// before recordRevision's advisory lock, the same order split and merge use.
+// before recordRevision's advisory lock, the same order split and merge use:
+// both lock their scenes first and work on the text as read under the lock.
 export async function saveSceneBody(
 	db: Database,
 	sceneId: string,
@@ -41,7 +43,9 @@ export async function saveSceneBody(
 		const [current] = await tx
 			.select({ bodyMd: scenes.bodyMd, title: scenes.title })
 			.from(scenes)
-			.where(eq(scenes.id, sceneId))
+			// Checked again under the lock: a merge or trash that held it first
+			// may have binned the scene since the caller's ownership check.
+			.where(and(eq(scenes.id, sceneId), isNull(scenes.deletedAt), inLiveStory(scenes.storyId)))
 			.for('update');
 		if (!current) return { ok: false as const, missing: true as const };
 		const bodyChanged = current.bodyMd !== save.bodyMd;
@@ -51,8 +55,10 @@ export async function saveSceneBody(
 				conflict: { bodyMd: current.bodyMd, title: current.title }
 			};
 		}
-		// Arcs name the scenes they retell.
-		if (current.title !== save.title) await markMentionsStale(tx, { sceneIds: [sceneId] });
+		// Arcs and enrich passages name the scenes they quote.
+		if (current.title !== save.title) {
+			await markMentionsStale(tx, { sceneIds: [sceneId] }, { enrich: true });
+		}
 		const count = wordCount(save.bodyMd);
 		// An idle editor keeps resending the same text. History already ends on
 		// it and the anchors have nothing to move through, so only a new title
@@ -60,13 +66,16 @@ export async function saveSceneBody(
 		if (!bodyChanged) {
 			if (current.title !== save.title) {
 				// Mentions read only the body, so an index that was current stays
-				// current; one already behind keeps its pending rebuild.
+				// current; one already behind keeps its pending rebuild. The app
+				// clock, as updated_at's $onUpdate uses for every other save, so an
+				// edit never moves updated_at back behind this one.
+				const now = new Date();
 				await tx
 					.update(scenes)
 					.set({
 						title: save.title,
-						updatedAt: sql`now()`,
-						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then now() else ${scenes.mentionsIndexedAt} end`
+						updatedAt: now,
+						mentionsIndexedAt: sql`case when ${scenes.mentionsIndexedAt} >= ${scenes.updatedAt} then ${now}::timestamptz else ${scenes.mentionsIndexedAt} end`
 					})
 					.where(eq(scenes.id, sceneId));
 			}

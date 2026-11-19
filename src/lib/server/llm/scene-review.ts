@@ -15,6 +15,7 @@ import {
 	emptyReviewRun,
 	legacyReviewScopeKey,
 	loadReviewRun,
+	ReviewRunLoadError,
 	reviewScopeKey,
 	saveReviewRun
 } from '../review-runs.ts';
@@ -42,7 +43,8 @@ import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
 import { summaryIsCurrent } from '../summary-currency.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig } from './config.ts';
-import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
+import { CAP_NOT_APPLIED_MESSAGE, spentFields, type SpendMeter } from './spend.ts';
+import { jobSpendMeter } from './job-spend.ts';
 import { errorFields, logEvent } from '../log.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyAssistantOn, storyIsLive } from '../universe-scope.ts';
@@ -637,12 +639,15 @@ export type ContinuityReviewResult = {
 	// Set when the run stopped because it had spent the account's ceiling.
 	capped?: boolean;
 	spentUsd?: number;
+	spentEstimated?: boolean;
 };
 
 // The run state a review writes as it advances, when it was queued with a job
-// id. Progress is a convenience: a write that fails is logged and the review
-// carries on, and without a job id nothing is stored at all (the inline and
-// test callers).
+// id. Saving progress is a convenience: a write that fails is logged and the
+// review carries on, and without a job id nothing is stored at all (the inline
+// and test callers). Loading it is not: a run that could not read the earlier
+// progress would review and bill every scene again, so the attempt fails with
+// ReviewRunLoadError and the worker leaves it to pg-boss to retry.
 type RunWriter = { state: ReviewRunState; save: () => Promise<void> };
 
 async function openRun(
@@ -669,15 +674,19 @@ async function openRun(
 			});
 		} catch (err) {
 			logEvent('error', 'review_run.load_failed', { jobId: opts.jobId, ...errorFields(err) });
+			throw new ReviewRunLoadError(err);
 		}
 	}
 	const current = state ?? emptyReviewRun();
 	current.scope = opts.scope;
-	// A resumed run is a fresh attempt with the whole ceiling again, so the
-	// earlier attempt's stop flags and spend do not carry into it.
+	// The earlier attempt's stop flags and reported spend described that attempt,
+	// so they are cleared. The cap is the meter's (jobSpendMeter): a retry of the
+	// same job carries on from what its earlier attempts spent, and only a new
+	// job picking up a capped run starts with the whole ceiling.
 	current.capped = false;
 	current.aborted = false;
 	current.spentUsd = 0;
+	delete current.spentEstimated;
 	return {
 		state: current,
 		async save() {
@@ -707,11 +716,7 @@ export async function reviewStoryContinuity(
 	// Fresh per attempt: the pass re-runs from the start every time, so a retry
 	// after a crash must not report the crash the earlier attempt hit.
 	const failures: ReviewFailure[] = [];
-	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
-	const meter = new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
+	const meter = await jobSpendMeter(db, opts);
 
 	// The survey stage compares scene summaries, so they are brought up to date
 	// before anything is compared.
@@ -727,6 +732,7 @@ export async function reviewStoryContinuity(
 	if (targets.length < 2) {
 		run.state.phase = 'done';
 		await run.save();
+		await meter.flush();
 		return {
 			scenes: targets.length,
 			notes: 0,
@@ -741,8 +747,9 @@ export async function reviewStoryContinuity(
 		run.state.phase = 'done';
 		run.state.failures = failures;
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 		await run.save();
+		await meter.flush();
 		return {
 			scenes: targets.length,
 			notes: 0,
@@ -750,9 +757,12 @@ export async function reviewStoryContinuity(
 			failures,
 			summariesRefreshed: summaries.refreshed,
 			capped: true,
-			spentUsd: meter.spentUsd
+			...spentFields(meter)
 		};
 	}
+	// The pass re-runs from the start on a continuation or a retry, so the notes
+	// an earlier attempt counted are not added to this one's.
+	run.state.notes = 0;
 	run.state.phase = 'consistency';
 	await run.save();
 	let result: ConsistencyPassResult;
@@ -778,14 +788,15 @@ export async function reviewStoryContinuity(
 	if (result.stopped) failures.push({ message: stoppedMessage(result.stopped) });
 	if (meter.notApplied)
 		failures.push({ message: meter.notAppliedMessage ?? CAP_NOT_APPLIED_MESSAGE });
-	run.state.notes += result.notes;
+	run.state.notes = result.notes;
 	run.state.failures = failures;
 	run.state.phase = 'done';
 	if (result.spendCapped) {
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 	}
 	await run.save();
+	await meter.flush();
 	return {
 		scenes: targets.length,
 		notes: result.notes,
@@ -794,7 +805,7 @@ export async function reviewStoryContinuity(
 		candidatesCapped: result.capped,
 		failures,
 		summariesRefreshed: summaries.refreshed,
-		...(result.spendCapped ? { capped: true, spentUsd: meter.spentUsd } : {})
+		...(result.spendCapped ? { capped: true, ...spentFields(meter) } : {})
 	};
 }
 
@@ -813,11 +824,7 @@ export async function reviewUniverseContinuity(
 		...opts,
 		scope: reviewScopeKey({ universeId: opts.universeId, mode: 'continuity' })
 	});
-	const resolved = await resolveLlmConfig(db, opts.userId);
-	const meter = new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
+	const meter = await jobSpendMeter(db, { userId: opts.userId, jobId: opts.jobId });
 	// Ordered by story, then story order within it, so the survey listing groups
 	// each story's scenes together.
 	const rows = await db
@@ -847,6 +854,7 @@ export async function reviewUniverseContinuity(
 		return { scenes: rows.length, notes: 0, ran: false, failures: [] };
 	}
 
+	run.state.notes = 0;
 	run.state.phase = 'consistency';
 	await run.save();
 	let result: ConsistencyPassResult;
@@ -874,14 +882,15 @@ export async function reviewUniverseContinuity(
 		: [];
 	if (meter.notApplied)
 		failures.push({ message: meter.notAppliedMessage ?? CAP_NOT_APPLIED_MESSAGE });
-	run.state.notes += result.notes;
+	run.state.notes = result.notes;
 	run.state.failures = failures;
 	run.state.phase = 'done';
 	if (result.spendCapped) {
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 	}
 	await run.save();
+	await meter.flush();
 	return {
 		scenes: rows.length,
 		notes: result.notes,
@@ -889,7 +898,7 @@ export async function reviewUniverseContinuity(
 		candidates: result.candidates,
 		candidatesCapped: result.capped,
 		failures,
-		...(result.spendCapped ? { capped: true, spentUsd: meter.spentUsd } : {})
+		...(result.spendCapped ? { capped: true, ...spentFields(meter) } : {})
 	};
 }
 
@@ -907,9 +916,11 @@ export type StoryReviewResult = {
 	total: number;
 	// Set when the run stopped at a scene boundary because it had spent the
 	// account's ceiling; a distinct outcome from a failure or a cancellation.
-	// spentUsd is what it had spent when it stopped.
+	// spentUsd is what it had spent when it stopped, approximate when
+	// spentEstimated is set.
 	capped?: boolean;
 	spentUsd?: number;
+	spentEstimated?: boolean;
 };
 
 // A whole-story or single-chapter review: every non-deleted scene in scope,
@@ -968,11 +979,7 @@ export async function reviewStoryScenes(
 	// The ceiling is shared across every phase of the run (summaries, the scene
 	// passes, the cross-scene pass), so one review cannot spend it several times
 	// over.
-	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
-	const meter = new SpendMeter({
-		pricing: resolved.config.modelPricing,
-		capUsd: resolved.config.spendCapUsd
-	});
+	const meter = await jobSpendMeter(db, opts);
 
 	// Scene summaries feed both the context assembly and the cross-scene pass, so
 	// the run brings them up to date before it reviews anything.
@@ -1030,6 +1037,9 @@ export async function reviewStoryScenes(
 		}
 		if (done.has(scene.id)) continue;
 		run.state.currentSceneTitle = scene.title;
+		// When the pass read the scene, so a continuation can tell an edit made
+		// since then and review the scene again (see adoptCappedRun).
+		run.state.reviewedAt = { ...run.state.reviewedAt, [scene.id]: new Date().toISOString() };
 		await run.save();
 		try {
 			const pass = await reviewOneScene(
@@ -1062,6 +1072,8 @@ export async function reviewStoryScenes(
 			}
 			failed += 1;
 			failures.push({ sceneId: scene.id, sceneTitle: scene.title, message: failureMessage(err) });
+			// A continuation tries it again (see adoptCappedRun).
+			run.state.failedScenes = [...(run.state.failedScenes ?? []), scene.id];
 		}
 		done.add(scene.id);
 		run.state.completed = [...done];
@@ -1075,15 +1087,13 @@ export async function reviewStoryScenes(
 
 	// A full review ends with one cross-scene pass: the only run that can see
 	// drift between scenes (names, timelines, idiom conventions). Pointless
-	// for a single scene, and skipped when every per-scene pass failed.
-	if (
-		!aborted &&
-		!capped &&
-		!meter.capReached &&
-		isFullReview(opts.categories ?? []) &&
-		targets.length > 1 &&
-		reviewed > 0
-	) {
+	// for a single scene, and skipped when every per-scene pass failed. When the
+	// last scene spent the ceiling, the run is capped so that running it again
+	// does only this pass.
+	const crossScene =
+		!aborted && isFullReview(opts.categories ?? []) && targets.length > 1 && reviewed > 0;
+	if (crossScene && meter.capReached) capped = true;
+	if (crossScene && !capped) {
 		run.state.phase = 'consistency';
 		await run.save();
 		try {
@@ -1116,9 +1126,10 @@ export async function reviewStoryScenes(
 	if (aborted) run.state.aborted = true;
 	if (capped) {
 		run.state.capped = true;
-		run.state.spentUsd = meter.spentUsd;
+		Object.assign(run.state, spentFields(meter));
 	}
 	await run.save();
+	await meter.flush();
 	return {
 		reviewed,
 		failed,
@@ -1126,7 +1137,7 @@ export async function reviewStoryScenes(
 		failures,
 		total: targets.length,
 		...(aborted ? { aborted: true } : {}),
-		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {}),
 		...(summaries.refreshed ? { summariesRefreshed: true } : {})
 	};
 }

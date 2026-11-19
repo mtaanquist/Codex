@@ -1,5 +1,7 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type { PgBoss } from 'pg-boss';
 import type { Database } from './auth.ts';
+import { isUuid } from '../slug.ts';
 import { chapters, characters, stories, universes } from './db/schema.ts';
 import {
 	ASSISTANT_ENRICH_QUEUE,
@@ -165,4 +167,31 @@ export async function findRunningAssistantJobs(
 		});
 	}
 	return out;
+}
+
+// Stops one of the writer's unsettled Assistant jobs, so a run that hangs does
+// not hold its scope until it expires. Cancelling frees the queue's key at
+// once; the worker sees the cancel at its next heartbeat and aborts the run,
+// which then reports that it was stopped. False when the job is not this
+// writer's, or has already settled.
+export async function stopAssistantJob(
+	db: Database,
+	boss: Pick<PgBoss, 'cancel'>,
+	userId: string,
+	jobId: string
+): Promise<boolean> {
+	if (!isUuid(jobId)) return false;
+	const { rows } = await db.execute<{ name: string }>(sql`
+		select name from pgboss.job
+		where id = ${jobId}::uuid
+			and name in (
+				${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE}, ${ASSISTANT_ENRICH_QUEUE},
+				${LEGACY_ASSISTANT_REVIEW_QUEUE}, ${LEGACY_ASSISTANT_SUMMARIES_QUEUE}
+			)
+			and state in ('created', 'retry', 'active')
+			and data @> ${JSON.stringify({ userId })}::jsonb
+	`);
+	if (rows.length === 0) return false;
+	await boss.cancel(rows[0].name, jobId);
+	return true;
 }

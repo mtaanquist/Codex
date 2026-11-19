@@ -3,7 +3,6 @@ import { isUuid } from '#lib/slug';
 import { and, eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
-import { isUniqueViolation } from '#lib/server/db-errors';
 import { stories } from '#lib/server/db/schema';
 import { storyTimeline } from '#lib/server/revisions';
 import { effectiveAssetConfig, createAsset, deleteAsset, s3AssetStore } from '#lib/server/assets';
@@ -32,6 +31,7 @@ import {
 } from '#lib/server/user-exports';
 import { exportLimit, uploadLimit } from '#lib/server/rate-limit';
 import { STORY_TRASH_DAYS, trashStory } from '#lib/server/story-lifecycle';
+import { saveStoryDetails } from '#lib/server/story-details';
 import { publications, users } from '#lib/server/db/schema';
 import {
 	saveStoryPreferences,
@@ -51,7 +51,6 @@ import {
 	TEXT_ALIGNS
 } from '#lib/page-setup';
 import { ownedStory } from '#lib/server/story-access';
-import { uniqueSlug } from '#lib/server/slugs';
 import { assistantLayout } from '#lib/server/llm/config';
 import { formText } from '#lib/server/validation';
 import { isCoverColor } from '#lib/entity-color';
@@ -195,24 +194,14 @@ export const actions: Actions = {
 		if (coverColor !== null && !isCoverColor(coverColor)) {
 			return fail(400, { action: 'update', message: 'Pick a cover colour from the list.' });
 		}
-		// The slug follows the title: a rename moves the story's URL, an
-		// unchanged title leaves it alone.
-		const save = async (slug: string) => {
-			await db
-				.update(stories)
-				.set({ title, slug, author, brief, descriptionMd, styleNotes, coverColor })
-				.where(eq(stories.id, story.id));
-			return slug;
-		};
-		const freshSlug = () => uniqueSlug(db, 'stories', locals.user!.id, title, 'story');
-		let slug;
-		try {
-			slug = await save(title === story.title ? story.slug : await freshSlug());
-		} catch (err) {
-			// A concurrent create took the slug between the pick and the update.
-			if (!isUniqueViolation(err)) throw err;
-			slug = await save(await freshSlug());
-		}
+		const slug = await saveStoryDetails(db, locals.user!.id, story, {
+			title,
+			author,
+			brief,
+			descriptionMd,
+			styleNotes,
+			coverColor
+		});
 		// A changed slug moves this page's own URL.
 		if (slug !== story.slug) redirect(303, `/stories/${slug}/settings`);
 		return { action: 'update', saved: true };

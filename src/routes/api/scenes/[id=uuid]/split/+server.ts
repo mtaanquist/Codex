@@ -14,24 +14,35 @@ import { readJson } from '#lib/server/validation';
 // misplace the cut. The passage may have moved into another scene of the
 // story (confirming an earlier proposal splits the later ones away); the
 // locate follows it, so the split lands on whichever scene holds it now.
+// Either way the split is refused when the text changes before it lands.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
-	const payload = await readJson<{ offset?: unknown; before?: unknown }>(request);
+	const payload = await readJson<{ offset?: unknown; before?: unknown; baseHash?: unknown }>(
+		request
+	);
 
 	let targetSceneId = params.id;
 	let offset: number;
+	let baseHash: string | undefined;
 	if (typeof payload.before === 'string') {
 		const location = await locateSplitInStory(db, locals.user!.id, params.id, payload.before);
 		if (!location.ok) throwActionError(location);
 		targetSceneId = location.sceneId;
 		offset = location.offset;
+		baseHash = location.baseHash;
 	} else if (typeof payload.offset === 'number') {
 		offset = payload.offset;
+		if (payload.baseHash !== undefined) {
+			if (typeof payload.baseHash !== 'string' || payload.baseHash.length > 32) {
+				error(400, 'baseHash must be a short string');
+			}
+			baseHash = payload.baseHash;
+		}
 	} else {
 		error(400, 'offset must be a number');
 	}
 
-	const result = await splitScene(db, locals.user!.id, targetSceneId, offset);
+	const result = await splitScene(db, locals.user!.id, targetSceneId, offset, baseHash);
 	if (!result.ok) throwActionError(result);
 	await queueSceneMentions(targetSceneId);
 	await queueSceneMentions(result.newSceneId);

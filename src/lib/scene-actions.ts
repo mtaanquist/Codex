@@ -4,6 +4,24 @@
 // reopen a card). Every endpoint re-checks ownership server-side.
 import { post } from '#lib/api';
 
+export const SAVE_FAILED =
+	'The scene could not be saved, so nothing was changed. If the scene says it was changed in another window, choose Load newer version or Keep mine first. Otherwise, try again in a moment.';
+
+// An open editor that may hold words not yet stored.
+export type FlushableEditor = { flushSave: () => Promise<void>; isDirty: () => boolean };
+
+// Lands every pending save before an action that reads the stored text (a
+// split, merge or duplicate); false when one failed and its words are still
+// only in the browser, so the caller must not go ahead.
+export async function flushEditors(editors: FlushableEditor[]): Promise<boolean> {
+	await Promise.all(editors.map((editor) => editor.flushSave()));
+	// One more pass for an image upload that landed during the first (the
+	// writer chose to leave while it was still on its way).
+	const dirty = editors.filter((editor) => editor.isDirty());
+	await Promise.all(dirty.map((editor) => editor.flushSave()));
+	return !editors.some((editor) => editor.isDirty());
+}
+
 // Merges the picked scenes into the earliest of them (story order).
 export async function mergeScenes(storyId: string, sceneIds: string[]) {
 	return await post<{ targetSceneId: string }>(
@@ -22,10 +40,13 @@ export async function duplicateScene(storyId: string, sceneId: string) {
 	);
 }
 
-// Splits a scene at a character offset, or before an exact passage (the
-// Assistant's proposals); the server re-locates the passage against the
-// stored text, so flush any pending autosave first.
-export async function splitScene(sceneId: string, at: { offset: number } | { before: string }) {
+// Splits a scene at a character offset in the text baseHash fingerprints, or
+// before an exact passage (the Assistant's proposals); the server re-locates
+// the passage against the stored text, so flush any pending autosave first.
+export async function splitScene(
+	sceneId: string,
+	at: { offset: number; baseHash: string } | { before: string }
+) {
 	return await post<{ newSceneId: string; splitSceneId: string }>(
 		`/api/scenes/${sceneId}/split`,
 		at,

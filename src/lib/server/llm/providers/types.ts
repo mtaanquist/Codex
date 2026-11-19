@@ -39,7 +39,10 @@ export type ProviderToolCall = {
 // the one the gateway acts on: the reply hit the token cap, so its text and
 // any tool-call arguments may be cut off mid-token. Anything an adapter does
 // not recognise maps to 'other'; undefined means the endpoint reported none.
-export type FinishReason = 'stop' | 'length' | 'toolCalls' | 'other';
+// 'refusal' is a reply the model declined to give, and 'paused' a turn the
+// endpoint stopped partway (Claude's server-side search loop) that needs one
+// more request to finish; neither is a finished reply.
+export type FinishReason = 'stop' | 'length' | 'toolCalls' | 'refusal' | 'paused' | 'other';
 
 // A single non-streaming turn: either final content, or a set of tool calls to
 // run before the model can continue (or both, though most endpoints pick one).
@@ -65,6 +68,13 @@ export type TokenUsage = {
 	// report the cached share here. Cache reads bill far cheaper than fresh
 	// prompt tokens (see spend.ts).
 	cachedPromptTokens?: number;
+	// Set when a count is the adapter's own estimate rather than the endpoint's
+	// report: a stream that failed or was cancelled before the endpoint sent its
+	// totals. The usage log marks these rows so they are never read as billed.
+	estimated?: boolean;
+	// Server-side web searches the endpoint reported running for this request
+	// (Claude bills these per search, on top of tokens).
+	webSearchRequests?: number;
 };
 
 export type CompletionRequest = {
@@ -165,6 +175,32 @@ export class EndpointReplyError extends Error {
 		super(message);
 		this.name = 'EndpointReplyError';
 	}
+}
+
+// The abort reason for a stop the writer asked for: Stop on a running job, or
+// a browser that cancelled its request. Nothing runs the request again after
+// it, so a cut-short reply need not be counted at the output cap. Any other
+// abort (a job that expired, a worker shutting down) can be followed by a retry
+// that carries the job's spend, so the cap there must hold.
+export class WriterStopError extends Error {
+	constructor() {
+		super('Stopped by the writer.');
+		this.name = 'AbortError';
+	}
+}
+
+export function stoppedByWriter(signal?: AbortSignal): boolean {
+	return signal?.aborted === true && signal.reason instanceof WriterStopError;
+}
+
+// A signal that aborts as a writer's stop when the given one aborts, for a
+// request whose only abort is the browser going away.
+export function writerStopSignal(signal: AbortSignal): AbortSignal {
+	const controller = new AbortController();
+	const stop = () => controller.abort(new WriterStopError());
+	if (signal.aborted) stop();
+	else signal.addEventListener('abort', stop, { once: true });
+	return controller.signal;
 }
 
 // A request that failed after the endpoint began generating is still billed

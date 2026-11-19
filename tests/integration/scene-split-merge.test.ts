@@ -4,13 +4,23 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
-import { sceneMarkers, scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	chapters,
+	revisions,
+	sceneMarkers,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
+import { textHash } from '../../src/lib/text-hash';
 import {
 	duplicateScene,
 	locateSplitInStory,
 	mergeScenes,
 	splitScene
 } from '../../src/lib/server/scene-split-merge';
+import { recordRevision } from '../../src/lib/server/revisions';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -46,12 +56,48 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-	await pool.query('truncate table scene_markers, scenes cascade');
+	await pool.query('truncate table revisions, scene_markers, scenes, chapters cascade');
 });
 
 afterAll(async () => {
 	await pool.end();
 });
+
+// Waits until at least `count` statements in this database are blocked on a lock.
+async function waitForLockWait(count = 1) {
+	for (let i = 0; i < 100; i++) {
+		const { rows } = await pool.query(
+			`select count(*)::int as n from pg_stat_activity
+			 where datname = current_database() and wait_event_type = 'Lock'`
+		);
+		if (rows[0].n >= count) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	throw new Error('nothing blocked');
+}
+
+async function history(sceneId: string) {
+	return await db
+		.select({ bodyMd: revisions.bodyMd, reason: revisions.reason, label: revisions.label })
+		.from(revisions)
+		.where(eq(revisions.entityId, sceneId))
+		.orderBy(asc(revisions.createdAt));
+}
+
+async function makeChapter() {
+	const stamp = new Date('2026-11-01T10:00:00Z');
+	const [chapter] = await db
+		.insert(chapters)
+		.values({
+			storyId,
+			position: 1,
+			summaryMd: 'From the Assistant',
+			summaryGeneratedAt: stamp,
+			updatedAt: stamp
+		})
+		.returning();
+	return chapter;
+}
 
 async function makeScene(globalPosition: number, bodyMd: string, title: string | null = null) {
 	const [scene] = await db
@@ -92,6 +138,45 @@ describe('splitScene', () => {
 		// The scenes around the cut kept their order.
 		expect(rows[0].id).toBe(before.id);
 		expect(rows[3].id).toBe(after.id);
+	});
+
+	it('keeps the text from before the split in History', async () => {
+		const full = 'First half stays. Second half moves.';
+		const scene = await makeScene(1, full);
+		// The last autosave holds the whole text, moments before the split.
+		await recordRevision(db, 'scene', scene.id, full);
+		const result = await splitScene(db, ownerId, scene.id, 'First half stays. '.length);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(await history(scene.id)).toEqual([
+			{ bodyMd: full, reason: 'autosave', label: null },
+			{ bodyMd: 'First half stays.', reason: 'checkpoint', label: 'Split into two scenes' }
+		]);
+		expect(await history(result.newSceneId)).toEqual([
+			{
+				bodyMd: 'Second half moves.',
+				reason: 'checkpoint',
+				label: 'Split from the scene before'
+			}
+		]);
+	});
+
+	it('marks the chapter summary out of date when the new scene joins the chapter', async () => {
+		const chapter = await makeChapter();
+		const [scene] = await db
+			.insert(scenes)
+			.values({
+				storyId,
+				chapterId: chapter.id,
+				positionInChapter: 1,
+				globalPosition: 1,
+				bodyMd: 'One half. Other half.'
+			})
+			.returning();
+		const result = await splitScene(db, ownerId, scene.id, 'One half. '.length);
+		expect(result.ok).toBe(true);
+		const [after] = await db.select().from(chapters).where(eq(chapters.id, chapter.id));
+		expect(after.summaryGeneratedAt!.getTime()).toBeLessThan(after.updatedAt.getTime());
 	});
 
 	it('moves markers with their text and clamps one straddling the cut', async () => {
@@ -154,6 +239,175 @@ describe('splitScene', () => {
 			expect(tail.bodyMd).toBe('Second paragraph starts here.');
 			await pool.query('truncate table scene_markers, scenes cascade');
 		}
+	});
+
+	it('refuses to split when a save lands while the split waits on the scene', async () => {
+		const scene = await makeScene(1, 'First half stays. Second half moves.');
+		// An autosave holds the row; the split starts and has to wait for it.
+		const holder = await pool.connect();
+		let result;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [scene.id]);
+			const splitting = splitScene(db, ownerId, scene.id, 'First half stays. '.length);
+			await waitForLockWait();
+			await holder.query('update scenes set body_md = $1 where id = $2', [
+				'A new opening. First half stays. Second half moves.',
+				scene.id
+			]);
+			await holder.query('commit');
+			result = await splitting;
+		} finally {
+			holder.release();
+		}
+		expect(result).toMatchObject({ ok: false, code: 'conflict' });
+		const rows = await db.select().from(scenes).where(eq(scenes.storyId, storyId));
+		expect(rows.map((row) => row.bodyMd)).toEqual([
+			'A new opening. First half stays. Second half moves.'
+		]);
+	});
+
+	it('splits a body stored with Windows line endings at the place the editor shows', async () => {
+		// The editor reads the text with plain newlines, so its cursor offset,
+		// fingerprint, and marker anchors all count each line break as one.
+		const stored = 'First line.\r\nStill first.\r\n\r\nSecond part.\r\nEnds here.';
+		const shown = stored.replace(/\r\n/g, '\n');
+		const scene = await makeScene(1, stored);
+		const at = shown.indexOf('Second');
+		await db.insert(sceneMarkers).values([
+			{ sceneId: scene.id, ownerId, anchorStart: 0, anchorEnd: 'First line.'.length },
+			{ sceneId: scene.id, ownerId, anchorStart: at, anchorEnd: at + 'Second part'.length }
+		]);
+
+		const result = await splitScene(db, ownerId, scene.id, at, textHash(shown));
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const [head] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+		const [tail] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+		expect(head.bodyMd).toBe('First line.\nStill first.');
+		expect(tail.bodyMd).toBe('Second part.\nEnds here.');
+		const [headMarker] = await db
+			.select()
+			.from(sceneMarkers)
+			.where(eq(sceneMarkers.sceneId, scene.id));
+		const [tailMarker] = await db
+			.select()
+			.from(sceneMarkers)
+			.where(eq(sceneMarkers.sceneId, tail.id));
+		expect(head.bodyMd.slice(headMarker.anchorStart!, headMarker.anchorEnd!)).toBe('First line.');
+		expect(tail.bodyMd.slice(tailMarker.anchorStart!, tailMarker.anchorEnd!)).toBe('Second part');
+	});
+
+	it('splits a body stored with Windows line endings at an offset in the stored text', async () => {
+		// The Assistant's split locates its passage in the stored text.
+		const stored = 'First line.\r\n\r\nSecond part.';
+		const scene = await makeScene(1, stored);
+		const result = await splitScene(db, ownerId, scene.id, stored.indexOf('Second'));
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const [head] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+		const [tail] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+		expect([head.bodyMd, tail.bodyMd]).toEqual(['First line.', 'Second part.']);
+	});
+
+	it('moves a marker that starts in the seam whitespace with its text', async () => {
+		const scene = await makeScene(1, 'Hello.\n\nWorld');
+		// From the second newline into "Wo"; the cut lands just before "World".
+		await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, anchorStart: 7, anchorEnd: 10 });
+		const result = await splitScene(db, ownerId, scene.id, 8);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const markers = await db.select().from(sceneMarkers);
+		expect(markers).toHaveLength(1);
+		expect(markers[0]).toMatchObject({ sceneId: result.newSceneId, anchorStart: 0, anchorEnd: 2 });
+	});
+
+	it('keeps a marker that covers only the seam whitespace visible', async () => {
+		const scene = await makeScene(1, 'Hello.\n\nWorld');
+		// Just the blank line between the paragraphs; the cut lands before "World".
+		await db
+			.insert(sceneMarkers)
+			.values({ sceneId: scene.id, ownerId, anchorStart: 6, anchorEnd: 8 });
+		const result = await splitScene(db, ownerId, scene.id, 8);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const markers = await db.select().from(sceneMarkers);
+		expect(markers).toHaveLength(1);
+		expect(markers[0]).toMatchObject({ sceneId: result.newSceneId, anchorStart: 0, anchorEnd: 1 });
+	});
+
+	it('gives each of two splits in one story its own place in the order', async () => {
+		const first = await makeScene(1, 'One a. One b.');
+		const second = await makeScene(2, 'Two a. Two b.');
+		await makeScene(3, 'Three.');
+		// An autosave holds the second scene while both splits start; once it
+		// lets go, one split must not shift the scenes while the other is
+		// placing its new scene among them.
+		const holder = await pool.connect();
+		let results;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [second.id]);
+			const splitSecond = splitScene(db, ownerId, second.id, 'Two a. '.length);
+			await waitForLockWait(1);
+			const splitFirst = splitScene(db, ownerId, first.id, 'One a. '.length);
+			await waitForLockWait(2);
+			await holder.query('commit');
+			results = await Promise.all([splitSecond, splitFirst]);
+		} finally {
+			holder.release();
+		}
+		expect(results.map((result) => result.ok)).toEqual([true, true]);
+		const rows = await db
+			.select()
+			.from(scenes)
+			.where(eq(scenes.storyId, storyId))
+			.orderBy(asc(scenes.globalPosition));
+		expect(rows.map((row) => row.globalPosition)).toEqual([1, 2, 3, 4, 5]);
+		expect(rows.map((row) => row.bodyMd)).toEqual([
+			'One a.',
+			'One b.',
+			'Two a.',
+			'Two b.',
+			'Three.'
+		]);
+	});
+
+	it('refuses to split a scene whose story was deleted while the split waited', async () => {
+		const scene = await makeScene(1, 'First half. Second half.');
+		const holder = await pool.connect();
+		let result;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [scene.id]);
+			const splitting = splitScene(db, ownerId, scene.id, 'First half. '.length);
+			await waitForLockWait();
+			await holder.query('update stories set deleted_at = now() where id = $1', [storyId]);
+			await holder.query('commit');
+			result = await splitting;
+		} finally {
+			holder.release();
+			await pool.query('update stories set deleted_at = null where id = $1', [storyId]);
+		}
+		expect(result).toMatchObject({ ok: false, code: 'not_found' });
+		const rows = await db.select().from(scenes).where(eq(scenes.storyId, storyId));
+		expect(rows.map((row) => row.bodyMd)).toEqual(['First half. Second half.']);
+	});
+
+	it('refuses to split text other than the text the cut was placed in', async () => {
+		const body = 'First half stays. Second half moves.';
+		const scene = await makeScene(1, body);
+		const cut = 'First half stays. '.length;
+		expect(
+			await splitScene(db, ownerId, scene.id, cut, textHash('Some older text here.'))
+		).toMatchObject({ ok: false, code: 'conflict' });
+		const [kept] = await db.select().from(scenes).where(eq(scenes.id, scene.id));
+		expect(kept.bodyMd).toBe(body);
+		expect(await splitScene(db, ownerId, scene.id, cut, textHash(body))).toMatchObject({
+			ok: true
+		});
 	});
 });
 
@@ -259,6 +513,68 @@ describe('duplicateScene', () => {
 		expect(copy.title).toBeNull();
 	});
 
+	it('copies a save that lands while the duplicate waits on the scene', async () => {
+		const scene = await makeScene(1, 'Old text.');
+		const holder = await pool.connect();
+		let result;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [scene.id]);
+			const duplicating = duplicateScene(db, ownerId, scene.id);
+			await waitForLockWait();
+			await holder.query('update scenes set body_md = $1 where id = $2', ['New text.', scene.id]);
+			await holder.query('commit');
+			result = await duplicating;
+		} finally {
+			holder.release();
+		}
+		if (!result.ok) throw new Error('duplicate failed');
+		const [copy] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+		expect(copy.bodyMd).toBe('New text.');
+	});
+
+	it('refuses to copy a scene whose story was deleted while the copy waited', async () => {
+		const scene = await makeScene(1, 'Text.');
+		const holder = await pool.connect();
+		let result;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [scene.id]);
+			const duplicating = duplicateScene(db, ownerId, scene.id);
+			await waitForLockWait();
+			await holder.query('update stories set deleted_at = now() where id = $1', [storyId]);
+			await holder.query('commit');
+			result = await duplicating;
+		} finally {
+			holder.release();
+			await pool.query('update stories set deleted_at = null where id = $1', [storyId]);
+		}
+		expect(result).toMatchObject({ ok: false, code: 'not_found' });
+		expect(await db.select().from(scenes).where(eq(scenes.storyId, storyId))).toHaveLength(1);
+	});
+
+	it('marks the chapter summary out of date when the copy joins the chapter', async () => {
+		const stamp = new Date('2026-11-01T10:00:00Z');
+		const [chapter] = await db
+			.insert(chapters)
+			.values({
+				storyId,
+				position: 1,
+				summaryMd: 'From the Assistant',
+				summaryGeneratedAt: stamp,
+				updatedAt: stamp
+			})
+			.returning();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, chapterId: chapter.id, positionInChapter: 1, globalPosition: 1 })
+			.returning();
+		const result = await duplicateScene(db, ownerId, scene.id);
+		expect(result.ok).toBe(true);
+		const [after] = await db.select().from(chapters).where(eq(chapters.id, chapter.id));
+		expect(after.summaryGeneratedAt!.getTime()).toBeLessThan(after.updatedAt.getTime());
+	});
+
 	it('refuses a foreign scene and a missing scene', async () => {
 		const scene = await makeScene(1, 'Mine.');
 		expect(await duplicateScene(db, strangerId, scene.id)).toMatchObject({ ok: false });
@@ -290,6 +606,85 @@ describe('mergeScenes', () => {
 		expect(trashed).toHaveLength(1);
 	});
 
+	it('keeps a save that lands while the merge waits on a scene', async () => {
+		const a = await makeScene(1, 'One.');
+		const b = await makeScene(2, 'Two.');
+		// An autosave holds b's row; the merge starts and has to wait for it.
+		const holder = await pool.connect();
+		try {
+			await holder.query('begin');
+			await holder.query('select id from scenes where id = $1 for update', [b.id]);
+			const merging = mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+			await waitForLockWait();
+			await holder.query('update scenes set body_md = $1 where id = $2', ['Two, revised.', b.id]);
+			await holder.query('commit');
+			expect((await merging).ok).toBe(true);
+		} finally {
+			holder.release();
+		}
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('One.\n\nTwo, revised.');
+	});
+
+	it('keeps the target text from before the merge in History', async () => {
+		const a = await makeScene(1, 'One.');
+		const b = await makeScene(2, 'Two.');
+		await recordRevision(db, 'scene', a.id, 'One.');
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+		expect(await history(a.id)).toEqual([
+			{ bodyMd: 'One.', reason: 'autosave', label: null },
+			{ bodyMd: 'One.\n\nTwo.', reason: 'checkpoint', label: 'Merged 2 scenes' }
+		]);
+	});
+
+	it('keeps markers in trimmed blank space visible and inside their own scene', async () => {
+		const a = await makeScene(1, 'One.\n\n');
+		const b = await makeScene(2, '\n\nTwo two.\n\n');
+		await db.insert(sceneMarkers).values([
+			// In the target's trailing blank space.
+			{ sceneId: a.id, ownerId, anchorStart: 4, anchorEnd: 6, bodyMd: 'a-tail' },
+			// In b's leading blank space.
+			{ sceneId: b.id, ownerId, anchorStart: 0, anchorEnd: 2, bodyMd: 'b-lead' },
+			// In b's trailing blank space.
+			{ sceneId: b.id, ownerId, anchorStart: 10, anchorEnd: 12, bodyMd: 'b-tail' }
+		]);
+
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('One.\n\nTwo two.');
+		const markers = await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, a.id));
+		const quoted = Object.fromEntries(
+			markers.map((marker) => [
+				marker.bodyMd,
+				target.bodyMd.slice(marker.anchorStart!, marker.anchorEnd!)
+			])
+		);
+		expect(quoted).toEqual({ 'a-tail': '.', 'b-lead': 'T', 'b-tail': '.' });
+	});
+
+	it('keeps markers on a blank first scene visible in the merged text', async () => {
+		const a = await makeScene(1, '\n\n');
+		const b = await makeScene(2, 'Two two.');
+		await db.insert(sceneMarkers).values([
+			{ sceneId: a.id, ownerId, anchorStart: 0, anchorEnd: 2, bodyMd: 'blank' },
+			{ sceneId: a.id, ownerId, anchorStart: 0, anchorEnd: 0, bodyMd: 'empty' }
+		]);
+
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('Two two.');
+		const markers = await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, a.id));
+		expect(markers.map((marker) => [marker.bodyMd, marker.anchorStart, marker.anchorEnd])).toEqual(
+			expect.arrayContaining([
+				['blank', 0, 1],
+				['empty', 0, 1]
+			])
+		);
+	});
+
 	it('moves markers along with each merged body', async () => {
 		const a = await makeScene(1, 'One.');
 		const b = await makeScene(2, 'Two two.');
@@ -302,6 +697,23 @@ describe('mergeScenes', () => {
 		expect(markers).toHaveLength(1);
 		// 'One.' + blank line puts b's text at offset 6.
 		expect(markers[0]).toMatchObject({ anchorStart: 10, anchorEnd: 14 });
+	});
+
+	it('lands markers on the same words when a body has Windows line endings', async () => {
+		// Bodies imported before line endings were normalised keep their \r\n;
+		// marker anchors count each one as a single character, as the editor does.
+		const a = await makeScene(1, 'One.\r\nTwo.\r\nThree.\r\n');
+		const b = await makeScene(2, '\r\n\r\nFour.\r\nFive five.');
+		// "Five" in b as the editor shows it: '\n\nFour.\nFive five.'.
+		await db.insert(sceneMarkers).values({ sceneId: b.id, ownerId, anchorStart: 8, anchorEnd: 12 });
+
+		const result = await mergeScenes(db, ownerId, storyId, [a.id, b.id]);
+		expect(result.ok).toBe(true);
+
+		const [target] = await db.select().from(scenes).where(eq(scenes.id, a.id));
+		expect(target.bodyMd).toBe('One.\nTwo.\nThree.\n\nFour.\nFive five.');
+		const [marker] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.sceneId, a.id));
+		expect(target.bodyMd.slice(marker.anchorStart!, marker.anchorEnd!)).toBe('Five');
 	});
 
 	it('moves an unanchored marker to the target with its anchors still null', async () => {
@@ -360,7 +772,8 @@ describe('locateSplitInStory', () => {
 		expect(await locateSplitInStory(db, ownerId, scene.id, 'MIDCUT')).toEqual({
 			ok: true,
 			sceneId: scene.id,
-			offset: BODY.indexOf('MIDCUT')
+			offset: BODY.indexOf('MIDCUT'),
+			baseHash: textHash(BODY)
 		});
 	});
 
@@ -418,6 +831,25 @@ describe('locateSplitInStory', () => {
 		expect(located).toMatchObject({ ok: false });
 		if (located.ok) return;
 		expect(located.reason).toContain('more than once');
+	});
+
+	it('finds a passage across a line break in a body stored with Windows line endings', async () => {
+		const stored = 'Opening beat.\r\nStill opening.\r\n\r\nThe cut\r\nstarts here.';
+		const shown = stored.replace(/\r\n/g, '\n');
+		const scene = await makeScene(1, stored);
+		const located = await locateSplitInStory(db, ownerId, scene.id, 'The cut\nstarts');
+		expect(located).toEqual({
+			ok: true,
+			sceneId: scene.id,
+			offset: shown.indexOf('The cut'),
+			baseHash: textHash(shown)
+		});
+		if (!located.ok) return;
+		const result = await splitScene(db, ownerId, scene.id, located.offset, located.baseHash);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const [tail] = await db.select().from(scenes).where(eq(scenes.id, result.newSceneId));
+		expect(tail.bodyMd).toBe('The cut\nstarts here.');
 	});
 
 	it('is scoped to the owner and the story', async () => {

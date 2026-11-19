@@ -2,6 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantStory,
 	throwAssistantError
 } from '#lib/server/llm/assistant-route';
@@ -44,7 +45,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			enableTools: false,
 			messages: [{ role: 'user', content: buildContinuationMessage(textBefore) }],
 			maxTokens,
-			signal: request.signal
+			signal: requestSignal(request)
 		});
 	} catch (err) {
 		throwAssistantError(err, 'The Assistant could not continue the passage.');

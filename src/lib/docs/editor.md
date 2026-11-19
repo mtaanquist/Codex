@@ -20,9 +20,11 @@ Right-click a chapter in the sidebar to rename it, move it up or down, or delete
 
 ## Splitting and merging scenes
 
-To split a scene in two, put the cursor where the break should go and press the split button in the toolbar (the page with the dashed line). Everything after the cursor moves into a new untitled scene directly after the current one. Marks move along with their text.
+To split a scene in two, put the cursor where the break should go and press the split button in the toolbar (the page with the dashed line). Everything after the cursor moves into a new untitled scene directly after the current one. Marks move along with their text. If the scene was changed somewhere else (in another tab, for example) just before the split, nothing is split and a message says so; check the text and try again.
 
 To merge scenes, right-click each scene in the sidebar and choose "Select for merging"; selected scenes show a coloured ring. With two or more selected, right-click any of them and choose "Merge". The scenes join in story order into the earliest one, with a blank line between them; that scene keeps its title. The others go to "Deleted scenes", so a merge can be undone by restoring them and removing the joined text.
+
+A split or merge shows in the scene's History as a checkpoint ("Split into two scenes", "Merged 3 scenes"), and the text from before it stays in History too, so you can preview or restore it.
 
 ## Duplicating a scene
 
@@ -148,7 +150,7 @@ To choose which model answers in this chat, select the model name under the chat
 
 When you come back to a story after time away, choose "Catch me up" from the command menu. The Assistant writes a short recap of what has happened up to the scene you have open, drawn from your scenes and their summaries, and adds it to the conversation.
 
-Choose "Update summaries" from the command menu to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story. If you set a spend cap on your account page, the update stops once it has spent that much and tells you so; run it again to carry on from where it stopped.
+Choose "Update summaries" from the command menu to have the Assistant write a one or two line summary for each scene and chapter that does not have one yet, and refresh the ones it wrote earlier when you have changed the scene since. It works in the background and notifies you when it is done; select Stop on its card in the bottom corner to stop it early. If you edit a scene while it runs, update summaries again once it finishes. A summary you wrote yourself is left untouched. These summaries feed the recap and help the Assistant keep track of your story. If you set a spend cap on your account page, the update stops once it has spent that much and tells you so; run it again to carry on from where it stopped.
 
 While you are writing, press Ctrl+J to ask the Assistant to continue the passage from where your cursor is. The suggestion appears in grey after the cursor: press Tab to accept it, or Esc (or just keep typing) to dismiss it. Nothing is added until you accept.
 

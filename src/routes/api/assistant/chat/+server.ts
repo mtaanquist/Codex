@@ -3,6 +3,7 @@ import { db } from '#lib/server/db';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
+	requestSignal,
 	requireAssistantStory,
 	requireAssistantUniverse,
 	requireChat
@@ -184,7 +185,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			};
 		}),
 		budgetTokens: chatBudgetTokens(contextWindow),
-		signal: request.signal
+		signal: requestSignal(request)
 	});
 	// The attachments go into the newest turn after the transcript is fitted:
 	// they have a budget of their own, and must not push earlier turns out.

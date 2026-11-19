@@ -327,6 +327,21 @@ describe('restoreDraftScene', () => {
 		expect(scene.globalPosition).toBeGreaterThan(2);
 	});
 
+	it('marks the chapter summary out of date when it adds a scene back', async () => {
+		const id = await save();
+		await db.delete(notes);
+		await db.delete(scenes).where(eq(scenes.id, sceneId));
+		const stamp = new Date('2026-11-01T10:00:00Z');
+		await db
+			.update(chapters)
+			.set({ summaryMd: 'From the Assistant', summaryGeneratedAt: stamp, updatedAt: stamp })
+			.where(eq(chapters.id, chapterId));
+		const result = await restoreDraftScene(db, storyId, id, sceneId);
+		expect(result).toMatchObject({ ok: true, created: true });
+		const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId));
+		expect(chapter.summaryGeneratedAt!.getTime()).toBeLessThan(chapter.updatedAt.getTime());
+	});
+
 	it('keeps an Assistant summary refreshable on a scene it adds back', async () => {
 		const stamp = new Date('2026-11-01T10:00:00Z');
 		await db

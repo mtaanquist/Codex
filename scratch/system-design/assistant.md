@@ -349,7 +349,7 @@ The tab, from the prototype:
   also a typed `/command` (`#lib/assistant-slash` is the one list). The
   model chip shows the model and effort the chat runs on and opens a picker
   (the endpoint's listed models plus any already set); the choice belongs to
-  the chat (`assistant_chats.settings`, migration 0084) and rides with each
+  the chat (`assistant_chats.settings`, migration 0087) and rides with each
   message, laid over the chat role's model by `withRoleOverride`. Effort is
   only offered on Claude models that take it. The quoted passage from "Ask
   the Assistant about this" sits in the row as a chip with an x. The header
@@ -810,7 +810,10 @@ it checks), so a run that stopped at the spend cap is picked up by the
 next run over that scope even though it arrives with a new job id; only the
 newest run over the scope is looked at, it is adopted only if it was capped
 (or was itself a continuation of a capped run that threw or was cancelled
-before it finished), and it starts again with the whole ceiling. A copyedit capped before the
+before it finished), and it starts again with the whole ceiling, minus the
+scenes whose pass failed and those edited since their pass read them, which
+are reviewed again. A failure to read or adopt the earlier run fails the
+attempt for pg-boss to retry rather than starting over. A copyedit capped before the
 categories joined the key is continued only when its job (still on the legacy
 queue) shows it checked the same categories; otherwise it starts over. The rows are
 disposable, and a daily worker sweep drops those older than 30 days. The
@@ -827,7 +830,11 @@ left, or its job moved to a retry or picked up again under a newer start time)
 sends no notification, so the writer hears once, from the run that finishes. The worker runs up to four Assistant jobs at once but one per writer
 (the job's pg-boss group), and every model request has a ten-minute idle
 timeout in the egress layer, so one writer's hung endpoint stalls only that
-writer's queue. Before it reviews
+writer's queue. A running job's activity card has a Stop button, which
+cancels the writer's own job (freeing its key at once); the worker aborts the
+run at its next heartbeat. Each job's spend is kept per pg-boss job id in
+`assistant_job_spend` while a cap is set, so a retry of the same job carries
+on against the ceiling instead of starting at zero. Before it reviews
 anything, a story-level pass refreshes scene summaries that are missing or
 stale (the `assistant-summaries` logic, called directly), since both the
 context assembly and the cross-scene pass read them.
@@ -1096,8 +1103,13 @@ calls the gateway, which proxies through the egress guard.
   every entity in a universe whose passages changed since its
   `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
   entity when a reindex changes its passages, so status changes and reorders
-  do not count and an alias that links older scenes does), and a job naming a character rewrites that
-  character's arc (`arc_summary_md`) instead. Marks are coarse (any passage),
+  do not count and an alias that links older scenes does; renaming a scene
+  or story marks what its scenes mention, since passages are labelled with
+  both), and a job naming a character rewrites that
+  character's arc (`arc_summary_md`) instead. Arcs are also marked by a
+  character rename and by a reorder, for what the scenes that moved relative
+  to the others mention. Restoring a universe marks nothing: rebuilds keep
+  marking while it is in the trash. Marks are coarse (any passage),
   while enrich sends at most 16 passages and an arc the first passage of each
   scene without a summary, so each watermark is stored with a hash of the
   request it was written from (`assistant_enriched_input`,

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
@@ -16,6 +16,7 @@ import { isUuid } from '#lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
 import { loadAssistantChat } from '#lib/server/llm/chat-history';
 import { listTrashedScenes } from '#lib/server/scene-lifecycle';
+import { lastTouchedScene } from '#lib/server/scene-access';
 import { sceneManageActions } from '#lib/server/scene-manage-actions';
 import { formText } from '#lib/server/validation';
 import { listDrafts } from '#lib/server/story-drafts';
@@ -50,13 +51,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 				);
 			return row ?? null;
 		}
-		const [row] = await db
-			.select()
-			.from(scenes)
-			.where(and(eq(scenes.storyId, story.id), isNull(scenes.deletedAt)))
-			.orderBy(desc(scenes.updatedAt))
-			.limit(1);
-		return row ?? null;
+		return await lastTouchedScene(db, story.id);
 	};
 
 	// Everything below needs only the story and universe ids, so it runs as

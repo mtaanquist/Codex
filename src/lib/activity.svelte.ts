@@ -16,6 +16,8 @@ export type ActivityItem = {
 	state: ActivityState;
 	href?: string;
 	startedAt: number;
+	// Set on a running background job's card: stops the job.
+	stop?: () => void;
 };
 
 export const activity = $state<{ items: ActivityItem[] }>({ items: [] });
@@ -35,7 +37,13 @@ export function startActivity(label: string, detail?: string): number {
 
 export function resolveActivity(
 	id: number,
-	patch: { state: ActivityState; label?: string; detail?: string; href?: string }
+	patch: {
+		state: ActivityState;
+		label?: string;
+		detail?: string;
+		href?: string;
+		stop?: () => void;
+	}
 ): void {
 	activity.items = activity.items.map((item) => (item.id === id ? { ...item, ...patch } : item));
 	if (patch.state !== 'running') {
@@ -146,6 +154,35 @@ export function trackJob(opts: TrackOptions): Promise<void> {
 
 async function followJob(opts: TrackOptions, jobId: string | null): Promise<void> {
 	const id = startActivity(opts.runningLabel);
+	// The writer's last Stop, resolving true once the queue took it. A job that
+	// ends while it is in flight waits for the answer, so a job that finished
+	// on its own is not shown as stopped.
+	let stopRequest: Promise<boolean> | undefined;
+	const requestStop = async (): Promise<boolean> => {
+		resolveActivity(id, { state: 'running', detail: 'Stopping...', stop: undefined });
+		let message: string;
+		try {
+			const response = await fetch('/api/assistant/job-stop', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ id: jobId })
+			});
+			if (response.ok) return true;
+			// Already settled: the next poll shows how it ended.
+			if (response.status === 404) {
+				resolveActivity(id, { state: 'running', detail: undefined });
+				return false;
+			}
+			message = 'Could not stop it. Try again in a moment.';
+		} catch {
+			message = 'Could not stop it. Check your connection and try again.';
+		}
+		resolveActivity(id, { state: 'running', detail: message, stop });
+		return false;
+	};
+	const stop = () => {
+		stopRequest = requestStop();
+	};
 	if (!jobId) {
 		resolveActivity(id, {
 			state: 'done',
@@ -156,6 +193,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 		return;
 	}
 	trackedJobs.list = [...trackedJobs.list, { id: jobId, kind: opts.kind, ...opts.scope }];
+	resolveActivity(id, { state: 'running', stop });
 	const startedAt = Date.now();
 	try {
 		for (;;) {
@@ -171,6 +209,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 				if ([401, 403, 404].includes(response.status)) {
 					resolveActivity(id, {
 						state: 'failed',
+						stop: undefined,
 						label: opts.runningLabel.replace(/\.\.\.$/, ''),
 						detail: 'Could not check on it from this page. You will be notified when it is ready.'
 					});
@@ -197,13 +236,31 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 			} catch {
 				// A blip leaves the card running; the next poll catches up.
 			}
+			// A cancelled job reads as failed; one that finished anyway is done.
+			const stopped =
+				state !== 'running' && stopRequest !== undefined && (await stopRequest) && state !== 'done';
+			if (stopped) {
+				resolveActivity(id, {
+					state: 'done',
+					label: `${opts.runningLabel.replace(/\.\.\.$/, '')}: stopped`,
+					detail: undefined,
+					stop: undefined
+				});
+				return;
+			}
 			if (state === 'done') {
-				resolveActivity(id, { state: 'done', label: opts.doneLabel, href: opts.href });
+				resolveActivity(id, {
+					state: 'done',
+					label: opts.doneLabel,
+					href: opts.href,
+					stop: undefined
+				});
 				return;
 			}
 			if (state === 'failed' || state === 'stale') {
 				resolveActivity(id, {
 					state: 'failed',
+					stop: undefined,
 					label: opts.failedLabel,
 					// A stale run was dropped by the queue part-way and will not finish.
 					detail:
