@@ -141,14 +141,16 @@ export async function enrichEntity(
 	return (await enrichRead(db, opts, deps)).suggestions;
 }
 
-// enrichEntity, plus the hash of the request it built. With `unlessInput`, a
-// request with that hash is not sent (unchanged: true).
-async function enrichRead(
+// The request an enrich read of this entity would send as things stand, with
+// its fingerprint; null when the entity is not the user's or not in the scope.
+export async function enrichRequest(
 	db: Database,
-	opts: EnrichOptions & { unlessInput?: string | null },
-	deps: GatewayDeps
-): Promise<{ suggestions: EntitySuggestion[]; input: string | null; unchanged: boolean }> {
-	const none = { suggestions: [], input: null, unchanged: false };
+	opts: { userId: string; scope: EnrichScope; entityId: string }
+): Promise<{
+	kind: 'character' | 'place' | 'lore';
+	messages: ChatMessage[];
+	input: string;
+} | null> {
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
 		universeId: table.universeId,
 		name: entityNameColumn(table),
@@ -156,8 +158,8 @@ async function enrichRead(
 		details: table.details,
 		summaryMd: table.summaryMd
 	}));
-	if (!entity) return none;
-	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return none;
+	if (!entity) return null;
+	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return null;
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 
 	const universeWide = 'universeId' in opts.scope;
@@ -190,6 +192,19 @@ async function enrichRead(
 	const input = requestHash([
 		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
 	]);
+	return { kind, messages, input };
+}
+
+// enrichEntity, plus the hash of the request it built. With `unlessInput`, a
+// request with that hash is not sent (unchanged: true).
+async function enrichRead(
+	db: Database,
+	opts: EnrichOptions & { unlessInput?: string | null },
+	deps: GatewayDeps
+): Promise<{ suggestions: EntitySuggestion[]; input: string | null; unchanged: boolean }> {
+	const request = await enrichRequest(db, opts);
+	if (!request) return { suggestions: [], input: null, unchanged: false };
+	const { kind, messages, input } = request;
 	if (opts.unlessInput && input === opts.unlessInput) {
 		return { suggestions: [], input, unchanged: true };
 	}

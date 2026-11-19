@@ -982,6 +982,35 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Stale-mark invariant test (2026-11-19)
+
+Review rounds kept finding missed or needless Assistant out-of-date marks one
+write path at a time, so #1193 added
+`tests/integration/stale-marks-invariant.test.ts`: seeded random sequences of
+writer actions (edits, paragraph swaps, renames, status, moves, trash and
+restore, split, merge, duplicate, story rename, mute, chapter rename, move
+and delete, entity edits) run through the real server functions, and after
+each step the marks are compared with the request the Assistant would send.
+`arcRequest` and `enrichRequest` were split out of the arc and enrich passes
+so the test builds the same request the passes do. Summaries store no
+fingerprint, so the test keeps the prompt each was written from.
+
+Rules it holds: anything whose input changed is marked; a scene or chapter
+summary whose input did not change is not (no fingerprint check, so a paid
+call). For enrich only a passage not read before counts, since trash and
+mute only take passages away and do not pay for a re-read; the entity's own
+name, aliases and details are the writer's to edit and are left out too.
+Needless arc and enrich marks cost no call (the fingerprint check) and are
+only printed.
+
+What it found on main: renumbering chapters on a chapter move or delete bumped
+every chapter's `updated_at`, so each summary read as out of date (#1200);
+reordering scenes inside one chapter left its summary current (#1146). A
+removal that shifts a full 16-passage enrich sample is reported, not failed
+(#1201). The fake model's summaries follow the prompt, so a changed scene
+summary moves its chapter's input as a real one would; duplicates copy their
+summary, so a chapter with two equal summaries is not judged on a reorder.
+
 ## November review (2026-11-18)
 
 An independent review of every November change (5f3b182..HEAD) filed #1006

@@ -334,6 +334,29 @@ describe('chapters', () => {
 		]);
 		expect(await deleteChapter(db, strangerId, c.id)).toBe(false);
 	});
+
+	// A chapter summary reads the chapter's title and scenes, not its place in
+	// the story; a moved updated_at would make every renumbered chapter's
+	// Assistant summary look out of date and cost a call each.
+	it('moving or deleting a chapter leaves the others unchanged', async () => {
+		const [c] = await db.insert(chapters).values({ storyId, position: 3, title: 'C' }).returning();
+		const stamps = async () =>
+			Object.fromEntries(
+				(
+					await db
+						.select({ id: chapters.id, at: chapters.updatedAt })
+						.from(chapters)
+						.where(eq(chapters.storyId, storyId))
+				).map((row) => [row.id, row.at.getTime()])
+			);
+		const before = await stamps();
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		expect(await moveChapter(db, ownerId, c.id, 'up')).toBe(true);
+		expect(await stamps()).toEqual(before);
+		expect(await deleteChapter(db, ownerId, chapterA)).toBe(true);
+		delete before[chapterA];
+		expect(await stamps()).toEqual(before);
+	});
 });
 
 // Both marks lock the entities they touch lowest id first, so two marks over

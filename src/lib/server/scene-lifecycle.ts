@@ -351,6 +351,12 @@ async function lockStoryChapters(tx: Database, storyId: string) {
 }
 
 /** Swaps a chapter with its neighbour. A no-op at either end of the list. */
+// A chapter's place in the story is not part of what its Assistant summary
+// reads, so renumbering leaves updated_at alone and the summary current.
+function keepChapterUpdatedAt() {
+	return { updatedAt: sql`${chapters.updatedAt}` };
+}
+
 export async function moveChapter(
 	db: Database,
 	userId: string,
@@ -375,7 +381,7 @@ export async function moveChapter(
 		for (const [index, row] of list.entries()) {
 			await tx
 				.update(chapters)
-				.set({ position: index + 1 })
+				.set({ position: index + 1, ...keepChapterUpdatedAt() })
 				.where(eq(chapters.id, row.id));
 		}
 	});
@@ -406,7 +412,7 @@ export async function deleteChapter(
 		for (const [index, row] of rest.entries()) {
 			await tx
 				.update(chapters)
-				.set({ position: index + 1 })
+				.set({ position: index + 1, ...keepChapterUpdatedAt() })
 				.where(eq(chapters.id, row.id));
 		}
 	});
