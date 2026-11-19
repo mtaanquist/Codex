@@ -1032,6 +1032,9 @@ export async function reviewStoryScenes(
 	// passes, the cross-scene pass), so one review cannot spend it several times
 	// over.
 	const meter = await jobSpendMeter(db, opts);
+	// The reviewer's window sizes the pattern pass; its tool support decides
+	// whether the scene reviews offer leave_pattern_note.
+	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
 
 	// Scene summaries feed both the context assembly and the cross-scene pass, so
 	// the run brings them up to date before it reviews anything.
