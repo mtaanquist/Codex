@@ -7,16 +7,16 @@ import {
 	requireAssistantUniverse,
 	requireChat
 } from '#lib/server/llm/assistant-route';
-import { CHAT_MISSING, chatTitle } from '#lib/assistant-chat';
+import { CHAT_MISSING, chatTitle, readChatSettings } from '#lib/assistant-chat';
 import {
 	assembleContext,
 	buildSystemMessage,
 	type AssembleOptions
 } from '#lib/server/llm/context/assemble';
-import { appendChat, type ChatScope } from '#lib/server/llm/chat-history';
+import { appendChat, setChatSettings, type ChatScope } from '#lib/server/llm/chat-history';
 import { fitChatWithSummary } from '#lib/server/llm/chat-summary';
 import { chatBudgetTokens, contextBudgetTokens } from '#lib/server/llm/context/budgets';
-import { modelContextWindow, resolveLlmConfig } from '#lib/server/llm/config';
+import { modelContextWindow, resolveLlmConfig, withRoleOverride } from '#lib/server/llm/config';
 import {
 	foldReference,
 	readReference,
@@ -74,7 +74,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		chatId?: unknown;
 		newChatId?: unknown;
 		messages?: unknown;
+		settings?: unknown;
 	}>(request, locals);
+	const settings = readChatSettings(payload.settings);
 	const sceneId = typeof payload.sceneId === 'string' ? payload.sceneId : undefined;
 	const turns = readTurns(payload.messages);
 
@@ -103,6 +105,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		payload.newChatId
 	);
 	const chatId = chat.id;
+	await setChatSettings(db, userId, chatId, settings);
 	if (newest.role === 'user') {
 		const stored = await appendChat(db, userId, scope, chatId, {
 			role: 'user',
@@ -120,7 +123,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		userId,
 		'storyId' in scope ? scope.storyId : undefined
 	);
-	const contextWindow = modelContextWindow(resolved.config, 'chat');
+	const contextWindow = modelContextWindow(
+		withRoleOverride(resolved.config, 'chat', settings),
+		'chat'
+	);
 	const context = await assembleContext(db, {
 		...assembleOptions,
 		budgetTokens: contextBudgetTokens(contextWindow)
@@ -150,6 +156,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		scope,
 		chat,
 		role: 'chat',
+		override: settings,
 		enableTools: true,
 		messages,
 		summarised: fitted.summarised,

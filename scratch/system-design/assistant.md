@@ -342,7 +342,19 @@ The tab, from the prototype:
   consistent so far?". These are starting points, not a fixed menu; they
   seed the three surfaces (a question, a co-author nudge, a continuity
   review).
-- An "Ask about your story..." input with a send control.
+- A composer (#1171): one bordered box with the text field and a row of
+  controls under it. The slash button opens the command menu, every chat
+  action in sections (Chat, Write, Review, Look up, Upkeep, Model) with a
+  filter; typing "/" in the field opens the same list, and each entry is
+  also a typed `/command` (`#lib/assistant-slash` is the one list). The
+  model chip shows the model and effort the chat runs on and opens a picker
+  (the endpoint's listed models plus any already set); the choice belongs to
+  the chat (`assistant_chats.settings`, migration 0084) and rides with each
+  message, laid over the chat role's model by `withRoleOverride`. Effort is
+  only offered on Claude models that take it. The quoted passage from "Ask
+  the Assistant about this" sits in the row as a chip with an x. The header
+  is the chat's title, a clock button for the chat list, and a new chat
+  button; muting moved into the command menu.
 
 The chat is sync and streaming. It is the home of:
 
@@ -359,8 +371,8 @@ The chat is sync and streaming. It is the home of:
 Persistence: chats are stored per scope (story or universe) and user, any
 number of them (`assistant_chats`, with turns in `assistant_chat_messages`;
 issue #985, migration 0080). The panel opens the most recently used chat; a
-picker at the top lists the scope's chats newest first, searchable by title,
-and the + (or `/new`) starts a new one, which the server creates on its first
+clock button at the top lists the scope's chats newest first, searchable by
+title, and the new chat button (or `/new`) starts a new one, which the server creates on its first
 message and names after it (`x-chat-id` on the response tells the panel the
 id). "Delete chat" removes one with its turns and summary. Titles are not
 editable yet.

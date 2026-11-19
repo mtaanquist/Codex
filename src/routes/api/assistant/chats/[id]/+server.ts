@@ -26,7 +26,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		listChat(db, locals.user.id, chat.id),
 		hasChatSummary(db, locals.user.id, chat.id)
 	]);
-	return Response.json({ messages, summarised });
+	return Response.json({ messages, summarised, settings: chat.settings });
 };
 
 export const DELETE: RequestHandler = async ({ params, locals }) => {

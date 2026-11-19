@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { ChatSummary } from '#lib/assistant-chat';
+	import type { ChatModelInfo, ChatModelSettings, ChatSummary } from '#lib/assistant-chat';
 	import type { SplitProposal } from './AssistantProposal.svelte';
 
 	export type StopReason = 'context' | 'budget';
@@ -19,6 +19,8 @@
 		chatId: string | null;
 		messages: StoredChatTurn[];
 		summarised: boolean;
+		settings: ChatModelSettings;
+		model: ChatModelInfo;
 	};
 </script>
 
@@ -56,11 +58,20 @@
 	import { relativeShort } from '#lib/format';
 	import { now } from '#lib/now.svelte';
 	import { page } from '$app/state';
-	import { commandsForScope, matchSlash, slashName, slashArgs } from '#lib/assistant-slash';
+	import {
+		commandsForScope,
+		matchCommands,
+		matchSlash,
+		slashName,
+		slashArgs,
+		type SlashCommand
+	} from '#lib/assistant-slash';
+	import { modelTakesEffort } from '#lib/assistant-tuning';
 	import Icon from './Icon.svelte';
 	import AssistantProposal from './AssistantProposal.svelte';
+	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
+	import AssistantModelMenu, { EFFORT_LABELS } from './AssistantModelMenu.svelte';
 	import { dismiss } from '#lib/dismiss';
-	import { menu } from '#lib/menu';
 
 	let {
 		scope,
@@ -194,6 +205,18 @@
 		nextChatMayExist = false;
 	}
 	const currentTitle = $derived(chats.find((c) => c.id === chatId)?.title || 'New chat');
+	// The model and effort this chat runs on, from the model chip; empty runs on
+	// the default. Sent with every message, and stored on the chat by the server.
+	// svelte-ignore state_referenced_locally
+	let chatSettings = $state<ChatModelSettings>(chat?.settings ?? {});
+	// svelte-ignore state_referenced_locally
+	const modelInfo: ChatModelInfo = chat?.model ?? { model: '', effort: null, claude: false };
+	const chipModel = $derived(chatSettings.model ?? modelInfo.model);
+	const chipEffort = $derived(
+		modelInfo.claude && modelTakesEffort(chipModel)
+			? (chatSettings.effort ?? modelInfo.effort ?? 'medium')
+			: null
+	);
 	let input = $state('');
 	let busy = $state(false);
 	// An earlier chat is loading; nothing is sent until it is in place, or the
@@ -429,7 +452,8 @@
 				...(isStory ? { sceneId } : {}),
 				messages: turns
 					.slice(-CHAT_WINDOW_TURNS)
-					.map((m) => ({ role: m.role, content: m.content, reference: m.reference }))
+					.map((m) => ({ role: m.role, content: m.content, reference: m.reference })),
+				settings: $state.snapshot(chatSettings)
 			},
 			chatTitle(question),
 			true
@@ -458,9 +482,22 @@
 	function runSlashCommand(raw: string) {
 		input = '';
 		if (composer) composer.style.height = 'auto';
-		slashSelected = 0;
+		commandSelected = 0;
 		const name = slashName(raw);
 		switch (name) {
+			case 'history':
+				pickerOpen = true;
+				chatQuery = '';
+				break;
+			case 'delete':
+				void deleteChat();
+				break;
+			case 'mute':
+				if (isStory) muteForm?.requestSubmit();
+				break;
+			case 'model':
+				modelOpen = true;
+				break;
 			// 'clear' is the command's old name, from before chats were kept.
 			case 'new':
 			case 'clear':
@@ -521,13 +558,13 @@
 		}
 	}
 
-	// Choosing a command from the hint menu. A command that takes arguments leaves
+	// Choosing a command from the menu. A command that takes arguments leaves
 	// "/name " in the composer to type the argument into; the rest run straightaway.
-	function chooseSlash(command: { name: string; args?: boolean }) {
+	function chooseCommand(command: SlashCommand) {
+		commandsOpen = false;
+		commandSelected = 0;
 		if (command.args) {
-			input = `/${command.name} `;
-			slashSelected = 0;
-			composer?.focus();
+			setComposer(`/${command.name} `);
 			return;
 		}
 		runSlashCommand(`/${command.name}`);
@@ -701,14 +738,67 @@
 		);
 	}
 
-	// The hint menu: the matching commands while the composer holds a bare "/word",
-	// narrowed to this surface's scope.
-	let slashSelected = $state(0);
+	// The command menu. Typing "/word" in the composer opens it filtered by the
+	// word (Escape hides it until the word changes); the "/" button opens it with
+	// a filter field of its own. Either way the highlighted row is commandSelected.
+	let commandSelected = $state(0);
+	let commandsOpen = $state(false);
+	let commandQuery = $state('');
+	let commandsTrigger = $state<HTMLButtonElement>();
+	let slashDismissed = $state<string | null>(null);
 	const slashMatches = $derived(matchSlash(input, !isStory));
-	const slashOpen = $derived(slashMatches.length > 0 && !busy);
+	const slashOpen = $derived(
+		!commandsOpen && slashMatches.length > 0 && !busy && slashDismissed !== input
+	);
+	const shownCommands = $derived(
+		commandsOpen ? matchCommands(commandQuery, !isStory) : slashOpen ? slashMatches : []
+	);
 	$effect(() => {
-		if (slashSelected >= slashMatches.length) slashSelected = 0;
+		if (commandSelected >= shownCommands.length) commandSelected = 0;
 	});
+	function toggleCommands() {
+		commandsOpen = !commandsOpen;
+		commandQuery = '';
+		commandSelected = 0;
+		if (commandsOpen) modelOpen = false;
+	}
+	// The keys of whichever field drives the menu. True when the key was used.
+	function commandKey(event: KeyboardEvent): boolean {
+		const count = shownCommands.length;
+		if (event.key === 'ArrowDown' && count > 0) {
+			commandSelected = (commandSelected + 1) % count;
+		} else if (event.key === 'ArrowUp' && count > 0) {
+			commandSelected = (commandSelected - 1 + count) % count;
+		} else if ((event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) && count > 0) {
+			chooseCommand(shownCommands[commandSelected]);
+		} else if (event.key === 'Escape') {
+			if (commandsOpen) {
+				commandsOpen = false;
+				commandsTrigger?.focus();
+			} else {
+				slashDismissed = input;
+			}
+		} else {
+			return false;
+		}
+		event.preventDefault();
+		return true;
+	}
+	function filterKeydown(event: KeyboardEvent) {
+		if (event.key === 'Tab' && shownCommands.length === 0) {
+			commandsOpen = false;
+			return;
+		}
+		commandKey(event);
+	}
+
+	// The model menu, from the chip in the composer.
+	let modelOpen = $state(false);
+	let modelTrigger = $state<HTMLButtonElement>();
+	const commandListId = `assistant-commands-${newChatId().slice(0, 8)}`;
+
+	// The mute switch is a form action; the command menu submits it.
+	let muteForm = $state<HTMLFormElement>();
 
 	// Intents raised by the editor menus or the command palette: the page has
 	// already switched the right pane here; the panel acts on the intent.
@@ -770,6 +860,7 @@
 		freshChatId();
 		messages = [{ role: 'assistant', content: opening }];
 		olderSummarised = false;
+		chatSettings = {};
 		pickerOpen = false;
 		composer?.focus();
 	}
@@ -789,10 +880,12 @@
 			const loaded = (await response.json()) as {
 				messages: StoredChatTurn[];
 				summarised: boolean;
+				settings: ChatModelSettings;
 			};
 			chatId = id;
 			messages = toMessages(loaded.messages);
 			olderSummarised = loaded.summarised;
+			chatSettings = loaded.settings ?? {};
 		} finally {
 			switching = false;
 			composer?.focus();
@@ -855,34 +948,8 @@
 		if (pickerOpen) pickerSearch?.focus();
 	});
 
-	// The actions menu next to the send button; closes like the other inline
-	// menus, on an outside press or Escape.
-	let actionsOpen = $state(false);
-	let actionsTrigger = $state<HTMLButtonElement>();
-
-	function runAction(action: () => void) {
-		actionsOpen = false;
-		action();
-	}
-
 	function onKeydown(event: KeyboardEvent) {
-		if (slashOpen) {
-			if (event.key === 'ArrowDown') {
-				event.preventDefault();
-				slashSelected = Math.min(slashSelected + 1, slashMatches.length - 1);
-				return;
-			}
-			if (event.key === 'ArrowUp') {
-				event.preventDefault();
-				slashSelected = Math.max(slashSelected - 1, 0);
-				return;
-			}
-			if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
-				event.preventDefault();
-				chooseSlash(slashMatches[slashSelected]);
-				return;
-			}
-		}
+		if (slashOpen && commandKey(event)) return;
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			void send();
@@ -915,6 +982,10 @@
 	function prefill(text: string) {
 		const value = withPrompt(input, lastPrompt, text);
 		lastPrompt = text;
+		setComposer(value);
+	}
+
+	function setComposer(value: string) {
 		input = value;
 		if (!composer) return;
 		composer.value = value;
@@ -925,7 +996,7 @@
 
 	function fit(el: HTMLTextAreaElement) {
 		el.style.height = 'auto';
-		el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+		el.style.height = Math.min(el.scrollHeight, 160) + 'px';
 	}
 
 	function grow(event: Event) {
@@ -948,18 +1019,7 @@
 {:else}
 	<div class="assistant">
 		<div class="assistant-head">
-			<span class="assistant-name"><Icon name="sparkles" size={13} /> {name}</span>
-			<div class="head-actions">
-				{#if isStory}
-					<form method="POST" action="?/muteAssistant" use:enhance>
-						<button class="mute-link" type="submit" title="Hide the Assistant for this story">
-							Mute for this story
-						</button>
-					</form>
-				{/if}
-			</div>
-		</div>
-		<div class="chat-bar">
+			<span class="chat-title" title={currentTitle}>{currentTitle}</span>
 			<div
 				class="chat-picker-wrap"
 				use:dismiss={{
@@ -970,17 +1030,16 @@
 			>
 				<button
 					bind:this={pickerTrigger}
-					class="chat-picker-btn"
+					class="icon-btn sm"
 					type="button"
-					title="Switch to an earlier chat"
-					aria-label="{currentTitle}, switch chat"
+					title="Chat history"
+					aria-label="Chat history"
 					aria-haspopup="dialog"
 					aria-expanded={pickerOpen}
 					disabled={busy || switching}
 					onclick={togglePicker}
 				>
-					<span class="chat-picker-title">{currentTitle}</span>
-					<Icon name="caret" size={12} />
+					<Icon name="clock" size={15} />
 				</button>
 				{#if pickerOpen}
 					<div
@@ -1028,8 +1087,11 @@
 				disabled={busy}
 				onclick={newChat}
 			>
-				<Icon name="plus" size={14} />
+				<Icon name="chat-new" size={15} />
 			</button>
+			{#if isStory}
+				<form bind:this={muteForm} method="POST" action="?/muteAssistant" use:enhance hidden></form>
+			{/if}
 		</div>
 		<div class="chat-scroll" bind:this={scroll} aria-live="polite" aria-atomic="false">
 			{#if olderSummarised}
@@ -1112,132 +1174,142 @@
 			</div>
 		{/if}
 
-		{#if reference}
-			<div class="ref-chip" role="note">
-				<span class="ref-quote" title={reference.text}>{reference.text}</span>
-				<button
-					class="ref-x"
-					type="button"
-					title="Remove the reference"
-					aria-label="Remove the reference"
-					onclick={() => (reference = null)}
+		<div class="composer-wrap">
+			{#if commandsOpen || slashOpen}
+				<div
+					class="composer-pop"
+					use:dismiss={{
+						enabled: commandsOpen,
+						close: () => (commandsOpen = false),
+						refocus: () => commandsTrigger?.focus()
+					}}
 				>
-					x
-				</button>
-			</div>
-		{/if}
-		{#if slashOpen}
-			<div class="slash-menu" role="listbox" aria-label="Commands">
-				{#each slashMatches as command, index (command.name)}
-					<button
-						class="slash-item"
-						class:active={index === slashSelected}
-						role="option"
-						aria-selected={index === slashSelected}
-						type="button"
-						onmouseenter={() => (slashSelected = index)}
-						onclick={() => chooseSlash(command)}
-					>
-						<span class="slash-name">/{command.name}</span>
-						<span class="slash-detail">{command.detail}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
-		<div class="composer">
-			<textarea
-				bind:this={composer}
-				rows="1"
-				placeholder="Ask about your story, or type / for commands..."
-				value={input}
-				oninput={grow}
-				onkeydown={onKeydown}></textarea>
-			<div
-				class="composer-menu-wrap"
-				use:dismiss={{
-					enabled: actionsOpen,
-					close: () => (actionsOpen = false),
-					refocus: () => actionsTrigger?.focus()
-				}}
-			>
-				<button
-					bind:this={actionsTrigger}
-					class="menu-btn"
-					type="button"
-					title="More actions"
-					aria-label="More actions"
-					aria-haspopup="menu"
-					aria-expanded={actionsOpen}
-					onclick={() => (actionsOpen = !actionsOpen)}
+					<AssistantCommandMenu
+						id={commandListId}
+						commands={shownCommands}
+						selected={commandSelected}
+						onChoose={chooseCommand}
+						onHover={(index) => (commandSelected = index)}
+						filter={commandsOpen
+							? {
+									value: commandQuery,
+									onInput: (value) => {
+										commandQuery = value;
+										commandSelected = 0;
+									},
+									onKeydown: filterKeydown
+								}
+							: undefined}
+					/>
+				</div>
+			{/if}
+			{#if modelOpen}
+				<div
+					class="composer-pop"
+					use:dismiss={{
+						enabled: modelOpen,
+						close: () => (modelOpen = false),
+						refocus: () => modelTrigger?.focus()
+					}}
 				>
-					<Icon name="more" size={16} />
-				</button>
-				{#if actionsOpen}
-					<div
-						class="composer-menu popover"
-						role="menu"
-						use:menu={{
-							close: () => (actionsOpen = false),
-							refocus: () => actionsTrigger?.focus()
-						}}
-					>
-						{#if isStory}
+					<AssistantModelMenu
+						info={modelInfo}
+						settings={chatSettings}
+						onChange={(next) => (chatSettings = next)}
+						close={() => (modelOpen = false)}
+						refocus={() => (modelTrigger ?? composer)?.focus()}
+					/>
+				</div>
+			{/if}
+			<div class="composer">
+				<textarea
+					bind:this={composer}
+					rows="1"
+					placeholder={isStory ? 'Ask about your story' : 'Ask about this universe'}
+					aria-label="Message the Assistant"
+					aria-controls={slashOpen ? commandListId : undefined}
+					aria-activedescendant={slashOpen && shownCommands[commandSelected]
+						? `${commandListId}-${shownCommands[commandSelected].name}`
+						: undefined}
+					value={input}
+					oninput={grow}
+					onkeydown={onKeydown}></textarea>
+				<div class="composer-row">
+					<div class="composer-tools">
+						<button
+							bind:this={commandsTrigger}
+							class="icon-btn sm"
+							type="button"
+							title="Chat commands (/)"
+							aria-label="Chat commands"
+							aria-haspopup="listbox"
+							aria-expanded={commandsOpen}
+							onclick={toggleCommands}
+						>
+							<Icon name="command" size={15} />
+						</button>
+						<button
+							bind:this={modelTrigger}
+							class="chip model-chip"
+							class:custom={chatSettings.model || chatSettings.effort}
+							type="button"
+							title="Model for this chat"
+							aria-label="Model for this chat, {chipModel || 'not set'}{chipEffort
+								? `, ${EFFORT_LABELS[chipEffort]} effort`
+								: ''}"
+							aria-haspopup="menu"
+							aria-expanded={modelOpen}
+							onclick={() => {
+								modelOpen = !modelOpen;
+								if (modelOpen) commandsOpen = false;
+							}}
+						>
+							<span class="model-chip-name">{chipModel || 'Model'}</span>
+							{#if chipEffort}<span class="model-chip-effort">{EFFORT_LABELS[chipEffort]}</span
+								>{/if}
+						</button>
+						{#if reference}
+							<span class="chip context-chip" title={reference.text}>
+								<Icon name="quote" size={12} />
+								<span class="context-chip-label">{reference.text}</span>
+								<button
+									class="chip-x"
+									type="button"
+									title="Remove the passage"
+									aria-label="Remove the passage"
+									onclick={() => (reference = null)}
+								>
+									x
+								</button>
+							</span>
+						{/if}
+					</div>
+					<span class="composer-send">
+						{#if busy}
 							<button
-								class="menu-item"
+								class="icon-btn sm send-btn"
 								type="button"
-								role="menuitem"
-								disabled={busy}
-								title="Recap the story up to where you are"
-								onclick={() => runAction(() => void catchUp())}
+								title="Stop generating"
+								aria-label="Stop generating"
+								onclick={stop}
 							>
-								Catch me up
+								<span class="stop-glyph"></span>
 							</button>
+						{:else}
 							<button
-								class="menu-item"
+								class="icon-btn sm send-btn"
 								type="button"
-								role="menuitem"
-								disabled={summarising}
-								title="Draft and refresh scene and chapter summaries in the background"
-								onclick={() => runAction(() => void updateSummaries())}
+								disabled={!input.trim() || switching}
+								title="Send"
+								aria-label="Send"
+								onclick={() => send()}
 							>
-								{summarising ? 'Starting...' : 'Update summaries'}
+								<Icon name="send" size={15} />
 							</button>
 						{/if}
-						<button
-							class="menu-item danger"
-							type="button"
-							role="menuitem"
-							disabled={deleting || busy}
-							title="Delete this chat for good"
-							onclick={() => runAction(() => void deleteChat())}
-						>
-							Delete chat
-						</button>
-					</div>
-				{/if}
+					</span>
+				</div>
 			</div>
-			{#if busy}
-				<button
-					class="icon-btn"
-					type="button"
-					title="Stop generating"
-					aria-label="Stop generating"
-					onclick={stop}
-				>
-					<span class="stop-glyph"></span>
-				</button>
-			{:else}
-				<button
-					class="icon-btn"
-					type="button"
-					disabled={!input.trim() || switching}
-					title="Send"
-					aria-label="Send"
-					onclick={() => send()}
-				>
-					<Icon name="send" size={16} />
-				</button>
-			{/if}
 		</div>
 	</div>
 {/if}
@@ -1250,48 +1322,17 @@
 		height: 100%;
 		min-height: 0;
 	}
-	.chat-bar {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 6px 10px;
-		border-bottom: 1px solid var(--border);
-	}
+	/* The chat list drops below the whole header, as wide as the panel. */
 	.chat-picker-wrap {
-		position: relative;
-		flex: 1;
-		min-width: 0;
-	}
-	.chat-picker-btn {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		width: 100%;
-		min-width: 0;
-		border: 0;
-		background: none;
-		padding: 4px 6px;
-		border-radius: 6px;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13px;
-		cursor: pointer;
-	}
-	.chat-picker-btn:hover:not(:disabled) {
-		background: var(--bg-hover);
-	}
-	.chat-picker-title {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		flex: none;
 	}
 	/* Skin from the shared .popover / .menu-item (menus.css); only the
 	   positioning and the list's own layout stay here. */
 	.chat-picker {
 		position: absolute;
 		top: calc(100% + 4px);
-		left: 0;
-		right: 0;
+		left: 8px;
+		right: 8px;
 		z-index: 30;
 		display: flex;
 		flex-direction: column;
@@ -1333,38 +1374,105 @@
 		color: var(--text-faint);
 	}
 	.assistant-head {
+		position: relative;
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 10px 14px;
+		gap: 2px;
+		padding: 6px 8px 6px 14px;
 		border-bottom: 1px solid var(--border);
 	}
-	.assistant-name {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
+	.chat-title {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--text-base);
 		font-weight: 600;
-		color: var(--text-muted);
+		color: var(--text);
 	}
-	.head-actions {
+	/* The composer: one bordered box holding the text and a row of controls.
+	   The command and model menus open above it, as wide as the box. */
+	.composer-wrap {
+		position: relative;
+		padding: 8px 12px 12px;
+	}
+	.composer-pop {
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		bottom: calc(100% - 2px);
+		z-index: 60;
+	}
+	.composer {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg-inset);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+	}
+	.composer:focus-within {
+		border-color: var(--accent-line);
+	}
+	.composer textarea {
+		resize: none;
+		background: none;
+		border: 0;
+		padding: 10px 12px 4px;
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-size: var(--text-base);
+		line-height: 1.45;
+		max-height: 160px;
+		outline: none;
+	}
+	.composer-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 4px;
+		padding: 4px 6px 6px;
+		border-top: 1px solid var(--border);
+	}
+	.composer-tools {
+		flex: 1;
+		min-width: 0;
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: flex-end;
 		align-items: center;
-		gap: 6px 12px;
+		gap: 4px;
 	}
-	.mute-link {
-		border: 0;
-		background: none;
-		padding: 0;
-		font-size: 12px;
-		color: var(--text-faint);
+	.composer-row .chip {
+		padding: 2px 8px;
+		font-size: var(--text-meta);
+		max-width: 100%;
+		min-width: 0;
+	}
+	.model-chip {
 		cursor: pointer;
 	}
-	.mute-link:hover {
-		color: var(--text);
-		text-decoration: underline;
+	.model-chip-name,
+	.context-chip-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.model-chip-name {
+		max-width: 16ch;
+	}
+	.context-chip-label {
+		max-width: 18ch;
+	}
+	.model-chip-effort {
+		color: var(--text-faint);
+	}
+	.model-chip.custom {
+		border-color: var(--accent-line);
+	}
+	.composer-send {
+		flex: none;
+	}
+	.send-btn:not(:disabled) {
+		color: var(--accent-ink);
 	}
 	.chat-scroll {
 		flex: 1;
@@ -1460,70 +1568,6 @@
 		border-color: var(--border-strong);
 		background: var(--bg-hover);
 	}
-	.slash-menu {
-		margin: 0 12px 6px;
-		border: 1px solid var(--border);
-		border-radius: 9px;
-		background: var(--bg-elevated);
-		box-shadow: var(--shadow);
-		padding: 5px;
-		display: flex;
-		flex-direction: column;
-	}
-	.slash-item {
-		display: flex;
-		align-items: baseline;
-		gap: 9px;
-		width: 100%;
-		text-align: left;
-		border: 0;
-		background: none;
-		color: var(--text);
-		font-family: var(--font-ui);
-		padding: 6px 8px;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-	.slash-item.active {
-		background: var(--bg-hover);
-	}
-	.slash-name {
-		flex: 0 0 auto;
-		font-family: var(--font-mono);
-		font-size: 12.5px;
-		font-weight: 550;
-	}
-	.slash-detail {
-		font-size: 12px;
-		color: var(--text-faint);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.composer {
-		border-top: 1px solid var(--border);
-		padding: 12px;
-		display: flex;
-		gap: 8px;
-		align-items: flex-end;
-	}
-	.composer textarea {
-		flex: 1;
-		resize: none;
-		background: var(--bg-inset);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 9px 11px;
-		color: var(--text);
-		font-family: var(--font-ui);
-		font-size: 13.5px;
-		line-height: 1.45;
-		max-height: 120px;
-		outline: none;
-	}
-	.composer textarea:focus {
-		border-color: var(--accent-line);
-	}
 	.msg-insert {
 		display: inline-flex;
 		align-items: center;
@@ -1556,67 +1600,7 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
-	.ref-chip {
-		display: flex;
-		align-items: flex-start;
-		gap: 8px;
-		margin: 0 12px;
-		padding: 7px 10px;
-		border: 1px solid var(--border);
-		border-left: 3px solid var(--accent);
-		border-radius: 8px;
-		background: var(--bg-card);
-		font-size: 12.5px;
-		color: var(--text-muted);
-	}
-	.ref-quote {
-		flex: 1;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-	.ref-x {
-		border: 0;
-		background: none;
-		color: var(--text-faint);
-		cursor: pointer;
-		font-size: 13px;
-		line-height: 1;
-		padding: 0 2px;
-	}
-	.ref-x:hover {
-		color: var(--text);
-	}
-	.composer-menu-wrap {
-		position: relative;
-		flex: none;
-	}
-	.menu-btn {
-		width: 36px;
-		height: 36px;
-		border-radius: 9px;
-		border: 1px solid var(--border);
-		background: var(--bg-card);
-		color: var(--text-muted);
-		display: grid;
-		place-items: center;
-		cursor: pointer;
-	}
-	.menu-btn:hover {
-		color: var(--text);
-		border-color: var(--border-strong);
-	}
-	/* Skin from the shared .popover / .menu-item (menus.css); only the
-	   positioning stays here. */
-	.composer-menu {
-		position: absolute;
-		bottom: 42px;
-		right: 0;
-		z-index: 60;
-		min-width: 190px;
-	}
+
 	.stop-glyph {
 		width: 11px;
 		height: 11px;

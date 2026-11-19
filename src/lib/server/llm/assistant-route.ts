@@ -13,7 +13,7 @@ import {
 	resolveChat,
 	type ChatScope
 } from './chat-history';
-import { CHAT_MISSING } from '#lib/assistant-chat';
+import { CHAT_MISSING, type ChatModelSettings } from '#lib/assistant-chat';
 import { isUuid } from '#lib/slug';
 import type { ChatMessage, SplitProposal, StreamEvent } from './providers/types';
 
@@ -118,6 +118,8 @@ export function assistantSseResponse(options: {
 	// Conversational turns run as 'chat'; the recap runs as 'utility'. Both land
 	// in the same stored conversation.
 	role: 'chat' | 'utility';
+	// The chat's own model and effort (the composer's model chip).
+	override?: ChatModelSettings;
 	enableTools: boolean;
 	messages: ChatMessage[];
 	// Older turns of this conversation were summarised; the panel shows a note.
@@ -142,6 +144,7 @@ export function assistantSseResponse(options: {
 					storyId,
 					universeId,
 					role: options.role,
+					override: options.override,
 					enableTools: options.enableTools,
 					messages: options.messages,
 					signal: request.signal
