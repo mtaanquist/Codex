@@ -142,6 +142,8 @@ describe('upgrading from the previous release', () => {
 
 	it('continues the capped review without reviewing its scenes again', async () => {
 		const scope = { storyId: TIDE };
+		// The pg-boss job lookup is stubbed: the worker makes its own schema, so
+		// this checks the stored state carries over, not the job lookup.
 		const adopted = await adoptCappedRun(db, {
 			userId: USER,
 			scope: reviewScopeKey(scope),
@@ -181,7 +183,7 @@ describe('upgrading from the previous release', () => {
 		expect(calls).toEqual([]);
 	});
 
-	it('exports every scene, with the old line endings read as plain newlines', async () => {
+	it('exports every scene, including the one with the old line endings', async () => {
 		const content = await gatherStory(db, {
 			id: TIDE,
 			title: 'The Long Tide',

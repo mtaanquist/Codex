@@ -381,19 +381,22 @@ export async function moveChapter(
 ): Promise<boolean> {
 	const chapter = await ownedChapter(db, userId, chapterId);
 	if (!chapter) return false;
-	const list = await db
-		.select({ id: chapters.id })
-		.from(chapters)
-		.where(eq(chapters.storyId, chapter.storyId))
-		.orderBy(asc(chapters.position));
-	const at = list.findIndex((row) => row.id === chapter.id);
-	const to = direction === 'up' ? at - 1 : at + 1;
-	if (to < 0 || to >= list.length) return true;
-	[list[at], list[to]] = [list[to], list[at]];
-	// Renumber the whole list; stories are small enough that this costs nothing
-	// and it keeps positions compact.
 	await db.transaction(async (tx) => {
+		// The list is read under the locks, so a chapter created or deleted
+		// meanwhile is counted.
+		await tx.execute(sql`select id from stories where id = ${chapter.storyId} for no key update`);
 		await lockStoryChapters(tx, chapter.storyId);
+		const list = await tx
+			.select({ id: chapters.id })
+			.from(chapters)
+			.where(eq(chapters.storyId, chapter.storyId))
+			.orderBy(asc(chapters.position));
+		const at = list.findIndex((row) => row.id === chapter.id);
+		const to = direction === 'up' ? at - 1 : at + 1;
+		if (at < 0 || to < 0 || to >= list.length) return;
+		[list[at], list[to]] = [list[to], list[at]];
+		// Renumber the whole list; stories are small enough that this costs
+		// nothing and it keeps positions compact.
 		for (const [index, row] of list.entries()) {
 			await tx
 				.update(chapters)

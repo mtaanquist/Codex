@@ -32,6 +32,7 @@ import { purgeStory } from '../../src/lib/server/story-delete';
 import { saveEntity } from '../../src/lib/server/entity-save';
 import { saveStoryLlmOverride } from '../../src/lib/server/llm/config';
 import type { Database } from '../../src/lib/server/auth';
+import { lockStoryScenes } from '../../src/lib/server/row-locks';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
 // Finds lock-order deadlocks between write operations without having to guess
@@ -559,10 +560,11 @@ describe('lock order', () => {
 	}, 900_000);
 });
 
-// A story with no scenes yet has no scene rows to lock, so these run on their
-// own seed: the story row still has to keep a scene create and another change
-// to the story apart.
-describe('lock order in a story with no scenes', () => {
+// Scene rows that are not there when a change starts waiting: a story with no
+// scenes yet, and a scene another change adds while this one waits. The
+// seeded races never insert while another operation waits, so these run on
+// their own.
+describe('lock order around scenes being added', () => {
 	async function emptyStory() {
 		await seed();
 		await db.delete(scenes).where(eq(scenes.storyId, S.story));
@@ -628,5 +630,42 @@ describe('lock order in a story with no scenes', () => {
 			.from(scenes)
 			.where(eq(scenes.storyId, S.story));
 		expect(rows).toEqual([{ chapterId: null }]);
+	});
+
+	// Otherwise a mention rebuild of the new scene, holding it while it waits
+	// for the story, deadlocks with the waiter that now holds the story.
+	it('a change that waited also locks the scene added meanwhile', async () => {
+		await seed();
+		let unlocked: string[] = [];
+		const failure = await overlap(
+			(tx) => duplicateScene(tx, S.user, S.B),
+			() =>
+				opDb.transaction(async (tx) => {
+					await lockStoryScenes(tx, S.story);
+					const { rows } = await pool.query(
+						'select id from scenes where story_id = $1 for update skip locked',
+						[S.story]
+					);
+					unlocked = rows.map((row) => row.id);
+				})
+		);
+		expect(failure).toBeNull();
+		expect(unlocked).toEqual([]);
+	});
+
+	// The move must read the chapter list under its lock, or it writes back a
+	// position the delete just freed and leaves a gap the next create fills twice.
+	it('a chapter moved while its neighbour is deleted keeps positions compact', async () => {
+		await seed();
+		const failure = await overlap(
+			(tx) => deleteChapter(tx, S.user, S.ch2),
+			() => moveChapter(opDb, S.user, S.ch1, 'down')
+		);
+		expect(failure).toBeNull();
+		const rows = await db
+			.select({ id: chapters.id, position: chapters.position })
+			.from(chapters)
+			.where(eq(chapters.storyId, S.story));
+		expect(rows).toEqual([{ id: S.ch1, position: 1 }]);
 	});
 });

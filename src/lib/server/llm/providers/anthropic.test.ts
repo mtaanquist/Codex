@@ -1183,7 +1183,7 @@ describe('anthropicProvider.chatStream', () => {
 		);
 		expect(events).toEqual([
 			{ type: 'token', text: 'Hi' },
-			{ type: 'error', message: 'The endpoint closed the stream before the reply finished.' }
+			{ type: 'error', message: 'The connection closed before the reply finished.' }
 		]);
 	});
 
