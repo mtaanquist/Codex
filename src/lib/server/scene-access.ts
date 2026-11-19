@@ -52,7 +52,7 @@ export async function lastTouchedScene(db: Database, storyId: string) {
 		.select()
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
-		.orderBy(desc(scenes.touchedAt))
+		.orderBy(desc(sql`coalesce(${scenes.touchedAt}, ${scenes.updatedAt})`))
 		.limit(1);
 	return row ?? null;
 }

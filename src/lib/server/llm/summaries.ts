@@ -13,7 +13,7 @@ import { spentFields, type SpendMeter } from './spend.ts';
 import { jobSpendMeter } from './job-spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
-import { markMentionsStale } from '../scene-lifecycle.ts';
+import { markChapterSummariesStale, markMentionsStale } from '../scene-lifecycle.ts';
 import { summaryIsCurrent } from '../summary-currency.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
@@ -135,14 +135,9 @@ export async function summariseStory(
 		else return false;
 		return true;
 	};
-	// Chapters whose scenes changed this run, so their summary is now stale even
-	// if the chapter row itself was not edited.
-	const touchedChapters = new Set<string>();
-
 	const sceneRows = await db
 		.select({
 			id: scenes.id,
-			chapterId: scenes.chapterId,
 			title: scenes.title,
 			bodyMd: scenes.bodyMd,
 			summaryMd: scenes.summaryMd,
@@ -208,11 +203,15 @@ export async function summariseStory(
 						and summary_md is not distinct from ${scene.summaryMd}
 						and summary_generated_at is not distinct from ${scene.generatedAtText}::timestamptz
 						and deleted_at is null
-					returning id
+					returning chapter_id
 				`);
 				if (rows.length === 0) return false;
 				// Character arcs read scene summaries.
 				await markMentionsStale(tx, { sceneIds: [scene.id] });
+				// So does the chapter's summary. Marked here rather than remembered
+				// for the chapter pass, so a run that stops first leaves it due.
+				const sceneChapter = (rows[0] as { chapter_id: string | null }).chapter_id;
+				if (sceneChapter) await markChapterSummariesStale(tx, [sceneChapter]);
 				return true;
 			});
 			if (!stored) {
@@ -220,7 +219,6 @@ export async function summariseStory(
 				continue;
 			}
 			written += 1;
-			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {
 			if (stopsPass(err)) break;
 			logEvent('error', 'summaries.scene_failed', { sceneId: scene.id, ...errorFields(err) });
@@ -278,11 +276,9 @@ export async function summariseStory(
 		const summaries = summariesByChapter.get(chapter.id) ?? [];
 		if (summaries.length === 0) continue;
 
-		const changedSince =
-			touchedChapters.has(chapter.id) ||
-			(chapter.summaryGeneratedAt
-				? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
-				: false);
+		const changedSince = chapter.summaryGeneratedAt
+			? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
+			: false;
 		if (
 			!needsSummary({
 				summaryMd: chapter.summaryMd,

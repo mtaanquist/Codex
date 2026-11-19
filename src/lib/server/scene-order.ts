@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
-import { markMentionsStale } from './scene-lifecycle.ts';
+import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
 
 export type SceneOrder = {
 	chapters: { id: string; sceneIds: string[] }[];
@@ -56,7 +56,7 @@ export async function applySceneOrder(
 		.where(eq(chapters.storyId, storyId));
 	// Trashed scenes sit outside the order until restored.
 	const sceneRows = await db
-		.select({ id: scenes.id, globalPosition: scenes.globalPosition })
+		.select({ id: scenes.id, chapterId: scenes.chapterId, globalPosition: scenes.globalPosition })
 		.from(scenes)
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
 
@@ -119,6 +119,20 @@ export async function applySceneOrder(
 			.sort((a, b) => a.globalPosition - b.globalPosition)
 			.map((row) => row.id);
 		const moved = movedScenes(was, ids);
+		// A scene dropped into another chapter was moved too, even when its
+		// reading order stays the same. Both chapters now hold different scenes.
+		const chapterWas = new Map(sceneRows.map((row) => [row.id, row.chapterId]));
+		const rechaptered: string[] = [];
+		const chaptersChanged = new Set<string>();
+		ids.forEach((id, i) => {
+			const from = chapterWas.get(id) ?? null;
+			if (from === targetChapters[i]) return;
+			rechaptered.push(id);
+			for (const chapter of [from, targetChapters[i]]) if (chapter) chaptersChanged.add(chapter);
+		});
+		// Only what the writer moved counts as a change; the scenes it shifted
+		// keep their touched_at.
+		const touched = [...new Set([...moved, ...rechaptered])];
 		await db.transaction(async (tx) => {
 			await tx.execute(sql`
 			update scenes set
@@ -126,8 +140,7 @@ export async function applySceneOrder(
 				position_in_chapter = v.position_in_chapter,
 				global_position = v.global_position,
 				touched_at = case
-					when (scenes.chapter_id, scenes.position_in_chapter, scenes.global_position)
-						is distinct from (v.chapter_id, v.position_in_chapter, v.global_position)
+					when scenes.id = any(array[${column(touched)}]::uuid[])
 					then clock_timestamp() else scenes.touched_at end
 			from (
 				select
@@ -141,6 +154,7 @@ export async function applySceneOrder(
 			// Arcs retell the character's scenes in reading order. Only what a
 			// moved scene mentions can read in a new order.
 			await markMentionsStale(tx, { sceneIds: moved });
+			await markChapterSummariesStale(tx, [...chaptersChanged]);
 		});
 	}
 	return { ok: true };

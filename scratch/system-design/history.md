@@ -1483,6 +1483,24 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       as stopped: the card waits for the stop's answer and shows stopped
       only when it was taken and the job did not end done.
 
+- [x] Staging review round 1 of staging/review-follow-ups: scenes and
+      summaries (2026-11-19). Writer trust: mergeScenes read the bodies
+      outside its transaction, so an autosave landing before the write was
+      replaced (only History kept it; this predates the staging branch). It
+      now locks the scenes lowest id first and reads them under the lock.
+      Migration 0084 was edited before shipping: touched_at is added
+      nullable, its clock_timestamp() default set by a second ALTER, no
+      backfill, so the scenes table is not rewritten; readers use
+      coalesce(touched_at, updated_at). A scene summary write now marks its
+      chapter summary stale in the same transaction (the in-memory
+      touchedChapters set is gone), so a pass stopped before the chapter
+      pass leaves the chapter due. A reorder bumps touched_at only for the
+      scenes movedScenes names plus any that changed chapter, a chapter
+      delete bumps none, and a scene moved to another chapter marks both
+      chapters' summaries stale. markChapterSummariesStale, moveChapter and
+      deleteChapter lock chapters order by id first. A reorder within a
+      chapter still leaves its summary as it is.
+
 - [x] Review runs, job spend and job stops (staging/review-follow-ups,
       2026-11-19; #1117, #1105, #1103, #1045, #1046, #1093, #1106, #1108,
       #1113). Each queued Assistant job's spend is kept in a new
@@ -1588,7 +1606,8 @@ Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
       change, move or restore counts as editing the story while updated_at
       stays the prose clock. clock_timestamp() so the scene a split or
       merge acted on reads later than the scenes it shifted in the same
-      transaction. Migration 0084 backfills it from updated_at.
+      transaction. Migration 0084 adds it (see staging review round 1 for how it was
+      reworked before shipping).
 
 - [x] Staging review round 8 (#1122, 2026-11-18). The output-cap floor
       from round 6 also applied to a finished reply without an output count,
