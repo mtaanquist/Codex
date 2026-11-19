@@ -478,3 +478,53 @@ test('a failed model save reverts the chip, and a suggestion keeps the draft', a
 	await expect(page.getByText('Could not save the model')).toBeVisible();
 	await expect(chip).not.toContainText('small-model');
 });
+
+// A model picked in a new chat is saved to the chat a catch-up starts, and the
+// command menu's headings and options do not share ids.
+test('a catch-up keeps the model picked for a new chat', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Recap model');
+	await page.route('**/api/assistant/models', (route) =>
+		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
+	);
+	const recapId = '00000000-0000-4000-8000-000000000002';
+	await page.route('**/api/assistant/recap', (route) =>
+		route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': recapId,
+				'x-chat-created': '1',
+				'x-chat-title': 'Catch%20me%20up'
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'So far...' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		})
+	);
+	const patched: { url: string; body: unknown }[] = [];
+	await page.route('**/api/assistant/chats/*', (route) => {
+		if (route.request().method() !== 'PATCH') return route.continue();
+		patched.push({ url: route.request().url(), body: route.request().postDataJSON() });
+		return route.fulfill({ json: { ok: true } });
+	});
+
+	const chip = panel.getByRole('button', { name: /Model for this chat/ });
+	await chip.click();
+	await page
+		.getByRole('menu', { name: 'Model for this chat' })
+		.getByRole('menuitemradio', { name: 'small-model' })
+		.click();
+
+	await panel.getByRole('button', { name: 'Chat commands' }).click();
+	const duplicates = await panel.evaluate((root) => {
+		const ids = [...root.querySelectorAll('[id]')].map((el) => el.id);
+		return ids.filter((id, i) => ids.indexOf(id) !== i);
+	});
+	expect(duplicates).toEqual([]);
+	await panel.getByRole('option', { name: /Catch me up/ }).click();
+	await expect(panel.locator('.chat-scroll')).toContainText('So far...');
+	await expect.poll(() => patched.length).toBe(1);
+	expect(patched[0].url).toContain(recapId);
+	expect(patched[0].body).toEqual({ settings: { model: 'small-model' } });
+	await expect(chip).toContainText('small-model');
+});

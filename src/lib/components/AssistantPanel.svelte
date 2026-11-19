@@ -364,6 +364,14 @@
 		// turn in the chat the next send reuses.
 		if (creating && storesTurnFirst) nextChatMayExist = true;
 		let reached = false;
+		// A chat this request started without the chip's choice (a recap) is
+		// given it once adopted, so the chip and the chat agree.
+		const adopt = (id: string) => {
+			noteChatUsed(id, storedTitle);
+			if (creating && !('settings' in payload) && Object.keys(chatSettings).length > 0) {
+				saveSettings($state.snapshot(chatSettings), {});
+			}
+		};
 		try {
 			const response = await fetch(url, {
 				method: 'POST',
@@ -381,7 +389,7 @@
 			// is kept whatever happens to this reply.
 			const existed = response.headers.get('x-chat-created') === '0';
 			if (response.ok && storedIn) {
-				if (storesTurnFirst || existed || chatId === storedIn) noteChatUsed(storedIn, storedTitle);
+				if (storesTurnFirst || existed || chatId === storedIn) adopt(storedIn);
 				else startedIn = storedIn;
 			}
 			const failure = response.ok ? '' : await errorMessage(response);
@@ -431,7 +439,7 @@
 				finished &&
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
-			if (startedIn && stored) noteChatUsed(startedIn, storedTitle);
+			if (startedIn && stored) adopt(startedIn);
 			if (reply && reply.role === 'assistant' && reply.content === '') {
 				reply.content = streamError || 'The Assistant did not return a response.';
 			}
@@ -458,21 +466,25 @@
 	// `typed` is the line as the writer typed it, when `text` was built from it
 	// (/who, /find); a send that does not go out puts that back.
 	async function send(text?: string, typed?: string) {
-		const question = (text ?? input).trim();
-		if (!question) return;
+		const line = (text ?? input).trim();
+		if (!line) return;
 		// A line that starts with "/" is a command, not a message to the model.
-		if (question.startsWith('/')) {
+		if (line.startsWith('/')) {
 			// Commands wait for the reply in progress, and the line stays put.
 			if (busy || switching) return;
-			runSlashCommand(question);
+			runSlashCommand(line);
 			return;
 		}
-		if (busy || switching) return;
-		// A model just picked is saved before the message goes, so it answers.
-		if (settingsSaving) {
-			await settingsSaving;
-			if (busy || switching) return;
+		// A model just picked is saved before the message goes, so it answers;
+		// the draft is read after the wait, so nothing typed meanwhile is lost.
+		if (settingsSaving) await settingsSaving;
+		if (busy || switching) {
+			// A /who or /find line the chat box already gave up goes back.
+			if (typed) restoreDraft(typed, {});
+			return;
 		}
+		const question = (text ?? input).trim();
+		if (!question || question.startsWith('/')) return;
 		// Text passed in (a starter suggestion) leaves the writer's draft alone.
 		if (text === undefined) {
 			input = '';
@@ -958,7 +970,9 @@
 		if (settingsLocked) return;
 		const previous = chatSettings;
 		chatSettings = next;
-		if (!chatId) return;
+		if (chatId) saveSettings(next, previous);
+	}
+	function saveSettings(next: ChatModelSettings, previous: ChatModelSettings) {
 		const savingFor = chatId;
 		const failed = () => {
 			if (settingsSaving !== saving) return;
