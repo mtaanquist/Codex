@@ -5,18 +5,14 @@ import { e2eDatabaseUrl } from './database';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
-// Signs in as the account with the Assistant switched on.
-test.use({ storageState: { cookies: [], origins: [] } });
+// Runs as the account with the Assistant switched on.
+test.use({ storageState: 'e2e/.auth/assistant.json' });
 
 // A writer with two earlier chats in a universe opens the newest, switches to
 // the other from the chat list (searching it), starts a new chat, and deletes
 // one. The chats are seeded straight into the database; no reply is needed.
 test('the Assistant keeps several chats and switches between them', async ({ page }) => {
-	await gotoReady(page, '/login');
-	await page.getByLabel('Email').fill('assistant-e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await gotoReady(page, '/');
 
 	const name = `Chats ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
@@ -109,11 +105,7 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 // mounted; the Assistant panel must follow to the new story's chats rather
 // than keep the old ones.
 test('the Assistant panel follows a switch to another story', async ({ page }) => {
-	await gotoReady(page, '/login');
-	await page.getByLabel('Email').fill('assistant-e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await gotoReady(page, '/');
 
 	const name = `Switch ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
@@ -177,14 +169,10 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	).toHaveCount(0);
 });
 
-// Signs in as the Assistant account, starts a story in a fresh universe, and
-// opens the Assistant tab on a new chat.
+// Starts a story in a fresh universe and opens the Assistant tab on a new
+// chat.
 async function freshStoryPanel(page: Page, label: string, storyTitle = 'Cinders') {
-	await gotoReady(page, '/login');
-	await page.getByLabel('Email').fill('assistant-e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await gotoReady(page, '/');
 
 	const name = `${label} ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');

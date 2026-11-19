@@ -129,17 +129,13 @@ test('the author works through a pattern note across two scenes', async ({ page 
 });
 
 test.describe('with the Assistant on', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
+	test.use({ storageState: 'e2e/.auth/assistant.json' });
 
 	// A note with the same edit in two scenes, and the re-read after an accept
 	// answered by the test: it stages a follow-up on "ford" in the first scene
 	// once `release` resolves.
 	async function openPass(page: Page, release: Promise<void> = Promise.resolve()) {
-		await gotoReady(page, '/login');
-		await page.getByLabel('Email').fill('assistant-e2e@example.com');
-		await page.getByLabel('Password').fill('e2e-password');
-		await page.getByRole('button', { name: 'Sign in' }).click();
-		await expect(page).toHaveURL('/');
+		await gotoReady(page, '/');
 
 		const name = `Follow-up ${Date.now()}`;
 		await pickFromLibraryMenu(page, 'New universe');
