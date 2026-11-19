@@ -14,6 +14,16 @@ export const CHAT_BUDGET_TOKENS = 8000;
 // shares together leave over half the window for the persona, the tool
 // schemas, and the reply; below that the floor takes over and the gateway's
 // context guard is the backstop.
+// A rough token estimate (about four characters per token); good enough to keep
+// a request from blowing past a context window, not a real tokenizer.
+export function estimateTokens(text: string): number {
+	return tokensForChars(text.length);
+}
+
+export function tokensForChars(chars: number): number {
+	return Math.ceil(chars / 4);
+}
+
 const CONTEXT_WINDOW_SHARE = 0.15;
 const CONTEXT_CEILING_TOKENS = 16000;
 const CHAT_WINDOW_SHARE = 0.25;

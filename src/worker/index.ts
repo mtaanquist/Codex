@@ -20,7 +20,9 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
-	ASSISTANT_ENRICH_QUEUE_OPTIONS
+	ASSISTANT_QUEUE_OPTIONS,
+	LEGACY_ASSISTANT_REVIEW_QUEUE,
+	LEGACY_ASSISTANT_SUMMARIES_QUEUE
 } from '../lib/server/queues.ts';
 import { createPool } from '../lib/server/db/pool.ts';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -71,12 +73,17 @@ await boss.createQueue(NOTIFICATION_DIGEST_QUEUE);
 await boss.createQueue(REVIEWER_DIGEST_QUEUE);
 await boss.createQueue(MIGRATE_ASSETS_QUEUE);
 await boss.createQueue(USER_EXPORT_QUEUE);
-await boss.createQueue(ASSISTANT_REVIEW_QUEUE);
-await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE);
-await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_ENRICH_QUEUE_OPTIONS);
+await boss.createQueue(ASSISTANT_REVIEW_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+// LEGACY (#1041): drains reviews and summary passes queued on the old
+// default-policy queues before the upgrade. Remove in a later release.
+await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
+await boss.createQueue(LEGACY_ASSISTANT_SUMMARIES_QUEUE);
 
-// Assistant jobs run several at once, but one per writer (the job's group),
-// so one writer's slow or hung endpoint does not hold up anyone else. The
+// Each Assistant queue runs several jobs at once, but one per writer (the job's
+// group), so one writer's slow or hung endpoint does not hold up anyone else.
+// The limits are per queue: a writer can have one job running on each. The
 // metadata carries the start time and retry count shouldNotifyWriter reads.
 const ASSISTANT_WORK_OPTIONS = {
 	localConcurrency: ASSISTANT_JOB_CONCURRENCY,
@@ -93,6 +100,16 @@ await boss.work(USER_EXPORT_QUEUE, handlers.userExport);
 await boss.work(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantReview);
 await boss.work(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantSummaries);
 await boss.work(ASSISTANT_ENRICH_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantEnrich);
+// LEGACY (#1041): the old queues' drain, removed with the createQueue calls above.
+// One job at a time on each: while old jobs remain, the drain adds a slot of its
+// own next to the new queue's, so a writer can briefly have two runs at once.
+const LEGACY_DRAIN_OPTIONS = { ...ASSISTANT_WORK_OPTIONS, localConcurrency: 1 };
+await boss.work(LEGACY_ASSISTANT_REVIEW_QUEUE, LEGACY_DRAIN_OPTIONS, handlers.assistantReview);
+await boss.work(
+	LEGACY_ASSISTANT_SUMMARIES_QUEUE,
+	LEGACY_DRAIN_OPTIONS,
+	handlers.assistantSummaries
+);
 await boss.work(BACKUP_QUEUE, handlers.backup);
 await boss.work(EMAIL_QUEUE, handlers.email);
 await boss.work(EMAIL_DEAD_LETTER_QUEUE, handlers.emailDeadLetter);

@@ -1,29 +1,48 @@
 import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { assistantReviewRuns, type ReviewRunState } from './db/schema.ts';
+import { parseCategories, type ReviewCategory } from '../review-shape.ts';
 
 // Progress storage for the background review job. The job writes its state as
 // it advances (one row per pg-boss job id), so the status endpoint can report
 // where it is and a retry of the same job after a worker restart can skip the
 // scenes already handled.
 
-// What a run was over: the mode and the target, the same key the queue uses to
-// hold one unfinished job per scope. Stored on the run state so a later job
-// over the same scope can pick up where a capped run stopped (see
-// adoptCappedRun) - the writer starts that one from the same button, so it
-// arrives with a job id the earlier run never saw.
-export function reviewScopeKey(input: {
+// What a run was over: the mode, the target and, for a copyedit, the
+// categories it checks (in canonical order; "general" is the sparing pass with
+// none). The queue holds one unfinished job per key, so a copyedit for other
+// categories is its own job rather than refused as a repeat. Stored on the run
+// state so a later job over the same scope can pick up where a capped run
+// stopped (see adoptCappedRun) - the writer starts that one from the same
+// button, so it arrives with a job id the earlier run never saw.
+type ScopeInput = {
 	storyId?: string;
 	universeId?: string;
 	chapterId?: string;
+	categories?: ReviewCategory[];
 	mode?: 'full' | 'continuity';
-}): string {
-	const target = input.universeId
+};
+
+function scopeTarget(input: ScopeInput): string {
+	return input.universeId
 		? `universe:${input.universeId}`
 		: input.chapterId
 			? `${input.storyId}:${input.chapterId}`
 			: `${input.storyId}`;
-	return `${input.mode ?? 'full'}:${target}`;
+}
+
+export function reviewScopeKey(input: ScopeInput): string {
+	const target = scopeTarget(input);
+	if (input.mode === 'continuity') return `continuity:${target}`;
+	const categories = parseCategories(input.categories);
+	return `full:${target}:${categories.length ? categories.join('+') : 'general'}`;
+}
+
+// LEGACY, remove with the legacy queues (#1041): the key a copyedit had before
+// its categories were part of it, so a run capped before the upgrade can still
+// be continued (see adoptCappedRun). A continuity key did not change.
+export function legacyReviewScopeKey(input: ScopeInput): string | null {
+	return input.mode === 'continuity' ? null : `full:${scopeTarget(input)}`;
 }
 
 export function emptyReviewRun(): ReviewRunState {
@@ -54,40 +73,93 @@ export async function loadReviewRun(
 }
 
 // The work a capped run over this scope already did, for a later run to carry
-// forward. Only a capped run is adopted: a run that finished within its ceiling
-// is done, and a fresh full review of the same story must really review every
-// scene again. The newest matching row wins.
+// forward. Only the newest run over the scope counts, and only if it was
+// capped: a run that finished within its ceiling is done, and a fresh review of
+// the same story must really review every scene again, even when an older
+// capped run is still on record.
+//
+// A continuation of a capped run saves its own row (not capped) as soon as it
+// starts, so it becomes the newest. If it then never finished (it threw, which
+// completes its job with the row part-way, or it was cancelled), its row holds
+// the capped run's scenes plus its own, and that is what is carried forward.
 //
 // The counts come across, but not the ceiling: each run gets the whole budget
 // again, which is what "run the review again to continue" promises.
+//
+// legacy: when nothing was run under the scope yet, a capped run saved under
+// the old key (no categories in it) is continued, but only when its job is
+// known to have checked these same categories. The old row does not record
+// them, so they are read from the job; once the queue has forgotten the job the
+// run starts over, since carrying it forward could report scenes as reviewed
+// for categories nobody checked.
 export async function adoptCappedRun(
 	db: Database,
-	opts: { userId: string; scope: string }
+	opts: {
+		userId: string;
+		scope: string;
+		legacy?: {
+			scope: string;
+			categories: ReviewCategory[];
+			jobCategories: (jobId: string) => Promise<ReviewCategory[] | null>;
+		};
+	}
 ): Promise<ReviewRunState | null> {
+	const row = await newestRun(db, opts.userId, opts.scope);
+	if (row) return resumable(row.state) ? carryForward(row.state, opts.scope) : null;
+	if (!opts.legacy) return null;
+	const legacy = await newestRun(db, opts.userId, opts.legacy.scope);
+	if (!legacy || !resumable(legacy.state)) return null;
+	const checked = await opts.legacy.jobCategories(legacy.jobId);
+	if (!checked || !sameCategories(checked, opts.legacy.categories)) return null;
+	return carryForward(legacy.state, opts.scope);
+}
+
+async function newestRun(
+	db: Database,
+	userId: string,
+	scope: string
+): Promise<{ jobId: string; state: ReviewRunState } | null> {
 	const [row] = await db
-		.select({ state: assistantReviewRuns.state })
+		.select({ jobId: assistantReviewRuns.jobId, state: assistantReviewRuns.state })
 		.from(assistantReviewRuns)
 		.where(
 			and(
-				eq(assistantReviewRuns.userId, opts.userId),
-				sql`${assistantReviewRuns.state} ->> 'scope' = ${opts.scope}`,
-				sql`${assistantReviewRuns.state} ->> 'capped' = 'true'`
+				eq(assistantReviewRuns.userId, userId),
+				sql`${assistantReviewRuns.state} ->> 'scope' = ${scope}`
 			)
 		)
 		.orderBy(desc(assistantReviewRuns.updatedAt))
 		.limit(1);
-	if (!row) return null;
+	return row ?? null;
+}
+
+// Capped, or a continuation of a capped run that stopped before it finished.
+// A run that finished cleanly, or a fresh run that never carried anything
+// forward, is not resumed.
+function resumable(state: ReviewRunState): boolean {
+	if (state.capped) return true;
+	return !!state.carriedForward && (state.phase !== 'done' || !!state.aborted);
+}
+
+function sameCategories(a: ReviewCategory[], b: ReviewCategory[]): boolean {
+	return parseCategories(a).join('+') === parseCategories(b).join('+');
+}
+
+function carryForward(state: ReviewRunState, scope: string): ReviewRunState {
 	return {
 		...emptyReviewRun(),
-		scope: opts.scope,
-		completed: row.state.completed,
-		reviewed: row.state.reviewed,
-		failed: row.state.failed,
-		notes: row.state.notes,
-		failures: row.state.failures,
-		...(row.state.summariesRefreshed ? { summariesRefreshed: true } : {}),
+		scope,
+		completed: state.completed,
+		reviewed: state.reviewed,
+		failed: state.failed,
+		notes: state.notes,
+		// Scene failures only: the earlier run's own messages (a cap it hit, a
+		// price it lacked) say nothing about this one.
+		failures: state.failures.filter((failure) => failure.sceneId),
+		...(state.summariesRefreshed ? { summariesRefreshed: true } : {}),
 		capped: false,
-		spentUsd: 0
+		spentUsd: 0,
+		carriedForward: true
 	};
 }
 

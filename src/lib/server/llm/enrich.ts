@@ -1,8 +1,15 @@
-import { and, asc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
-import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
+import {
+	AssistantDisabledError,
+	completeDetailed,
+	NoModelError,
+	ReplyCutOffError,
+	type GatewayDeps
+} from './gateway.ts';
 import { resolveLlmConfig } from './config.ts';
 import { SpendMeter } from './spend.ts';
 import { buildEnrichMessage } from './prompts/enrich.ts';
@@ -15,8 +22,10 @@ import {
 	resolveOwnedEntity
 } from '../entity-lookups.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
+import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 import {
 	stageEntitySuggestions,
+	summarySuggestionClosed,
 	type EntitySuggestion,
 	type ProposedSuggestion
 } from '../entity-suggestions.ts';
@@ -32,6 +41,9 @@ export type EnrichScope = { storyId: string } | { universeId: string };
 
 const MAX_APPEARANCES = 16;
 const MAX_ENRICH_TOKENS = 700;
+// Failed reads in a row after which the pass stops rather than keep calling an
+// endpoint that is down. A cut-off reply is not counted: the endpoint answered.
+export const MAX_FAILURES_IN_A_ROW = 3;
 
 // Defensive parse of the model's reply into proposals. Endpoints vary, so this
 // pulls the first JSON object out of the text and validates each field, ignoring
@@ -101,22 +113,42 @@ export function spreadAppearances<T extends { storyId: string }>(rows: T[], max:
 	return picked.sort((a, b) => a - b).map((index) => rows[index]);
 }
 
+// A fingerprint of a request's messages, stored with the watermark so a marked
+// entity or arc whose request would be the same is not sent again. Marks are
+// set for any passage change, but enrich and arcs send only some passages.
+export function requestHash(messages: ChatMessage[]): string {
+	return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
+}
+
 function snippetLine(a: PlanAppearance, withStory: boolean): string {
 	const where = [withStory ? a.storyTitle : '', a.sceneTitle ?? ''].filter(Boolean).join(' / ');
 	return where ? `[${where}] ${a.snippet}` : a.snippet;
 }
 
+type EnrichOptions = {
+	userId: string;
+	scope: EnrichScope;
+	entityId: string;
+	meter?: SpendMeter;
+	signal?: AbortSignal;
+};
+
 export async function enrichEntity(
 	db: Database,
-	opts: {
-		userId: string;
-		scope: EnrichScope;
-		entityId: string;
-		meter?: SpendMeter;
-		signal?: AbortSignal;
-	},
+	opts: EnrichOptions,
 	deps: GatewayDeps = {}
 ): Promise<EntitySuggestion[]> {
+	return (await enrichRead(db, opts, deps)).suggestions;
+}
+
+// enrichEntity, plus the hash of the request it built. With `unlessInput`, a
+// request with that hash is not sent (unchanged: true).
+async function enrichRead(
+	db: Database,
+	opts: EnrichOptions & { unlessInput?: string | null },
+	deps: GatewayDeps
+): Promise<{ suggestions: EntitySuggestion[]; input: string | null; unchanged: boolean }> {
+	const none = { suggestions: [], input: null, unchanged: false };
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
 		universeId: table.universeId,
 		name: entityNameColumn(table),
@@ -124,8 +156,8 @@ export async function enrichEntity(
 		details: table.details,
 		summaryMd: table.summaryMd
 	}));
-	if (!entity) return [];
-	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return [];
+	if (!entity) return none;
+	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return none;
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 
 	const universeWide = 'universeId' in opts.scope;
@@ -146,12 +178,21 @@ export async function enrichEntity(
 					aliases: entity.aliases ?? [],
 					details: entity.details ?? [],
 					summaryMd: entity.summaryMd,
-					hasSummary: !!entity.summaryMd?.trim()
+					hasSummary: await summarySuggestionClosed(db, {
+						ownerId: opts.userId,
+						kind,
+						entityId: opts.entityId,
+						summaryMd: entity.summaryMd
+					})
 				},
 				snippets
 			)
 		}
 	];
+	const input = requestHash(messages);
+	if (opts.unlessInput && input === opts.unlessInput) {
+		return { suggestions: [], input, unchanged: true };
+	}
 
 	const result = await completeDetailed(
 		db,
@@ -164,11 +205,11 @@ export async function enrichEntity(
 			enableTools: false,
 			messages,
 			maxTokens: MAX_ENRICH_TOKENS,
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	opts.meter?.record(result.model, result.usage);
 	// Cut-off JSON parses to nothing; failing keeps the entity unmarked so the
 	// next pass reads it again.
 	if (result.cutOff) {
@@ -178,18 +219,22 @@ export async function enrichEntity(
 	}
 
 	const proposals = parseEnrichResponse(result.content);
-	if (proposals.length === 0) return [];
-	return stageEntitySuggestions(db, {
+	if (proposals.length === 0) return { suggestions: [], input, unchanged: false };
+	const suggestions = await stageEntitySuggestions(db, {
 		ownerId: opts.userId,
 		kind,
 		entityId: opts.entityId,
 		proposals
 	});
+	return { suggestions, input, unchanged: false };
 }
 
 export type UniverseEnrichResult = {
 	// Entities the pass read, and how many suggestions it staged across them.
 	entities: number;
+	// Entities passed over because the request would have been the same as
+	// their last read.
+	unchanged?: number;
 	staged: number;
 	failed: number;
 	// Why reads failed when replies were cut off at the limit, and how many.
@@ -197,6 +242,12 @@ export type UniverseEnrichResult = {
 	cutOffs?: number;
 	// Set when the job was stopped (expired, shut down) before the pass finished.
 	aborted?: boolean;
+	// Set when the Assistant was turned off while the pass ran.
+	disabled?: boolean;
+	// Set when the pass stopped because no model is chosen for it.
+	noModel?: boolean;
+	// Set when the pass gave up after MAX_FAILURES_IN_A_ROW failed reads.
+	stoppedFailing?: boolean;
 	// Set when the spend ceiling stopped the pass early, with what it had spent.
 	capped?: boolean;
 	spentUsd?: number;
@@ -205,13 +256,13 @@ export type UniverseEnrichResult = {
 };
 
 // The universe's entities worth enriching: those mentioned in at least one live
-// scene, never enriched or with a mentioning scene changed since the last pass.
-// Characters, then places, then lore, each by name.
+// scene, never enriched or marked since the last pass (a passage that mentions
+// them changed, or a scene or story holding them was deleted, restored, or
+// unmuted). Characters, then places, then lore, each by name.
 async function entitiesToEnrich(db: Database, userId: string, universeId: string) {
 	const out: { id: string; type: (typeof ENTITY_TYPES)[number] }[] = [];
 	for (const type of ENTITY_TYPES) {
 		const table = entityTable(type);
-		const lastChanged = max(scenes.updatedAt);
 		const rows = await db
 			.select({ id: table.id })
 			.from(table)
@@ -233,11 +284,11 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 					isNull(stories.deletedAt),
 					isNull(scenes.deletedAt),
 					storyAssistantOn(),
-					inLiveUniverse(table.universeId)
+					inLiveUniverse(table.universeId),
+					or(isNull(table.assistantEnrichedAt), lt(table.assistantEnrichedAt, STALE_MARK_BEFORE))
 				)
 			)
-			.groupBy(table.id, table.assistantEnrichedAt, entityNameColumn(table))
-			.having(or(isNull(table.assistantEnrichedAt), gt(lastChanged, table.assistantEnrichedAt)))
+			.groupBy(table.id, entityNameColumn(table))
 			.orderBy(asc(entityNameColumn(table)));
 		out.push(...rows.map((row) => ({ id: row.id, type })));
 	}
@@ -254,7 +305,8 @@ export async function dbNow(db: Database): Promise<Date> {
 // Each entity is marked with the time its read started, so an edit made while
 // the pass runs is picked up next time. A failed entity is not marked, so the
 // next pass tries it again. Stops between entities at the spend cap or when the
-// job is stopped.
+// job is stopped, and stops early when the Assistant is turned off or the
+// endpoint keeps failing.
 export async function enrichUniverse(
 	db: Database,
 	opts: { userId: string; universeId: string; signal?: AbortSignal },
@@ -267,14 +319,20 @@ export async function enrichUniverse(
 		capUsd: resolved.config.spendCapUsd
 	});
 	let entities = 0;
+	let unchanged = 0;
 	let staged = 0;
 	let failed = 0;
 	let capped = false;
 	let aborted = false;
+	let disabled = false;
+	let noModel = false;
+	let stoppedFailing = false;
+	let failedInARow = 0;
 	let cutOff: string | undefined;
 	let cutOffs = 0;
 
-	for (const entity of await entitiesToEnrich(db, userId, universeId)) {
+	const todo = await entitiesToEnrich(db, userId, universeId);
+	for (const [index, entity] of todo.entries()) {
 		if (signal?.aborted) {
 			aborted = true;
 			break;
@@ -283,36 +341,66 @@ export async function enrichUniverse(
 			capped = true;
 			break;
 		}
-		// The database clock, which scene saves stamp updated_at with, so a clock
-		// skew between the worker and the database cannot hide an edit.
+		// A real time, so any mark set while the model reads stands apart from it.
 		const startedAt = await dbNow(db);
 		const table = entityTable(entity.type);
-		const [{ before }] = await db
-			.select({ before: table.assistantEnrichedAt })
+		// As text, so the check below compares to the microsecond; a JS Date
+		// keeps only milliseconds, and marks land often.
+		const [{ before, lastInput }] = await db
+			.select({
+				before: sql<string | null>`${table.assistantEnrichedAt}::text`,
+				lastInput: table.assistantEnrichedInput
+			})
 			.from(table)
 			.where(eq(table.id, entity.id));
 		try {
-			const rows = await enrichEntity(
+			const read = await enrichRead(
 				db,
-				{ userId, scope: { universeId }, entityId: entity.id, meter, signal },
+				{
+					userId,
+					scope: { universeId },
+					entityId: entity.id,
+					meter,
+					signal,
+					unlessInput: lastInput
+				},
 				deps
 			);
 			// An unmute while the model was reading cleared the mark so the next
-			// pass reads the entity again; that stands.
+			// pass reads the entity again; that stands. A request the same as the
+			// last one only clears the mark.
 			await db
 				.update(table)
-				.set({ assistantEnrichedAt: startedAt, updatedAt: sql`${table.updatedAt}` })
+				.set({
+					assistantEnrichedAt: startedAt,
+					...(read.input ? { assistantEnrichedInput: read.input } : {}),
+					updatedAt: sql`${table.updatedAt}`
+				})
 				.where(
 					and(
 						eq(table.id, entity.id),
-						sql`date_trunc('milliseconds', ${table.assistantEnrichedAt}) is not distinct from ${before}`
+						sql`${table.assistantEnrichedAt} is not distinct from ${before}::timestamptz`
 					)
 				);
+			if (read.unchanged) {
+				unchanged += 1;
+				continue;
+			}
 			entities += 1;
-			staged += rows.length;
+			staged += read.suggestions.length;
+			failedInARow = 0;
 		} catch (err) {
 			if (signal?.aborted) {
 				aborted = true;
+				break;
+			}
+			// Every later entity would be refused the same way.
+			if (err instanceof NoModelError) {
+				noModel = true;
+				break;
+			}
+			if (err instanceof AssistantDisabledError) {
+				disabled = true;
 				break;
 			}
 			logEvent('error', 'assistant.enrich_failed', { entityId: entity.id, ...errorFields(err) });
@@ -320,16 +408,29 @@ export async function enrichUniverse(
 			if (err instanceof ReplyCutOffError) {
 				cutOff = err.message;
 				cutOffs += 1;
+				failedInARow = 0;
+			} else {
+				failedInARow += 1;
+				// Only a stop with entities still to read; a pass that failed on its
+				// last entity finished anyway.
+				if (failedInARow >= MAX_FAILURES_IN_A_ROW && index < todo.length - 1) {
+					stoppedFailing = true;
+					break;
+				}
 			}
 		}
 	}
 
 	return {
 		entities,
+		...(unchanged ? { unchanged } : {}),
 		staged,
 		failed,
 		...(cutOff ? { cutOff, cutOffs } : {}),
 		...(aborted ? { aborted: true } : {}),
+		...(disabled ? { disabled: true } : {}),
+		...(noModel ? { noModel: true } : {}),
+		...(stoppedFailing ? { stoppedFailing: true } : {}),
 		...(capped ? { capped: true, spentUsd: meter.spentUsd } : {}),
 		...(meter.notApplied ? { capNotApplied: meter.notAppliedMessage } : {})
 	};

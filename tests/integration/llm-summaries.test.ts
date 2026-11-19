@@ -16,11 +16,19 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'llm-summaries-test-secret';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
+const { duplicateScene, splitScene } = await import('../../src/lib/server/scene-split-merge');
+const { setSceneStatus } = await import('../../src/lib/server/scene-status');
+const { trashScene, restoreScene, deleteChapter } =
+	await import('../../src/lib/server/scene-lifecycle');
+const { saveDraft, restoreDraftScene, newStoryFromDraft } =
+	await import('../../src/lib/server/story-drafts');
 
 // A stub provider that returns a distinct summary on each call, so a refresh is
 // visible as a changed value. The transport is never reached.
 let calls = 0;
 let prompts: string[] = [];
+// Runs while the stub is answering, to land a change mid-call.
+let duringCall: ((call: number) => Promise<void>) | null = null;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -28,6 +36,7 @@ const stubProvider: Provider = {
 	async respond(req) {
 		calls += 1;
 		prompts.push(req.messages.map((m) => m.content ?? '').join('\n'));
+		if (duringCall) await duringCall(calls);
 		return { content: `SUMMARY-${calls}`, toolCalls: [] };
 	},
 	async listModels() {
@@ -58,6 +67,7 @@ beforeAll(async () => {
 beforeEach(async () => {
 	calls = 0;
 	prompts = [];
+	duringCall = null;
 	await pool.query('truncate table scenes, chapters, stories, universes, users cascade');
 	const [owner] = await db
 		.insert(users)
@@ -140,6 +150,10 @@ async function readScene(id: string) {
 	return row;
 }
 
+// updated_at has millisecond precision: an edit in the same millisecond as
+// the summary would read as already summarised.
+const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
+
 describe('summariseStory', () => {
 	it('fills blank summaries, leaves hand-written ones, skips empty scenes, and drafts the chapter', async () => {
 		const before = await readScene(sceneAId);
@@ -182,6 +196,7 @@ describe('summariseStory', () => {
 		const first = await readScene(sceneAId);
 
 		// A writer edit bumps updated_at past the summary watermark.
+		await nextMillisecond();
 		await db
 			.update(scenes)
 			.set({ bodyMd: 'Alice met Bram, then ran.' })
@@ -194,6 +209,52 @@ describe('summariseStory', () => {
 		expect(second.summaryGeneratedAt!.getTime()).toBeGreaterThan(
 			first.summaryGeneratedAt!.getTime()
 		);
+	});
+
+	it('keeps a summary the writer types while the model is writing one', async () => {
+		duringCall = async (call) => {
+			// Raw SQL so the writer's summary does not move updated_at either.
+			if (call === 1) {
+				await pool.query(`update scenes set summary_md = 'Mine.' where id = $1`, [sceneAId]);
+			}
+			if (call === 2) {
+				await pool.query(`update chapters set summary_md = 'My chapter.' where id = $1`, [
+					chapterId
+				]);
+			}
+		};
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ scenes: 0, chapters: 0 });
+		const a = await readScene(sceneAId);
+		expect(a.summaryMd).toBe('Mine.');
+		expect(a.summaryGeneratedAt).toBeNull();
+		const [chapter] = await db
+			.select({ summaryMd: chapters.summaryMd, summaryGeneratedAt: chapters.summaryGeneratedAt })
+			.from(chapters)
+			.where(eq(chapters.id, chapterId));
+		expect(chapter).toEqual({ summaryMd: 'My chapter.', summaryGeneratedAt: null });
+	});
+
+	it('does not roll back an edit made while the model is writing', async () => {
+		let edited: Date | null = null;
+		duringCall = async (call) => {
+			if (call !== 1) return;
+			const [row] = await db
+				.update(scenes)
+				.set({ bodyMd: 'Alice met Bram, then ran.' })
+				.where(eq(scenes.id, sceneAId))
+				.returning({ updatedAt: scenes.updatedAt });
+			edited = row.updatedAt;
+		};
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const a = await readScene(sceneAId);
+		expect(a.updatedAt).toEqual(edited);
+		// Summarised from the old text, so it is left for the next run.
+		expect(a.summaryMd).toBeNull();
+
+		duringCall = null;
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).scenes).toBe(1);
+		expect(prompts.at(-2)).toContain('then ran');
 	});
 
 	it('does not run for a story the user does not own', async () => {
@@ -245,5 +306,149 @@ describe('summariseStory', () => {
 		const descent = prompts.find((p) => p.includes('"Descent"'));
 		expect(descent).toContain('My own note.');
 		expect(descent).not.toContain('Harbour');
+	});
+});
+
+// A copy of a scene whose summary was current for its text is current too, so
+// the next pass does not pay to summarise the same text again. A copy of a
+// stale summary stays stale and is refreshed.
+describe('copied summaries', () => {
+	async function editSceneA() {
+		await nextMillisecond();
+		await db
+			.update(scenes)
+			.set({ bodyMd: 'Alice met Bram, then ran.' })
+			.where(eq(scenes.id, sceneAId));
+	}
+	async function draftWithoutSceneA(): Promise<string> {
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('save failed');
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneAId));
+		return saved.id;
+	}
+	async function storyRow() {
+		const [row] = await db.select().from(stories).where(eq(stories.id, storyId));
+		return row;
+	}
+
+	// Scene C gets prose, so the Assistant summarises a scene after A that the
+	// position shift of a duplicate or split moves along.
+	async function summariseWithSceneAfterA() {
+		await db.update(scenes).set({ bodyMd: 'Bram rowed out alone.' }).where(eq(scenes.id, sceneCId));
+		const first = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(first.scenes).toBe(2);
+	}
+
+	it('skips a duplicated scene whose summary was current', async () => {
+		await summariseWithSceneAfterA();
+		const result = await duplicateScene(db, ownerId, sceneAId);
+		if (!result.ok) throw new Error('duplicate failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		// Neither the copy nor scene C, which only moved down one place.
+		expect(again.scenes).toBe(0);
+		const copy = await readScene(result.newSceneId);
+		expect(copy.summaryGeneratedAt).not.toBeNull();
+	});
+
+	it('refreshes only the two halves of a split, not the scenes after it', async () => {
+		await summariseWithSceneAfterA();
+		await nextMillisecond();
+		const split = await splitScene(db, ownerId, sceneAId, 'Alice met Bram'.length);
+		if (!split.ok) throw new Error('split failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(2);
+	});
+
+	it('keeps a summary current through a status change', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(await setSceneStatus(db, ownerId, sceneAId, 'revised')).toBe(true);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+	});
+
+	it('keeps a summary current through a chapter delete', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(await deleteChapter(db, ownerId, chapterId)).toBe(true);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+	});
+
+	it('keeps a summary current through the trash and back', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		// Indexed, the way the mention job leaves it (raw SQL, as that job writes).
+		await pool.query('update scenes set mentions_indexed_at = now() where id = $1', [sceneAId]);
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		expect(await restoreScene(db, ownerId, sceneAId)).toBe(true);
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+		// Its mentions went with the trash, so the restored scene is due a rebuild.
+		const [row] = await db
+			.select({ mentionsIndexedAt: scenes.mentionsIndexedAt })
+			.from(scenes)
+			.where(eq(scenes.id, sceneAId));
+		expect(row.mentionsIndexedAt).toBeNull();
+	});
+
+	it('refreshes a duplicated scene whose summary was stale', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await editSceneA();
+		const result = await duplicateScene(db, ownerId, sceneAId);
+		if (!result.ok) throw new Error('duplicate failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		// The original and its copy.
+		expect(again.scenes).toBe(2);
+		expect((await readScene(result.newSceneId)).summaryMd).toMatch(/^SUMMARY-/);
+	});
+
+	it('skips a scene added back from a draft whose summary was current', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const draftId = await draftWithoutSceneA();
+		const restored = await restoreDraftScene(db, storyId, draftId, sceneAId);
+		if (!restored.ok || !restored.created) throw new Error('add back failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(0);
+	});
+
+	it('refreshes a scene added back from a draft whose summary was stale', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await editSceneA();
+		const draftId = await draftWithoutSceneA();
+		const restored = await restoreDraftScene(db, storyId, draftId, sceneAId);
+		if (!restored.ok || !restored.created) throw new Error('add back failed');
+		const again = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(again.scenes).toBe(1);
+	});
+
+	it('skips the scenes and chapters of a new story made from a draft', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('save failed');
+		const made = await newStoryFromDraft(db, ownerId, await storyRow(), saved.id, 'Copy');
+		if (!made.ok) throw new Error('copy failed');
+		const [copy] = await db.select().from(stories).where(eq(stories.slug, made.slug));
+		const [copiedChapter] = await db
+			.select({ summaryMd: chapters.summaryMd, summaryGeneratedAt: chapters.summaryGeneratedAt })
+			.from(chapters)
+			.where(eq(chapters.storyId, copy.id));
+		// Still marked as the Assistant's, so a later change refreshes it.
+		expect(copiedChapter.summaryMd).toMatch(/^SUMMARY-/);
+		expect(copiedChapter.summaryGeneratedAt).not.toBeNull();
+		const again = await summariseStory(db, { userId: ownerId, storyId: copy.id }, deps);
+		expect(again.scenes).toBe(0);
+		expect(again.chapters).toBe(0);
+	});
+
+	it('refreshes a chapter summary in a new story when it was stale in the draft', async () => {
+		await summariseStory(db, { userId: ownerId, storyId }, deps);
+		await nextMillisecond();
+		await db.update(chapters).set({ title: 'Descent, renamed' }).where(eq(chapters.id, chapterId));
+		const saved = await saveDraft(db, ownerId, storyId, { label: 'Before', note: '' });
+		if (!saved.ok) throw new Error('save failed');
+		const made = await newStoryFromDraft(db, ownerId, await storyRow(), saved.id, 'Copy');
+		if (!made.ok) throw new Error('copy failed');
+		const [copy] = await db.select().from(stories).where(eq(stories.slug, made.slug));
+		const again = await summariseStory(db, { userId: ownerId, storyId: copy.id }, deps);
+		expect(again.scenes).toBe(0);
+		expect(again.chapters).toBe(1);
 	});
 });

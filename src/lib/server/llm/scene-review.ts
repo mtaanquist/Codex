@@ -13,6 +13,7 @@ import {
 import {
 	adoptCappedRun,
 	emptyReviewRun,
+	legacyReviewScopeKey,
 	loadReviewRun,
 	reviewScopeKey,
 	saveReviewRun
@@ -38,6 +39,7 @@ import {
 	type SurveyScene
 } from './prompts/review.ts';
 import { isFullReview, type ReviewCategory } from '../../review-shape.ts';
+import { summaryIsCurrent } from '../summary-currency.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
 import { modelContextWindow, resolveLlmConfig } from './config.ts';
 import { CAP_NOT_APPLIED_MESSAGE, SpendMeter } from './spend.ts';
@@ -257,11 +259,11 @@ export async function reviewOneScene(
 			enableTools: true,
 			messages,
 			...(categories.length === 0 ? {} : { toolBudget: FOCUSED_PASS_BUDGET }),
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	opts.meter?.record(result.model, result.usage);
 	return { notes: result.notes, ...(result.stopped ? { stopped: result.stopped } : {}) };
 }
 
@@ -321,10 +323,10 @@ async function surveyChunk(
 		userId: opts.userId,
 		...scopeIds(opts.scope),
 		role: 'reviewer' as const,
+		meter: opts.meter,
 		signal: opts.signal
 	};
 	const first = await completeDetailed(db, { ...request, messages }, deps);
-	opts.meter?.record(first.model, first.usage);
 	const parsed = parseCandidates(first.content);
 	if (parsed) return parsed;
 	const retry = await completeDetailed(
@@ -339,7 +341,6 @@ async function surveyChunk(
 		},
 		deps
 	);
-	opts.meter?.record(retry.model, retry.usage);
 	const reparsed = parseCandidates(retry.content);
 	if (reparsed) return reparsed;
 	throw new Error(
@@ -460,11 +461,11 @@ async function runConsistencyPass(
 				toolNames: CONFIRM_TOOL_NAMES,
 				toolBudget: CONFIRM_TOOL_BUDGET,
 				messages: system ? [system, task] : [task],
+				meter: opts.meter,
 				signal: opts.signal
 			},
 			deps
 		);
-		opts.meter?.record(result.model, result.usage);
 		notes += result.notes;
 		stopped ??= result.stopped;
 	}
@@ -568,7 +569,7 @@ async function staleSummaryCount(db: Database, userId: string, storyId: string):
 				summaryMd: row.summaryMd,
 				summaryGeneratedAt: row.summaryGeneratedAt,
 				changedSince: row.summaryGeneratedAt
-					? row.updatedAt.getTime() > row.summaryGeneratedAt.getTime()
+					? !summaryIsCurrent(row.summaryGeneratedAt, row.updatedAt)
 					: false
 			})
 	).length;
@@ -646,7 +647,12 @@ type RunWriter = { state: ReviewRunState; save: () => Promise<void> };
 
 async function openRun(
 	db: Database,
-	opts: { jobId?: string; userId: string; scope: string }
+	opts: {
+		jobId?: string;
+		userId: string;
+		scope: string;
+		legacy?: Parameters<typeof adoptCappedRun>[1]['legacy'];
+	}
 ): Promise<RunWriter> {
 	let state: ReviewRunState | null = null;
 	if (opts.jobId) {
@@ -656,7 +662,11 @@ async function openRun(
 			// to continue" arrives as a new job with no row of its own. The capped
 			// run over the same scope is adopted under the new id, so the scenes it
 			// already reviewed are not reviewed (and billed) a second time.
-			state ??= await adoptCappedRun(db, { userId: opts.userId, scope: opts.scope });
+			state ??= await adoptCappedRun(db, {
+				userId: opts.userId,
+				scope: opts.scope,
+				legacy: opts.legacy
+			});
 		} catch (err) {
 			logEvent('error', 'review_run.load_failed', { jobId: opts.jobId, ...errorFields(err) });
 		}
@@ -920,15 +930,37 @@ export async function reviewStoryScenes(
 		categories?: ReviewCategory[];
 		jobId?: string;
 		signal?: AbortSignal;
+		// LEGACY (#1041): the categories a job queued before the upgrade
+		// checked, or null once the queue has forgotten it (see adoptCappedRun).
+		legacyJobCategories?: (jobId: string) => Promise<ReviewCategory[] | null>;
 	},
 	deps: GatewayDeps = {}
 ): Promise<StoryReviewResult> {
+	const scope = {
+		storyId: opts.storyId,
+		chapterId: opts.chapterId,
+		categories: opts.categories
+	};
+	const legacyScope = legacyReviewScopeKey(scope);
 	const run = await openRun(db, {
-		...opts,
-		scope: reviewScopeKey({ storyId: opts.storyId, chapterId: opts.chapterId })
+		userId: opts.userId,
+		jobId: opts.jobId,
+		scope: reviewScopeKey(scope),
+		legacy:
+			legacyScope && opts.legacyJobCategories
+				? {
+						scope: legacyScope,
+						categories: opts.categories ?? [],
+						jobCategories: opts.legacyJobCategories
+					}
+				: undefined
 	});
 	const done = new Set(run.state.completed);
-	const failures: ReviewFailure[] = [...run.state.failures];
+	// Only the scene failures carry over from an earlier attempt, alongside the
+	// scenes they belong to. Run-level messages (the summary phase, the cap, the
+	// cross-scene pass) are this attempt's own and are raised again if they still
+	// apply, so an earlier attempt's cap is not reported for one that hit none.
+	const failures: ReviewFailure[] = run.state.failures.filter((failure) => failure.sceneId);
 	let reviewed = run.state.reviewed;
 	let failed = run.state.failed;
 	let notes = run.state.notes;
@@ -947,13 +979,7 @@ export async function reviewStoryScenes(
 	run.state.phase = 'summaries';
 	await run.save();
 	const summaries = await refreshSummaries(db, { ...opts, meter }, deps);
-	// The summary phase runs again on every attempt, so a message the earlier
-	// attempt already recorded is not listed twice.
-	for (const failure of summaries.failures) {
-		if (!failures.some((seen) => seen.message === failure.message && !seen.sceneId)) {
-			failures.push(failure);
-		}
-	}
+	failures.push(...summaries.failures);
 	if (summaries.refreshed) run.state.summariesRefreshed = true;
 
 	const where = [

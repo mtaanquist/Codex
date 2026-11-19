@@ -3,11 +3,12 @@ import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
-import { ownedScene } from './scene-access.ts';
+import { keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { storyIsLive } from './universe-scope.ts';
+import { copiedSummaryStamp, summaryIsCurrent } from './summary-currency.ts';
 
 // Splitting and merging scenes. Both run in one transaction and record a
 // revision for every body they change; the caller queues the mention
@@ -50,14 +51,14 @@ export async function splitScene(
 		// Make room directly after the source scene.
 		await tx
 			.update(scenes)
-			.set({ globalPosition: sql`${scenes.globalPosition} + 1` })
+			.set({ globalPosition: sql`${scenes.globalPosition} + 1`, ...keepUpdatedAt() })
 			.where(
 				and(eq(scenes.storyId, scene.storyId), gt(scenes.globalPosition, scene.globalPosition))
 			);
 		if (scene.chapterId) {
 			await tx
 				.update(scenes)
-				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1` })
+				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1`, ...keepUpdatedAt() })
 				.where(
 					and(
 						eq(scenes.chapterId, scene.chapterId),
@@ -185,18 +186,19 @@ export async function duplicateScene(
 	if (!source) return { ok: false, code: 'not_found', reason: 'That scene no longer exists.' };
 	const scene = source.scenes;
 
+	const stamp = new Date();
 	const newSceneId = await db.transaction(async (tx) => {
 		// Make room directly after the source scene, the same shift split uses.
 		await tx
 			.update(scenes)
-			.set({ globalPosition: sql`${scenes.globalPosition} + 1` })
+			.set({ globalPosition: sql`${scenes.globalPosition} + 1`, ...keepUpdatedAt() })
 			.where(
 				and(eq(scenes.storyId, scene.storyId), gt(scenes.globalPosition, scene.globalPosition))
 			);
 		if (scene.chapterId) {
 			await tx
 				.update(scenes)
-				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1` })
+				.set({ positionInChapter: sql`${scenes.positionInChapter} + 1`, ...keepUpdatedAt() })
 				.where(
 					and(
 						eq(scenes.chapterId, scene.chapterId),
@@ -220,6 +222,14 @@ export async function duplicateScene(
 				charactersPresent: scene.charactersPresent,
 				status: scene.status,
 				summaryMd: scene.summaryMd,
+				// Whether the Assistant wrote the summary travels with it, and so
+				// does whether it was current for this text.
+				summaryGeneratedAt: copiedSummaryStamp(
+					scene.summaryGeneratedAt,
+					summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt),
+					stamp
+				),
+				updatedAt: stamp,
 				wordCount: wordCount(scene.bodyMd),
 				metadata: scene.metadata
 			})
@@ -325,7 +335,7 @@ export async function mergeScenes(
 		const restIds = rest.map((scene) => scene.id);
 		await tx
 			.update(scenes)
-			.set({ deletedAt: sql`now()` })
+			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(inArray(scenes.id, restIds));
 		await markMentionsStale(tx, { sceneIds: restIds });
 		await tx

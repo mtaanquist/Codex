@@ -33,17 +33,20 @@ import {
 	type ToolOutcome
 } from './tools/dispatch.ts';
 import { MINIMAL_TOOL_NAMES, toolSpecs } from './tools/registry.ts';
-import type {
-	ChatMessage,
-	CompletionRequest,
-	Connection,
-	HttpRequest,
-	Provider,
-	ProviderResponse,
-	StreamEvent,
-	TokenUsage,
-	ToolSpec
+import {
+	EndpointReplyError,
+	type ChatMessage,
+	type CompletionRequest,
+	type Connection,
+	type HttpRequest,
+	type Provider,
+	type ProviderResponse,
+	type StreamEvent,
+	type TokenUsage,
+	type ToolSpec,
+	billedUsage
 } from './providers/types.ts';
+import type { SpendMeter } from './spend.ts';
 
 // Adds one request's reported counts to a running total, so a caller can price
 // a whole agentic turn. Undefined stays undefined until something is reported.
@@ -69,6 +72,15 @@ export class AssistantDisabledError extends Error {
 	constructor(message = 'The Assistant is not enabled for this account.') {
 		super(message);
 		this.name = 'AssistantDisabledError';
+	}
+}
+
+// Refused like a disabled Assistant (a retry would be refused the same way),
+// but the fix is to pick a model, not to switch the Assistant on.
+export class NoModelError extends AssistantDisabledError {
+	constructor() {
+		super('No model is configured for this action.');
+		this.name = 'NoModelError';
 	}
 }
 
@@ -141,6 +153,9 @@ export type GatewayRequest = {
 	// full review needs one call per note plus one read per scene, far beyond
 	// the conservative account default; server-set only, never client input.
 	toolBudget?: number;
+	// A background run's spend meter. The gateway records every request it
+	// sends into it, failed attempts the endpoint billed included.
+	meter?: SpendMeter;
 	signal?: AbortSignal;
 };
 
@@ -165,10 +180,12 @@ const RETRY_DELAYS_MS = [250, 1000];
 // adapters report as `Endpoint returned <status>: ...`. A 4xx other than 429 is
 // the request's own fault, an egress denial is policy, and an abort was asked
 // for; none of those improve on a second try. Nor does an endpoint that already
-// sat silent for the whole idle timeout.
+// sat silent for the whole idle timeout, or one that answered with something
+// other than a reply (see EndpointReplyError).
 function isTransientFailure(err: unknown): boolean {
 	if (err instanceof EgressDeniedError) return false;
 	if (err instanceof EgressTimeoutError) return false;
+	if (err instanceof EndpointReplyError) return false;
 	if (!(err instanceof Error)) return false;
 	if (err.name === 'AbortError') return false;
 	// A 200 whose body is not JSON fails the same way every time; retrying it
@@ -184,16 +201,26 @@ function isTransientFailure(err: unknown): boolean {
 
 // One provider request, retried on a transient failure. This wraps the REQUEST
 // only: tool dispatch happens after a response is in hand, so a retry can never
-// re-run a write tool.
+// re-run a write tool. An attempt that failed after the endpoint began
+// generating was still billed: it is logged and metered before the retry or
+// the give-up, and the response carries those counts as failedUsage.
 async function respondWithRetry(
+	db: Database,
 	p: Prepared,
 	req: GatewayRequest,
 	request: CompletionRequest
-): Promise<ProviderResponse> {
+): Promise<ProviderResponse & { failedUsage?: TokenUsage }> {
+	let failedUsage: TokenUsage | undefined;
 	for (let attempt = 0; ; attempt += 1) {
 		try {
-			return await p.provider.respond(request, p.conn, p.http, req.signal);
+			const response = await p.provider.respond(request, p.conn, p.http, req.signal);
+			return failedUsage ? { ...response, failedUsage } : response;
 		} catch (err) {
+			const billed = billedUsage(err);
+			if (billed) {
+				await recordUsage(db, p, req, request.messages, billed);
+				failedUsage = addUsage(failedUsage, billed);
+			}
 			if (attempt >= RETRY_DELAYS_MS.length || req.signal?.aborted || !isTransientFailure(err)) {
 				throw err;
 			}
@@ -312,7 +339,7 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 	// this story not muted.
 	if (!resolved.gate.surfacesEnabled) throw new AssistantDisabledError();
 	const model = pickModel(resolved.config, req.role);
-	if (!model) throw new AssistantDisabledError('No model is configured for this action.');
+	if (!model) throw new NoModelError();
 	const policy = await egressPolicy(db);
 	// The persona system message rides at the front of every turn, so the
 	// Assistant's name and tone are consistent across surfaces. Any
@@ -406,15 +433,17 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 }
 
 // Every provider request logs a usage row (see ./usage), so the account page
-// can show what the Assistant has been costing. The endpoint's token report
-// rides along when it sent one; the row still lands without it.
+// can show what the Assistant has been costing, and lands in the run's spend
+// meter when it has one. The endpoint's token report rides along when it sent
+// one; the row still lands without it.
 function recordUsage(
 	db: Database,
 	p: Prepared,
 	req: GatewayRequest,
 	messages: ChatMessage[],
-	usage?: { promptTokens: number; completionTokens: number }
+	usage?: TokenUsage
 ): Promise<void> {
+	req.meter?.record(p.model, usage);
 	return recordAssistantUsage(db, {
 		userId: req.userId,
 		storyId: req.storyId,
@@ -495,7 +524,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 			}
 		}
 		const round = async (maxTokens: number) => {
-			const result = await respondWithRetry(p, req, {
+			const result = await respondWithRetry(db, p, req, {
 				model: p.model,
 				messages,
 				maxTokens,
@@ -506,7 +535,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				webSearch: p.webSearch
 			});
 			await recordUsage(db, p, req, messages, result.usage);
-			usage = addUsage(usage, result.usage);
+			usage = addUsage(addUsage(usage, result.failedUsage), result.usage);
 			return result;
 		};
 		// A reply cut off at the token cap is unusable: its text stops mid-sentence
@@ -655,7 +684,7 @@ export async function completeDetailed(
 		const { content, notes, usage, stopped } = await runAgent(db, prepared, req);
 		return { content, notes, usage, stopped, model: prepared.model };
 	}
-	const response = await respondWithRetry(prepared, req, {
+	const response = await respondWithRetry(db, prepared, req, {
 		model: prepared.model,
 		messages: prepared.messages,
 		maxTokens: prepared.maxTokens,
@@ -667,7 +696,7 @@ export async function completeDetailed(
 	return {
 		content: response.content,
 		notes: 0,
-		usage: response.usage,
+		usage: addUsage(response.failedUsage, response.usage),
 		model: prepared.model,
 		cutOff: response.finishReason === 'length'
 	};

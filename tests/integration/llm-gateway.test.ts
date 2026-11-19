@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assistantUsage,
 	reviewSuggestions,
 	scenes,
 	stories,
@@ -30,6 +31,8 @@ const { saveAccountLlmConfig, saveModelContext } = await import('../../src/lib/s
 const { listSuggestions, decideSuggestion } = await import('../../src/lib/server/review');
 const { complete, completeDetailed, stream, AssistantDisabledError } =
 	await import('../../src/lib/server/llm/gateway');
+const { anthropicProvider } = await import('../../src/lib/server/llm/providers/anthropic');
+const { SpendMeter } = await import('../../src/lib/server/llm/spend');
 
 let pool: pg.Pool;
 let db: Database;
@@ -1985,5 +1988,248 @@ describe('gateway request retries', () => {
 		const controller = new AbortController();
 		controller.abort();
 		expect(await attemptsFor(new Error('fetch failed'), controller.signal)).toBe(1);
+	});
+
+	// The real Anthropic adapter over a scripted transport, so what is retried is
+	// decided by what the adapter throws for a given body.
+	function scriptedHttp(answer: () => { type: string; body: string }): {
+		http: HttpRequest;
+		calls: () => number;
+	} {
+		let calls = 0;
+		const http: HttpRequest = async () => {
+			calls += 1;
+			const { type, body } = answer();
+			return {
+				status: 200,
+				headers: { 'content-type': type },
+				body: (async function* () {
+					yield new TextEncoder().encode(body);
+				})(),
+				text: async () => body
+			};
+		};
+		return { http, calls: () => calls };
+	}
+	const sse = (frames: unknown[]) =>
+		frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('');
+
+	const failingStream = (error: unknown) =>
+		sse([
+			{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+			{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+			{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hal' } },
+			{ type: 'error', error }
+		]);
+
+	it('retries an overload partway through the stream, as it would a 529', async () => {
+		await configure(true);
+		let attempt = 0;
+		const endpoint = scriptedHttp(() => {
+			attempt += 1;
+			return {
+				type: 'text/event-stream',
+				body:
+					attempt === 1
+						? failingStream({ type: 'overloaded_error', message: 'Overloaded' })
+						: sse([
+								{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+								{
+									type: 'content_block_start',
+									index: 0,
+									content_block: { type: 'text', text: '' }
+								},
+								{
+									type: 'content_block_delta',
+									index: 0,
+									delta: { type: 'text_delta', text: 'whole' }
+								},
+								{ type: 'content_block_stop', index: 0 },
+								{ type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+								{ type: 'message_stop' }
+							])
+			};
+		});
+		const reply = await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+		);
+		expect(reply).toBe('whole');
+		expect(endpoint.calls()).toBe(2);
+	});
+
+	// An overload that arrives after the endpoint has started generating. The
+	// input side is billed on message_start; the real API sends message_delta only
+	// at the end, so the output so far is estimated from the 28 characters
+	// streamed (7 tokens at four characters each), not message_start's 1.
+	const billedFailure = sse([
+		{ type: 'message_start', message: { usage: { input_tokens: 40, output_tokens: 1 } } },
+		{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+		{
+			type: 'content_block_delta',
+			index: 0,
+			delta: { type: 'text_delta', text: 'Halfway through a long reply' }
+		},
+		{ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
+	]);
+	const pricing = { 'chat-model': { prompt: 0.001, completion: 0.01 } };
+	const usageRows = () =>
+		db
+			.select({
+				promptTokens: assistantUsage.promptTokens,
+				completionTokens: assistantUsage.completionTokens
+			})
+			.from(assistantUsage)
+			.where(eq(assistantUsage.userId, userId));
+
+	it('records and meters the tokens a failed attempt was billed for, then retries', async () => {
+		await configure(true);
+		let attempt = 0;
+		const endpoint = scriptedHttp(() => {
+			attempt += 1;
+			return {
+				type: 'text/event-stream',
+				body:
+					attempt === 1
+						? billedFailure
+						: sse([
+								{ type: 'message_start', message: { usage: { input_tokens: 40 } } },
+								{
+									type: 'content_block_start',
+									index: 0,
+									content_block: { type: 'text', text: '' }
+								},
+								{
+									type: 'content_block_delta',
+									index: 0,
+									delta: { type: 'text_delta', text: 'whole' }
+								},
+								{ type: 'content_block_stop', index: 0 },
+								{
+									type: 'message_delta',
+									delta: { stop_reason: 'end_turn' },
+									usage: { output_tokens: 2 }
+								},
+								{ type: 'message_stop' }
+							])
+			};
+		});
+		const meter = new SpendMeter({ pricing, capUsd: 100 });
+		const result = await completeDetailed(
+			db,
+			{ userId, role: 'chat', messages: [], meter },
+			{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+		);
+		expect(result.content).toBe('whole');
+		const rows = await usageRows();
+		expect(rows).toHaveLength(2);
+		expect(rows).toEqual(
+			expect.arrayContaining([
+				{ promptTokens: 40, completionTokens: 7 },
+				{ promptTokens: 40, completionTokens: 2 }
+			])
+		);
+		expect(result.usage).toEqual({ promptTokens: 80, completionTokens: 9 });
+		expect(meter.spentUsd).toBeCloseTo(80 * 0.001 + 9 * 0.01);
+		expect(meter.notApplied).toBe(false);
+	});
+
+	it('records and meters every billed attempt when it gives up', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({ type: 'text/event-stream', body: billedFailure }));
+		const meter = new SpendMeter({ pricing, capUsd: 100 });
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, role: 'chat', messages: [], meter },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/Endpoint returned 529/);
+		expect(endpoint.calls()).toBe(3);
+		const rows = await usageRows();
+		expect(rows).toHaveLength(3);
+		for (const row of rows) expect(row).toEqual({ promptTokens: 40, completionTokens: 7 });
+		expect(meter.spentUsd).toBeCloseTo(3 * (40 * 0.001 + 7 * 0.01));
+	});
+
+	it('gives up on a stream that keeps failing with a server fault after the usual retries', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({
+			type: 'text/event-stream',
+			body: failingStream({ type: 'api_error', message: 'Internal error' })
+		}));
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/Endpoint returned 500: Internal error/);
+		expect(endpoint.calls()).toBe(3);
+	});
+
+	it('does not retry any other error event partway through the stream', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({
+			type: 'text/event-stream',
+			body: failingStream({ type: 'invalid_request_error', message: 'Bad request' })
+		}));
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/Bad request/);
+		expect(endpoint.calls()).toBe(1);
+	});
+
+	it('does not retry a 2xx web page in place of a reply', async () => {
+		await configure(true);
+		const endpoint = scriptedHttp(() => ({
+			type: 'text/html',
+			body: '<html>Sign in to the network</html>'
+		}));
+		await expect(
+			complete(
+				db,
+				{ userId, role: 'chat', messages: [] },
+				{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+			)
+		).rejects.toThrow(/text\/html/);
+		expect(endpoint.calls()).toBe(1);
+	});
+
+	it('still retries a stream cut off before the reply finished', async () => {
+		await configure(true);
+		let attempt = 0;
+		const endpoint = scriptedHttp(() => {
+			attempt += 1;
+			const opening = [
+				{ type: 'message_start', message: { usage: { input_tokens: 5 } } },
+				{ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+				{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'whole' } }
+			];
+			return {
+				type: 'text/event-stream',
+				body: sse(
+					attempt === 1
+						? opening
+						: [
+								...opening,
+								{ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: {} },
+								{ type: 'message_stop' }
+							]
+				)
+			};
+		});
+		const text = await complete(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider: anthropicProvider, http: endpoint.http, sleep: noSleep }
+		);
+		expect(text).toBe('whole');
+		expect(endpoint.calls()).toBe(2);
 	});
 });

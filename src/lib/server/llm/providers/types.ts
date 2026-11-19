@@ -153,6 +153,35 @@ export type HttpResponse = {
 	text(): Promise<string>;
 };
 
+// The endpoint answered 2xx, but not with a usable reply: a body that is
+// neither the stream nor the JSON asked for (a captive portal's web page), or an
+// error event partway through the stream that is not an overload or a server
+// fault (those are reported as their status, and retried like it). The gateway
+// does not retry it, since a resend gets the same answer, and nothing above it
+// does either: the review and summary jobs record the failure and finish, so
+// the writer starts the run again.
+export class EndpointReplyError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'EndpointReplyError';
+	}
+}
+
+// A request that failed after the endpoint began generating is still billed
+// for the tokens it had used. The adapter attaches that count to the error it
+// throws, so the gateway can log and meter it before it retries or gives up.
+const BILLED = Symbol('billedUsage');
+
+export function withBilledUsage<E extends Error>(err: E, usage: TokenUsage | undefined): E {
+	if (usage) (err as E & { [BILLED]?: TokenUsage })[BILLED] = usage;
+	return err;
+}
+
+export function billedUsage(err: unknown): TokenUsage | undefined {
+	if (!(err instanceof Error)) return undefined;
+	return (err as Error & { [BILLED]?: TokenUsage })[BILLED];
+}
+
 export type HttpRequestInit = {
 	method: string;
 	headers: Record<string, string>;

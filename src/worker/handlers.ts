@@ -1,10 +1,9 @@
 import type { Job, JobWithMetadata, PgBoss } from 'pg-boss';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
-	ASSISTANT_REVIEW_QUEUE,
-	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
+	LEGACY_ASSISTANT_REVIEW_QUEUE,
 	NOTIFICATION_DIGEST_QUEUE
 } from '../lib/server/queues.ts';
 import * as schema from '../lib/server/db/schema.ts';
@@ -47,11 +46,15 @@ import {
 	reviewUniverseContinuity
 } from '../lib/server/llm/scene-review.ts';
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
-import type { ReviewCategory } from '../lib/review-shape.ts';
+import { parseCategories, type ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
-import { enrichUniverse } from '../lib/server/llm/enrich.ts';
-import { ReplyCutOffError } from '../lib/server/llm/gateway.ts';
-import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
+import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.ts';
+import {
+	AssistantDisabledError,
+	NoModelError,
+	ReplyCutOffError
+} from '../lib/server/llm/gateway.ts';
+import { ArcStoryMutedError, summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeReviewRuns } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
@@ -111,6 +114,15 @@ function staged(notes: number): string {
 	return `, with ${notes} note${notes === 1 ? '' : 's'} left`;
 }
 
+// The arc button reads Write arc or Refresh arc, so the notices name neither.
+const ARC_AGAIN = "try again from the character's entry in Plan";
+const PICK_MODEL = 'Pick one under Account, Assistant, Models per role';
+
+// "1 entry", "3 other entries", for an enrich notice.
+function entries(n: number, other = false): string {
+	return `${n} ${other ? 'other ' : ''}${n === 1 ? 'entry' : 'entries'}`;
+}
+
 export function createHandlers(deps: WorkerDeps) {
 	const { db, boss, origin } = deps;
 	const services: WorkerServices = { ...defaultServices, ...deps.services };
@@ -142,6 +154,15 @@ export function createHandlers(deps: WorkerDeps) {
 		await queueDigests(await insertNotifications(db, [userId], kind, payload));
 	}
 
+	// LEGACY (#1041): what a review queued before the upgrade checked, read from
+	// its job, for continuing a run it capped (see adoptCappedRun). Null when
+	// pg-boss no longer has the job, or it does not say.
+	async function legacyJobCategories(jobId: string): Promise<ReviewCategory[] | null> {
+		const found = await boss.getJobById(LEGACY_ASSISTANT_REVIEW_QUEUE, jobId);
+		const categories = (found?.data as { categories?: unknown } | undefined)?.categories;
+		return Array.isArray(categories) ? parseCategories(categories) : null;
+	}
+
 	// One character's arc, from an assistant-enrich job that names it.
 	async function characterArc(job: JobWithMetadata<AssistantEnrichData>, characterId: string) {
 		const { userId, universeId } = job.data;
@@ -168,7 +189,11 @@ export function createHandlers(deps: WorkerDeps) {
 			title =
 				result.outcome === 'empty'
 					? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
-					: `The Assistant wrote the arc for ${character.name}.`;
+					: result.outcome === 'unchanged'
+						? `The arc for ${character.name} is up to date. Nothing it reads has changed since it was written.`
+						: result.outcome === 'changed'
+							? `Something the arc for ${character.name} reads changed while the Assistant was checking it, so the arc is still out of date. To bring it up to date, ${ARC_AGAIN}.`
+							: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
 			if (error instanceof ReplyCutOffError) {
@@ -184,11 +209,38 @@ export function createHandlers(deps: WorkerDeps) {
 				);
 				return;
 			}
-			title = job.signal?.aborted
-				? `Writing the arc for ${character.name} was stopped before it finished.`
-				: `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
-			// The notice is held back while pg-boss will try again; the job is
-			// failed either way, so the activity card shows it did not work.
+			if (error instanceof AssistantDisabledError) {
+				// A retry would be refused the same way, so end here, settled as
+				// failed like a cut-off.
+				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_enrich', {
+						title:
+							error instanceof NoModelError
+								? `No model is chosen for the Assistant, so it did not write the arc for ${character.name}. ${PICK_MODEL}, then ${ARC_AGAIN}.`
+								: `The Assistant is turned off, so it did not write the arc for ${character.name}. Switch it back on in your settings, then ${ARC_AGAIN}.`,
+						href
+					})
+				);
+				return;
+			}
+			if (!job.signal?.aborted && job.retryCount < job.retryLimit) {
+				// pg-boss runs it again, and a retry usually writes the arc (one
+				// muted story is left out, a passing endpoint fault has cleared),
+				// so say nothing until the last attempt. notifyWriter would not hold
+				// this back: a thrown job is still active when it runs.
+				throw error;
+			}
+			if (job.signal?.aborted) {
+				title = `Writing the arc for ${character.name} was stopped before it finished.`;
+			} else if (error instanceof ArcStoryMutedError) {
+				title = `A story was muted while the Assistant was writing the arc for ${character.name}, so the arc was not saved. Select Write arc to try again.`;
+			} else {
+				title = `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
+			}
+			// notifyWriter holds the notice back only when pg-boss has already
+			// queued the retry (an expiry or abort). The job is failed either
+			// way, so the activity card shows it did not work.
 			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 			throw error;
 		}
@@ -353,7 +405,7 @@ export function createHandlers(deps: WorkerDeps) {
 					} catch (err) {
 						title = `The Assistant could not run the continuity pass on "${universe.name}": ${failureMessage(err)}`;
 					}
-					await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
+					await notifyWriter(job.name, job, userId, 'assistant_review', {
 						title,
 						href
 					});
@@ -412,7 +464,7 @@ export function createHandlers(deps: WorkerDeps) {
 					} catch (err) {
 						title = `The Assistant could not run the continuity pass on "${story.title}": ${failureMessage(err)}`;
 					}
-					await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
+					await notifyWriter(job.name, job, userId, 'assistant_review', {
 						title,
 						href
 					});
@@ -431,7 +483,8 @@ export function createHandlers(deps: WorkerDeps) {
 						chapterId,
 						categories,
 						jobId: job.id,
-						signal: job.signal
+						signal: job.signal,
+						legacyJobCategories
 					});
 					const problem = firstFailure(result.failures);
 					if (result.capped) {
@@ -456,7 +509,7 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant could not review "${story.title}": ${failureMessage(err)}`;
 					done = { threw: true };
 				}
-				await notifyWriter(ASSISTANT_REVIEW_QUEUE, job, userId, 'assistant_review', {
+				await notifyWriter(job.name, job, userId, 'assistant_review', {
 					title,
 					href
 				});
@@ -501,7 +554,7 @@ export function createHandlers(deps: WorkerDeps) {
 					title = `The Assistant stopped summarising "${story.title}" at about $${(result.spentUsd ?? 0).toFixed(2)}, after ${written} ${written === 1 ? 'summary' : 'summaries'}. Raise the cap in settings or run it again to continue.`;
 				}
 				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
-				await notifyWriter(ASSISTANT_SUMMARIES_QUEUE, job, userId, 'assistant_summaries', {
+				await notifyWriter(job.name, job, userId, 'assistant_summaries', {
 					title,
 					href
 				});
@@ -548,23 +601,40 @@ export function createHandlers(deps: WorkerDeps) {
 				const href = `/universes/${universeId}/plan`;
 				const name = universe.name;
 				const suggestions = `${result.staged} ${result.staged === 1 ? 'suggestion' : 'suggestions'}`;
+				// For a pass that stopped early: what it still left behind, if anything.
+				const left = result.staged > 0 ? `, with ${suggestions} left` : '';
+				const readNothing = result.entities === 0 && !result.unchanged && result.failed > 0;
 				let title: string;
-				if (result.aborted) {
-					title = `The Assistant stopped reading the entries in "${name}" before it finished, with ${suggestions} left. Type /enrich to carry on.`;
-				} else if (result.entities === 0 && result.failed > 0) {
+				if (result.noModel) {
+					title = `No model is chosen for the Assistant, so it stopped reading the entries in "${name}"${left}. ${PICK_MODEL}, then type /enrich to carry on.`;
+				} else if (result.disabled) {
+					title = `The Assistant is turned off, so it stopped reading the entries in "${name}"${left}. Switch it back on in your settings, then type /enrich to carry on.`;
+				} else if (result.stoppedFailing) {
+					title = `The Assistant stopped reading the entries in "${name}" after ${MAX_FAILURES_IN_A_ROW} in a row could not be read${left}. Check the endpoint in your settings, then type /enrich to carry on.`;
+				} else if (result.aborted) {
+					title = `The Assistant stopped reading the entries in "${name}" before it finished${left}. Type /enrich to carry on.`;
+				} else if (readNothing) {
 					title = `The Assistant could not read the entries in "${name}". ${result.cutOff ?? 'Check the endpoint in your settings.'}`;
 				} else if (result.staged === 0) {
 					title = `The Assistant found nothing new to suggest for the entries in "${name}".`;
 				} else {
 					title = `The Assistant left ${suggestions} on the entries in "${name}". Open an entry in Plan to accept or reject them.`;
 				}
-				if (result.cutOff && result.entities > 0) {
-					const n = result.cutOffs ?? 0;
-					title += ` ${n} ${n === 1 ? 'entry' : 'entries'} could not be read: ${result.cutOff}`;
+				// The entries that failed in a pass that read or passed over others. A
+				// pass stopped for failing already says why.
+				if ((result.entities > 0 || !!result.unchanged) && !result.stoppedFailing) {
+					const cutOffs = result.cutOffs ?? 0;
+					const others = result.failed - cutOffs;
+					if (cutOffs > 0) {
+						title += ` ${entries(cutOffs)} could not be read: ${result.cutOff}`;
+					}
+					if (others > 0) {
+						title += ` ${entries(others, cutOffs > 0)} could not be read. Check the endpoint in your settings.`;
+					}
 				}
 				if (result.capped) {
 					const spent = (result.spentUsd ?? 0).toFixed(2);
-					title = `The Assistant stopped reading the entries in "${name}" at about $${spent}, with ${suggestions} left. Raise the cap in settings or run it again to continue.`;
+					title = `The Assistant stopped reading the entries in "${name}" at about $${spent}${left}. Raise the cap in settings or run it again to continue.`;
 				}
 				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
 				await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', {
@@ -575,8 +645,18 @@ export function createHandlers(deps: WorkerDeps) {
 					universeId,
 					entities: result.entities,
 					staged: result.staged,
-					failed: result.failed
+					failed: result.failed,
+					...(result.disabled ? { disabled: true } : {}),
+					...(result.noModel ? { noModel: true } : {}),
+					...(result.stoppedFailing ? { stoppedFailing: true } : {})
 				});
+				// A pass that stopped on a problem, or could read nothing, is settled
+				// as completed with a failed output, which the activity card reads as
+				// failed instead of ready. pg-boss does not run it again: a retry
+				// would stop the same way.
+				if (result.noModel || result.disabled || result.stoppedFailing || readNothing) {
+					await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
+				}
 			}
 		},
 

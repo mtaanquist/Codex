@@ -1,10 +1,11 @@
-import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { characters, entityMentions, scenes, stories } from '../db/schema.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
 import { completeDetailed, ReplyCutOffError, type GatewayDeps } from './gateway.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
-import { dbNow } from './enrich.ts';
+import { dbNow, requestHash } from './enrich.ts';
+import type { ChatMessage } from './providers/types.ts';
 import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
 
 // Character arc summaries: what happens to a character across the universe's
@@ -77,42 +78,31 @@ async function arcScenes(
 	return { scenes: out, storyIds: [...storyIds] };
 }
 
-// Whether a cached arc is out of date: a scene that mentions the character
-// changed after the arc was written. Deleting or restoring a scene or story,
-// and unmuting one, mark the arc directly (see markMentionsStale).
-// An arc never written is not stale (there is nothing to refresh, only to
-// write). A watermark before STALE_MARK_BEFORE was set on purpose (a scene it read
-// was deleted, or a story was unmuted) and always counts as stale.
-export async function arcIsStale(
-	db: Database,
-	character: { id: string; universeId: string; arcSummaryAt: Date | null }
-): Promise<boolean> {
-	if (!character.arcSummaryAt) return false;
-	if (character.arcSummaryAt < STALE_MARK_BEFORE) return true;
-	const [row] = await db
-		.select({ lastChanged: max(scenes.updatedAt) })
-		.from(entityMentions)
-		.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
-		.innerJoin(stories, eq(stories.id, scenes.storyId))
-		.where(
-			and(
-				eq(entityMentions.sourceType, 'scene'),
-				eq(entityMentions.targetType, 'character'),
-				eq(entityMentions.targetId, character.id),
-				eq(stories.universeId, character.universeId),
-				isNull(stories.deletedAt),
-				isNull(scenes.deletedAt),
-				storyAssistantOn()
-			)
-		);
-	const lastChanged = row?.lastChanged ? new Date(row.lastChanged) : null;
-	return !!lastChanged && lastChanged.getTime() > character.arcSummaryAt.getTime();
+// Whether a cached arc is out of date: something it reads was marked since it
+// was written (see markStale in scene-lifecycle): a passage that mentions the
+// character changed, a new summary was written for a scene that does, or such a
+// scene or story was deleted, restored, or unmuted. An arc never written is not
+// stale (there is nothing to refresh, only to write).
+export function arcIsStale(character: { arcSummaryAt: Date | null }): boolean {
+	return !!character.arcSummaryAt && character.arcSummaryAt < STALE_MARK_BEFORE;
+}
+
+// A story the arc read was muted before the arc was stored. Thrown so the job
+// retries, and the retry reads without the muted story.
+export class ArcStoryMutedError extends Error {
+	constructor() {
+		super('A story was muted while the arc was being written.');
+		this.name = 'ArcStoryMutedError';
+	}
 }
 
 export type ArcResult = {
-	// written: a new arc is stored; empty: the character appears in no scene,
-	// so nothing was asked; missing: not the user's character.
-	outcome: 'written' | 'empty' | 'missing';
+	// written: a new arc is stored; unchanged: the arc was out of date but would
+	// be written from the same request, so it was only marked current; changed:
+	// as unchanged, but something the arc reads was marked while it was checked,
+	// so it is left out of date; empty: the character appears in no scene, so
+	// nothing was asked; missing: not the user's character.
+	outcome: 'written' | 'unchanged' | 'changed' | 'empty' | 'missing';
 };
 
 // Write (or rewrite) one character's arc. Owner scoped. Throws when the
@@ -128,7 +118,11 @@ export async function summariseCharacterArc(
 			id: characters.id,
 			name: characters.name,
 			universeId: characters.universeId,
-			arcSummaryAt: characters.arcSummaryAt
+			arcSummaryAt: characters.arcSummaryAt,
+			arcSummaryMd: characters.arcSummaryMd,
+			arcSummaryInput: characters.arcSummaryInput,
+			// As text, so the write below compares to the microsecond.
+			arcSummaryAtText: sql<string | null>`${characters.arcSummaryAt}::text`
 		})
 		.from(characters)
 		.where(
@@ -140,7 +134,7 @@ export async function summariseCharacterArc(
 		);
 	if (!character) return { outcome: 'missing' };
 
-	// The database clock, which scene saves stamp updated_at with.
+	// A real time, so any mark set while the model writes stands apart from it.
 	const startedAt = await dbNow(db);
 	const { scenes: found, storyIds } = await arcScenes(db, character.id, character.universeId);
 	if (found.length === 0) {
@@ -148,9 +142,40 @@ export async function summariseCharacterArc(
 		// earlier arc goes too rather than lingering in the context.
 		await db
 			.update(characters)
-			.set({ arcSummaryMd: null, arcSummaryAt: null, updatedAt: sql`${characters.updatedAt}` })
+			.set({
+				arcSummaryMd: null,
+				arcSummaryAt: null,
+				arcSummaryInput: null,
+				updatedAt: sql`${characters.updatedAt}`
+			})
 			.where(eq(characters.id, character.id));
 		return { outcome: 'empty' };
+	}
+
+	const messages: ChatMessage[] = [
+		{ role: 'user', content: buildArcMessage(character.name, sampleEvenly(found, MAX_ARC_SCENES)) }
+	];
+	const input = requestHash(messages);
+	// An arc marked out of date by a change it does not read (a passage past
+	// the first mention, a scene outside the sample) would be written from the
+	// same request, so it is only marked current. A current arc is rewritten
+	// when asked: the writer wants another take.
+	if (character.arcSummaryMd && arcIsStale(character) && input === character.arcSummaryInput) {
+		// A mark set since the read above stands, and the arc stays out of date.
+		const marked = await db
+			.update(characters)
+			.set({
+				arcSummaryAt: startedAt,
+				updatedAt: sql`${characters.updatedAt}`
+			})
+			.where(
+				and(
+					eq(characters.id, character.id),
+					sql`${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz`
+				)
+			)
+			.returning({ id: characters.id });
+		return { outcome: marked.length ? 'unchanged' : 'changed' };
 	}
 
 	const result = await completeDetailed(
@@ -159,12 +184,7 @@ export async function summariseCharacterArc(
 			userId,
 			role: 'utility',
 			enableTools: false,
-			messages: [
-				{
-					role: 'user',
-					content: buildArcMessage(character.name, sampleEvenly(found, MAX_ARC_SCENES))
-				}
-			],
+			messages,
 			maxTokens: MAX_ARC_TOKENS,
 			signal
 		},
@@ -189,16 +209,15 @@ export async function summariseCharacterArc(
 			.from(stories)
 			.where(inArray(stories.id, storyIds))
 			.for('share');
-		// Thrown so the job retries, and the retry reads without the muted story.
-		if (read.some((r) => !r.open))
-			throw new Error('A story was muted while the arc was being written.');
+		if (read.some((r) => !r.open)) throw new ArcStoryMutedError();
 		await tx
 			.update(characters)
 			.set({
 				arcSummaryMd: text,
+				arcSummaryInput: input,
 				// An unmute or a scene delete while the model was writing marked the
 				// arc out of date; that mark stands.
-				arcSummaryAt: sql`case when date_trunc('milliseconds', ${characters.arcSummaryAt}) is not distinct from ${character.arcSummaryAt} then ${startedAt} else ${characters.arcSummaryAt} end`,
+				arcSummaryAt: sql`case when ${characters.arcSummaryAt} is not distinct from ${character.arcSummaryAtText}::timestamptz then ${startedAt} else ${characters.arcSummaryAt} end`,
 				updatedAt: sql`${characters.updatedAt}`
 			})
 			.where(eq(characters.id, character.id));
@@ -208,26 +227,21 @@ export async function summariseCharacterArc(
 
 // The arc for a Plan page's selected entity: its stored text and whether it is
 // stale, for a character; null for anything else.
-export async function planArc(
-	db: Database,
+export function planArc(
 	resolved: {
 		kind: string;
 		entity: {
 			id: string;
-			universeId: string;
 			arcSummaryMd?: string | null;
 			arcSummaryAt?: Date | null;
 		};
 	} | null
-): Promise<{ summaryMd: string | null; stale: boolean } | null> {
+): { summaryMd: string | null; stale: boolean } | null {
 	if (resolved?.kind !== 'character') return null;
 	const { entity } = resolved;
-	const arcSummaryAt = entity.arcSummaryAt ?? null;
 	return {
 		summaryMd: entity.arcSummaryMd ?? null,
 		// A mark on an arc never written means nothing to refresh.
-		stale:
-			!!entity.arcSummaryMd &&
-			(await arcIsStale(db, { id: entity.id, universeId: entity.universeId, arcSummaryAt }))
+		stale: !!entity.arcSummaryMd && arcIsStale({ arcSummaryAt: entity.arcSummaryAt ?? null })
 	};
 }

@@ -6,7 +6,8 @@ import {
 	entityMentions,
 	placeStoryMemberships,
 	scenes,
-	stories
+	stories,
+	universes
 } from './db/schema.ts';
 import { detectMentions, mentionSnippet, type MentionTarget } from '../mention-detect.ts';
 import { listMentionPins } from './mention-pins.ts';
@@ -14,8 +15,11 @@ import {
 	ENTITY_TYPES,
 	entityAliasColumn,
 	entityNameColumn,
-	entityTable
+	entityTable,
+	type EntityType
 } from './entity-lookups.ts';
+import { markEntitiesStale } from './scene-lifecycle.ts';
+import { storyAssistantOn } from './universe-scope.ts';
 
 // Entities declared in the scene's story outrank the rest when a name is
 // shared; see the attribution rules in mention-detect.
@@ -74,6 +78,31 @@ async function storyContext(db: Database, context: MentionRebuildContext, storyI
 	return ctx;
 }
 
+type MentionPassages = { targetType: EntityType; targetId: string; surroundingText: string };
+
+// The entities whose passages in a scene differ between two indexings of it:
+// mentioned only in one, or quoted with different surrounding text. These are
+// the ones whose arc and enrichment read something new. A status change or a
+// rename elsewhere reindexes the scene without changing any of them.
+export function changedTargets(
+	before: MentionPassages[],
+	after: MentionPassages[]
+): { targetType: EntityType; targetId: string }[] {
+	const targets = new Map<string, { targetType: EntityType; targetId: string }>();
+	const passages = (rows: MentionPassages[]) => {
+		const byTarget = new Map<string, string[]>();
+		for (const { targetType, targetId, surroundingText } of rows) {
+			const key = `${targetType}:${targetId}`;
+			targets.set(key, { targetType, targetId });
+			byTarget.set(key, [...(byTarget.get(key) ?? []), surroundingText]);
+		}
+		return new Map([...byTarget].map(([key, texts]) => [key, JSON.stringify(texts.sort())]));
+	};
+	const was = passages(before);
+	const now = passages(after);
+	return [...targets].filter(([key]) => was.get(key) !== now.get(key)).map(([, target]) => target);
+}
+
 export async function rebuildSceneMentions(
 	db: Database,
 	sceneId: string,
@@ -115,32 +144,54 @@ export async function rebuildSceneMentions(
 		pins
 	});
 
-	await db.transaction(async (tx) => {
-		await tx
+	const rows = found.map((match) => ({
+		sourceType: 'scene',
+		sourceId: scene.id,
+		targetType: match.targetType,
+		targetId: match.targetId,
+		position: match.position,
+		surroundingText: mentionSnippet(scene.bodyMd, match.position, match.length)
+	}));
+
+	return await db.transaction(async (tx) => {
+		// The scene row first, then the story, then entities: the order saves,
+		// reorders, trash, merge and the summary job take, so none of them can
+		// deadlock with a rebuild. The watermark is the context's load time, so
+		// "indexed against the names as of then"; a later body save or flagged
+		// name change moves past it and the reconcile sweep catches it. Raw SQL
+		// so it does not trip the scene's updated_at $onUpdate, which would make
+		// every scene look perpetually stale.
+		const stamped = await tx.execute(sql`
+			update scenes set mentions_indexed_at = ${shared.loadedAt}
+			where id = ${scene.id} and deleted_at is null
+			returning id
+		`);
+		// Trashed since it was read: the trash already cleared its mentions.
+		if (stamped.rows.length === 0) return { ok: true as const, count: 0 };
+		// Whether the Assistant reads this scene. Restoring a story or universe,
+		// or unmuting a story, marks what it mentions, so a change made while it
+		// was out of reach needs no mark. The share lock waits for a restore or
+		// mute in flight, so the mark and that change cannot miss each other.
+		const [reach] = await tx
+			.select({
+				reads: sql<boolean>`${stories.deletedAt} is null and ${universes.deletedAt} is null and ${storyAssistantOn()}`
+			})
+			.from(stories)
+			.innerJoin(universes, eq(universes.id, stories.universeId))
+			.where(eq(stories.id, scene.storyId))
+			.for('share');
+		const previous = await tx
 			.delete(entityMentions)
-			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
-		if (found.length > 0) {
-			await tx.insert(entityMentions).values(
-				found.map((match) => ({
-					sourceType: 'scene',
-					sourceId: scene.id,
-					targetType: match.targetType,
-					targetId: match.targetId,
-					position: match.position,
-					surroundingText: mentionSnippet(scene.bodyMd, match.position, match.length)
-				}))
-			);
-		}
-		// Stamp the watermark in the same transaction. Raw SQL so it does not trip
-		// the scene's updated_at $onUpdate, which would make every scene look
-		// perpetually stale. The context's load time marks "indexed against the
-		// names as of then"; a later body save or flagged name change moves past
-		// it and the reconcile sweep catches it.
-		await tx.execute(
-			sql`update scenes set mentions_indexed_at = ${shared.loadedAt} where id = ${scene.id}`
-		);
+			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)))
+			.returning({
+				targetType: entityMentions.targetType,
+				targetId: entityMentions.targetId,
+				surroundingText: entityMentions.surroundingText
+			});
+		if (rows.length > 0) await tx.insert(entityMentions).values(rows);
+		if (reach?.reads) await markEntitiesStale(tx, changedTargets(previous, rows));
+		return { ok: true as const, count: found.length };
 	});
-	return { ok: true, count: found.length };
 }
 
 // Records that the universe's detection targets changed (a name, alias,

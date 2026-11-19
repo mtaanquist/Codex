@@ -229,14 +229,17 @@ function jobLabels(
 	if (kind === 'arc') {
 		return {
 			runningLabel: `Writing the arc for ${label}...`,
-			doneLabel: `Arc for ${label} written`,
+			// The job may write the arc, find it up to date, or find it changed
+			// again while it checked; the notification says which.
+			doneLabel: `Finished with the arc for ${label}`,
 			failedLabel: `Could not write the arc for ${label}`
 		};
 	}
 	if (kind === 'enrich') {
 		return {
 			runningLabel: `Suggesting details for the entries in ${label}...`,
-			doneLabel: `Suggestions for the entries in ${label} ready`,
+			// A finished pass may have found nothing new; the notification says.
+			doneLabel: `Finished suggesting details for the entries in ${label}`,
 			failedLabel: `Could not suggest details for ${label}`
 		};
 	}

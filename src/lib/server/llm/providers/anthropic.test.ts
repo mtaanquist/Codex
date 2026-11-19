@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { anthropicProvider } from './anthropic';
-import type { Connection, HttpRequest, HttpResponse, StreamEvent } from './types';
+import {
+	billedUsage,
+	EndpointReplyError,
+	type Connection,
+	type HttpRequest,
+	type HttpResponse,
+	type StreamEvent
+} from './types';
 
 function encode(parts: string[]): AsyncIterable<Uint8Array> {
 	const encoder = new TextEncoder();
@@ -473,6 +480,630 @@ describe('anthropicProvider.respond', () => {
 			http
 		);
 		expect(calledUrl).toBe('https://api.anthropic.com/v1/messages');
+	});
+});
+
+describe('anthropicProvider.respond over a stream', () => {
+	const req = { model: 'claude-x', messages: [], maxTokens: 16 };
+	const frame = (obj: unknown) => `event: x\ndata: ${JSON.stringify(obj)}\n\n`;
+	const start = (usage: Record<string, unknown> = { input_tokens: 9, output_tokens: 1 }) =>
+		frame({ type: 'message_start', message: { usage } });
+	const end = (stop_reason: string, usage: Record<string, unknown> = { output_tokens: 5 }) => [
+		frame({ type: 'message_delta', delta: { stop_reason }, usage }),
+		frame({ type: 'message_stop' })
+	];
+
+	it('asks for a stream so a long reply keeps the connection busy', async () => {
+		let sent: Record<string, unknown> = {};
+		const http: HttpRequest = async (_url, init) => {
+			sent = JSON.parse(init.body ?? '{}');
+			return sseResponse([start(), ...end('end_turn')]);
+		};
+		await anthropicProvider.respond(req, conn, http);
+		expect(sent.stream).toBe(true);
+	});
+
+	it('assembles text deltas, usage and the stop reason', async () => {
+		const frames = [
+			start({ input_tokens: 9, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }),
+			frame({ type: 'ping' }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hel' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'lo' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('end_turn', { output_tokens: 7 })
+		];
+		// Split mid-frame to check lines are reassembled across chunks.
+		const joined = frames.join('');
+		const http: HttpRequest = async () =>
+			sseResponse([joined.slice(0, 50), joined.slice(50, 51), joined.slice(51)]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result).toEqual({
+			content: 'Hello',
+			toolCalls: [],
+			usage: { promptTokens: 129, completionTokens: 7, cachedPromptTokens: 100 },
+			finishReason: 'stop'
+		});
+	});
+
+	it('keeps thinking with its signature ahead of a tool call with split input JSON', async () => {
+		const frames = [
+			start(),
+			frame({
+				type: 'content_block_start',
+				index: 0,
+				content_block: { type: 'thinking', thinking: '' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'thinking_delta', thinking: 'Look up ' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'thinking_delta', thinking: 'Mira.' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'signature_delta', signature: 'sig-abc' }
+			}),
+			frame({ type: 'content_block_stop', index: 0 }),
+			frame({
+				type: 'content_block_start',
+				index: 1,
+				content_block: { type: 'tool_use', id: 'tu1', name: 'find_entity', input: {} }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 1,
+				delta: { type: 'input_json_delta', partial_json: '{"na' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 1,
+				delta: { type: 'input_json_delta', partial_json: 'me":"Mira"}' }
+			}),
+			frame({ type: 'content_block_stop', index: 1 }),
+			frame({
+				type: 'content_block_start',
+				index: 2,
+				content_block: { type: 'tool_use', id: 'tu2', name: 'list_scenes', input: {} }
+			}),
+			frame({ type: 'content_block_stop', index: 2 }),
+			...end('tool_use')
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.finishReason).toBe('toolCalls');
+		expect(result.toolCalls).toEqual([
+			{ id: 'tu1', name: 'find_entity', arguments: '{"name":"Mira"}' },
+			{ id: 'tu2', name: 'list_scenes', arguments: '{}' }
+		]);
+		expect(result.raw).toEqual([
+			{ type: 'thinking', thinking: 'Look up Mira.', signature: 'sig-abc' },
+			{ type: 'tool_use', id: 'tu1', name: 'find_entity', input: { name: 'Mira' } },
+			{ type: 'tool_use', id: 'tu2', name: 'list_scenes', input: {} }
+		]);
+	});
+
+	it('reports a reply cut off at the cap as length', async () => {
+		const frames = [
+			start(),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Half' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('max_tokens', { output_tokens: 16 })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.content).toBe('Half');
+		expect(result.finishReason).toBe('length');
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: 16 });
+	});
+
+	it('still reports length when the cap lands inside tool arguments', async () => {
+		const frames = [
+			start(),
+			frame({
+				type: 'content_block_start',
+				index: 0,
+				content_block: { type: 'tool_use', id: 'tu1', name: 'find_entity', input: {} }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'input_json_delta', partial_json: '{"name":"Mi' }
+			}),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('max_tokens', { output_tokens: 16 })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.finishReason).toBe('length');
+		expect(result.toolCalls).toEqual([{ id: 'tu1', name: 'find_entity', arguments: '{}' }]);
+	});
+
+	it('reads a last frame that has no trailing newline', async () => {
+		const frames = [
+			start(),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			frame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+			'data: {"type":"message_stop"}'
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.content).toBe('Hi');
+		expect(result.finishReason).toBe('stop');
+	});
+
+	const errorMidStream = (error: unknown) => [
+		start(),
+		frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+		frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+		frame({ type: 'error', error })
+	];
+
+	it('reports an overload or server fault mid-stream as the status a buffered call gets', async () => {
+		for (const [type, status] of [
+			['overloaded_error', 529],
+			['api_error', 500]
+		] as const) {
+			const http: HttpRequest = async () =>
+				sseResponse(errorMidStream({ type, message: 'Overloaded' }));
+			const failure = anthropicProvider.respond(req, conn, http);
+			await expect(failure).rejects.toThrow(`Endpoint returned ${status}: Overloaded`);
+			await expect(failure).rejects.not.toBeInstanceOf(EndpointReplyError);
+		}
+	});
+
+	it('throws a reply error on any other error event mid-stream', async () => {
+		for (const error of [
+			{ type: 'invalid_request_error', message: 'Bad' },
+			{ type: 'constructor', message: 'Bad' },
+			{ message: 'Bad' }
+		]) {
+			const http: HttpRequest = async () => sseResponse(errorMidStream(error));
+			const failure = anthropicProvider.respond(req, conn, http);
+			await expect(failure).rejects.toThrow(/Bad/);
+			await expect(failure).rejects.toBeInstanceOf(EndpointReplyError);
+		}
+	});
+
+	it('throws when the stream ends before any stop reason', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start(),
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } })
+			]);
+		await expect(anthropicProvider.respond(req, conn, http)).rejects.toThrow(/before the reply/);
+	});
+
+	it('returns the reply when the stream ends after its stop reason without message_stop', async () => {
+		// Some Anthropic-compatible endpoints close the body after message_delta;
+		// the streaming chat path accepts that too.
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start(),
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }),
+				frame({ type: 'content_block_stop', index: 0 }),
+				frame({
+					type: 'message_delta',
+					delta: { stop_reason: 'end_turn' },
+					usage: { output_tokens: 2 }
+				})
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result).toEqual({
+			content: 'Hi',
+			toolCalls: [],
+			usage: { promptTokens: 9, completionTokens: 2 },
+			finishReason: 'stop'
+		});
+	});
+
+	it('merges cache usage from message_start with the totals on message_delta', async () => {
+		// message_delta repeats the usage fields as running totals, with null for
+		// any it does not report: a null must not wipe what message_start said, and
+		// a reported value replaces it.
+		const frames = [
+			start({ input_tokens: 9, cache_creation_input_tokens: 40, cache_read_input_tokens: 100 }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('end_turn', {
+				input_tokens: 9,
+				cache_creation_input_tokens: null,
+				cache_read_input_tokens: 150,
+				output_tokens: 12
+			})
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({
+			promptTokens: 199,
+			completionTokens: 12,
+			cachedPromptTokens: 150
+		});
+	});
+
+	it('keeps the input count from message_start when message_delta reports it as 0', async () => {
+		// Some compatible endpoints send 0 for the input side on message_delta.
+		const frames = [
+			start({ input_tokens: 9, cache_read_input_tokens: 100 }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } }),
+			frame({ type: 'content_block_stop', index: 0 }),
+			...end('end_turn', { input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 12 })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({
+			promptTokens: 109,
+			completionTokens: 12,
+			cachedPromptTokens: 100
+		});
+	});
+
+	it('attaches what a failed stream was billed so far to the error it throws', async () => {
+		const opening = [
+			start({ input_tokens: 9, output_tokens: 1 }),
+			frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+			frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Ha' } }),
+			frame({ type: 'message_delta', delta: {}, usage: { output_tokens: 4 } })
+		];
+		const cases = [
+			[...opening, frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })],
+			[
+				...opening,
+				frame({ type: 'error', error: { type: 'invalid_request_error', message: 'x' } })
+			],
+			opening
+		];
+		for (const frames of cases) {
+			const http: HttpRequest = async () => sseResponse(frames);
+			const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+			expect(err).toBeInstanceOf(Error);
+			expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: 4 });
+		}
+	});
+
+	it('estimates the output of a failed stream that never reached message_delta', async () => {
+		// The real API sends message_delta once, at the end, so a stream that
+		// fails partway has only message_start's output count (about 1). The
+		// text and tool input streamed so far stand in for it.
+		const text = 'x'.repeat(40);
+		const toolJson = '{"name":"Mira"}';
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text } }),
+				frame({ type: 'content_block_stop', index: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 2,
+					content_block: { type: 'tool_use', id: 't1', name: 'find', input: {} }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 2,
+					delta: { type: 'input_json_delta', partial_json: toolJson }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 9,
+			completionTokens: Math.ceil((text.length + toolJson.length) / 4)
+		});
+	});
+
+	it('bills a failed stream the output cap once thinking had started', async () => {
+		// Current models stream thinking with its text omitted (a signature
+		// only), yet bill every thinking token, so the streamed length says
+		// nothing. The request's output cap is the most the attempt can cost.
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'signature_delta', signature: 'sig' }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: req.maxTokens });
+	});
+
+	it('adds web search results to the input of a failed stream', async () => {
+		// Search results are billed as input, but only message_delta's running
+		// totals report them; a stream that fails first estimates them.
+		const result = {
+			type: 'web_search_tool_result',
+			tool_use_id: 's1',
+			content: [
+				{
+					type: 'web_search_result',
+					url: 'http://x',
+					title: 'T',
+					encrypted_content: 'e'.repeat(400)
+				}
+			]
+		};
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({ type: 'content_block_start', index: 0, content_block: result }),
+				frame({ type: 'content_block_stop', index: 0 }),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 9 + Math.ceil(JSON.stringify(result).length / 4),
+			completionTokens: 1
+		});
+	});
+
+	it('estimates a failed stream whose thinking streamed text from the characters', async () => {
+		const thinking = 'y'.repeat(20);
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({
+					type: 'content_block_delta',
+					index: 0,
+					delta: { type: 'thinking_delta', thinking }
+				}),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({ promptTokens: 9, completionTokens: thinking.length / 4 });
+	});
+
+	it('estimates a finished thinking reply with no output count from the characters', async () => {
+		// Only a failed attempt can have unseen thinking still billed; a
+		// finished reply is never booked at the output cap.
+		const text = 'x'.repeat(8);
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({ type: 'content_block_stop', index: 0 }),
+				frame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text } }),
+				frame({ type: 'content_block_stop', index: 1 }),
+				...end('end_turn', {})
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: text.length / 4 });
+	});
+
+	it('retries the timeout and rate limit errors a stream can send', async () => {
+		for (const [type, status] of [
+			['timeout_error', 504],
+			['rate_limit_error', 429]
+		] as const) {
+			const http: HttpRequest = async () =>
+				sseResponse([start(), frame({ type: 'error', error: { type, message: 'x' } })]);
+			const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+			expect((err as Error).message).toContain(`Endpoint returned ${status}`);
+		}
+	});
+
+	it('takes an output count sent as a string', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({
+					type: 'content_block_start',
+					index: 0,
+					content_block: { type: 'thinking', thinking: '' }
+				}),
+				frame({ type: 'content_block_stop', index: 0 }),
+				...end('end_turn', { output_tokens: '7' })
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: 7 });
+	});
+
+	it('estimates the output of a finished stream whose message_delta reports none', async () => {
+		// Some compatible endpoints end with a stop reason and no output count,
+		// leaving message_start's placeholder.
+		const text = 'x'.repeat(40);
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({ input_tokens: 9, output_tokens: 1 }),
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }),
+				frame({ type: 'content_block_stop', index: 0 }),
+				...end('end_turn', {})
+			]);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.usage).toEqual({ promptTokens: 9, completionTokens: text.length / 4 });
+	});
+
+	it('attaches no usage to a failure before message_start', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toBeUndefined();
+	});
+
+	it('assembles web search blocks and citations, kept verbatim for a thinking tool turn', async () => {
+		const citation = {
+			type: 'web_search_result_location',
+			url: 'http://x',
+			title: 'Waterdeep',
+			encrypted_index: 'enc',
+			cited_text: 'on the Sword Coast'
+		};
+		const frames = [
+			start(),
+			frame({
+				type: 'content_block_start',
+				index: 0,
+				content_block: { type: 'thinking', thinking: '' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'thinking_delta', thinking: 'Search it.' }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 0,
+				delta: { type: 'signature_delta', signature: 'sig' }
+			}),
+			frame({ type: 'content_block_stop', index: 0 }),
+			frame({
+				type: 'content_block_start',
+				index: 1,
+				content_block: { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: {} }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 1,
+				delta: { type: 'input_json_delta', partial_json: '{"query":"Waterdeep"}' }
+			}),
+			frame({ type: 'content_block_stop', index: 1 }),
+			frame({
+				type: 'content_block_start',
+				index: 2,
+				content_block: {
+					type: 'web_search_tool_result',
+					tool_use_id: 'srv1',
+					content: [{ type: 'web_search_result', title: 'Waterdeep', url: 'http://x' }]
+				}
+			}),
+			frame({ type: 'content_block_stop', index: 2 }),
+			frame({
+				type: 'content_block_start',
+				index: 3,
+				content_block: { type: 'text', text: '', citations: [] }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 3,
+				delta: { type: 'citations_delta', citation }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 3,
+				delta: { type: 'text_delta', text: 'It is on the Sword Coast.' }
+			}),
+			frame({ type: 'content_block_stop', index: 3 }),
+			frame({
+				type: 'content_block_start',
+				index: 4,
+				content_block: { type: 'tool_use', id: 'tu1', name: 'find_entity', input: {} }
+			}),
+			frame({
+				type: 'content_block_delta',
+				index: 4,
+				delta: { type: 'input_json_delta', partial_json: '{"name":"Waterdeep"}' }
+			}),
+			frame({ type: 'content_block_stop', index: 4 }),
+			...end('tool_use')
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(
+			{ ...req, webSearch: true, tuning: { thinking: true } },
+			conn,
+			http
+		);
+		// Only Codex's own tool is a call to run; the search stays the provider's.
+		expect(result.content).toBe('It is on the Sword Coast.');
+		expect(result.toolCalls).toEqual([
+			{ id: 'tu1', name: 'find_entity', arguments: '{"name":"Waterdeep"}' }
+		]);
+		expect(result.raw).toEqual([
+			{ type: 'thinking', thinking: 'Search it.', signature: 'sig' },
+			{ type: 'server_tool_use', id: 'srv1', name: 'web_search', input: { query: 'Waterdeep' } },
+			{
+				type: 'web_search_tool_result',
+				tool_use_id: 'srv1',
+				content: [{ type: 'web_search_result', title: 'Waterdeep', url: 'http://x' }]
+			},
+			{ type: 'text', text: 'It is on the Sword Coast.', citations: [citation] },
+			{ type: 'tool_use', id: 'tu1', name: 'find_entity', input: { name: 'Waterdeep' } }
+		]);
+	});
+
+	it('keeps a redacted thinking block intact ahead of a tool call', async () => {
+		const frames = [
+			start(),
+			frame({
+				type: 'content_block_start',
+				index: 0,
+				content_block: { type: 'redacted_thinking', data: 'opaque-blob' }
+			}),
+			frame({ type: 'content_block_stop', index: 0 }),
+			frame({
+				type: 'content_block_start',
+				index: 1,
+				content_block: { type: 'tool_use', id: 'tu1', name: 'list_scenes', input: {} }
+			}),
+			frame({ type: 'content_block_stop', index: 1 }),
+			...end('tool_use')
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.toolCalls).toEqual([{ id: 'tu1', name: 'list_scenes', arguments: '{}' }]);
+		expect(result.raw).toEqual([
+			{ type: 'redacted_thinking', data: 'opaque-blob' },
+			{ type: 'tool_use', id: 'tu1', name: 'list_scenes', input: {} }
+		]);
+	});
+
+	it('reads a JSON reply that arrives without a content type', async () => {
+		const text = JSON.stringify({
+			content: [{ type: 'text', text: 'plain' }],
+			stop_reason: 'end_turn'
+		});
+		const http: HttpRequest = async () => ({
+			status: 200,
+			headers: {},
+			body: encode([text]),
+			text: async () => text
+		});
+		const result = await anthropicProvider.respond(req, conn, http);
+		expect(result.content).toBe('plain');
+		expect(result.finishReason).toBe('stop');
+	});
+
+	it('fails clearly on a 2xx that is neither a stream nor JSON', async () => {
+		// A captive portal or a misrouted proxy answering with a web page.
+		const html = '<html><body>Sign in to the network</body></html>';
+		const http: HttpRequest = async () => ({
+			status: 200,
+			headers: { 'content-type': 'text/html; charset=utf-8' },
+			body: encode([html]),
+			text: async () => html
+		});
+		const failure = anthropicProvider.respond(req, conn, http);
+		await expect(failure).rejects.toBeInstanceOf(EndpointReplyError);
+		await expect(failure).rejects.toThrow(/text\/html.*Sign in to the network/);
 	});
 });
 

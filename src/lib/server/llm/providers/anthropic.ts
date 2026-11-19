@@ -1,14 +1,18 @@
-import type {
-	ChatMessage,
-	CompletionRequest,
-	Connection,
-	FinishReason,
-	ModelInfo,
-	ProviderToolCall,
-	Provider,
-	StreamEvent,
-	TokenUsage
+import {
+	EndpointReplyError,
+	withBilledUsage,
+	type ChatMessage,
+	type CompletionRequest,
+	type Connection,
+	type FinishReason,
+	type HttpResponse,
+	type ModelInfo,
+	type ProviderToolCall,
+	type Provider,
+	type StreamEvent,
+	type TokenUsage
 } from './types.ts';
+import { tokensForChars } from '../context/budgets.ts';
 
 // The native Anthropic adapter: speaks the Messages API (/v1/messages), which
 // is not OpenAI-compatible. Raw fetch over the injected transport, like the
@@ -277,89 +281,333 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	};
 }
 
+// What has streamed so far, for billing a stream that fails partway.
+// sawDelta is set once a message_delta has reported the output count.
+// sawThinking is set once a thinking block opens, thinkingChars counts its
+// streamed text: current models stream thinking with its text omitted, so
+// its billed length cannot be counted. maxTokens is the request's output
+// cap, the most an attempt can be billed.
+type StreamProgress = {
+	outputChars: number;
+	// Server tool results (web search) are billed as input, but only
+	// message_delta's running totals report them.
+	resultChars: number;
+	sawDelta: boolean;
+	sawThinking: boolean;
+	thinkingChars: number;
+	maxTokens: number;
+};
+
+// The output a stream was billed for when no message_delta reported it: the
+// characters streamed. A failed attempt whose thinking streamed no text is
+// billed for thinking it never showed, so it counts as the request's output
+// cap instead. Over-counting only stops a capped run early; under-counting
+// would let it pass the cap. A finished reply's thinking is done, so the
+// characters are the estimate there.
+function estimatedOutput(progress: StreamProgress, failed: boolean): number {
+	const streamed = tokensForChars(progress.outputChars);
+	const hidden = failed && progress.sawThinking && progress.thinkingChars === 0;
+	return hidden ? Math.max(streamed, progress.maxTokens) : streamed;
+}
+
+// What a stream that failed partway had been billed: the input side from
+// message_start and the output so far. The real API sends message_delta once,
+// at the end, so before it arrives message_start's output count (about 1) is
+// all there is; estimatedOutput stands in for it, so a retried long reply
+// cannot slip past the spend cap.
+// Undefined when message_start never came.
+function partialUsage(raw: Block, progress: StreamProgress): TokenUsage | undefined {
+	const started = promptTotal(raw);
+	if (!Number.isFinite(started)) return undefined;
+	const prompt = progress.sawDelta ? started : started + tokensForChars(progress.resultChars);
+	const reported = Number(raw.output_tokens);
+	const counted = Number.isFinite(reported) ? reported : 0;
+	const completion = progress.sawDelta
+		? counted
+		: Math.max(counted, estimatedOutput(progress, true));
+	const cached = cacheRead(raw);
+	return {
+		promptTokens: prompt,
+		completionTokens: completion,
+		...(cached > 0 ? { cachedPromptTokens: cached } : {})
+	};
+}
+
+const INPUT_USAGE_KEYS = new Set([
+	'input_tokens',
+	'cache_creation_input_tokens',
+	'cache_read_input_tokens'
+]);
+
+// The parsed JSON of each "data:" line of a server-sent event stream. Event
+// name lines and unparseable data are skipped.
+function frameData(line: string): unknown {
+	line = line.replace(/\r$/, '');
+	if (!line.startsWith('data:')) return undefined;
+	const data = line.slice(5).trim();
+	if (!data) return undefined;
+	try {
+		return JSON.parse(data);
+	} catch {
+		return undefined;
+	}
+}
+
+async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unknown> {
+	const decoder = new TextDecoder();
+	let buffer = '';
+	for await (const chunk of body) {
+		buffer += decoder.decode(chunk, { stream: true });
+		let newline: number;
+		while ((newline = buffer.indexOf('\n')) !== -1) {
+			const json = frameData(buffer.slice(0, newline));
+			buffer = buffer.slice(newline + 1);
+			if (json !== undefined) yield json;
+		}
+	}
+	// A last frame the endpoint did not end with a newline.
+	const json = frameData(buffer + decoder.decode());
+	if (json !== undefined) yield json;
+}
+
 // Parse an Anthropic streaming response: "data: {json}" frames whose JSON
 // carries a type. Text arrives as content_block_delta/text_delta; the stream
 // ends with message_stop. Thinking and tool-input deltas are ignored. Usage
 // arrives split across frames: input tokens on message_start, the output
 // total on message_delta; the combined count is emitted before done.
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
-	const decoder = new TextDecoder();
-	let buffer = '';
 	let promptTokens: number | undefined;
 	let cachedPromptTokens = 0;
 	let completionTokens: number | undefined;
 	let finishReason: FinishReason | undefined;
-	for await (const chunk of body) {
-		buffer += decoder.decode(chunk, { stream: true });
-		let newline: number;
-		while ((newline = buffer.indexOf('\n')) !== -1) {
-			const line = buffer.slice(0, newline).replace(/\r$/, '');
-			buffer = buffer.slice(newline + 1);
-			if (!line.startsWith('data:')) continue;
-			const data = line.slice(5).trim();
-			if (!data) continue;
-			let json: unknown;
-			try {
-				json = JSON.parse(data);
-			} catch {
-				continue;
-			}
-			const frame = json as {
-				type?: unknown;
-				delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
-				message?: {
-					usage?: {
-						input_tokens?: unknown;
-						cache_creation_input_tokens?: unknown;
-						cache_read_input_tokens?: unknown;
-					};
+	for await (const json of sseFrames(body)) {
+		const frame = json as {
+			type?: unknown;
+			delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
+			message?: {
+				usage?: {
+					input_tokens?: unknown;
+					cache_creation_input_tokens?: unknown;
+					cache_read_input_tokens?: unknown;
 				};
-				usage?: { output_tokens?: unknown };
-				error?: { message?: unknown };
 			};
-			if (frame.type === 'message_start') {
-				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
-				if (Number.isFinite(input)) promptTokens = input;
-				if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
-				continue;
+			usage?: { output_tokens?: unknown };
+			error?: { message?: unknown };
+		};
+		if (frame.type === 'message_start') {
+			const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
+			if (Number.isFinite(input)) promptTokens = input;
+			if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
+			continue;
+		}
+		if (frame.type === 'message_delta') {
+			const output = Number(frame.usage?.output_tokens);
+			if (Number.isFinite(output)) completionTokens = output;
+			finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
+			continue;
+		}
+		if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
+			if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
+				yield { type: 'token', text: frame.delta.text };
 			}
-			if (frame.type === 'message_delta') {
-				const output = Number(frame.usage?.output_tokens);
-				if (Number.isFinite(output)) completionTokens = output;
-				finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
-				continue;
-			}
-			if (frame.type === 'content_block_delta' && frame.delta?.type === 'text_delta') {
-				if (typeof frame.delta.text === 'string' && frame.delta.text.length > 0) {
-					yield { type: 'token', text: frame.delta.text };
-				}
-				continue;
-			}
-			if (frame.type === 'message_stop') {
-				if (promptTokens !== undefined || completionTokens !== undefined) {
-					yield {
-						type: 'usage',
-						usage: {
-							promptTokens: promptTokens ?? 0,
-							completionTokens: completionTokens ?? 0,
-							...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
-						}
-					};
-				}
-				yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
-				return;
-			}
-			if (frame.type === 'error') {
+			continue;
+		}
+		if (frame.type === 'message_stop') {
+			if (promptTokens !== undefined || completionTokens !== undefined) {
 				yield {
-					type: 'error',
-					message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
+					type: 'usage',
+					usage: {
+						promptTokens: promptTokens ?? 0,
+						completionTokens: completionTokens ?? 0,
+						...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {})
+					}
 				};
-				return;
 			}
+			yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
+			return;
+		}
+		if (frame.type === 'error') {
+			yield {
+				type: 'error',
+				message: typeof frame.error?.message === 'string' ? frame.error.message : 'stream error'
+			};
+			return;
 		}
 	}
 	// The stream ended without an explicit message_stop; close it out anyway.
 	yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
+}
+
+type BufferedMessage = { content?: unknown; usage?: unknown; stop_reason?: unknown };
+
+type Block = Record<string, unknown>;
+
+// The status a buffered call gets for the errors Anthropic sends mid-stream.
+const STREAM_ERROR_STATUS = new Map<unknown, number>([
+	['overloaded_error', 529],
+	['api_error', 500],
+	['timeout_error', 504],
+	['rate_limit_error', 429]
+]);
+
+// Rebuild, from a stream, the message a non-streaming call returns: content
+// blocks by index (thinking with its signature, tool_use with its input JSON
+// put back together), the stop reason, and usage, whose input side arrives on
+// message_start and whose running totals arrive on message_delta. The buffered
+// path streams so that a long reply keeps bytes moving and the egress idle
+// timeout only fires on real silence.
+async function assembleMessage(
+	body: AsyncIterable<Uint8Array>,
+	maxTokens: number
+): Promise<BufferedMessage> {
+	const usage: Block = {};
+	const progress: StreamProgress = {
+		outputChars: 0,
+		resultChars: 0,
+		sawDelta: false,
+		sawThinking: false,
+		thinkingChars: 0,
+		maxTokens
+	};
+	try {
+		const message = await assembleFrames(body, usage, progress);
+		// A compatible endpoint can finish without reporting the output count,
+		// leaving message_start's placeholder of about 1.
+		if (!progress.sawDelta) {
+			const reported = Number(usage.output_tokens);
+			usage.output_tokens = Math.max(
+				Number.isFinite(reported) ? reported : 0,
+				estimatedOutput(progress, false)
+			);
+		}
+		return message;
+	} catch (err) {
+		throw err instanceof Error ? withBilledUsage(err, partialUsage(usage, progress)) : err;
+	}
+}
+
+// Fills usage and progress in place as the frames arrive, so a failure partway
+// still knows what had been billed.
+async function assembleFrames(
+	body: AsyncIterable<Uint8Array>,
+	usage: Block,
+	progress: StreamProgress
+): Promise<BufferedMessage> {
+	const blocks: Block[] = [];
+	const inputJson = new Map<number, string>();
+	let stopReason: unknown;
+	for await (const json of sseFrames(body)) {
+		const frame = json as {
+			type?: unknown;
+			index?: unknown;
+			content_block?: unknown;
+			delta?: Block;
+			message?: { usage?: Block };
+			usage?: Block;
+			error?: { type?: unknown; message?: unknown };
+		};
+		const index = typeof frame.index === 'number' ? frame.index : -1;
+		const block = blocks[index];
+		const delta = frame.delta;
+		switch (frame.type) {
+			case 'message_start':
+				Object.assign(usage, frame.message?.usage);
+				break;
+			case 'content_block_start':
+				if (index >= 0 && frame.content_block && typeof frame.content_block === 'object') {
+					blocks[index] = { ...(frame.content_block as Block) };
+					const type = blocks[index].type;
+					if (type === 'thinking' || type === 'redacted_thinking') progress.sawThinking = true;
+					if (type === 'web_search_tool_result') {
+						progress.resultChars += JSON.stringify(frame.content_block).length;
+					}
+				}
+				break;
+			case 'content_block_delta':
+				if (!block || !delta) break;
+				if (delta.type === 'text_delta') {
+					const text = `${delta.text ?? ''}`;
+					block.text = `${block.text ?? ''}${text}`;
+					progress.outputChars += text.length;
+				} else if (delta.type === 'thinking_delta') {
+					const thinking = `${delta.thinking ?? ''}`;
+					block.thinking = `${block.thinking ?? ''}${thinking}`;
+					progress.outputChars += thinking.length;
+					progress.thinkingChars += thinking.length;
+				} else if (delta.type === 'signature_delta') {
+					block.signature = `${block.signature ?? ''}${delta.signature ?? ''}`;
+				} else if (delta.type === 'input_json_delta') {
+					const json = `${delta.partial_json ?? ''}`;
+					inputJson.set(index, `${inputJson.get(index) ?? ''}${json}`);
+					progress.outputChars += json.length;
+				} else if (delta.type === 'citations_delta') {
+					const citations = Array.isArray(block.citations) ? block.citations : [];
+					block.citations = [...citations, delta.citation];
+				}
+				break;
+			case 'content_block_stop': {
+				const raw = inputJson.get(index);
+				// The start frame carries an empty input; the deltas carry the real
+				// one, and a call with no arguments sends none. A reply cut off at
+				// the token cap can stop mid-argument: parse leniently so the message
+				// still assembles and its max_tokens stop reaches the cut-off retry.
+				if (block && raw !== undefined) block.input = parseArguments(raw);
+				inputJson.delete(index);
+				break;
+			}
+			case 'message_delta':
+				// Some compatible endpoints send the count as a string.
+				if (
+					frame.usage?.output_tokens != null &&
+					Number.isFinite(Number(frame.usage.output_tokens))
+				) {
+					progress.sawDelta = true;
+				}
+				if (delta?.stop_reason) stopReason = delta.stop_reason;
+				for (const [key, value] of Object.entries(frame.usage ?? {})) {
+					if (value === null || value === undefined) continue;
+					// Some compatible endpoints repeat the input side as 0 here; the
+					// real count from message_start stands.
+					if (INPUT_USAGE_KEYS.has(key) && Number(value) === 0 && Number(usage[key]) > 0) continue;
+					usage[key] = value;
+				}
+				break;
+			case 'message_stop':
+				return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
+			case 'error': {
+				const message =
+					typeof frame.error?.message === 'string' ? frame.error.message : 'unknown error';
+				// Once a stream is open, overload and server faults arrive here
+				// instead of as a 529 or 500. Reported as that status, so the gateway
+				// retries them as it would the status.
+				const status = STREAM_ERROR_STATUS.get(frame.error?.type);
+				if (status) throw new Error(`Endpoint returned ${status}: ${message}`);
+				throw new EndpointReplyError(`Endpoint stream error: ${message}`);
+			}
+		}
+	}
+	// Some Anthropic-compatible endpoints close the body after message_delta
+	// without a message_stop. Once the stop reason is in, the reply is whole.
+	if (stopReason !== undefined) {
+		return { content: blocks.filter(Boolean), usage, stop_reason: stopReason };
+	}
+	throw new Error('The endpoint closed the stream before the reply finished.');
+}
+
+// The reply to a stream: true request. An endpoint that ignores the flag and
+// answers in one JSON body is read as one, with or without a JSON content
+// type; a broken JSON body throws SyntaxError, which the gateway does not
+// retry. Anything else (a captive portal's web page, say) is not a reply.
+async function readReply(res: HttpResponse, maxTokens: number): Promise<BufferedMessage> {
+	const type = (res.headers['content-type'] ?? '').toLowerCase();
+	if (type.includes('text/event-stream')) return assembleMessage(res.body, maxTokens);
+	const text = await res.text();
+	if (type.includes('json') || (!type && /^\s*\{/.test(text))) {
+		return JSON.parse(text) as BufferedMessage;
+	}
+	throw new EndpointReplyError(
+		`The endpoint answered with ${type || 'an unlabelled body'} instead of a reply: ${truncate(text)}`
+	);
 }
 
 export const anthropicProvider: Provider = {
@@ -390,14 +638,13 @@ export const anthropicProvider: Provider = {
 		const res = await http(`${base(conn.endpoint)}/v1/messages`, {
 			method: 'POST',
 			headers: headers(conn),
-			body: requestBody(req, false),
+			body: requestBody(req, true),
 			signal
 		});
-		const text = await res.text();
 		if (res.status < 200 || res.status >= 300) {
-			throw new Error(`Endpoint returned ${res.status}: ${truncate(text)}`);
+			throw new Error(`Endpoint returned ${res.status}: ${truncate(await res.text())}`);
 		}
-		const json = JSON.parse(text) as { content?: unknown; usage?: unknown; stop_reason?: unknown };
+		const json = await readReply(res, req.maxTokens);
 		const finishReason = parseStopReason(json?.stop_reason);
 		return {
 			...parseContent(json?.content),

@@ -282,7 +282,13 @@ rather than guessed at or skipped in silence. The estimate itself
 (`llm/estimate.ts`) assembles the same frame and per-scene deltas the run
 would send, counts them, and scales by an agentic multiplier drawn from this
 account's own `assistant_usage` rows for the model where there are enough of
-them, or a stated static 2.5 where there are not.
+them, or a stated static 2.5 where there are not. The gateway records every
+request into the run's meter (passed on the request) as it logs its usage
+row, including an attempt that failed partway through a stream and was
+retried or given up on: the endpoint bills the tokens it had used, which the
+adapter attaches to the error. Claude reports the output count only at the
+end of a stream, so for a stream that failed before then the adapter
+estimates it from the characters streamed so far.
 
 The tool-call budget is a writer-set value in `users.llm_config`, not a
 fixed number Codex chooses. The point of bring-your-own-endpoint is that the
@@ -757,9 +763,13 @@ machinery instead of building a parallel apply-and-undo path.
 ### Background jobs
 
 New pg-boss queues alongside exports and backups (names in the existing queue
-SSOT): `assistant-review` (scene/chapter/story passes), `assistant-enrich`
-(entity alias/detail/summary suggestions), `assistant-summaries` (summary_md
-maintenance). Expensive derived artifacts (a character's arc summary) cache on
+SSOT): `assistant-review-v2` (scene/chapter/story passes), `assistant-enrich`
+(entity alias/detail/summary suggestions), `assistant-summaries-v2` (summary_md
+maintenance). All three are created with pg-boss's `exclusive` policy, which is
+what makes a `singletonKey` hold one queued or running job per key; review and
+summaries moved off their original default-policy names (`assistant-review`,
+`assistant-summaries`) for that, and the worker drains the old names for one
+release (#1041). Expensive derived artifacts (a character's arc summary) cache on
 the entity with a staleness watermark, mirroring `mentions_indexed_at`, and
 the reconcile-sweep pattern used for stale mentions applies directly.
 
@@ -769,12 +779,18 @@ and the failure list). The job-status endpoint reads it while the job runs, so
 the review window can show where the pass is; a retry of the same job after a
 worker restart reads it too and skips the scenes already handled. The state
 also records the scope the run was over (the same key the queue holds one
-unfinished job per), so a run that stopped at the spend cap is picked up by the
-next run over that scope even though it arrives with a new job id; only a
-capped run is adopted, and it starts again with the whole ceiling. The rows are
+unfinished job per: the mode, the target and, for a copyedit, the categories
+it checks), so a run that stopped at the spend cap is picked up by the
+next run over that scope even though it arrives with a new job id; only the
+newest run over the scope is looked at, it is adopted only if it was capped
+(or was itself a continuation of a capped run that threw or was cancelled
+before it finished), and it starts again with the whole ceiling. A copyedit capped before the
+categories joined the key is continued only when its job (still on the legacy
+queue) shows it checked the same categories; otherwise it starts over. The rows are
 disposable, and a daily worker sweep drops those older than 30 days. The
-`assistant-review` enqueue holds one unfinished job per scope, so a duplicate
-request cannot start a second pass over the same scenes, and both Assistant
+review enqueue holds one unfinished job per scope (and the summaries enqueue one
+per story), so a duplicate request cannot start a second pass over the same
+scenes and is answered with a 409, and the Assistant
 queues send with an expiry of hours rather than the pg-boss default of 15
 minutes, which would hand a long run to a second worker while the first is
 still going. A heartbeat (60 seconds) catches a worker that died, so its job
@@ -1043,17 +1059,25 @@ calls the gateway, which proxies through the egress guard.
 
 ### Background jobs - sequencing steps 4 and 7
 
-- [built] pg-boss queues `assistant-review`, `assistant-summaries`, and
-  `assistant-enrich` (names in
+- [built] pg-boss queues `assistant-review-v2`, `assistant-summaries-v2`, and
+  `assistant-enrich`, all `exclusive` (names in
   `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
   registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
   helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
   than a queue, for one entity from a story (story Plan) or across its
   universe (universe Plan); the `assistant-enrich` job runs the same call over
-  every entity in a universe with new prose since its `assistant_enriched_at`
-  watermark (`/enrich`), and a job naming a character rewrites that
-  character's arc (`arc_summary_md`) instead.
+  every entity in a universe whose passages changed since its
+  `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
+  entity when a reindex changes its passages, so status changes and reorders
+  do not count and an alias that links older scenes does), and a job naming a character rewrites that
+  character's arc (`arc_summary_md`) instead. Marks are coarse (any passage),
+  while enrich sends at most 16 passages and an arc the first passage of each
+  scene without a summary, so each watermark is stored with a hash of the
+  request it was written from (`assistant_enriched_input`,
+  `arc_summary_input`): a marked entity whose request hashes the same is not
+  sent again, only marked current. A current arc is still rewritten when the
+  writer asks.
 
 ### Tool use and structural actions - sequencing step 6
 

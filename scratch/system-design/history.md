@@ -1461,6 +1461,294 @@ own PR and version.
 Nothing left open in Phase 9 (the last two items, #845 and #846, shipped
 2026-11-18).
 
+- [x] Staging review round 8 (#1122, 2026-11-18). The output-cap floor
+      from round 6 also applied to a finished reply without an output count,
+      so a compatible endpoint that omits it booked every thinking request at
+      the cap. The floor now applies only to a failed attempt whose thinking
+      streamed no text; otherwise the streamed characters are the estimate.
+      Mid-stream timeout_error and rate_limit_error are retried as 504 and
+      429, as their HTTP statuses were before the buffered path streamed.
+      Summary stamps are written from the app clock again, the clock that
+      sets updated_at, since the two are compared (#1120; the database's
+      now() had made a same-millisecond edit read as summarised, which CI
+      caught). The round's low findings went to #1123-#1125.
+
+- [x] Staging review round 7 (#1118, 2026-11-18). Web search results are
+      billed as input but only message_delta's running totals report them,
+      so a reviewer stream that failed after searching was metered at its
+      opening prompt size. Until message_delta arrives, the size of the
+      result blocks is now estimated into the input side. An output count
+      sent as a string by a compatible endpoint is read too. The round's low
+      findings went to #1116, #1117, #1119 and #1120.
+
+- [x] Staging review round 6 (#1110, 2026-11-18). The round-5 estimate
+      counted streamed thinking, but current Claude models stream thinking
+      with its text omitted and bill it in full, so a stream that failed
+      mid-thought still metered about 1 output token. Once a thinking block
+      opens, a failed stream is now metered at the request's output cap, the
+      most it can cost; over-counting only stops a capped run early. A
+      finished stream whose message_delta carried no output count uses the
+      same estimate. The round's low findings went to #1111-#1114.
+
+- [x] Staging review round 5 (#1098-#1101, 2026-11-18). Writer trust
+      first. A Claude stream that failed partway was metered at
+      message_start's output count (about 1), since the real API sends
+      message_delta only at the end; the round-4 fixture had sent one before
+      the error. Until a message_delta reports the count, the output is now
+      estimated from the text, thinking and tool input streamed so far, with
+      the same four-characters-per-token estimate the context budgets use
+      (moved to `context/budgets.ts` so the adapter does not pull in the
+      database modules) (#1098). A resumed review carried the earlier run's
+      run-level messages (the summary cap, the unpriced cap) into its notice,
+      and a same-job retry listed the unpriced cap twice; only scene failures
+      carry over now, and each attempt raises its own run-level messages
+      (#1099). Non-prose scene updates (the position shift of a split or
+      duplicate, a status change, trash, merge's trash, restore, a chapter
+      delete) no longer bump `updated_at` through `$onUpdate`, which had made
+      the scenes' Assistant summaries look stale and re-billed them
+      (`keepUpdatedAt` in `scene-access.ts`). Every consumer was checked: save
+      conflicts use body hashes, the sweep's watermark only needs prose
+      changes, and the story page's "last edited scene" is better for it. The
+      one path that relied on the bump was restore: the trash deletes the
+      mention rows, and the bump was what let the reconcile sweep rebuild
+      them if the queued rebuild was lost. Restore now clears
+      `mentions_indexed_at` instead (#1100). The mute path clears the arcs it
+      locked by id rather than re-running the filter (#1101). The
+      `DraftScene` comment now says what happens to summaries copied from
+      drafts saved before the stamp was recorded (they stay the writer's
+      own). Filed and left open: #1102-#1108; #1031 and #1080 gained notes.
+- [x] Staging review round 4 (#1075, #1089-#1092, 2026-11-18). Writer
+      trust first. A stream that failed partway (overload, server fault, a
+      close before the stop reason) was billed but its tokens were dropped
+      (#1075). The Claude adapter now fills usage in place as frames arrive
+      and attaches what had been billed to the error it throws; the gateway
+      logs a usage row for it and meters it before it retries or gives up,
+      and the run's total includes it. Metering moved into the gateway: the
+      meter rides on the request and `recordUsage` feeds it for every
+      request, so the agent loop's earlier rounds are metered even when a
+      later round throws. One behaviour change: a round the endpoint
+      reported no counts for now marks the cap as not applied even when other
+      rounds reported, where the old per-run sum hid it. A 0 input count on
+      message_delta (some compatible endpoints) no longer overwrites the real
+      one from message_start. Copies (duplicate scene, draft add-back, new
+      story from a draft) stamp `summary_generated_at` with the copy's own
+      `updated_at` when the source summary was current for its text, so the
+      next pass does not pay to summarise the same text again; a stale one
+      keeps its old stamp and is refreshed (#1089). Drafts now record
+      `summaryCurrent` per scene and chapter; older drafts count as stale.
+      Comparing the summarised text with the body was weighed and dropped:
+      the timestamp test is the one the summary job itself uses
+      (`summaryIsCurrent`, now shared). Draft chapters carry the stamp too,
+      so a copied chapter summary stays the Assistant's (#1090). Muting a
+      story locks the arc-bearing characters `order by id for update` before
+      clearing them, the order `markStale` takes (#1091); no test, since a
+      deadlock test would be timing-dependent. An enrich pass that stopped
+      for no model, the Assistant off, failures in a row, or read nothing is
+      settled as failed, and the enrich done label is now "Finished
+      suggesting details for the entries in X" (#1092). Filed and left open:
+      #1093-#1096; #1076 gained a note on checking running jobs before a send.
+- [x] Staging review round 3 (#1078-#1082, 2026-11-18). Writer trust
+      first. The #1064 rule (adopt only a capped newest row) lost progress
+      when a continuation of a capped run threw or was cancelled: its own
+      uncapped row is saved as soon as it starts and became the newest
+      (#1078). A run that starts from a capped run's progress now records
+      `carriedForward` on its state, and the newest row is adopted when it is
+      capped, or carried forward and never finished (still part-way, or
+      aborted); a newer run that finished cleanly still blocks adoption, and
+      the legacy key follows the same rule. Marking the capped row as
+      consumed was weighed and dropped: the continuation's row already holds
+      the capped run's scenes plus its own. Migration 0083 (custom SQL)
+      backfills the stale marks that the move from watermark staleness to
+      marks dropped at upgrade (#1079), mirroring the old `arcIsStale` and
+      `entitiesToEnrich` queries from `main` (live, unmuted story; the arc at
+      millisecond precision as the old JavaScript compare was; enrich also
+      skipping a trashed universe); 0082 was left as it was. Duplicate scene,
+      draft add-back and new story from a draft now copy
+      `summary_generated_at` with the summary, so a copied Assistant summary
+      stays refreshable (#1080); drafts record it in their content from now
+      on, and older drafts, which never stored it, still copy the summary as
+      the writer's own. There is no writer edit path for scene summaries, so
+      nothing else changes. `markStale` locks every target `order by id for
+      update` (characters, places, lore) before it updates, so a mark by
+      scene and a mark by entity cannot deadlock (#1081); the test holds the
+      lowest id and checks the mark has not taken a higher one. The arc
+      card's done label is now "Finished with the arc for X", true for every
+      outcome (the notification says which); the enrich result counts
+      entities passed over as unchanged, and the notice only says it could
+      not read the entries when none were read or passed over (#1082). Filed
+      and left open: #1083-#1087; the suggested fix for #1073 is on the issue.
+- [x] Staging review round 2 (#1064-#1068, 2026-11-18). Writer trust
+      first. `adoptCappedRun` took the newest capped row for a scope, so a
+      capped run that a later run had finished was carried into a fresh
+      review weeks later, which then skipped (and reported reviewed) scenes
+      the writer had rewritten. It now looks only at the newest row for the
+      scope and adopts it only if that row was capped (#1064). Clearing or
+      flagging the adopted row was weighed and dropped: the newest-row rule
+      covers it with no extra write. Copyedit keys gained their categories in
+      #1062, which orphaned runs capped before the upgrade (#1065). The old
+      rows do not record their categories, and adopting one for any
+      categories would report scenes as checked for categories nobody
+      checked, so the fallback reads the categories from the old job on the
+      legacy queue (pg-boss keeps a completed job for seven days by default)
+      and adopts only the newest legacy row, only if capped, only on a match.
+      A forgotten job starts the run over. Remove it with the legacy queues
+      (#1041). Reverses part of #1050: a stream `overloaded_error` or
+      `api_error` is now thrown as `Endpoint returned 529` or `500`, so the
+      gateway retries it exactly as it does that status (#1066). The earlier
+      reasoning held that a job's retry would try again, but the review and
+      summaries handlers catch everything, so nothing did, while a buffered
+      529 had always been retried. Other stream errors and a 2xx that is not
+      a reply stay final. An arc check whose compare-and-set loses to a mark
+      now returns `changed` with its own notice instead of `unchanged` (the
+      "up to date" notice) (#1067). `untrash` now marks what the row mentions
+      in the same transaction as the revive, one transaction per slug attempt
+      so a unique violation does not abort the retry; the three callers no
+      longer mark separately (#1068). Filed and left open: #1069-#1076.
+- [x] Review follow-ups on the enrich and arc marks (#1047, #1055-#1061,
+      2026-11-18). Writer trust first. `rebuildSceneMentions` marked entities
+      before stamping the scene, while saves (a title change), reorders, trash,
+      merge and the summary job lock the scene row and then mark entities, so a
+      rebuild and a save could deadlock and the killed autosave (or the
+      un-retried keepalive save on tab close) lost the edit. The rebuild now
+      stamps the scene first (`where deleted_at is null`, so a scene trashed
+      since it was read is left as the trash left it), then the story, then
+      entities: the order is scene, story, entity everywhere. A test holds the
+      scene row in one connection, starts a rebuild, then marks the entity, as
+      a save does. The summary job overwrote `summary_md` unconditionally and
+      wrote back the `updated_at` it read before the model call, so a summary
+      typed while the model ran was lost and an edit in that window had its
+      `updated_at` rolled back (so the next run did not refresh it). The write
+      is now raw SQL (no `$onUpdate`, and `updated_at` is never set) guarded
+      by `updated_at` (as text, to the microsecond) and `summary_md` as read;
+      a miss skips the scene for the next run. Chapters got the same guard.
+      Cost: marks fire on any passage change, but enrich sends at most 16
+      passages and arcs the first passage per scene without a summary, so
+      many marks led to an identical request. Two fixes were weighed: making
+      the mark consider only the passages that are sent, which would repeat
+      the selection (per-story spread, even sampling, summaries) in the save
+      path and still drift from it; and storing a hash of the exact request
+      with the watermark. The hash was chosen: one comparison, exact by
+      construction, and the marks stay simple. Additive migration
+      `assistant_enriched_input` (characters, places, lore) and
+      `arc_summary_input` (characters). The background pass skips the model
+      and just clears the mark on a match (inline enrich always calls); an arc
+      refresh does the same only when the arc is marked, returning
+      `unchanged` with its own notice, so the writer can still ask for another
+      take on a current arc. Not fixed: the "may be out of date" line still
+      shows for such a mark until the writer refreshes. Reorders now compare
+      rank among live scenes, not the stored `global_position`, so closing a
+      trash gap marks nothing. `NoModelError` (a subclass of
+      `AssistantDisabledError`, so callers that end on a refusal still do)
+      gives the arc and enrich notices their own wording; the arc notices no
+      longer name the button, which reads Write arc or Refresh arc. A generic
+      arc failure now waits for the last attempt before notifying (#1047),
+      like the muted-story case.
+- [x] Staging review fixes for the streamed Claude replies and the
+      exclusive queues (#1049-#1054, 2026-11-18). The buffered path now
+      accepts a stream that ends after `message_delta` without
+      `message_stop`, as `chatStream` already did. A mid-stream `error`
+      event and a 2xx that is neither an event stream nor JSON throw
+      `EndpointReplyError`, which `isTransientFailure` treats as final. The
+      mid-stream case was considered for a longer backoff limited to
+      `overloaded_error` and `api_error`, but overload outlasts any wait a
+      request can sensibly hold, and the failed attempt already generated
+      tokens; the review job's own retry or the writer tries again. Its
+      partial usage is not recorded, like every other failed request. A
+      stream cut off with no stop reason is still retried, as a transport
+      drop. JSON with no content type is read as JSON (sniffed by a leading
+      `{`). Review scope keys now carry the categories (see #986 below).
+      Tests added for the streamed web search and citation blocks,
+      `redacted_thinking`, cache usage merged across `message_start` and
+      `message_delta`, and a job in pg-boss's `retry` state still holding
+      its key on the exclusive queue.
+- [x] Enrich and arc re-reads follow the passages, not `scenes.updated_at`;
+      a rejected summary is never suggested again (#977, #992, 2026-11-18).
+      The staleness checks compared `max(scenes.updated_at)` over mentioning
+      scenes with the watermark, so a status change, reorder, or lifecycle
+      update re-read every entity those scenes mention, while an accepted
+      alias that linked older scenes went unread. `mentions_indexed_at` was
+      considered and rejected: the reconcile sweep reindexes a scene whose
+      `updated_at` moved (so a status change still moves it) and a rename
+      reindexes the whole universe. Instead `rebuildSceneMentions` compares
+      each entity's passages (the snippets enrich and arcs read) before and
+      after, and marks only the entities whose passages changed, with the
+      existing fifty-years-back mark (`markEntitiesStale`), only for scenes
+      the Assistant reads (a live, unmuted story; restore and unmute already
+      mark). The checks are
+      now just "never read or marked", so there is no query against scenes
+      and no migration. Edits outside a mention's snippet window no longer
+      trigger a re-read, which is the intended precision. The summary job
+      marks arcs for a scene whose summary it rewrites, since arcs read
+      scene summaries, and a scene rename or a reorder that moves a scene
+      marks arcs only. Scene titles do reach enrich (each passage is labelled
+      `[story / scene title]` by `snippetLine`), and reading order picks which
+      passages are sent when there are more than 16; neither tells the model
+      anything new about the entity, so a rename or reorder is not worth a
+      paid re-read, and the next passage change sends the new labels. Review follow-ups: restoring a universe (or reviving a trashed
+      standalone one) now marks like a story restore; the rebuild reads
+      whether the Assistant reaches the scene inside its transaction with a
+      share lock on the story and universe rows, so an unmute or restore in
+      flight cannot slip between the read and the mark; and the enrich and
+      arc compare-and-set compare the watermark to the microsecond (carried
+      as text), since a JS Date drops microseconds and marks are now
+      frequent. Upgrade note: an entity or arc that was already
+      behind by the old rule at deploy is not re-read until its passages
+      change again. For #992, Mads chose "never again once rejected";
+      `summaryClosed` in `entity-suggestions.ts` holds the rule, and
+      `enrichEntity` uses it to stop asking the model for a summary.
+- [x] De-duplicate Assistant review and summary jobs (#986, 2026-11-18).
+      Both queues ran under pg-boss's default policy, where a `singletonKey`
+      alone adds no unique index, so a repeat request queued (and paid for) a
+      second run and the 409 branch never fired. A policy cannot change once a
+      queue exists, so the jobs moved to new queues created `exclusive`
+      (`assistant-review-v2`, `assistant-summaries-v2`); exclusive is "one
+      queued, retrying or running job per key", where `singleton` would still
+      allow many queued and `stately` one queued plus one running. The old
+      queues keep a worker for one release so jobs queued before the upgrade
+      drain, and the status and running-jobs lookups read both names; removal
+      is #1041 (search `LEGACY_ASSISTANT_`). Handlers pass the job's own queue
+      name to the retry-notice check so a drained job is looked up where it
+      lives. The summaries send dropped its 30-second `singletonSeconds`
+      window (the only thing deduping it before, and only within a slot) and
+      now returns 'coalesced' like the others, so the endpoint answers 409
+      instead of a 503. The app-side check-before-send alternative was
+      rejected as racy. A copyedit's key includes its categories in
+      canonical order (`full:<story>[:<chapter>]:<cats>`, `general` for the
+      sparing pass), so a review for other categories is its own job rather
+      than a 409, and a capped run is only adopted by a run checking the same
+      categories (#1052). Release note (#1053, also on #1041): rolling back
+      to a version before this strands jobs queued on the v2 queues, which
+      the older worker does not read; and while a deploy has the new web up
+      before the new worker, jobs sent to the v2 queues wait for the worker
+      restart.
+- [x] Enrich and arc failure notices (#988, #991, 2026-11-18). The enrich
+      pass now stops after three failed reads in a row (`MAX_FAILURES_IN_A_ROW`)
+      when entities remain, and on `AssistantDisabledError` at once, each with
+      its own notice. A cut-off reply does not count toward the run and resets
+      it, since the endpoint answered. A pass that read some entries counts
+      the failed ones in its notice. The arc job settles as failed without a
+      retry when the Assistant is off, like a cut-off; a story muted mid-write
+      raises `ArcStoryMutedError`, still retried, with its own wording.
+- [x] Claude's buffered replies stream under the hood (#967, 2026-11-18).
+      The Anthropic adapter's `respond` (every agent loop round, so every
+      Assistant review round) sent `stream: false`, so a long thinking reply
+      wrote nothing until it was done and could outlast the 10 minute egress
+      idle timeout. It now sends `stream: true` and `assembleMessage` rebuilds
+      the message a buffered call returns (blocks by index, thinking with its
+      signature, tool input from `input_json_delta`, the stop reason, usage
+      from `message_start` merged with `message_delta`), then reuses the
+      existing parsers, so the result, cut-off retry and spend accounting are
+      unchanged. The SSE line splitting moved into `sseFrames`, shared with
+      `chatStream`. An error event mid-stream throws `EndpointReplyError`,
+      which the gateway does not retry (#1050); a stream that ends with no
+      stop reason throws, and one that ends after `message_delta` without
+      `message_stop` is returned whole (#1049). A 2xx body that is JSON, with
+      or without a JSON content type, is still read as one, for an
+      Anthropic-compatible proxy that ignores `stream`; any other non-stream
+      body is an `EndpointReplyError` too (#1051). Not changed: the
+      OpenAI-compatible adapter's `respond` buffers the same way, but its
+      streams differ by server (tool-call deltas, usage frames), so it waits
+      for a sign that local reasoning models actually hit the timeout.
 - [x] Markdown in Assistant replies (#983, 2026-11-18). Models, Claude in
       particular, answer in Markdown, which the chat showed raw apart from a
       `**bold**` regex. Chosen approach, by surface: text that is only read

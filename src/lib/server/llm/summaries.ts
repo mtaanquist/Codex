@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { errorFields, logEvent } from '../log.ts';
 import { chapters, scenes, stories } from '../db/schema.ts';
@@ -8,14 +8,18 @@ import { resolveLlmConfig } from './config.ts';
 import { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
+import { markMentionsStale } from '../scene-lifecycle.ts';
+import { summaryIsCurrent } from '../summary-currency.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
 // by the background job (the only caller for now). It proposes nothing for the
 // writer to accept: a summary is generated metadata, not authored prose, so it
 // is written directly - but it never overwrites a summary the writer wrote by
-// hand (see needsSummary) and it preserves the row's updated_at so a summary
-// write does not register as an edit or look stale on the next run.
+// hand (see needsSummary), and it leaves the row's updated_at alone so a summary
+// write does not register as an edit or look stale on the next run. The write
+// only lands if the row is as it was read before the model call, so a summary
+// typed or an edit made while the model was writing is kept.
 
 const MAX_SUMMARY_TOKENS = 200;
 
@@ -70,11 +74,11 @@ async function generate(
 			enableTools: false,
 			messages,
 			maxTokens: MAX_SUMMARY_TOKENS,
+			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	opts.meter?.record(result.model, result.usage);
 	return result.content.trim();
 }
 
@@ -116,7 +120,9 @@ export async function summariseStory(
 			bodyMd: scenes.bodyMd,
 			summaryMd: scenes.summaryMd,
 			summaryGeneratedAt: scenes.summaryGeneratedAt,
-			updatedAt: scenes.updatedAt
+			updatedAt: scenes.updatedAt,
+			// As text, so the write below compares to the microsecond.
+			updatedAtText: sql<string>`${scenes.updatedAt}::text`
 		})
 		.from(scenes)
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
@@ -138,7 +144,7 @@ export async function summariseStory(
 		}
 		if (blank(scene.bodyMd)) continue;
 		const changedSince = scene.summaryGeneratedAt
-			? scene.updatedAt.getTime() > scene.summaryGeneratedAt.getTime()
+			? !summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt)
 			: false;
 		if (
 			!needsSummary({
@@ -162,12 +168,25 @@ export async function summariseStory(
 				deps
 			);
 			if (!text) continue;
-			await db
-				.update(scenes)
-				// Keep updated_at as it was so the summary write is not seen as an edit
-				// (and so the row does not look stale next run).
-				.set({ summaryMd: text, summaryGeneratedAt: new Date(), updatedAt: scene.updatedAt })
-				.where(eq(scenes.id, scene.id));
+			const stored = await db.transaction(async (tx) => {
+				// Raw SQL so updated_at's $onUpdate does not fire. A scene edited, or
+				// given a summary, since it was read keeps what it has; the next run
+				// looks at it again. The stamp comes from the app clock, the one that
+				// sets updated_at, since the two are compared.
+				const { rows } = await tx.execute(sql`
+					update scenes set summary_md = ${text}, summary_generated_at = ${new Date()}
+					where id = ${scene.id}
+						and updated_at = ${scene.updatedAtText}::timestamptz
+						and summary_md is not distinct from ${scene.summaryMd}
+						and deleted_at is null
+					returning id
+				`);
+				if (rows.length === 0) return false;
+				// Character arcs read scene summaries.
+				await markMentionsStale(tx, { sceneIds: [scene.id] });
+				return true;
+			});
+			if (!stored) continue;
 			written += 1;
 			if (scene.chapterId) touchedChapters.add(scene.chapterId);
 		} catch (err) {
@@ -182,7 +201,8 @@ export async function summariseStory(
 			title: chapters.title,
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
-			updatedAt: chapters.updatedAt
+			updatedAt: chapters.updatedAt,
+			updatedAtText: sql<string>`${chapters.updatedAt}::text`
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(chapters.storyId, stories.id))
@@ -226,7 +246,7 @@ export async function summariseStory(
 		const changedSince =
 			touchedChapters.has(chapter.id) ||
 			(chapter.summaryGeneratedAt
-				? chapter.updatedAt.getTime() > chapter.summaryGeneratedAt.getTime()
+				? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
 				: false);
 		if (
 			!needsSummary({
@@ -250,11 +270,15 @@ export async function summariseStory(
 				deps
 			);
 			if (!text) continue;
-			await db
-				.update(chapters)
-				.set({ summaryMd: text, summaryGeneratedAt: new Date(), updatedAt: chapter.updatedAt })
-				.where(eq(chapters.id, chapter.id));
-			chaptersWritten += 1;
+			// As for scenes: only over the chapter as it was read.
+			const { rows } = await db.execute(sql`
+				update chapters set summary_md = ${text}, summary_generated_at = ${new Date()}
+				where id = ${chapter.id}
+					and updated_at = ${chapter.updatedAtText}::timestamptz
+					and summary_md is not distinct from ${chapter.summaryMd}
+				returning id
+			`);
+			if (rows.length > 0) chaptersWritten += 1;
 		} catch (err) {
 			logEvent('error', 'summaries.chapter_failed', { chapterId: chapter.id, ...errorFields(err) });
 			failed += 1;
