@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fitChatTurns } from './chat-history';
+import { fitChatTurns, mergeAdjacentTurns } from './chat-history';
 import type { ChatMessage } from './providers/types';
 
 // About four characters per token, so 400 characters costs about 100 tokens.
@@ -47,5 +47,37 @@ describe('fitChatTurns', () => {
 	it('keeps the newest turn even when it alone exceeds the budget', () => {
 		const turns = [turn('user', 'a'), turn('assistant', 'b'), turn('user', 'big', 20_000)];
 		expect(fitChatTurns(turns, 100)).toEqual([turns[2]]);
+	});
+});
+
+describe('mergeAdjacentTurns', () => {
+	it('joins back-to-back turns of one role and leaves alternating turns alone', () => {
+		const alternating: ChatMessage[] = [
+			{ role: 'user', content: 'a' },
+			{ role: 'assistant', content: 'b' },
+			{ role: 'user', content: 'c' }
+		];
+		expect(mergeAdjacentTurns(alternating)).toEqual(alternating);
+		expect(
+			mergeAdjacentTurns([
+				{ role: 'user', content: 'a' },
+				{ role: 'user', content: 'b' },
+				{ role: 'assistant', content: 'c' },
+				{ role: 'user', content: 'd' }
+			])
+		).toEqual([
+			{ role: 'user', content: 'a\n\nb' },
+			{ role: 'assistant', content: 'c' },
+			{ role: 'user', content: 'd' }
+		]);
+	});
+
+	it('leaves system and tool turns as they are', () => {
+		const turns: ChatMessage[] = [
+			{ role: 'system', content: 'a' },
+			{ role: 'system', content: 'b' },
+			{ role: 'user', content: 'c' }
+		];
+		expect(mergeAdjacentTurns(turns)).toEqual(turns);
 	});
 });
