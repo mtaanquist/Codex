@@ -1,18 +1,30 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { isUniqueViolation } from './db-errors';
-import { assistantDrafts, scenes } from './db/schema';
+import { assistantDrafts, chapters, scenes, stories } from './db/schema';
 import { recordRevision } from './revisions';
 import { ownedScene } from './scene-access.ts';
 import { saveSceneBody } from './scene-save';
 import { lockStoryScene, makeRoomAfter } from './scene-split-merge';
-import { inLiveStory } from './universe-scope.ts';
-import { DRAFT_STOPPED_NOTE, estimateSceneDraft, type SceneDraftInput } from './llm/scene-draft.ts';
+import { inLiveStory, storyIsLive } from './universe-scope.ts';
+import { usableSceneSummary } from './summary-currency.ts';
+import {
+	DRAFT_STOPPED_NOTE,
+	estimateChapterDraft,
+	estimateSceneDraft,
+	type SceneDraftInput
+} from './llm/scene-draft.ts';
 import { isUuid } from '#lib/slug';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
-import type { SceneDraftView } from '#lib/scene-draft';
+import {
+	defaultDraftWords,
+	type ChapterDraftDefaults,
+	type ChapterDraftEstimate,
+	type ChapterDraftView,
+	type SceneDraftView
+} from '#lib/scene-draft';
 
 // The writer's side of a scene draft: asking for one, reading it back, and
 // deciding it. A draft reaches the story only here, and only two ways: into
@@ -136,7 +148,8 @@ export async function sceneDraftFor(
 		jobId: draft.jobId,
 		createdAt: draft.createdAt.toISOString(),
 		sceneEmpty: scene.bodyMd.trim() === '',
-		sceneTitle: title?.title ?? null
+		sceneTitle: title?.title ?? null,
+		inChapterRun: draft.chapterId !== null
 	};
 }
 
@@ -379,5 +392,404 @@ export async function discardSceneDraft(
 	// Already accepted or discarded: nothing to do, and nothing to undo.
 	if (rows.length === 0) return NOT_READY;
 	const unsettled = draft.status === 'pending' || draft.status === 'running';
-	return { ok: true, stopJobId: unsettled ? draft.jobId : null };
+	// One scene of a chapter draft: its job has other scenes to write, and
+	// passes over this one now that it is discarded.
+	return { ok: true, stopJobId: unsettled && draft.chapterId === null ? draft.jobId : null };
+}
+
+// ---- A chapter, drafted scene by scene ----
+// One job writes a draft row per scene, in order. Each row is an ordinary
+// scene draft once written: the writer keeps or discards it on its own, with
+// the functions above.
+
+const CHAPTER_GONE: ActionFailure = {
+	ok: false,
+	code: 'not_found',
+	reason: 'That chapter no longer exists.'
+};
+const ALREADY_DRAFTING_CHAPTER: ActionFailure = {
+	ok: false,
+	code: 'conflict',
+	reason: 'This chapter is already being drafted. Wait for it to finish, or stop it first.'
+};
+
+export const CHAPTER_HAS_NO_SCENES =
+	'This chapter has no scenes yet. Add a scene for each part of the chapter, then ask again.';
+
+// A chapter of a live story of the user's, with its live scenes in order.
+async function chapterScenes(db: Database, userId: string, storyId: string, chapterId: string) {
+	if (!isUuid(chapterId)) return null;
+	const [chapter] = await db
+		.select({ id: chapters.id, title: chapters.title })
+		.from(chapters)
+		.innerJoin(stories, eq(chapters.storyId, stories.id))
+		.where(
+			and(
+				eq(chapters.id, chapterId),
+				eq(chapters.storyId, storyId),
+				eq(stories.ownerId, userId),
+				storyIsLive()
+			)
+		);
+	if (!chapter) return null;
+	const rows = await db
+		.select({
+			id: scenes.id,
+			title: scenes.title,
+			bodyMd: scenes.bodyMd,
+			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt
+		})
+		.from(scenes)
+		.where(and(eq(scenes.chapterId, chapterId), isNull(scenes.deletedAt)))
+		.orderBy(asc(scenes.globalPosition));
+	return { chapter, scenes: rows };
+}
+
+// Asks the queue about each job once, however many drafts it writes.
+function onceEach(jobState: DraftJobState | undefined): DraftJobState | undefined {
+	if (!jobState) return undefined;
+	const asked = new Map<string, ReturnType<DraftJobState>>();
+	return (jobId) => {
+		let state = asked.get(jobId);
+		if (!state) asked.set(jobId, (state = jobState(jobId)));
+		return state;
+	};
+}
+
+// The scenes among these with a draft the writer has not decided, after
+// settling any whose job is gone.
+async function undecidedScenes(
+	db: Database,
+	userId: string,
+	sceneIds: string[],
+	jobState: DraftJobState | undefined
+): Promise<Set<string>> {
+	const held = new Set<string>();
+	if (sceneIds.length === 0) return held;
+	const open = await db
+		.select({
+			id: assistantDrafts.id,
+			sceneId: assistantDrafts.sceneId,
+			status: assistantDrafts.status,
+			jobId: assistantDrafts.jobId
+		})
+		.from(assistantDrafts)
+		.where(
+			and(
+				eq(assistantDrafts.userId, userId),
+				inArray(assistantDrafts.sceneId, sceneIds),
+				inArray(assistantDrafts.status, OPEN)
+			)
+		);
+	const state = onceEach(jobState);
+	for (const draft of open) {
+		if (draft.sceneId && !(await settleOrphan(db, draft, state))) held.add(draft.sceneId);
+	}
+	return held;
+}
+
+// What the chapter brief form opens with: every scene of the chapter with its
+// summary as its brief (the writer's, or the Assistant's while it still tells
+// the scene). Null when the chapter is not the user's.
+export async function chapterDraftDefaults(
+	db: Database,
+	opts: { userId: string; storyId: string; chapterId: string },
+	jobState?: DraftJobState
+): Promise<ChapterDraftDefaults | null> {
+	const found = await chapterScenes(db, opts.userId, opts.storyId, opts.chapterId);
+	if (!found) return null;
+	const held = await undecidedScenes(
+		db,
+		opts.userId,
+		found.scenes.map((scene) => scene.id),
+		jobState
+	);
+	const counts = await db
+		.select({ wordCount: scenes.wordCount })
+		.from(scenes)
+		.where(and(eq(scenes.storyId, opts.storyId), isNull(scenes.deletedAt)));
+	return {
+		chapterTitle: found.chapter.title,
+		targetWords: defaultDraftWords(counts.map((row) => row.wordCount)),
+		scenes: found.scenes.map((scene) => ({
+			sceneId: scene.id,
+			title: scene.title,
+			brief: usableSceneSummary(scene) ?? '',
+			hasText: scene.bodyMd.trim() !== '',
+			hasDraft: held.has(scene.id)
+		}))
+	};
+}
+
+export type ChapterDraftRequest = {
+	userId: string;
+	storyId: string;
+	chapterId: string;
+	brief: string;
+	targetWords: number;
+	pov?: string | null;
+	// The scenes the writer chose, each with its own brief (which may be empty
+	// when the chapter brief covers it).
+	scenes: { sceneId: string; brief: string }[];
+};
+
+// Which of the chosen scenes a chapter draft would write, in chapter order,
+// and which it leaves out because they already have an undecided draft.
+async function planChapterDraft(
+	db: Database,
+	input: ChapterDraftRequest,
+	jobState: DraftJobState | undefined
+): Promise<
+	| {
+			ok: true;
+			scenes: { sceneId: string; brief: string }[];
+			skipped: { sceneId: string; title: string | null }[];
+	  }
+	| ActionFailure
+> {
+	const found = await chapterScenes(db, input.userId, input.storyId, input.chapterId);
+	if (!found) return CHAPTER_GONE;
+	if (found.scenes.length === 0) {
+		return { ok: false, code: 'invalid', reason: CHAPTER_HAS_NO_SCENES };
+	}
+	const asked = new Map(input.scenes.map((scene) => [scene.sceneId, scene.brief.trim()]));
+	const chosen = found.scenes.filter((scene) => asked.has(scene.id));
+	if (chosen.length === 0) {
+		return { ok: false, code: 'invalid', reason: 'Choose at least one scene to draft.' };
+	}
+	if (!input.brief.trim() && chosen.some((scene) => !asked.get(scene.id))) {
+		return {
+			ok: false,
+			code: 'invalid',
+			reason: 'Say what happens in the chapter, or in each scene you chose.'
+		};
+	}
+	const held = await undecidedScenes(
+		db,
+		input.userId,
+		chosen.map((scene) => scene.id),
+		jobState
+	);
+	const scenesToDraft = chosen
+		.filter((scene) => !held.has(scene.id))
+		.map((scene) => ({ sceneId: scene.id, brief: asked.get(scene.id) ?? '' }));
+	if (scenesToDraft.length === 0) {
+		return {
+			ok: false,
+			code: 'conflict',
+			reason:
+				'Every scene you chose already has a draft. Keep or discard those drafts before asking for more.'
+		};
+	}
+	return {
+		ok: true,
+		scenes: scenesToDraft,
+		skipped: chosen
+			.filter((scene) => held.has(scene.id))
+			.map((scene) => ({ sceneId: scene.id, title: scene.title }))
+	};
+}
+
+// What the chapter draft would send and cost, counted without sending
+// anything. Throws NoModelError when no model is chosen.
+export async function chapterDraftEstimate(
+	db: Database,
+	input: ChapterDraftRequest,
+	jobState?: DraftJobState
+): Promise<{ ok: true; estimate: ChapterDraftEstimate } | ActionFailure> {
+	const plan = await planChapterDraft(db, input, jobState);
+	if (!plan.ok) return plan;
+	const estimate = await estimateChapterDraft(db, { ...input, scenes: plan.scenes });
+	if (!estimate) return CHAPTER_GONE;
+	return { ok: true, estimate: { ...estimate, skipped: plan.skipped } };
+}
+
+export type QueueChapterDraft = (job: {
+	userId: string;
+	storyId: string;
+	chapterId: string;
+	draftIds: string[];
+	brief: string;
+}) => Promise<string | 'coalesced' | null>;
+
+/**
+ * Stages a draft for each chosen scene of a chapter and queues the one job
+ * that writes them in order. A scene that already has an undecided draft is
+ * left out and named in the result. Refused when the summed estimate is over
+ * the spend cap. The caller has checked the Assistant is on for the story.
+ * Throws NoModelError when no model is chosen.
+ */
+export async function requestChapterDraft(
+	db: Database,
+	input: ChapterDraftRequest,
+	deps: { queue: QueueChapterDraft; jobState?: DraftJobState }
+): Promise<
+	| {
+			ok: true;
+			jobId: string;
+			draftIds: string[];
+			skipped: { sceneId: string; title: string | null }[];
+	  }
+	| ActionFailure
+> {
+	const plan = await planChapterDraft(db, input, deps.jobState);
+	if (!plan.ok) return plan;
+	const estimate = await estimateChapterDraft(db, { ...input, scenes: plan.scenes });
+	if (!estimate) return CHAPTER_GONE;
+	if (estimate.overCap) {
+		return {
+			ok: false,
+			code: 'conflict',
+			reason: `This chapter draft is estimated at about $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. Choose fewer scenes or a shorter length, or raise the cap in your Assistant settings.`
+		};
+	}
+
+	const sceneIds = plan.scenes.map((scene) => scene.sceneId);
+	let draftIds: string[];
+	try {
+		draftIds = await db.transaction(async (tx) => {
+			// A failed draft has been read by now; the new one takes its place.
+			await tx
+				.update(assistantDrafts)
+				.set({ status: 'discarded' })
+				.where(
+					and(
+						eq(assistantDrafts.userId, input.userId),
+						inArray(assistantDrafts.sceneId, sceneIds),
+						eq(assistantDrafts.status, 'failed')
+					)
+				);
+			const rows = await tx
+				.insert(assistantDrafts)
+				.values(
+					plan.scenes.map((scene, index) => ({
+						userId: input.userId,
+						storyId: input.storyId,
+						chapterId: input.chapterId,
+						sceneId: scene.sceneId,
+						position: index,
+						brief: scene.brief,
+						targetWords: input.targetWords,
+						pov: input.pov?.trim() || null
+					}))
+				)
+				.returning({ id: assistantDrafts.id, position: assistantDrafts.position });
+			return rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((row) => row.id);
+		});
+	} catch (err) {
+		// A draft for one of the scenes was asked for at the same moment.
+		if (isUniqueViolation(err)) return ALREADY_DRAFTING_CHAPTER;
+		throw err;
+	}
+
+	const jobId = await deps.queue({
+		userId: input.userId,
+		storyId: input.storyId,
+		chapterId: input.chapterId,
+		draftIds,
+		brief: input.brief.trim()
+	});
+	if (!jobId || jobId === 'coalesced') {
+		// Nothing will write them, so they must not hold their scenes.
+		await db.delete(assistantDrafts).where(inArray(assistantDrafts.id, draftIds));
+		return jobId === 'coalesced'
+			? ALREADY_DRAFTING_CHAPTER
+			: {
+					ok: false,
+					code: 'conflict',
+					reason: 'Could not start the draft. Try again in a moment.'
+				};
+	}
+	await db.update(assistantDrafts).set({ jobId }).where(inArray(assistantDrafts.id, draftIds));
+	return { ok: true, jobId, draftIds, skipped: plan.skipped };
+}
+
+/**
+ * The chapter's scene drafts that came from a chapter draft and are still in
+ * front of the writer (being written, ready, or failed), in chapter order.
+ * Null when there are none, or the chapter is not the user's.
+ */
+export async function chapterDraftFor(
+	db: Database,
+	opts: { userId: string; storyId: string; chapterId: string },
+	jobState?: DraftJobState
+): Promise<ChapterDraftView | null> {
+	const found = await chapterScenes(db, opts.userId, opts.storyId, opts.chapterId);
+	if (!found) return null;
+	const read = () =>
+		db
+			.select()
+			.from(assistantDrafts)
+			.where(
+				and(
+					eq(assistantDrafts.userId, opts.userId),
+					eq(assistantDrafts.chapterId, opts.chapterId),
+					isNotNull(assistantDrafts.sceneId),
+					inArray(assistantDrafts.status, SHOWN)
+				)
+			)
+			.orderBy(desc(assistantDrafts.createdAt));
+	let rows = await read();
+	const state = onceEach(jobState);
+	let settled = false;
+	for (const row of rows) settled = (await settleOrphan(db, row, state)) || settled;
+	if (settled) rows = await read();
+
+	// The newest draft of each scene, for the scenes still in the chapter.
+	const latest = new Map<string, (typeof rows)[number]>();
+	for (const row of rows) if (!latest.has(row.sceneId!)) latest.set(row.sceneId!, row);
+	const listed = found.scenes.flatMap((scene) => {
+		const row = latest.get(scene.id);
+		return row
+			? [
+					{
+						draftId: row.id,
+						sceneId: scene.id,
+						sceneTitle: scene.title,
+						status: row.status,
+						note: row.note,
+						jobId: row.jobId
+					}
+				]
+			: [];
+	});
+	if (listed.length === 0) return null;
+	const writing = listed.find((row) => row.status === 'pending' || row.status === 'running');
+	return {
+		chapterId: opts.chapterId,
+		chapterTitle: found.chapter.title,
+		jobId: writing?.jobId ?? null,
+		scenes: listed.map((row) => ({
+			draftId: row.draftId,
+			sceneId: row.sceneId,
+			sceneTitle: row.sceneTitle,
+			status: row.status,
+			note: row.note
+		}))
+	};
+}
+
+// How far a chapter draft's job has got, for the activity center: scenes
+// settled out of scenes asked for. Null for a job that is not a chapter draft
+// of the user's.
+export async function chapterDraftProgress(
+	db: Database,
+	userId: string,
+	jobId: string
+): Promise<{ completed: number; total: number } | null> {
+	const rows = await db
+		.select({ status: assistantDrafts.status })
+		.from(assistantDrafts)
+		.where(
+			and(
+				eq(assistantDrafts.jobId, jobId),
+				eq(assistantDrafts.userId, userId),
+				isNotNull(assistantDrafts.chapterId)
+			)
+		);
+	if (rows.length === 0) return null;
+	const waiting = rows.filter((row) => row.status === 'pending' || row.status === 'running');
+	return { completed: rows.length - waiting.length, total: rows.length };
 }

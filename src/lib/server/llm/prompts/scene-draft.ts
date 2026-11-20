@@ -15,12 +15,48 @@ export type SceneDraftBrief = {
 	// The draft carries on from it instead of starting over.
 	existingProse?: string | null;
 	// The scene that comes next, so this one ends where that one can begin:
-	// its summary when it has a current one, else how it opens.
-	following?: { title: string | null; text: string; kind: 'summary' | 'opening' } | null;
+	// its summary when it has a current one, else how it opens. In a chapter
+	// draft, the writer's plan for it when it is drafted next.
+	following?: {
+		title: string | null;
+		text: string;
+		kind: 'summary' | 'opening' | 'plan';
+	} | null;
+	// A chapter draft: what the writer said about the chapter as a whole.
+	chapterBrief?: string | null;
+	// A chapter draft: the scene drafted just before this one (or its closing
+	// part). It is not in the manuscript yet, so the context does not hold it.
+	previousDraft?: string | null;
 };
+
+const FOLLOWING_LEAD = {
+	summary: 'is summarised as',
+	opening: 'opens with',
+	plan: 'is planned as'
+} as const;
 
 export function buildSceneDraftMessage(input: SceneDraftBrief): string {
 	const parts: string[] = [];
+	const chapter = input.chapterBrief?.trim();
+	if (chapter) {
+		parts.push(
+			'This scene is one of a chapter being drafted scene by scene. The writer describes the chapter as:',
+			'',
+			`"${chapter}"`,
+			''
+		);
+	}
+	const previous = input.previousDraft?.trim();
+	if (previous) {
+		parts.push(
+			'The scene before this one was just drafted, and reads:',
+			'',
+			previous,
+			'',
+			'Carry on from where it ends. Do not repeat it.',
+			''
+		);
+	}
 	const existing = input.existingProse?.trim();
 	if (existing) {
 		parts.push(
@@ -37,7 +73,7 @@ export function buildSceneDraftMessage(input: SceneDraftBrief): string {
 		const title = input.following?.title?.trim();
 		parts.push(
 			`The scene that follows this one${title ? ` ("${title}")` : ''} ${
-				input.following?.kind === 'summary' ? 'is summarised as' : 'opens with'
+				FOLLOWING_LEAD[input.following?.kind ?? 'opening']
 			}:`,
 			'',
 			following,
@@ -46,14 +82,25 @@ export function buildSceneDraftMessage(input: SceneDraftBrief): string {
 			''
 		);
 	}
-	parts.push(
-		existing
-			? 'Write the rest of the current scene to this brief:'
-			: 'Write the whole of the current scene to this brief:',
-		'',
-		`"${input.brief.trim()}"`,
-		''
-	);
+	const brief = input.brief.trim();
+	if (brief) {
+		parts.push(
+			existing
+				? 'Write the rest of the current scene to this brief:'
+				: 'Write the whole of the current scene to this brief:',
+			'',
+			`"${brief}"`,
+			''
+		);
+	} else {
+		// Only a chapter draft sends a scene without a brief of its own.
+		parts.push(
+			existing
+				? 'Write the rest of the current scene, as its part of the chapter described above.'
+				: 'Write the whole of the current scene, as its part of the chapter described above.',
+			''
+		);
+	}
 	const pov = input.pov?.trim();
 	if (pov) parts.push(`Point of view: ${pov}.`);
 	parts.push(

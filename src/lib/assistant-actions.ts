@@ -313,6 +313,66 @@ export function followSceneDraft(opts: {
 	});
 }
 
+// Where a chapter's drafts show: the story in Write, with the chapter's drafts
+// open in the Assistant panel.
+export function chapterDraftPath(storyId: string, chapterId: string): ResolvedPathname {
+	return withQuery(resolve('/stories/[id]', { id: storyId }), { draftChapter: chapterId });
+}
+
+// Asks for a chapter draft: one background job that drafts the chosen scenes
+// in order. A refusal comes back as the server's own words. skipped counts the
+// scenes left out because they already had a draft waiting.
+export async function startChapterDraft(opts: {
+	storyId: string;
+	chapterId: string;
+	brief: string;
+	targetWords: number;
+	pov: string;
+	scenes: { sceneId: string; brief: string }[];
+	label: string;
+}): Promise<{ ok: true; jobId: string; skipped: number } | { ok: false; message: string }> {
+	let response: Response;
+	try {
+		response = await fetch('/api/assistant/draft/chapter', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				storyId: opts.storyId,
+				chapterId: opts.chapterId,
+				brief: opts.brief,
+				targetWords: opts.targetWords,
+				pov: opts.pov,
+				scenes: opts.scenes
+			})
+		});
+	} catch {
+		return { ok: false, message: 'Check your connection and try again.' };
+	}
+	if (!response.ok) {
+		return { ok: false, message: await apiErrorMessage(response, 'Could not start the draft.') };
+	}
+	const { jobId, skipped } = (await response.json()) as { jobId: string; skipped: unknown[] };
+	void followChapterDraft({ ...opts, jobId });
+	return { ok: true, jobId, skipped: skipped.length };
+}
+
+// Follows a chapter draft's job in the activity center, for one just started
+// or one found still running after a reload.
+export function followChapterDraft(opts: {
+	jobId: string;
+	storyId: string;
+	chapterId: string;
+	label: string;
+}): Promise<void> {
+	return trackJob({
+		jobId: opts.jobId,
+		kind: 'draft',
+		...jobLabels('draft', 'full', opts.label),
+		scope: { storyId: opts.storyId, chapterId: opts.chapterId },
+		href: chapterDraftPath(opts.storyId, opts.chapterId)
+	});
+}
+
 // The activity card's three labels for a job. label names what the job is over
 // ("your story", or a quoted title for a job picked up after a reload); a
 // summary pass started from the panel needs none.
@@ -411,7 +471,9 @@ export async function resumeRunningJobs(): Promise<void> {
 					? resolve('/stories/[id]/review', { id: storyId })
 					: kind === 'draft' && storyId && sceneId
 						? sceneDraftPath(storyId, sceneId)
-						: undefined
+						: kind === 'draft' && storyId && chapterId
+							? chapterDraftPath(storyId, chapterId)
+							: undefined
 		});
 		// One this tab started itself gets its title in the background jobs list.
 		labelJob(id, labels.runningLabel);

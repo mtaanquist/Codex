@@ -439,6 +439,33 @@ export async function queueAssistantDraft(input: {
 	}
 }
 
+// Queues the one job that drafts a chapter's scenes in order (their rows are
+// staged first, see scene-drafts.ts), on the scene draft queue. The singleton
+// key holds one unfinished chapter draft per chapter.
+export async function queueAssistantChapterDraft(input: {
+	userId: string;
+	storyId: string;
+	chapterId: string;
+	draftIds: string[];
+	brief: string;
+}): Promise<string | 'coalesced' | null> {
+	try {
+		const boss = await getBoss();
+		const jobId = await boss.send(ASSISTANT_DRAFT_QUEUE, input, {
+			singletonKey: `draft-chapter:${input.chapterId}`,
+			...assistantSendOptions(input.userId)
+		});
+		return jobId ?? 'coalesced';
+	} catch (error) {
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_DRAFT_QUEUE,
+			chapterId: input.chapterId,
+			...errorFields(error)
+		});
+		return null;
+	}
+}
+
 // What the queue says about a scene draft's job, for settling a draft whose
 // job ended without settling it (see scene-drafts.ts). 'stopped' is the
 // writer's Stop. A lookup that fails reads as running, so a draft still being

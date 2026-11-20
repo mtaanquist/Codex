@@ -20,7 +20,7 @@ export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
 	assistant_review: 'Assistant reviews you asked for',
 	assistant_summaries: 'Assistant summaries you asked for',
 	assistant_enrich: 'Assistant entry suggestions and character arcs you asked for',
-	assistant_draft: 'Assistant scene drafts you asked for',
+	assistant_draft: 'Assistant scene and chapter drafts you asked for',
 	export_ready: 'Exports you asked for are ready'
 };
 

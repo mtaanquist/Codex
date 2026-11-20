@@ -1591,9 +1591,10 @@ export const ASSISTANT_DRAFT_STATUSES = [
 // it (see scene-drafts.ts). The background job writes text_md and moves the row
 // from pending through running to ready or failed; note says why a draft
 // failed, or that a ready one stopped at the length limit. scene_id is the
-// scene the draft was asked for. chapter_id and position are unused so far:
-// they are for a draft that has no scene yet (a chapter drafted scene by
-// scene). The rows go with their scene, story and user.
+// scene the draft was asked for. chapter_id and position are set on a draft
+// that is one of a chapter's, written scene by scene by one job (which they
+// share a job_id with): the chapter it was asked for, and its place in the
+// run. The rows go with their scene, chapter, story and user.
 export const assistantDrafts = pgTable(
 	'assistant_drafts',
 	{

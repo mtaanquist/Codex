@@ -37,9 +37,11 @@ type JobData = {
 	userId?: string;
 	storyId?: string;
 	chapterId?: string;
-	// Set with draftId on a scene draft.
+	// Set with draftId on a scene draft; a chapter draft carries chapterId and
+	// draftIds instead.
 	sceneId?: string;
 	draftId?: string;
+	draftIds?: string[];
 	universeId?: string;
 	characterId?: string;
 	// A full-text read of one entity (the "Suggest details" button).
@@ -194,7 +196,8 @@ export async function findRunningAssistantJobs(
 			if (title !== undefined && chapter?.storyId === storyId && chapter.title) {
 				title = `${title}: ${chapter.title}`;
 			}
-			if (job.kind === 'draft') {
+			// A chapter draft carries no scene and keeps its chapter's title.
+			if (job.kind === 'draft' && job.data.sceneId) {
 				const scene = job.data.sceneId ? sceneTitles.get(job.data.sceneId) : undefined;
 				if (scene?.storyId !== storyId) title = undefined;
 				else if (scene.title) title = scene.title;

@@ -99,6 +99,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		args: true
 	},
 	{
+		name: 'draft-chapter',
+		label: 'Draft this chapter',
+		detail: "Draft every scene in the open scene's chapter, one by one, from a brief",
+		group: 'write',
+		scope: 'story',
+		args: true
+	},
+	{
 		name: 'rewrite',
 		label: 'Rewrite the selection',
 		detail: 'Rewrite the selected passage to an instruction',

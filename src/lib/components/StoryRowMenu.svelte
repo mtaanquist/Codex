@@ -24,6 +24,7 @@
 		onOpenReview,
 		onSuggestSplit,
 		onDraftScene,
+		onDraftChapter,
 		onDuplicateScene,
 		onMergeSelected,
 		onFindReplace
@@ -43,6 +44,8 @@
 		onSuggestSplit?: (sceneId: string) => void;
 		// Write only: opens the scene draft form in the Assistant panel.
 		onDraftScene?: (sceneId: string) => void;
+		// Write only: opens the chapter draft form in the Assistant panel.
+		onDraftChapter?: (chapterId: string) => void;
 		onDuplicateScene: (sceneId: string) => void;
 		onMergeSelected: () => void;
 		// Write only: opens find and replace across the chapter.
@@ -132,6 +135,16 @@
 						>
 							Review with the Assistant...
 						</button>
+						{#if onDraftChapter}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => onDraftChapter(target.id)}
+							>
+								Draft this chapter...
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>

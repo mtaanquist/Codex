@@ -444,6 +444,20 @@ already ships.
   scene" (only while the scene has no prose), "Add as a new scene after this
   one", or "Discard". There is no replace action. See "Writes are
   suggestions" and "Background jobs".
+- Chapter draft (#1168, step 2): the same, over the scenes of one chapter.
+  The Write page has no chapter focus of its own, so the command is a
+  separate one, `/draft-chapter <brief>`, which drafts the chapter the open
+  scene is in; "Draft this chapter..." on the chapter's menu names the
+  chapter directly. The form (`AssistantChapterDraft.svelte`) takes a brief
+  for the chapter, one length and point of view for every scene, and a
+  ticked list of the chapter's scenes with a line each, prefilled from the
+  scene's summary when it is usable. A chapter with no scenes is refused
+  with a message saying to add them first: the run drafts into scenes that
+  exist and never creates any. Scenes with text start unticked. A scene that
+  already has an undecided draft cannot be ticked and is left out. One job
+  drafts the ticked scenes in order; each result is an ordinary scene draft,
+  kept or discarded on its own in that scene's card. The chapter card lists
+  the drafts and their state and links to each scene.
 - "Ask the Assistant" on the editor right-click menu, over a selection, with
   submenu items:
   - Review (send the selection to the reviewer surface),
@@ -497,7 +511,9 @@ proposes, the human commits. Concretely:
   transaction as the write, and it goes through the normal save path
   (`saveSceneBody`), so it is a revision like any other save. Otherwise the
   draft can only become a new scene after the one it was written for, with
-  status `draft`. A stopped or failed run leaves the scene as it was.
+  status `draft`. A stopped or failed run leaves the scene as it was. A
+  chapter draft stages one such row per scene and nothing else: a scene's
+  text is staged only once it is whole, and each row is decided separately.
 - Structural actions invoked from chat (create a scene, create an entity,
   add an alias, set a quick detail, split a scene) show a preview and a
   confirm before anything is written.
@@ -1014,7 +1030,9 @@ context assembly and the cross-scene pass read them.
   fingerprint for chapter summaries (migration 0092).
 - Scene drafts: `assistant_drafts` (migration 0095), one row per draft asked
   for, with at most one undecided draft (pending, running or ready) per
-  writer and scene. It cascades with its user, story and scene.
+  writer and scene. It cascades with its user, story and scene. A chapter
+  draft's rows carry `chapter_id` and `position` and share a `job_id`; there
+  is no table for the run itself.
 - Persisted chats: `assistant_chats`, with `chat_id` on
   `assistant_chat_messages` and `assistant_chat_summaries` (migration 0080,
   which made each earlier conversation its scope's first chat).
@@ -1322,8 +1340,31 @@ calls the gateway, which proxies through the egress guard.
   keyed by the job. A reply cut off at the limit is kept as a ready draft
   with a note; a stop discards the draft; a failure marks it failed with the
   reason, to try again from the card. `/api/assistant/draft/[id]` takes the
-  writer's choice (fill, add, discard) for a draft they own. The row carries
-  `chapter_id` and `position`, unused so far, for chapter drafts (step 2).
+  writer's choice (fill, add, discard) for a draft they own.
+- [built] Chapter drafts (#1168, step 2): the same queue and table. The
+  request (`/api/assistant/draft/chapter`: defaults, `estimate: true`, or
+  the request itself) stages one `assistant_drafts` row per chosen scene with
+  `chapter_id` and `position` and queues one job that carries the row ids in
+  order and the chapter brief (`queueAssistantChapterDraft`, one unfinished
+  job per chapter). The estimate is the sum of the scenes' requests, each
+  later one counted with the scene before it, and over the cap it is
+  refused. The job (`runChapterDraft`) makes one `coauthor` request per
+  scene. Each is told the chapter brief, the closing part of the scene
+  drafted just before it (it is not in the manuscript, so the context does
+  not hold it), and the writer's line for the next scene where the single
+  draft would use that scene's summary. Before every scene it checks the
+  writer's Stop, that the Assistant is still on for the account and the
+  story, and the spend cap (one meter for the job); any of them ends the run
+  there, keeps the drafts already written and discards the rows not reached.
+  A Stop during a request drops that scene whole. A scene deleted or moved to
+  the trash by its turn is left out and the run goes on. A request that
+  fails is retried with the job, and the retry carries on from that scene;
+  when no retry follows, that scene's row is marked failed and the rest are
+  discarded. A row the writer discards mid-run is passed over, and does not
+  stop the job. The job-status poll reports scenes settled out of scenes
+  asked for (`chapterDraftProgress`), which the activity card and the
+  Background jobs list show, and the notice says how many scenes were
+  drafted and why the run ended when it ended early.
 
 ### Tool use and structural actions - sequencing step 6
 

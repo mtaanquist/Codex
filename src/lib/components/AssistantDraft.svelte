@@ -24,7 +24,8 @@
 		storyId,
 		sceneId,
 		request = null,
-		onLand
+		onLand,
+		onDecided
 	}: {
 		storyId: string;
 		sceneId: string;
@@ -35,6 +36,9 @@
 		// it (add). The page lands pending saves first and opens the result.
 		// Resolves to a message when it did not go through.
 		onLand: (draftId: string, action: 'fill' | 'add', text: string) => Promise<string | null>;
+		// Called once a draft is kept or discarded, so a list of the chapter's
+		// drafts can drop it.
+		onDecided?: () => void;
 	} = $props();
 
 	type View = 'hidden' | 'loading' | 'form' | 'draft';
@@ -88,8 +92,32 @@
 		if (found.status === 'pending' || found.status === 'running') void follow(found);
 	}
 
-	// Waits for the job writing the draft, then reads the draft back.
+	const POLL_MS = 4000;
+
+	// Waits for the job writing the draft, then reads the draft back. A draft
+	// that is one of a chapter's is ready before its job ends, so it is read
+	// again every few seconds instead.
 	async function follow(found: SceneDraftView, done?: Promise<void>) {
+		if (found.inChapterRun) {
+			let latest: SceneDraftView | null = found;
+			while (
+				latest?.id === found.id &&
+				(latest.status === 'pending' || latest.status === 'running')
+			) {
+				await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+				if (!alive || draft?.id !== found.id) return;
+				latest = await readDraft();
+				if (!alive || draft?.id !== found.id) return;
+			}
+			if (!latest || latest.id !== found.id) {
+				draft = null;
+				view = 'hidden';
+				return;
+			}
+			show(latest);
+			await reveal();
+			return;
+		}
 		if (!found.jobId) return;
 		await (done ??
 			followSceneDraft({ jobId: found.jobId, storyId, sceneId, label: sceneLabel(found) }));
@@ -255,6 +283,7 @@
 		}
 		draft = null;
 		view = 'hidden';
+		onDecided?.();
 	}
 
 	async function discard() {
@@ -274,6 +303,7 @@
 		}
 		draft = null;
 		view = 'hidden';
+		onDecided?.();
 	}
 
 	function cancelForm() {
@@ -370,6 +400,11 @@
 			<p class="draft-hint">
 				The draft is shown here first. Your scene stays as it is until you choose what to do with
 				it.
+			</p>
+		{:else if draft && running && draft.inChapterRun}
+			<p class="draft-note" role="status">
+				This scene is part of a chapter the Assistant is drafting in the background. Its draft shows
+				here when it is written.
 			</p>
 		{:else if draft && running}
 			<p class="draft-note" role="status">
