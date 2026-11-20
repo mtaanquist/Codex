@@ -585,8 +585,8 @@
 						<p class="field-hint">
 							Claude charges much less for text it was sent a short while ago, such as your story
 							notes going out again with each message. Choose 1 hour if you often pause for more
-							than 5 minutes between messages. With 1 hour, new text costs a little more the first
-							time it is sent.
+							than 5 minutes between messages. With 1 hour, new text costs about twice the normal
+							price the first time it is sent.
 						</p>
 					</div>
 				{/if}

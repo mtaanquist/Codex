@@ -121,11 +121,16 @@ export function attachmentKey(a: Pick<ChatAttachment, 'kind' | 'id' | 'depth'>):
 
 // What the chat endpoint says it sent of the newest message's attachments
 // (the x-chat-attachments header): each one's key, "!" when it was cut to fit,
-// then "=" and the name it was stored under, URI-encoded.
-export function attachedHeader(attachments: ChatAttachment[]): string[] {
-	return attachments.map(
-		(a) => `${attachmentKey(a)}${a.shortened ? '!' : ''}=${encodeURIComponent(a.label)}`
-	);
+// and, only where the stored name differs from the one the browser sent (a
+// rename since it was picked), "=" and that name, URI-encoded. Leaving the
+// usual case bare keeps the header short enough for a proxy's header limit.
+export function attachedHeader(stored: ChatAttachment[], sent: ChatAttachment[]): string[] {
+	const sentLabels = new Map(sent.map((a) => [attachmentKey(a), a.label]));
+	return stored.map((a) => {
+		const key = attachmentKey(a);
+		const head = `${key}${a.shortened ? '!' : ''}`;
+		return sentLabels.get(key) === a.label ? head : `${head}=${encodeURIComponent(a.label)}`;
+	});
 }
 
 export function parseAttachedHeader(

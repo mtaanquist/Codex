@@ -246,7 +246,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		summarised: fitted.summarised,
 		attached:
 			newest.role === 'user' && newest.attachments.length > 0
-				? attachedHeader(attached.map((item) => item.attachment))
+				? attachedHeader(
+						attached.map((item) => item.attachment),
+						newest.attachments
+					)
 				: undefined,
 		errorMessage: 'The Assistant could not complete that request.'
 	});
