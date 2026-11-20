@@ -164,6 +164,22 @@ describe('draft edits', () => {
 		expect(event.preventDefault).toHaveBeenCalled();
 	});
 
+	it('does not send a blank draft, and says how to drop one', async () => {
+		const edit = draftEdit(id(), stored);
+		edit.text = '  \n';
+		edit.autosave.schedule();
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(sent).toEqual([]);
+		expect(edit.error).toMatch(/Discard/);
+		expect(edit.text).toBe('  \n');
+		// Typing again saves as usual and clears the message.
+		edit.text = 'Back.';
+		edit.autosave.schedule();
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(sent.map((s) => s.body.text)).toEqual(['Back.']);
+		expect(edit.error).toBe('');
+	});
+
 	it('saves nothing more once the draft is decided', async () => {
 		const key = id();
 		const edit = draftEdit(key, stored);

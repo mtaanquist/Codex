@@ -92,7 +92,7 @@ test('a chapter draft is costed first, and each drafted scene is kept on its own
 	await card.getByRole('button', { name: 'Check the cost' }).click();
 	// The count is shown and nothing has been asked for yet.
 	await expect(card).toContainText(
-		/This drafts 2 scenes\. It sends about [\d,]+ tokens and writes about [\d,]+\./
+		/This drafts 2 scenes\. It sends about [\d,]+ tokens and writes up to [\d,]+\./
 	);
 	await expect(card.getByRole('button', { name: 'Draft the chapter' })).toBeFocused();
 	expect(asked).toEqual([]);

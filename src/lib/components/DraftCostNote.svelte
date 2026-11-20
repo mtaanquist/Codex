@@ -17,30 +17,30 @@
 		capAdvice: string;
 	} = $props();
 
-	// The reply figure is the most it can be when the model may think.
-	const upTo = $derived(estimate.estCompletionUpTo === true);
 	const phrase = $derived.by(() => {
 		const lead =
 			scenes === undefined
 				? 'This sends'
 				: `This drafts ${scenes} ${scenes === 1 ? 'scene' : 'scenes'}. It sends`;
-		const size = `${lead} about ${formatNumber(estimate.estTokens)} tokens and writes ${upTo ? 'up to' : 'about'} ${formatNumber(estimate.estCompletionTokens)}`;
+		const size = `${lead} about ${formatNumber(estimate.estTokens)} tokens and writes up to ${formatNumber(estimate.estCompletionTokens)}`;
 		if (estimate.estCostUsd === undefined) return `${size}.`;
 		return estimate.estCostUsd < 0.01
 			? `${size} (less than $0.01).`
-			: `${size} (${upTo ? 'up to' : 'about'} $${money(estimate.estCostUsd)}).`;
+			: `${size} (up to $${money(estimate.estCostUsd)}).`;
 	});
 	const each = $derived(scenes === undefined ? 'this draft' : 'each scene');
 </script>
 
 <div class="assist-card-stack" role="status">
 	<p class="assist-card-note">{phrase}</p>
-	{#if upTo}
-		<p class="assist-card-note">
-			Your model may think before it writes, and thinking is charged like writing. This is the most
-			the draft can use; it usually uses less.
-		</p>
-	{/if}
+	<p class="assist-card-note">
+		{#if estimate.mayThink}
+			Your model may think before it writes, and thinking is charged like writing, so it may use
+			most of that.
+		{:else}
+			That is the most the reply can be. A scene of the length you asked for usually takes less.
+		{/if}
+	</p>
 	{#if estimate.estCostUsd === undefined}
 		<p class="assist-card-note">{NO_PRICE_NOTE}</p>
 	{/if}

@@ -1,5 +1,6 @@
 import { createAutosave, keepaliveFits, saveFailure, type Autosave } from './autosave';
 import { apiErrorMessage } from './format';
+import { DRAFT_EMPTY_SAVE } from './scene-draft';
 
 // The writer's edits to a draft that is waiting to be kept, by draft id. Held
 // here and not in the card, so text not yet saved and a save still on its way
@@ -62,6 +63,13 @@ export function draftEdit(id: string, stored: Stored): DraftEdit {
 async function save(id: string, edit: DraftEdit, keepalive: boolean): Promise<void> {
 	const sending = edit.text;
 	if (sending === edit.saved) return;
+	// The server refuses to blank a draft; the box keeps what the writer left
+	// in it, and Discard is how a draft is dropped.
+	if (!sending.trim()) {
+		edit.error = DRAFT_EMPTY_SAVE;
+		edit.onChange?.();
+		return;
+	}
 	const body = JSON.stringify({ text: sending, base: edit.version });
 	let response: Response;
 	try {

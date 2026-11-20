@@ -23,6 +23,7 @@ import {
 	CHAPTER_CAP_ADVICE,
 	defaultDraftWords,
 	DRAFT_CHANGED_ELSEWHERE,
+	DRAFT_EMPTY_SAVE,
 	SCENE_CAP_ADVICE,
 	type ChapterDraftDefaults,
 	type ChapterDraftEstimate,
@@ -50,6 +51,11 @@ const CHANGED: ActionFailure = {
 	ok: false,
 	code: 'conflict',
 	reason: DRAFT_CHANGED_ELSEWHERE
+};
+const EMPTY_SAVE: ActionFailure = {
+	ok: false,
+	code: 'invalid',
+	reason: DRAFT_EMPTY_SAVE
 };
 const EMPTY: ActionFailure = {
 	ok: false,
@@ -98,16 +104,15 @@ const QUEUE_GRACE_MS = 60_000;
 // dropped, since it only settles a draft that is still unsettled.
 async function settleOrphan(
 	db: Database,
-	draft: { id: string; status: string; jobId: string | null; createdAt: Date },
+	draft: { id: string; status: string; jobId: string | null },
 	jobState: DraftJobState | undefined
 ): Promise<boolean> {
 	if (draft.status !== 'pending' && draft.status !== 'running') return false;
 	if (!jobState) return false;
-	const young = Date.now() - draft.createdAt.getTime() < QUEUE_GRACE_MS;
 	// Every row is written with its job's id. One without (from before that)
 	// has nothing to write it once the grace has passed.
 	const state = draft.jobId ? await jobState(draft.jobId) : 'missing';
-	if (state === 'running' || (state === 'missing' && young)) return false;
+	if (state === 'running') return false;
 	const rows = await db
 		.update(assistantDrafts)
 		.set(
@@ -116,7 +121,15 @@ async function settleOrphan(
 				: { status: 'failed', note: DRAFT_DID_NOT_FINISH }
 		)
 		.where(
-			and(eq(assistantDrafts.id, draft.id), inArray(assistantDrafts.status, ['pending', 'running']))
+			and(
+				eq(assistantDrafts.id, draft.id),
+				inArray(assistantDrafts.status, ['pending', 'running']),
+				// A job the queue does not know may only not be queued yet. The
+				// row's age is taken on the database's clock, which stamped it.
+				state === 'missing'
+					? sql`${assistantDrafts.createdAt} < now() - make_interval(secs => ${QUEUE_GRACE_MS / 1000})`
+					: undefined
+			)
 		)
 		.returning({ id: assistantDrafts.id });
 	return rows.length > 0;
@@ -198,7 +211,7 @@ export async function requestSceneDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This draft is estimated at ${estimate.estCompletionUpTo ? 'up to' : 'about'} $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
+			reason: `This draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
 		};
 	}
 
@@ -456,6 +469,9 @@ export async function saveDraftText(
 	base?: string
 ): Promise<{ ok: true; textVersion: string } | ActionFailure> {
 	if (!isUuid(draftId)) return NOT_FOUND;
+	// A draft is paid for and has no history: it is dropped by Discard, never
+	// by a save that would leave it blank.
+	if (!text.trim()) return EMPTY_SAVE;
 	const rows = await db
 		.update(assistantDrafts)
 		.set({ textMd: text })
@@ -545,13 +561,18 @@ export async function hasWaitingDrafts(
 	userId: string,
 	storyId: string
 ): Promise<boolean> {
+	// By the scene's own story, and only scenes still in it: a draft whose
+	// scene is in the trash, or has moved to another story, cannot be reached
+	// from this one.
 	const [row] = await db
 		.select({ id: assistantDrafts.id })
 		.from(assistantDrafts)
+		.innerJoin(scenes, eq(scenes.id, assistantDrafts.sceneId))
 		.where(
 			and(
 				eq(assistantDrafts.userId, userId),
-				eq(assistantDrafts.storyId, storyId),
+				eq(scenes.storyId, storyId),
+				isNull(scenes.deletedAt),
 				inArray(assistantDrafts.status, ['ready', 'failed'])
 			)
 		)
@@ -745,7 +766,7 @@ export async function requestChapterDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This chapter draft is estimated at ${estimate.estCompletionUpTo ? 'up to' : 'about'} $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
+			reason: `This chapter draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
 		};
 	}
 

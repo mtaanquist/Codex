@@ -59,8 +59,13 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
-const { runChapterDraft, failChapterDraft, estimateSceneDraft, CHAPTER_DRAFT_ENDED_NOTE } =
-	await import('../../src/lib/server/llm/scene-draft');
+const {
+	runChapterDraft,
+	failChapterDraft,
+	estimateSceneDraft,
+	CHAPTER_DRAFT_ENDED_NOTE,
+	EMPTY_DRAFT_CUT_OFF_NOTE
+} = await import('../../src/lib/server/llm/scene-draft');
 const {
 	addDraftAsScene,
 	chapterDraftDefaults,
@@ -88,6 +93,8 @@ let maxTokensSent: (number | undefined)[] = [];
 let calls = 0;
 let whileWriting: ((call: number) => Promise<void>) | null = null;
 let cutOff = false;
+// The request, counted from 1, that is answered with no text.
+let emptyCall = 0;
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -98,7 +105,7 @@ const stubProvider: Provider = {
 		const call = ++calls;
 		await whileWriting?.(call);
 		return {
-			content: `Draft ${call}. The river ran on.`,
+			content: call === emptyCall ? '' : `Draft ${call}. The river ran on.`,
 			toolCalls: [],
 			finishReason: cutOff ? ('length' as const) : undefined,
 			usage: { promptTokens: 1000, completionTokens: 500 }
@@ -146,6 +153,7 @@ beforeEach(async () => {
 	prompts = [];
 	maxTokensSent = [];
 	calls = 0;
+	emptyCall = 0;
 	whileWriting = null;
 	cutOff = false;
 	vi.clearAllMocks();
@@ -402,17 +410,18 @@ describe('the chapter estimate', () => {
 		expect(result.estimate).toMatchObject({
 			model: 'write-model',
 			scenes: 3,
-			estCompletionTokens: 3 * 1400,
+			estCompletionTokens: 3 * 1800,
 			overCap: false,
 			skipped: []
 		});
 		// More than three stand-alone drafts: the chapter brief rides with each,
-		// and the two later scenes carry the one before.
+		// and the two later scenes carry the one before, counted as long as it
+		// can be (6000 characters of it ride along) with the lines around it.
 		const alone =
 			(await single(quay, 'Ilse reaches the quay at dusk.')) +
 			(await single(crossing, 'Ilse crosses and hides the ledger.')) +
 			(await single(bank, CHAPTER_BRIEF));
-		expect(result.estimate.estTokens).toBeGreaterThan(alone + 2 * 1400 - 200);
+		expect(result.estimate.estTokens).toBeGreaterThan(alone + 2 * 1500);
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
 	});
 
@@ -430,7 +439,7 @@ describe('the chapter estimate', () => {
 		expect(result.ok && result.estimate).toMatchObject({
 			scenes: 3,
 			estCompletionTokens: 3 * 16_384,
-			estCompletionUpTo: true
+			mayThink: true
 		});
 		const started = await request();
 		await run(started);
@@ -439,13 +448,13 @@ describe('the chapter estimate', () => {
 
 	it('prices the whole run and holds it against the cap', async () => {
 		await configure({ spendCapUsd: 20 });
-		// 1400 expected tokens out a scene at $0.01 is $14 a scene.
+		// Up to 1800 tokens out a scene at $0.01 is $18 a scene.
 		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.01 } });
 		const one = await chapterDraftEstimate(db, input({ scenes: [{ sceneId: quay, brief: 'b' }] }));
 		expect(one.ok && one.estimate).toMatchObject({ scenes: 1, overCap: false });
 		const all = await chapterDraftEstimate(db, input());
 		expect(all.ok && all.estimate).toMatchObject({ scenes: 3, overCap: true, capUsd: 20 });
-		expect(all.ok && all.estimate.estCostUsd).toBeCloseTo(42, 6);
+		expect(all.ok && all.estimate.estCostUsd).toBeCloseTo(54, 6);
 	});
 });
 
@@ -563,7 +572,7 @@ describe('asking for a chapter draft', () => {
 		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.01 } });
 		const result = await requestChapterDraft(db, input(), queueDeps());
 		expect(result).toMatchObject({ ok: false, code: 'conflict' });
-		expect(!result.ok && result.reason).toMatch(/\$42\.00, over your spend cap of \$20\.00/);
+		expect(!result.ok && result.reason).toMatch(/\$54\.00, over your spend cap of \$20\.00/);
 		expect(jobs.queueAssistantChapterDraft).not.toHaveBeenCalled();
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
 	});
@@ -615,7 +624,7 @@ describe('the endpoint', () => {
 		);
 		expect(estimate).toMatchObject({
 			status: 200,
-			body: { scenes: 2, estCompletionTokens: 2 * 1260 }
+			body: { scenes: 2, estCompletionTokens: 2 * 1660 }
 		});
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
 		expect((await read(owner)).body.run).toBeNull();
@@ -788,11 +797,14 @@ describe('the job', () => {
 	});
 
 	it('stops at a scene boundary when the spend cap is reached, keeping what was drafted', async () => {
-		// Each request costs $0.50 (500 tokens out); the cap is reached after two.
-		await configure({ spendCapUsd: 0.9 });
+		// Each request costs $0.50 (500 tokens out). The run is asked for under a
+		// cap that allows it, and the cap is lowered while it waits: it is then
+		// reached after two scenes.
+		await configure({ spendCapUsd: 5 });
 		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
 		const snapshot = await scenesSnapshot();
 		const started = await request({ targetWords: 100 });
+		await configure({ spendCapUsd: 0.9 });
 		const result = await run(started);
 		expect(result).toMatchObject({
 			outcome: 'done',
@@ -811,6 +823,7 @@ describe('the job', () => {
 		expect(rows[2].note).toBe(CHAPTER_DRAFT_ENDED_NOTE);
 		expect(await scenesSnapshot()).toEqual(snapshot);
 		// The scene left over can be asked for again.
+		await configure({ spendCapUsd: 5 });
 		const again = await request({ targetWords: 100, scenes: [{ sceneId: bank, brief: '' }] });
 		expect(again.draftIds).toHaveLength(1);
 	});
@@ -1076,6 +1089,120 @@ describe('the job', () => {
 		await run(started);
 		prompts = [];
 		expect(await run(started)).toEqual({ outcome: 'missing' });
+		expect(prompts).toEqual([]);
+	});
+});
+
+describe('what a scene is told came before it', () => {
+	const CARRIED = 'The scene before this one was just drafted';
+
+	it('carries the draft of the scene directly before, and only that', async () => {
+		// The first and third scenes are chosen; the second lies between them.
+		const started = await request({
+			scenes: [
+				{ sceneId: quay, brief: 'Ilse reaches the quay at dusk.' },
+				{ sceneId: bank, brief: 'Ilse wakes on the far bank.' }
+			]
+		});
+		await run(started);
+		expect(prompts).toHaveLength(2);
+		// The third scene does not follow the first, so it is not told it does.
+		expect(prompts[1]).not.toContain(CARRIED);
+		expect(prompts[1]).not.toContain('Draft 1. The river ran on.');
+	});
+
+	it('does not repeat a draft the writer already kept, on a retry', async () => {
+		const started = await request();
+		whileWriting = async (n) => {
+			if (n >= 2) throw new Error('endpoint down');
+		};
+		await expect(run(started)).rejects.toThrow('endpoint down');
+		// The first draft is kept before the retry: it is in the manuscript now,
+		// which the context already shows.
+		const [first] = await draftRows();
+		expect((await fillSceneFromDraft(db, ownerId, first.id)).ok).toBe(true);
+		whileWriting = null;
+		prompts = [];
+		await run(started);
+		expect(prompts).toHaveLength(2);
+		expect(prompts[0]).not.toContain(CARRIED);
+		expect(prompts[0].split('Draft 1. The river ran on.').length - 1).toBe(1);
+	});
+
+	it('counts the estimate the same way', async () => {
+		const adjacent = await chapterDraftEstimate(
+			db,
+			input({
+				scenes: [
+					{ sceneId: quay, brief: 'a' },
+					{ sceneId: crossing, brief: 'b' }
+				]
+			})
+		);
+		const apart = await chapterDraftEstimate(
+			db,
+			input({
+				scenes: [
+					{ sceneId: quay, brief: 'a' },
+					{ sceneId: bank, brief: 'b' }
+				]
+			})
+		);
+		if (!adjacent.ok || !apart.ok) throw new Error('no estimate');
+		// 6000 characters of the scene before ride with the adjacent pair only.
+		expect(adjacent.estimate.estTokens - apart.estimate.estTokens).toBeGreaterThan(1200);
+	});
+});
+
+describe('a scene that comes back with no text', () => {
+	it('ends the run there with one request for it, keeping the scenes before', async () => {
+		emptyCall = 2;
+		cutOff = true;
+		const started = await request();
+		const result = await run(started);
+		expect(result).toMatchObject({
+			outcome: 'done',
+			drafted: 1,
+			total: 3,
+			ended: 'empty',
+			emptyNote: EMPTY_DRAFT_CUT_OFF_NOTE
+		});
+		// Scene one, and scene two once: not sent again, and scene three not at all.
+		expect(prompts).toHaveLength(2);
+		const rows = await draftRows();
+		expect(rows.map((row) => row.status)).toEqual(['ready', 'failed', 'discarded']);
+		expect(rows[1].note).toBe(EMPTY_DRAFT_CUT_OFF_NOTE);
+		// A second run of the job has nothing left to ask.
+		expect(await run(started)).toEqual({ outcome: 'missing' });
+		expect(prompts).toHaveLength(2);
+	});
+});
+
+describe('a Stop the worker has not seen yet', () => {
+	it('ends the run as stopped when a read of the drafts settled them first', async () => {
+		const started = await request();
+		// While the first scene is written the panel reads the chapter's drafts,
+		// and the queue says the job was stopped.
+		whileWriting = async (n) => {
+			if (n !== 1) return;
+			jobs.assistantDraftJobState.mockResolvedValue('stopped');
+			await chapterDraftFor(
+				db,
+				{ userId: ownerId, storyId, chapterId },
+				jobs.assistantDraftJobState
+			);
+		};
+		const result = await run(started);
+		expect(result).toMatchObject({ outcome: 'done', drafted: 0, ended: 'stopped' });
+		expect(prompts).toHaveLength(1);
+	});
+
+	it('is reported as stopped even when nothing was left for the job to write', async () => {
+		const started = await request();
+		jobs.assistantDraftJobState.mockResolvedValue('stopped');
+		await chapterDraftFor(db, { userId: ownerId, storyId, chapterId }, jobs.assistantDraftJobState);
+		const result = await run(started);
+		expect(result).toMatchObject({ outcome: 'done', drafted: 0, ended: 'stopped' });
 		expect(prompts).toEqual([]);
 	});
 });

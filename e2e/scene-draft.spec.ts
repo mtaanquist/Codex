@@ -98,7 +98,7 @@ test('a scene draft is costed first, waits for the writer, and fills the empty s
 	await card.getByRole('button', { name: 'Check the cost' }).click();
 	// The count is shown, the keyboard is on the button that starts the draft,
 	// and nothing has been asked for yet.
-	await expect(card).toContainText(/This sends about [\d,]+ tokens and writes about [\d,]+\./);
+	await expect(card).toContainText(/This sends about [\d,]+ tokens and writes up to [\d,]+\./);
 	await expect(card).toContainText('This model has no price on record');
 	await expect(card.getByRole('button', { name: 'Draft the scene' })).toBeFocused();
 	expect(asked).toEqual([]);

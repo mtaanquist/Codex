@@ -445,6 +445,9 @@ export function createHandlers(deps: WorkerDeps) {
 			}
 			if (result.outcome === 'stopped') {
 				title = `The draft of ${name} was stopped before it finished, so nothing was kept.`;
+			} else if (result.outcome === 'empty') {
+				await settleFailed();
+				title = `The Assistant did not draft ${name}. ${result.note}`;
 			} else if (result.outcome === 'off') {
 				await settleFailed();
 				title = `The Assistant is off for this story, so it did not draft ${name}.`;
@@ -543,11 +546,14 @@ export function createHandlers(deps: WorkerDeps) {
 						? 'You stopped it'
 						: ended === 'off'
 							? 'The Assistant is off for this story now'
-							: `It reached the spend cap at ${spentPhrase(result.spentUsd)}`;
+							: ended === 'empty'
+								? 'A scene came back with no text'
+								: `It reached the spend cap at ${spentPhrase(result.spentUsd)}`;
 				title =
 					drafted === 0
 						? `The Assistant drafted no scenes in ${name}. ${why}, so nothing was kept.`
 						: `The Assistant drafted ${drafted} of ${sceneCount(total)} in ${name}. ${why}, so the rest were not drafted. ${KEEP_OR_DISCARD}`;
+				if (ended === 'empty' && result.emptyNote) title += ` ${result.emptyNote}`;
 				if (ended === 'capped') {
 					title += ` To draft the rest, raise the cap in settings, then ${CHAPTER_DRAFT_AGAIN}.`;
 				}

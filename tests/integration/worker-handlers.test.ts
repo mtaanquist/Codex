@@ -835,7 +835,7 @@ describe('a scene draft', () => {
 				{
 					title:
 						'The Assistant drafted the scene "The Crossing" (912 words). Open the scene to keep or discard the draft.',
-					href: `/stories/${story.id}?scene=${scene.id}&draft=1`
+					href: `/stories/${story.id}?scene=${scene.id}&draft=show`
 				}
 			]
 		]);
@@ -862,6 +862,25 @@ describe('a scene draft', () => {
 		);
 		// Off and capped are settled as failed, so the activity card says so.
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }, { failed: true }]);
+	});
+
+	it('settles a draft that came back with no text, saying what to do and not asking again', async () => {
+		const { owner, data } = await seedDraft();
+		let runs = 0;
+		const note = 'Raise Longest reply for Write, then ask again.';
+		const { handlers, completed } = harness({
+			runSceneDraft: async () => {
+				runs += 1;
+				return { outcome: 'empty', note };
+			}
+		});
+		// The handler returns rather than throws, so the queue does not retry.
+		await handlers.assistantDraft([job(data)]);
+		expect(runs).toBe(1);
+		const [title] = await titles(owner.id);
+		expect(title).toBe(`The Assistant did not draft the scene "The Crossing". ${note}`);
+		expect(title).not.toMatch(/endpoint/i);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 
 	it("says nothing for a draft that is gone or not the writer's", async () => {
@@ -1043,6 +1062,47 @@ describe('a chapter draft', () => {
 		// Only the runs that drafted nothing for a reason other than Stop are
 		// settled as failed.
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }, { failed: true }]);
+	});
+
+	it('says which way a run ended on a scene with no text, without pointing at the endpoint', async () => {
+		const { owner, data } = await seedRun();
+		const note = 'Raise Longest reply for Write, then ask again.';
+		const results = [
+			{
+				outcome: 'done' as const,
+				drafted: 1,
+				total: 3,
+				words: 400,
+				cutOff: 0,
+				gone: 0,
+				ended: 'empty' as const,
+				spentUsd: 0,
+				emptyNote: note
+			},
+			{
+				outcome: 'done' as const,
+				drafted: 0,
+				total: 3,
+				words: 0,
+				cutOff: 0,
+				gone: 0,
+				ended: 'empty' as const,
+				spentUsd: 0,
+				emptyNote: note
+			}
+		];
+		const { handlers, completed } = harness({ runChapterDraft: async () => results.shift()! });
+		await handlers.assistantDraft([job(data)]);
+		await handlers.assistantDraft([job(data)]);
+		const all = await titles(owner.id);
+		expect(all).toHaveLength(2);
+		for (const title of all) {
+			expect(title).toContain('A scene came back with no text');
+			expect(title).toContain(note);
+			expect(title).not.toMatch(/endpoint/i);
+		}
+		expect(all.some((title) => title.includes('drafted 1 of 3 scenes'))).toBe(true);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
 	});
 
 	it('says nothing for a run whose drafts are gone', async () => {
