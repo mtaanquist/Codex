@@ -540,7 +540,7 @@
 		// a space in front of the "/" makes it a message.
 		if ((text ?? input).startsWith('/')) {
 			// Commands wait for the reply in progress, and the line stays put.
-			if (busy || switching) return;
+			if ((busy || switching) && !runsWhileBusy(slashName(line))) return;
 			runSlashCommand(line);
 			return;
 		}
@@ -657,6 +657,14 @@
 
 	// `typed` says the line came from the chat box, which it then clears; a
 	// command chosen from the menu leaves the writer's draft alone.
+	// A model or context popover opened by a command returns focus to the chat
+	// box when it closes; one opened by its button returns it to the button.
+	let popoverFromComposer = false;
+	// These only open a popover, so they need not wait for a reply in progress.
+	function runsWhileBusy(name: string): boolean {
+		if (switching) return false;
+		return name === 'context' || (name === 'model' && !settingsLocked);
+	}
 	function runSlashCommand(raw: string, typed = true) {
 		commandSelected = 0;
 		const name = slashName(raw);
@@ -682,6 +690,8 @@
 			commandsOpen = false;
 			modelOpen = false;
 			contextOpen = false;
+			// Opened from the chat box, so closing it goes back there.
+			popoverFromComposer = true;
 		}
 		switch (name) {
 			case 'history':
@@ -770,7 +780,7 @@
 			return;
 		}
 		// Like a typed command, it waits for the reply in progress.
-		if (busy || switching) {
+		if ((busy || switching) && !runsWhileBusy(command.name)) {
 			if (draft) {
 				flashActivity(
 					'failed',
@@ -1131,6 +1141,7 @@
 		attachments = [...attachments, attachment];
 	}
 	function toggleContext() {
+		popoverFromComposer = false;
 		contextOpen = !contextOpen;
 		if (contextOpen) {
 			commandsOpen = false;
@@ -1580,7 +1591,9 @@
 				},
 				refocus: () => {
 					if (document.activeElement === composer) return;
-					(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus();
+					if (!commandsOpen && popoverFromComposer) composer?.focus();
+					else
+						(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus();
 				}
 			}}
 		>
@@ -1620,7 +1633,7 @@
 						model={chipModel || undefined}
 						onAdd={addAttachment}
 						onClose={() => {
-							contextTrigger?.focus();
+							(popoverFromComposer ? composer : contextTrigger)?.focus();
 							contextOpen = false;
 						}}
 					/>
@@ -1634,7 +1647,7 @@
 						settings={chatSettings}
 						onChange={changeSettings}
 						close={() => (modelOpen = false)}
-						refocus={() => (modelTrigger ?? composer)?.focus()}
+						refocus={() => ((popoverFromComposer ? composer : modelTrigger) ?? composer)?.focus()}
 					/>
 				</div>
 			{/if}
@@ -1653,6 +1666,16 @@
 					oninput={grow}
 					onkeydown={onKeydown}
 					onblur={() => (slashDismissed = input)}></textarea>
+				<!-- A textarea cannot be a combobox, so the highlighted command is
+				     read out from here as the writer types or moves through the list. -->
+				<span class="visually-hidden" aria-live="polite">
+					{#if slashOpen && shownCommands[commandSelected]}
+						/{shownCommands[commandSelected].name}, {shownCommands[commandSelected].detail}
+						({commandSelected + 1} of {shownCommands.length})
+					{:else if slashOpen}
+						No matching command
+					{/if}
+				</span>
 				<div class="composer-row">
 					<div class="composer-tools">
 						<button
@@ -1693,6 +1716,7 @@
 							disabled={settingsLocked}
 							onclick={() => {
 								modelOpen = !modelOpen;
+								popoverFromComposer = false;
 								if (modelOpen) {
 									commandsOpen = false;
 									contextOpen = false;
