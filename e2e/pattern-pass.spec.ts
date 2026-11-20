@@ -259,12 +259,41 @@ test.describe('with the Assistant on', () => {
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
 			await pass.getByRole('button', { name: 'Edit' }).click();
 			await pass.getByLabel('Your wording').fill('Kara alone');
+			// The re-read shows in a corner card, not in the pane, so the step
+			// does not move when it starts or ends.
+			const rereading = page.locator('.activity-card').filter({
+				hasText: 'Re-reading the last change'
+			});
+			await expect(rereading).toBeVisible();
+			await expect(pass.getByText('Re-reading')).toHaveCount(0);
 			release();
-			await expect(pass.getByText('Re-reading the last change...')).toHaveCount(0);
+			await expect(rereading).toHaveCount(0);
+			await expect(
+				page.locator('.activity-card').filter({ hasText: 'Follow-up added' })
+			).toBeVisible();
 			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone');
 			await pass.getByRole('button', { name: 'Accept my wording' }).click();
 			await expect(pass.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
+		} finally {
+			await done();
+		}
+	});
+
+	// Stopping the pass takes its running re-read card with it.
+	test('stopping the pass clears the re-read card', async ({ page }) => {
+		let release!: () => void;
+		const { pass, done } = await openPass(page, new Promise<void>((r) => (release = r)));
+		try {
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			const rereading = page.locator('.activity-card').filter({
+				hasText: 'Re-reading the last change'
+			});
+			await expect(rereading).toBeVisible();
+			await pass.getByRole('button', { name: 'Stop' }).click();
+			await expect(rereading).toHaveCount(0);
+			release();
+			await expect(page.locator('.activity-card')).toHaveCount(0);
 		} finally {
 			await done();
 		}
