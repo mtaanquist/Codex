@@ -1023,6 +1023,40 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Assistant price and cache lows (2026-11-20)
+
+#1274, lane `fix/assistant-price-lows` on `staging/assistant-remaining`: the
+low findings from the quick wins staging review.
+
+- The cache rates moved out of `spend.ts` into `$lib/assistant-cost.ts` so
+  the account page can price with them; the meter, the estimate and the usage
+  list now share one function.
+- Usage rows store the cache shares (migration 0091, three nullable integer
+  columns on `assistant_usage`, no backfill). A row without them prices at
+  the plain rate as before, so old rows do not change.
+- The review estimate prices a first read at the cache write rate on Claude.
+  Pricing every estimated prompt token at that rate was considered and
+  dropped: the agentic multiplier stands for rounds that resend cached text,
+  and doubling those would put the figure far above any real run. Only the
+  first request of each scene and the survey requests take the write rate;
+  the resent rounds stay at the plain price, which is still above what a
+  cache read bills. `estTokens` is unchanged.
+- A half price pair no longer refuses the Models form: that pair is skipped
+  (its stored entry untouched), the rest saves, and the reply carries a
+  message naming the model. The box keeps what was typed.
+- Typed prices are cleared when the provider or the endpoint host changes.
+  The alternative was a hint beside the boxes; clearing was chosen because a
+  stale price meters silently, while a missing one makes the cap say it was
+  not applied. Typed context windows are still kept: a wrong window costs a
+  failed request, not money, and a local server's window is the writer's own
+  launch setting. The switch-provider prompt now says the prices go too.
+- The streaming Claude path merges `message_delta`'s running input totals
+  the way the buffered path does (shared `mergeDeltaUsage`).
+- Still not verified against the live API (no key in the build
+  environment): `cache_control.ttl: "1h"`, the `usage.cache_creation` split,
+  and whether `message_delta` carries input totals on a web search turn.
+  The first two match the published API reference.
+
 ## Background jobs list (2026-11-20)
 
 #1271. A slow local model can keep a review or a details read going for many

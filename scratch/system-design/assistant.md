@@ -288,16 +288,26 @@ that much, staging nothing partial; a retry resumes through the existing
 completed-scene skip). Both are priced from the account's prices: the
 `modelPricing` snapshot the last model discovery wrote, with
 `modelPricingManual` (what the writer typed, for the many endpoints that
-report no prices, Claude among them) laid over it. Claude's cache writes are
+report no prices, Claude among them) laid over it. Typed prices are dropped
+when the provider or the endpoint host changes (another endpoint can serve the
+same model id at another price), so the cap reports the model as unpriced
+rather than metering at a stale figure; typed context windows are kept.
+Claude's cache writes are
 metered at their premium (1.25x, 2x for the one-hour cache) and cache reads at
-a tenth. A cost figure is only ever shown or enforced when
+a tenth. Those rates live in one place, `$lib/assistant-cost.ts`, shared by
+the meter, the estimate, and the usage list on the account page; each
+`assistant_usage` row stores its cache shares (null on rows from before
+they were kept, which price at the plain rate). A cost figure is only ever shown or enforced when
 the resolved model actually has a price there: with no price the pre-flight
 estimate reports tokens alone, and a set cap is reported as not applied
 rather than guessed at or skipped in silence. The estimate itself
 (`llm/estimate.ts`) assembles the same frame and per-scene deltas the run
 would send, counts them, and scales by an agentic multiplier drawn from this
 account's own `assistant_usage` rows for the model where there are enough of
-them, or a stated static 2.5 where there are not. The gateway records every
+them, or a stated static 2.5 where there are not. With the Claude provider
+it prices each scene's first request and the survey requests at the cache
+write rate for the account's cache lifetime, and the resent rounds at the
+plain price, so the figure errs high. The gateway records every
 request into the run's meter (passed on the request) as it logs its usage
 row, including an attempt that failed partway through a stream and was
 retried or given up on: the endpoint bills the tokens it had used, which the

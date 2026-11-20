@@ -198,21 +198,35 @@ describe('saveAssistantModels prices', () => {
 		expect((await stored()).modelPricingManual?.['big-model']).toBeUndefined();
 	});
 
-	it('refuses half a price, or a negative one, and stores nothing', async () => {
-		for (const [priceIn, priceOut] of [
-			['3', ''],
-			['', '15'],
-			['-1', '15'],
-			['abc', '15']
+	it('saves the rest of the form around half a price, or a negative one, and says so (#1274)', async () => {
+		await storeConfig({ modelPricingManual: { 'big-model': { prompt: 1, completion: 2 } } });
+		for (const [priceIn, priceOut, context] of [
+			['3', '', '1000'],
+			['', '15', '2000'],
+			['-1', '15', '3000'],
+			['abc', '15', '4000']
 		]) {
 			const result = await saveModels({
 				reviewer: 'big-model',
+				'context-big-model': context,
 				'price-in-big-model': priceIn,
-				'price-out-big-model': priceOut
+				'price-out-big-model': priceOut,
+				'price-in-small-model': '5',
+				'price-out-small-model': '6'
 			});
-			expect(result).toMatchObject({ status: 400 });
+			expect(result).toMatchObject({
+				saved: true,
+				message: expect.stringMatching(/except the price for big-model\. Enter both prices/)
+			});
+			const view = await stored();
+			expect(view.models.reviewer).toBe('big-model');
+			expect(view.modelContextManual).toEqual({ 'big-model': Number(context) });
+			// The unfinished pair leaves its stored entry alone; a whole pair saves.
+			expect(view.modelPricingManual).toEqual({
+				'big-model': { prompt: 1, completion: 2 },
+				'small-model': { prompt: 5 / 1_000_000, completion: 6 / 1_000_000 }
+			});
 		}
-		expect((await stored()).modelPricingManual).toBeUndefined();
 	});
 
 	it('keeps entries for models the form did not render', async () => {
@@ -231,6 +245,37 @@ describe('saveAssistantModels prices', () => {
 			'big-model': { prompt: 5 / 1_000_000, completion: 6 / 1_000_000 },
 			'small-model': { prompt: 3, completion: 4 }
 		});
+	});
+});
+
+describe('typed prices when the endpoint changes (#1274)', () => {
+	const typed = { 'big-model': { prompt: 1, completion: 2 } };
+
+	it('drops them when the endpoint moves to another host', async () => {
+		await storeConfig({ modelPricingManual: typed, modelContextManual: { 'big-model': 4096 } });
+		await saveEndpoint({ endpoint: 'http://elsewhere/v1' });
+		const view = await stored();
+		expect(view.endpoint).toBe('http://elsewhere/v1');
+		expect(view.modelPricingManual).toBeUndefined();
+		expect(view.modelContextManual).toEqual({ 'big-model': 4096 });
+	});
+
+	it('drops them when the provider changes', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ provider: 'anthropic' });
+		expect((await stored()).modelPricingManual).toBeUndefined();
+	});
+
+	it('keeps them when the endpoint stays on the same host', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ endpoint: 'http://local/v2' });
+		expect((await stored()).modelPricingManual).toEqual(typed);
+	});
+
+	it('keeps them when only the port or the scheme changes', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ endpoint: 'https://local:8443/v1' });
+		expect((await stored()).modelPricingManual).toEqual(typed);
 	});
 });
 
