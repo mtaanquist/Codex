@@ -196,6 +196,9 @@
 		replacements: Record<string, string> = {}
 	) {
 		if (!view || !handle) return;
+		// A change to another scene (accepted from a pass or a card while this
+		// scene is open) is not this editor's: its text must never land here.
+		if (ids.some((id) => !suggestions.some((s) => s.id === id))) return;
 		// Nothing typed here is waiting to be saved, so the editor showed the
 		// text the server changed.
 		const wasClean = !autosave.hasUnsaved() && !conflict;

@@ -41,7 +41,9 @@ async function typeScene(page: Page, text: string, previous?: string) {
 	await expect(page.locator('.cm-content')).toHaveText(text);
 }
 
-test('the author works through a pattern note across two scenes', async ({ page }) => {
+// A story with two scenes and a pattern note with one edit in each, opened in
+// review on the first scene.
+async function openNote(page: Page): Promise<{ name: string; storyPath: string }> {
 	await gotoReady(page, '/');
 	const name = `Pattern ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
@@ -83,6 +85,25 @@ test('the author works through a pattern note across two scenes', async ({ page 
 
 	// The note sits on the first scene.
 	await gotoReady(page, `${storyPath}/review?scene=${firstSceneId}`);
+	return { name, storyPath };
+}
+
+async function sceneBodies(name: string): Promise<string[]> {
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	try {
+		const { rows } = await pool.query<{ body_md: string }>(
+			`select s.body_md from scenes s join stories st on st.id = s.story_id
+			 join universes u on u.id = st.universe_id where u.name = $1 order by s.global_position`,
+			[name]
+		);
+		return rows.map((r) => r.body_md);
+	} finally {
+		await pool.end();
+	}
+}
+
+test('the author works through a pattern note across two scenes', async ({ page }) => {
+	const { name, storyPath } = await openNote(page);
 	const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
 	await note.getByRole('button', { name: 'Work through this (2)' }).click();
 
@@ -115,17 +136,33 @@ test('the author works through a pattern note across two scenes', async ({ page 
 	// The typing is kept in the first scene, and the second scene has the change.
 	await gotoReady(page, `${storyPath}/review`);
 	await expect(page.locator('.rv-card').filter({ hasText: 'Pattern note' })).toHaveCount(0);
-	const pool2 = new pg.Pool({ connectionString: e2eDatabaseUrl() });
-	try {
-		const { rows } = await pool2.query<{ body_md: string }>(
-			`select s.body_md from scenes s join stories st on st.id = s.story_id
-			 join universes u on u.id = st.universe_id where u.name = $1 order by s.global_position`,
-			[name]
-		);
-		expect(rows.map((r) => r.body_md)).toEqual(['The elk crossed the ford.', 'Kara looked back.']);
-	} finally {
-		await pool2.end();
-	}
+	expect(await sceneBodies(name)).toEqual(['The elk crossed the ford.', 'Kara looked back.']);
+});
+
+// The writer may read another scene mid-pass. An accept then changes the
+// step's scene on the server, and the open scene keeps its own text.
+test('an accept with another scene open leaves that scene alone', async ({ page }) => {
+	const { name } = await openNote(page);
+	const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+	await note.getByRole('button', { name: 'Work through this (2)' }).click();
+	const pass = page.locator('.review-panel');
+	await expect(pass.getByText('1 of 2')).toBeVisible();
+
+	await page.locator('.scene-row').nth(1).click();
+	const editor = page.locator('.review-edit .cm-content');
+	await expect(editor).toContainText('looked back.');
+	await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+	await expect
+		.poll(() => sceneBodies(name))
+		.toEqual(['Kara crossed the ford.', 'The elf looked back.']);
+
+	// Typing in the open scene saves onto its own text.
+	await editor.click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.keyboard.type(' Twice.');
+	await expect
+		.poll(() => sceneBodies(name))
+		.toEqual(['Kara crossed the ford.', 'The elf looked back. Twice.']);
 });
 
 test.describe('with the Assistant on', () => {

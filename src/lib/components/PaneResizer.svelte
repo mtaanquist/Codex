@@ -31,7 +31,7 @@
 	// together reset instead. Where the browser sends one as well, the reset
 	// runs twice, which changes nothing.
 	const DOUBLE_TAP_MS = 400;
-	let lastTap = 0;
+	let lastTap = -Infinity;
 
 	// Values for assistive tech from the start, not only after a focus.
 	$effect(() => {
@@ -83,10 +83,12 @@
 	function endDrag(event: PointerEvent) {
 		if (!drag) return;
 		const tapped = event.type === 'pointerup' && !drag.moved && event.pointerType !== 'mouse';
+		// A drag in between means the next tap starts a new pair.
+		if (drag.moved) lastTap = -Infinity;
 		drag = null;
 		if (tapped) {
 			if (event.timeStamp - lastTap < DOUBLE_TAP_MS) {
-				lastTap = 0;
+				lastTap = -Infinity;
 				reset();
 			} else lastTap = event.timeStamp;
 		}

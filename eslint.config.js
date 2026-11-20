@@ -113,6 +113,7 @@ export default defineConfig(
 		files: [
 			'src/lib/server/**',
 			'src/routes/**/+*server.ts',
+			'src/routes/**/*.server.ts',
 			'src/hooks.server.ts',
 			'src/worker/**'
 		],

@@ -6,6 +6,7 @@ import type pg from 'pg';
 import { authTokens, sessions, users } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { hashPassword } from '../../src/lib/server/password';
+import { setUserSuspended } from '../../src/lib/server/admin';
 import { totpCode } from '../../src/lib/server/totp';
 import { ensureTestDatabase } from './test-db';
 import { sentToken } from './token-helpers';
@@ -134,6 +135,13 @@ describe('redeemSignInLink', () => {
 	it('refuses a link for an account suspended after it was sent', async () => {
 		const link = await sentLink();
 		await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, userId));
+		expect(await redeemSignInLink(db, link)).toBeNull();
+	});
+
+	it('stays refused when the account is suspended and let back in', async () => {
+		const link = await sentLink();
+		expect(await setUserSuspended(db, userId, true)).toBe(true);
+		expect(await setUserSuspended(db, userId, false)).toBe(true);
 		expect(await redeemSignInLink(db, link)).toBeNull();
 	});
 

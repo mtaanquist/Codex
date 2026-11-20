@@ -45,7 +45,10 @@ accepted edit at its mark, which leaves out white space at the edges of the
 range, while the server replaced the whole range, so an edit ending in a space
 left a doubled space that the next save stored. `applyAccepted` now widens to
 the stored range, and with nothing unsaved it takes the server's text when a
-change cannot be made locally.
+change cannot be made locally. The second review caught that fallback
+putting one scene's text into another scene's editor (an accept from a guided
+pass while a different scene is open), so the editor now ignores an accept
+whose edits are not its own scene's.
 
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and
