@@ -7,7 +7,7 @@ import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
 // A background review started before a reload still shows afterwards: the card
 // in the corner comes back, and the story's pages say it is running under the
-// mode strip. The job is queued straight into pg-boss to start an hour from
+// mode strip. The top bar lists it too (#1271), with a way to stop it. The job is queued straight into pg-boss to start an hour from
 // now, so the worker leaves it queued for the length of the test.
 test('a queued Assistant review shows again after a reload', async ({ page }) => {
 	await gotoReady(page, '/');
@@ -52,6 +52,24 @@ test('a queued Assistant review shows again after a reload', async ({ page }) =>
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
 		await expect(page).toHaveURL(`/stories/runs-${stamp}/plan`);
 		await expect(page.locator('.run-note')).toHaveText('Assistant review starting');
+
+		// With its card dismissed, the job is still in the top bar's list.
+		const work = page.getByRole('button', { name: 'Background work, 1 running' });
+		await work.click();
+		const panel = page.getByRole('dialog', { name: 'Background work' });
+		await expect(panel).toContainText(`Reviewing "Runs ${stamp}"`);
+		await expect(panel).toContainText('Started just now');
+		// Escape closes it and hands focus back to its button.
+		await page.keyboard.press('Escape');
+		await expect(panel).toHaveCount(0);
+		await expect(work).toBeFocused();
+
+		// Stop ends the job; the button stays, with nothing left in its list.
+		await work.click();
+		await panel.getByRole('button', { name: 'Stop' }).click();
+		await expect(panel).toContainText('Nothing is running.', { timeout: 15_000 });
+		await expect(page.getByRole('button', { name: 'Background work', exact: true })).toBeVisible();
+		await expect(page.locator('.run-note')).toHaveCount(0);
 	} finally {
 		if (jobId) await boss.deleteJob('assistant-review', jobId);
 		await boss.stop({ graceful: false });

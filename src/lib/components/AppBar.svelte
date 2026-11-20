@@ -5,6 +5,7 @@
 	import Icon from './Icon.svelte';
 	import CrumbMenu from './CrumbMenu.svelte';
 	import NotificationBell from './NotificationBell.svelte';
+	import BackgroundWork from './BackgroundWork.svelte';
 	import UserMenu from './UserMenu.svelte';
 	import ThemePicker from './ThemePicker.svelte';
 	import { openPalette } from '#lib/palette.svelte';
@@ -170,6 +171,7 @@
 			?
 		</a>
 		{#if shell === 'author'}
+			<BackgroundWork />
 			<NotificationBell />
 			<UserMenu />
 		{/if}
