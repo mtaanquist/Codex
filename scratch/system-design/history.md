@@ -1004,6 +1004,21 @@ triage.
   one-clock rule now refuses `const x = new Date()` outright in server code,
   and covers `src/routes/**/*.ts` and `src/worker/**` too. Nothing on main
   tripped it. A `new Date()` written where it is compared is still fine.
+- #1235: the lock-order harness now counts advisory locks. A holder takes
+  each one in turn (story-scenes, a scene's revision lock, draft-restore), and
+  the ones an operation holds while it waits are read from `pg_locks`, so two
+  operations under the same advisory lock are no longer treated as able to run
+  together. Ten operations were added: delete a trashed scene for good, find
+  and replace, restore a scene revision, accept a review suggestion, restore
+  and add back a scene from a draft, new story from a draft, purge universe,
+  save a place and a lore entry. That found one crossing: saving a character
+  or place with a first story note held the entity row and then took the
+  story (the note's foreign key), the opposite of a universe purge.
+  `saveEntity` now takes the story key share first, the order `row-locks.ts`
+  sets. It could not bite in practice (a purge only runs on a universe in the
+  trash past its window), but the rule is now kept everywhere. The limits
+  that stay (pairs only, rows inserted mid-run, story delete being the purge)
+  are in the test header. The file takes about 3 minutes, up from 2.5.
 - #1155: payload tests for the split route sit in `route-authz.test.ts`, which
   already calls the real handler. The editor half was not added: the position
   maths is covered by the `withoutRanges` tests, and what is left of
