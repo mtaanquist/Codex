@@ -429,6 +429,21 @@ already ships.
 - Co-author: a side-panel generation surface with insert / edit / reject,
   assembled from current-scene plus chapter-summary plus active-character
   context.
+- Scene draft (#1168, step 1): the co-author role at the size of one whole
+  scene. The writer asks for it (`/draft <brief>` in the Assistant chat with
+  the scene open, or "Draft this scene..." on the scene's menu in the left
+  sidebar), fills a short brief form (what happens, a length in words that
+  defaults to the story's median scene, an optional point of view), sees the
+  count (tokens in, tokens expected out, the price when the model has one)
+  and confirms. It is writer-invoked only: nothing starts one on its own, it
+  is not a tool the model can call, and it is not a suggested-prompt chip.
+  There is no setting for it; the account switch and the per-story mute are
+  its only gates. The draft is written by a background job into its own
+  staged row (`assistant_drafts`) and shown in a card in the Assistant panel
+  (`AssistantDraft.svelte`), where the writer edits it and chooses "Fill this
+  scene" (only while the scene has no prose), "Add as a new scene after this
+  one", or "Discard". There is no replace action. See "Writes are
+  suggestions" and "Background jobs".
 - "Ask the Assistant" on the editor right-click menu, over a selection, with
   submenu items:
   - Review (send the selection to the reviewer surface),
@@ -476,6 +491,13 @@ proposes, the human commits. Concretely:
   `review_suggestions` the writer accepts or rejects, or as an
   insert/edit/reject panel for co-author generation. Never a silent body
   write.
+- A scene draft is staged in `assistant_drafts` and never touches a scene
+  until the writer chooses. "Fill this scene" is refused when the scene has
+  any prose at that moment, checked under the scene's row lock in the same
+  transaction as the write, and it goes through the normal save path
+  (`saveSceneBody`), so it is a revision like any other save. Otherwise the
+  draft can only become a new scene after the one it was written for, with
+  status `draft`. A stopped or failed run leaves the scene as it was.
 - Structural actions invoked from chat (create a scene, create an entity,
   add an alias, set a quick detail, split a scene) show a preview and a
   confirm before anything is written.
@@ -599,7 +621,8 @@ Two execution modes, already separable by the existing architecture:
   co-author, single-scene review.
 - Background jobs (the pg-boss worker, as exports and backups already run):
   whole-story review, regenerating entity arc summaries across a universe,
-  refreshing scene and chapter summaries in bulk.
+  refreshing scene and chapter summaries in bulk, and drafting a whole scene
+  (a long generation on a slow model, so it is a job and not a stream).
 
 Derived artifacts that are expensive to compute (a character's arc summary,
 "what happened to them across the stories they are in") are cached on the
@@ -989,6 +1012,9 @@ context assembly and the cross-scene pass read them.
   `arc_summary_input` (migration 0082) and the stories it read in
   `arc_summary_stories` (migration 0093). `chapters.summary_input` holds the
   fingerprint for chapter summaries (migration 0092).
+- Scene drafts: `assistant_drafts` (migration 0095), one row per draft asked
+  for, with at most one undecided draft (pending, running or ready) per
+  writer and scene. It cascades with its user, story and scene.
 - Persisted chats: `assistant_chats`, with `chat_id` on
   `assistant_chat_messages` and `assistant_chat_summaries` (migration 0080,
   which made each earlier conversation its scope's first chat).
@@ -1277,6 +1303,27 @@ calls the gateway, which proxies through the egress guard.
   instead. Each is stored with a hash of the request it was written from
   (`assistant_enriched_input`, `arc_summary_input`), and no save marks
   anything (#1197). A current arc is still rewritten when the writer asks.
+- [built] Scene drafts (#1168, step 1): queue `assistant-draft`, exclusive,
+  one unfinished job per scene (`queueAssistantDraft`, handler `sceneDraft`,
+  job kind `draft` in the activity center and the Background jobs list).
+  `/api/assistant/draft` answers the form's defaults, the estimate
+  (`estimate: true`, nothing queued) and the request itself, which stages an
+  `assistant_drafts` row and queues the job; an estimate over the spend cap
+  is refused there. The job (`runSceneDraft`, `llm/scene-draft.ts`) checks
+  the account switch and the story's mute again, then makes one `coauthor`
+  request: `assembleContext` with `precedingProse` for the world, the
+  preceding prose and the open scene, and `buildSceneDraftMessage`
+  (`prompts/scene-draft.ts`) for the brief, the length, the point of view,
+  what the scene already holds and how the next scene opens. The reply limit
+  comes from the length asked for (`draftMaxTokens`: words times 1.4 plus
+  headroom, held to half the context window), though a "Longest reply" the
+  writer set for Write in its Tune window still wins in the gateway, and the
+  estimate says so when that would cut the scene short. The spend meter is
+  keyed by the job. A reply cut off at the limit is kept as a ready draft
+  with a note; a stop discards the draft; a failure marks it failed with the
+  reason, to try again from the card. `/api/assistant/draft/[id]` takes the
+  writer's choice (fill, add, discard) for a draft they own. The row carries
+  `chapter_id` and `position`, unused so far, for chapter drafts (step 2).
 
 ### Tool use and structural actions - sequencing step 6
 

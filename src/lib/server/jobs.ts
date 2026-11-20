@@ -24,7 +24,8 @@ export {
 	REVIEWER_DIGEST_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
-	ASSISTANT_ENRICH_QUEUE
+	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_DRAFT_QUEUE
 } from './queues.ts';
 import {
 	DIGEST_DELAY_SECONDS,
@@ -41,6 +42,7 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_QUEUE_OPTIONS,
 	LEGACY_ASSISTANT_REVIEW_QUEUE,
 	LEGACY_ASSISTANT_SUMMARIES_QUEUE,
@@ -76,6 +78,7 @@ function getBoss(): Promise<PgBoss> {
 		await boss.createQueue(ASSISTANT_REVIEW_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 		await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 		await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+		await boss.createQueue(ASSISTANT_DRAFT_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 		// LEGACY (#1041): so getAssistantJobState can look in them on any install.
 		await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
 		await boss.createQueue(LEGACY_ASSISTANT_SUMMARIES_QUEUE);
@@ -410,6 +413,59 @@ export async function queueAssistantDetails(input: {
 	}
 }
 
+// Queues the job that writes one scene draft (the row it fills is staged
+// first, see scene-drafts.ts). The singleton key holds one unfinished draft
+// per scene.
+export async function queueAssistantDraft(input: {
+	userId: string;
+	storyId: string;
+	sceneId: string;
+	draftId: string;
+}): Promise<string | 'coalesced' | null> {
+	try {
+		const boss = await getBoss();
+		const jobId = await boss.send(ASSISTANT_DRAFT_QUEUE, input, {
+			singletonKey: `draft:${input.sceneId}`,
+			...assistantSendOptions(input.userId)
+		});
+		return jobId ?? 'coalesced';
+	} catch (error) {
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_DRAFT_QUEUE,
+			sceneId: input.sceneId,
+			...errorFields(error)
+		});
+		return null;
+	}
+}
+
+// What the queue says about a scene draft's job, for settling a draft whose
+// job ended without settling it (see scene-drafts.ts). 'stopped' is the
+// writer's Stop. A lookup that fails reads as running, so a draft still being
+// written is never settled on a guess.
+export async function assistantDraftJobState(
+	id: string
+): Promise<'running' | 'stopped' | 'done' | 'failed'> {
+	try {
+		const boss = await getBoss();
+		const job = await boss.getJobById(ASSISTANT_DRAFT_QUEUE, id);
+		if (!job) return 'done';
+		if (job.state === 'cancelled') return 'stopped';
+		if (job.state === 'failed') return 'failed';
+		if (job.state === 'completed') {
+			return (job.output as { failed?: boolean } | null)?.failed ? 'failed' : 'done';
+		}
+		return 'running';
+	} catch (error) {
+		logEvent('error', 'job.state_failed', {
+			queue: ASSISTANT_DRAFT_QUEUE,
+			jobId: id,
+			...errorFields(error)
+		});
+		return 'running';
+	}
+}
+
 // Where the activity center's polling reads a queued Assistant job's progress.
 // pg-boss archives a job once it settles, so a job it can no longer find by id
 // is treated as done rather than lost.
@@ -435,7 +491,8 @@ const JOB_QUEUES = {
 	summaries: [ASSISTANT_SUMMARIES_QUEUE, LEGACY_ASSISTANT_SUMMARIES_QUEUE],
 	enrich: [ASSISTANT_ENRICH_QUEUE],
 	arc: [ASSISTANT_ENRICH_QUEUE],
-	details: [ASSISTANT_ENRICH_QUEUE]
+	details: [ASSISTANT_ENRICH_QUEUE],
+	draft: [ASSISTANT_DRAFT_QUEUE]
 } as const;
 
 export async function getAssistantJobState(

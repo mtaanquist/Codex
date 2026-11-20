@@ -666,6 +666,13 @@
 			"when": 1795194841294,
 			"tag": "0094_chapter-summary-adopt",
 			"breakpoints": true
+		},
+		{
+			"idx": 95,
+			"version": "7",
+			"when": 1795199542547,
+			"tag": "0095_assistant-drafts",
+			"breakpoints": true
 		}
 	]
 }

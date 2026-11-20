@@ -1,6 +1,7 @@
 import type { Job, JobWithMetadata, PgBoss } from 'pg-boss';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
 	LEGACY_ASSISTANT_REVIEW_QUEUE,
@@ -61,6 +62,8 @@ import {
 } from '../lib/server/llm/gateway.ts';
 import { EndpointReplyError } from '../lib/server/llm/providers/types.ts';
 import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
+import { failSceneDraft, runSceneDraft } from '../lib/server/llm/scene-draft.ts';
+import { sceneDraftHref } from '../lib/scene-draft.ts';
 import { purgeJobSpend } from '../lib/server/llm/job-spend.ts';
 import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
@@ -82,6 +85,7 @@ const defaultServices = {
 	enrichUniverse,
 	enrichEntityFromText,
 	summariseCharacterArc,
+	runSceneDraft,
 	sendEmail,
 	s3AssetStore
 };
@@ -118,6 +122,14 @@ export type AssistantEnrichData = {
 	read?: { entityId: string; name: string; storyId?: string; mode: 'scenes' | 'book' };
 };
 
+// One scene draft: the staged row (assistant_drafts) the job writes.
+export type AssistantDraftData = {
+	userId: string;
+	storyId: string;
+	sceneId: string;
+	draftId: string;
+};
+
 // The first distinct thing that went wrong in a run, for the notification
 // title. The whole list rides on the job status the review modal polls.
 function firstFailure(failures: ReviewFailure[] | undefined): string {
@@ -135,6 +147,7 @@ function staged(notes: number): string {
 const ARC_AGAIN = "try again from the character's entry in Plan";
 const PICK_MODEL = 'Pick one under Account, Assistant, Models per role';
 const DETAILS_AGAIN = 'select "Suggest details with the Assistant" on the entry again';
+const DRAFT_AGAIN = 'type /draft in the Assistant chat to ask again';
 
 // "1 entry", "3 other entries", for an enrich notice.
 function entries(n: number, other = false): string {
@@ -383,7 +396,94 @@ export function createHandlers(deps: WorkerDeps) {
 		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 	}
 
+	// One scene draft. The job writes only its staged row; the notice sends the
+	// writer to the scene, where the Assistant panel shows the draft to keep or
+	// discard.
+	async function sceneDraft(job: JobWithMetadata<AssistantDraftData>) {
+		const { userId, storyId, sceneId, draftId } = job.data;
+		const href = sceneDraftHref(storyId, sceneId);
+		const [scene] = await db
+			.select({ title: schema.scenes.title })
+			.from(schema.scenes)
+			.innerJoin(schema.stories, eq(schema.scenes.storyId, schema.stories.id))
+			.where(and(eq(schema.scenes.id, sceneId), eq(schema.stories.ownerId, userId)));
+		const name = scene?.title ? `the scene "${scene.title}"` : 'your scene';
+		// Settled as completed with a failed output, which the activity card
+		// reads as failed, and pg-boss does not run it again.
+		const settleFailed = () => boss.complete(ASSISTANT_DRAFT_QUEUE, job, { failed: true });
+		let title: string;
+		try {
+			const result = await withJobRunSignal(boss, job, (signal) =>
+				services.runSceneDraft(db, { userId, draftId, jobId: job.id, signal })
+			);
+			if (result.outcome === 'missing') {
+				logEvent('warn', 'assistant.draft_skipped', { draftId, userId });
+				return;
+			}
+			if (result.outcome === 'stopped') {
+				title = `The draft of ${name} was stopped before it finished, so nothing was kept.`;
+			} else if (result.outcome === 'off') {
+				await settleFailed();
+				title = `The Assistant is off for this story, so it did not draft ${name}.`;
+			} else if (result.outcome === 'capped') {
+				await settleFailed();
+				title = `The Assistant did not draft ${name}: this job reached the spend cap at ${spentPhrase(result.spentUsd)}. Raise the cap in settings, then ${DRAFT_AGAIN}.`;
+			} else {
+				title = `The Assistant drafted ${name} (${result.words} ${result.words === 1 ? 'word' : 'words'}). Open the scene to keep or discard the draft.`;
+				if (result.cutOff) title += ' It stopped at the length limit, so it may end mid-scene.';
+				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
+			}
+			logEvent('info', 'assistant.draft', { draftId, outcome: result.outcome });
+		} catch (error) {
+			logEvent('error', 'assistant.draft_failed', { draftId, ...errorFields(error) });
+			const settled =
+				error instanceof ReplyRefusedError ||
+				error instanceof EndpointReplyError ||
+				error instanceof AssistantDisabledError;
+			if (settled) {
+				// A retry would end the same way, so say why and end here.
+				const why =
+					error instanceof ReplyRefusedError
+						? 'The model declined to write this draft.'
+						: error instanceof EndpointReplyError
+							? `The endpoint did not send a reply. Check the endpoint in your settings, then ${DRAFT_AGAIN}.`
+							: error instanceof NoModelError
+								? `No model is chosen for the Assistant. ${PICK_MODEL}, then ${DRAFT_AGAIN}.`
+								: `The Assistant is turned off. Switch it back on in your settings, then ${DRAFT_AGAIN}.`;
+				await failSceneDraft(db, draftId, why);
+				await settleFailed();
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_draft', {
+						title: `The Assistant did not draft ${name}. ${why}`,
+						href
+					})
+				);
+				return;
+			}
+			// pg-boss runs it again (a passing endpoint fault, an expiry, a worker
+			// shutting down), and the draft stays unsettled for that attempt.
+			if (job.retryCount < job.retryLimit) throw error;
+			await failSceneDraft(
+				db,
+				draftId,
+				`The Assistant could not write this draft. Check the endpoint in your settings, then ${DRAFT_AGAIN}.`
+			);
+			await notifyWriter(ASSISTANT_DRAFT_QUEUE, job, userId, 'assistant_draft', {
+				title: `The Assistant could not draft ${name}. Check the endpoint in your settings.`,
+				href
+			});
+			throw error;
+		}
+		await notifyWriter(ASSISTANT_DRAFT_QUEUE, job, userId, 'assistant_draft', { title, href });
+	}
+
 	return {
+		// One scene drafted from the writer's brief, staged for them to keep or
+		// discard. Only ever queued by the writer's own request.
+		async assistantDraft(jobs: JobWithMetadata<AssistantDraftData>[]) {
+			for (const job of jobs) await sceneDraft(job);
+		},
+
 		async mentionsScene(jobs: Job<{ sceneId: string }>[]) {
 			for (const job of jobs) {
 				const result = await rebuildSceneMentions(db, job.data.sceneId);

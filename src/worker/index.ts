@@ -20,6 +20,7 @@ import {
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_QUEUE_OPTIONS,
 	LEGACY_ASSISTANT_REVIEW_QUEUE,
 	LEGACY_ASSISTANT_SUMMARIES_QUEUE
@@ -77,6 +78,7 @@ await boss.createQueue(USER_EXPORT_QUEUE);
 await boss.createQueue(ASSISTANT_REVIEW_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 await boss.createQueue(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 await boss.createQueue(ASSISTANT_ENRICH_QUEUE, ASSISTANT_QUEUE_OPTIONS);
+await boss.createQueue(ASSISTANT_DRAFT_QUEUE, ASSISTANT_QUEUE_OPTIONS);
 // LEGACY (#1041): drains reviews and summary passes queued on the old
 // default-policy queues before the upgrade. Remove in a later release.
 await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
@@ -101,6 +103,7 @@ await boss.work(USER_EXPORT_QUEUE, handlers.userExport);
 await boss.work(ASSISTANT_REVIEW_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantReview);
 await boss.work(ASSISTANT_SUMMARIES_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantSummaries);
 await boss.work(ASSISTANT_ENRICH_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantEnrich);
+await boss.work(ASSISTANT_DRAFT_QUEUE, ASSISTANT_WORK_OPTIONS, handlers.assistantDraft);
 // LEGACY (#1041): the old queues' drain, removed with the createQueue calls above.
 // One job at a time on each: while old jobs remain, the drain adds a slot of its
 // own next to the new queue's, so a writer can briefly have two runs at once.

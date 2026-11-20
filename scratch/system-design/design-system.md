@@ -992,7 +992,7 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 `EditorToolbar`, `SelectionMenu`, `NotesWorkspace`, `NotesSidebar`, `PlanSidebar`,
 `StoryOutline`, `StoryRowMenu`, `StoryDraftsMenu`, `RevisionHistory`, `EntityBadgePicker`,
 `EntityRelationships`, `ReviewSurface`, `ReviewPanel`, `ReviewCommentCard`,
-`ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`.
+`ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`, `AssistantDraft`.
 
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
