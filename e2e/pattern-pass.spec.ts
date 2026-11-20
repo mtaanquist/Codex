@@ -16,7 +16,8 @@ async function seedEdit(
 	scene: { id: string; story_id: string; body_md: string },
 	threadId: string,
 	range: [number, number],
-	replacement: string
+	replacement: string,
+	follows: string | null = null
 ): Promise<string> {
 	const revision = await pool.query<{ id: string }>(
 		`insert into revisions (entity_type, entity_id, body_md, reason)
@@ -25,9 +26,19 @@ async function seedEdit(
 	);
 	const edit = await pool.query<{ id: string }>(
 		`insert into review_suggestions
-		 (story_id, scene_id, assistant, base_revision_id, range_start, range_end, replacement, pattern_thread_id)
-		 values ($1, $2, true, $3, $4, $5, $6, $7) returning id`,
-		[scene.story_id, scene.id, revision.rows[0].id, range[0], range[1], replacement, threadId]
+		 (story_id, scene_id, assistant, base_revision_id, range_start, range_end, replacement,
+		  pattern_thread_id, follows_suggestion_id)
+		 values ($1, $2, true, $3, $4, $5, $6, $7, $8) returning id`,
+		[
+			scene.story_id,
+			scene.id,
+			revision.rows[0].id,
+			range[0],
+			range[1],
+			replacement,
+			threadId,
+			follows
+		]
 	);
 	return edit.rows[0].id;
 }
@@ -210,10 +221,11 @@ test.describe('with the Assistant on', () => {
 		for (const scene of [one, two]) await seedEdit(pool, scene, threadId, [0, 7], 'Kara');
 
 		await page.route('**/api/assistant/pattern-reread', async (route) => {
+			const { suggestionId } = route.request().postDataJSON() as { suggestionId: string };
 			await release;
 			const [after] = await scenesOf();
 			const at = after.body_md.indexOf('ford');
-			const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river');
+			const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river', suggestionId);
 			await route.fulfill({ json: { staged: 1, ids: [id] } });
 		});
 
@@ -224,6 +236,7 @@ test.describe('with the Assistant on', () => {
 		await expect(pass.locator('.pp-para')).toContainText('crossed the ford.');
 		return {
 			pass,
+			current: pass.locator('.pp-card[aria-current="step"]'),
 			done: async () => {
 				await page.unrouteAll({ behavior: 'wait' });
 				await pool.end();
@@ -234,16 +247,16 @@ test.describe('with the Assistant on', () => {
 	// The follow-up is the next step, even though the pass had already moved
 	// on to the next scene.
 	test('a follow-up from the re-read comes next', async ({ page }) => {
-		const { pass, done } = await openPass(page);
+		const { pass, current, done } = await openPass(page);
 		try {
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
-			await expect(pass.getByText('Follow-up')).toBeVisible();
+			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
 			await expect(page.locator('.review-edit .cm-content')).toContainText('Kara crossed');
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
 			// Then on to the second scene.
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
-			await expect(pass.getByText('Follow-up')).toHaveCount(0);
+			await expect(current.getByText('Follow-up')).toHaveCount(0);
 		} finally {
 			await done();
 		}
@@ -253,7 +266,7 @@ test.describe('with the Assistant on', () => {
 	// until that step is done, so the wording being typed is kept.
 	test('a follow-up does not take over a step being reworded', async ({ page }) => {
 		let release!: () => void;
-		const { pass, done } = await openPass(page, new Promise<void>((r) => (release = r)));
+		const { pass, current, done } = await openPass(page, new Promise<void>((r) => (release = r)));
 		try {
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
@@ -273,7 +286,7 @@ test.describe('with the Assistant on', () => {
 			).toBeVisible();
 			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone');
 			await pass.getByRole('button', { name: 'Accept my wording' }).click();
-			await expect(pass.getByText('Follow-up')).toBeVisible();
+			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
 		} finally {
 			await done();
@@ -294,6 +307,40 @@ test.describe('with the Assistant on', () => {
 			await expect(rereading).toHaveCount(0);
 			release();
 			await expect(page.locator('.activity-card')).toHaveCount(0);
+		} finally {
+			await done();
+		}
+	});
+
+	// Every edit of the note shows as a card; only the current one has buttons.
+	// A follow-up links to the edit it follows, and keeps the link after a
+	// reload.
+	test('the pass lists every edit, and a follow-up links to its original', async ({ page }) => {
+		const { pass, current, done } = await openPass(page);
+		try {
+			const cards = pass.locator('.pp-card');
+			await expect(cards).toHaveCount(2);
+			await expect(pass.locator('.pp-faded').getByRole('button')).toHaveCount(0);
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(current.getByText('Follow-up')).toBeVisible();
+			await expect(cards).toHaveCount(3);
+			const accepted = pass.locator('.pp-faded').filter({ hasText: 'Accepted' });
+			await expect(accepted).toHaveCount(1);
+			await current.getByRole('button', { name: 'Follows an earlier change' }).click();
+			await expect(accepted).toHaveClass(/pp-flash/);
+
+			await pass.getByRole('button', { name: 'Skip' }).click();
+			await expect(pass.locator('.pp-faded').filter({ hasText: 'Skipped' })).toHaveCount(1);
+
+			// After a reload the follow-up still links back.
+			await page.reload();
+			await page.locator('html[data-hydrated="true"]').waitFor();
+			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+			await note.getByRole('button', { name: /Work through this/ }).click();
+			await expect(current.getByText('Follow-up')).toBeVisible();
+			await expect(
+				current.getByRole('button', { name: 'Follows an earlier change' })
+			).toBeVisible();
 		} finally {
 			await done();
 		}
