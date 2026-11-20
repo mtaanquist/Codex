@@ -27,7 +27,7 @@
 		writeHref: resolve('/stories/[id]', { id: data.story.slug }),
 		planHref: resolve('/stories/[id]/plan', { id: data.story.slug })
 	});
-	// The author can open an entity's full details from its quick card.
+	// The author can open an entity in Plan view from its quick card.
 	const planPath = $derived(resolve('/stories/[id]/plan', { id: data.story.slug }));
 	const entityHref = (entity: { id: string }) => withQuery(planPath, { entity: entity.id });
 </script>
