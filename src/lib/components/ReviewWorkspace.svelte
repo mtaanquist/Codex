@@ -6,7 +6,12 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { refreshAll } from '$app/navigation';
-	import { flashActivity } from '#lib/activity.svelte';
+	import {
+		dismissActivity,
+		flashActivity,
+		resolveActivity,
+		startActivity
+	} from '#lib/activity.svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
@@ -479,7 +484,6 @@
 		followUps: SvelteSet<string>;
 		done: SvelteSet<string>;
 		currentId: string | null;
-		reread: 'idle' | 'running' | 'failed';
 		// The writer is rewording or accepting the current step.
 		held: boolean;
 	} | null>(null);
@@ -511,7 +515,6 @@
 			followUps: new SvelteSet(),
 			done: new SvelteSet(),
 			currentId: queue[0]?.id ?? null,
-			reread: 'idle',
 			held: false
 		};
 		composer = null;
@@ -563,14 +566,30 @@
 
 	// The Assistant re-reads the changed paragraph and its neighbours and may
 	// stage one follow-up edit on the same note, which the pass then reaches.
-	// Only the latest re-read reports its status; an earlier one finishing late
-	// must not clear the running note of the one after it.
+	// Each re-read shows as a card in the corner rather than in the pane, so
+	// the step being read does not move when one starts or ends. Only the
+	// latest re-read may move the pass to its follow-up; an earlier one
+	// finishing late must not pull the pass back.
 	let rereadToken = 0;
+	// Not state: only read to dismiss the cards.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const rereadCards = new Set<number>();
+	function clearRereadCards() {
+		for (const id of rereadCards) dismissActivity(id);
+		rereadCards.clear();
+	}
+	// A stopped pass, or a page left, takes its re-read cards with it.
+	$effect(() => {
+		if (!pass) untrack(clearRereadCards);
+	});
+	$effect(() => clearRereadCards);
+
 	async function rereadAfter(suggestionId: string) {
 		const current = pass;
 		if (!current) return;
 		const token = ++rereadToken;
-		current.reread = 'running';
+		const card = startActivity('Re-reading the last change');
+		rereadCards.add(card);
 		let ok: boolean;
 		let ids: string[] = [];
 		try {
@@ -584,11 +603,18 @@
 		} catch {
 			ok = false;
 		}
-		if (pass !== current) return;
+		if (pass !== current) {
+			dismissActivity(card);
+			rereadCards.delete(card);
+			return;
+		}
 		if (ok) await refreshAll();
 		for (const id of ids) current.followUps.add(id);
+		rereadCards.delete(card);
+		if (!ok) resolveActivity(card, { state: 'failed', label: 'Could not re-read the last change' });
+		else if (ids.length > 0) resolveActivity(card, { state: 'done', label: 'Follow-up added' });
+		else dismissActivity(card);
 		if (token !== rereadToken) return;
-		current.reread = ok ? 'idle' : 'failed';
 		// The follow-up is the next step, ahead of whatever the pass moved on to,
 		// unless the writer is already rewording that step; it then comes after.
 		const next = ids.find((id) => passOpen.some((s) => s.id === id));
@@ -770,7 +796,6 @@
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
 						followUp={passStep !== null && pass.followUps.has(passStep.id)}
-						reread={pass.reread}
 						onAccepted={passAccepted}
 						onSkip={(id) => pass?.done.add(id)}
 						beforeAccept={flushEditor}

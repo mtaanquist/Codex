@@ -16,7 +16,6 @@
 		position,
 		total,
 		followUp,
-		reread,
 		onAccepted,
 		onSkip,
 		beforeAccept,
@@ -32,8 +31,6 @@
 		total: number;
 		// The edit came from the re-read after an earlier accept.
 		followUp: boolean;
-		// The re-read after the last accept: running, or it could not run.
-		reread: 'idle' | 'running' | 'failed';
 		onAccepted: (
 			id: string,
 			accepted: { bodyMd: string; baseHash: string } | null,
@@ -98,12 +95,6 @@
 		>
 	</div>
 	<div class="rv-panel-scroll">
-		{#if reread === 'running'}
-			<p class="rv-compose-hint">Re-reading the last change...</p>
-		{:else if reread === 'failed'}
-			<p class="rv-compose-hint">Could not re-read the last change.</p>
-		{/if}
-
 		{#if step}
 			<div class="rv-card is-draft" style="--auth: var(--cat-violet);">
 				<div class="rv-card-top">
