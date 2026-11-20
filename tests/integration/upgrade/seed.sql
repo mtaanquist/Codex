@@ -36,7 +36,7 @@ insert into characters (id, universe_id, owner_id, name, body_md, arc_summary_md
 insert into entity_mentions (source_type, source_id, target_type, target_id, position, surrounding_text) values
 	('scene', '00000000-0000-4000-8000-0000000000e1', 'character', '00000000-0000-4000-8000-0000000000f1', 0, 'Mara reached the quay.'),
 	('scene', '00000000-0000-4000-8000-0000000000e2', 'character', '00000000-0000-4000-8000-0000000000f1', 0, 'Mara sold the boat.'),
-	('scene', '00000000-0000-4000-8000-0000000000e2', 'character', '00000000-0000-4000-8000-0000000000f2', 19, 'Mara sold the boat to Tam.');
+	('scene', '00000000-0000-4000-8000-0000000000e2', 'character', '00000000-0000-4000-8000-0000000000f2', 22, 'Mara sold the boat to Tam.');
 
 -- A whole-story copyedit that hit the spend cap after two scenes, saved under
 -- the scope key this release used.

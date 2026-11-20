@@ -580,7 +580,12 @@ const RARE = [
 	'muteStory',
 	'pinMention',
 	'restoreEntityRevision',
-	'restoreDraftScene'
+	'restoreDraftScene',
+	'storyFromDraft',
+	'saveDraft',
+	'createEntityFromStory',
+	'pinMention',
+	'editEntity'
 ];
 
 // The write paths outside the editor's own save (#1214).
@@ -614,16 +619,27 @@ const moreActions: Record<string, Action> = {
 		return `restore an earlier version of ${revision.title}`;
 	},
 	async restoreEntityRevision(r) {
-		const entity = r.pick(await allEntities());
-		if (!entity) return null;
-		const type = REVISION_TYPE[entity.kind];
-		const rows = await db
-			.select({ id: revisions.id })
-			.from(revisions)
-			.where(and(eq(revisions.entityType, type), eq(revisions.entityId, entity.id)))
-			.orderBy(asc(revisions.createdAt));
+		const entities = await allEntities();
+		// Only an entity that has been saved has a version to go back to.
+		const rows = entities.length
+			? await db
+					.select({ id: revisions.id, entityId: revisions.entityId })
+					.from(revisions)
+					.where(
+						and(
+							inArray(revisions.entityType, Object.values(REVISION_TYPE)),
+							inArray(
+								revisions.entityId,
+								entities.map((entity) => entity.id)
+							)
+						)
+					)
+					.orderBy(asc(revisions.createdAt))
+			: [];
 		const revision = r.pick(rows);
-		if (!revision) return null;
+		const entity = entities.find((candidate) => candidate.id === revision?.entityId);
+		if (!revision || !entity) return null;
+		const type = REVISION_TYPE[entity.kind];
 		const result = await restoreRevision(db, userId, revision.id, type, entity.id);
 		expect(result.ok, 'entity restore').toBe(true);
 		if (result.ok && result.mentionsAffected) await reindexUniverse();
@@ -631,9 +647,10 @@ const moreActions: Record<string, Action> = {
 	},
 	async acceptSuggestion(r) {
 		const scene = await someScene(r);
-		const word = r.pick(SWAPS)!;
-		const start = scene?.bodyMd.indexOf(word) ?? -1;
-		if (!scene || start < 0) return null;
+		// A word this scene holds, so the step is not lost to a miss.
+		const word = scene && r.pick(SWAPS.filter((swap) => scene.bodyMd.includes(swap)));
+		if (!scene || !word) return null;
+		const start = scene.bodyMd.indexOf(word);
 		const replacement = r.pick(SWAPS.filter((other) => other !== word))!;
 		const created = await createSuggestion(db, {
 			storyId: scene.storyId,
@@ -684,7 +701,7 @@ const moreActions: Record<string, Action> = {
 		const story = r.pick(await liveStories());
 		// Words the prose holds, so the new entry is mentioned at once. A name
 		// taken twice makes it ambiguous, which is what a pin settles.
-		const name = r.pick(['Corin', 'Isolde', 'the rain'])!;
+		const name = r.pick(['Corin', 'Isolde', 'Bram', 'the rain'])!;
 		const existing = (await allEntities()).filter((entity) => entity.name === name);
 		if (!story || existing.length >= 2) return null;
 		const type = r.pick(['character', 'place'] as const)!;
@@ -1106,6 +1123,8 @@ async function checkMarks(before?: Map<string, Set<string>>): Promise<Finding[]>
 const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
 
 describe('Assistant stale marks follow what the Assistant reads', () => {
+	// The actions that applied in at least one seed.
+	const ran = new Set<string>();
 	const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
 
 	it.each(seeds)('seed %i', { timeout: 300_000 }, async (seed) => {
@@ -1144,6 +1163,7 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 			await nextMillisecond();
 			const did = await actions[name](r);
 			if (!did) continue;
+			ran.add(name);
 			log.push(did);
 			await settleMentions();
 			let findings = await checkMarks(snippets);
@@ -1163,5 +1183,11 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 				);
 		}
 		if (soft.length) console.info(`seed ${seed}: not failed\n  ${soft.join('\n  ')}`);
+	});
+
+	// A write path that never applies is not being checked at all. The default
+	// seeds reach every one; a narrower run is not held to that.
+	it.skipIf(SEEDS < 8)('every action ran in some seed', () => {
+		expect(Object.keys(actions).filter((name) => !ran.has(name))).toEqual([]);
 	});
 });

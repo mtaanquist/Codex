@@ -512,7 +512,8 @@ async function reconcileRelationships(
 }
 
 // Restore never overwrites history: the entity gets the revision's content
-// and a new 'restore' revision lands on top of the timeline. An entity
+// and a new 'restore' revision lands on top of the timeline (a scene that
+// already has the revision's text is left as it is, with no new row). An entity
 // revision with a snapshot restores the whole entity - name, aliases or
 // keywords, summary, category, details, and the relationship set - while
 // older body-only rows restore the body and leave the rest as it is. Parts

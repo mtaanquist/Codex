@@ -110,7 +110,12 @@ export default defineConfig(
 	{
 		// A later block replaces no-restricted-syntax rather than adding to it,
 		// so server code repeats the locale rules.
-		files: ['src/lib/server/**', 'src/routes/**/*.ts', 'src/worker/**'],
+		files: [
+			'src/lib/server/**',
+			'src/routes/**/*server.ts',
+			'src/hooks.server.ts',
+			'src/worker/**'
+		],
 		rules: { 'no-restricted-syntax': ['error', ...fixedLocale, ...oneClock] }
 	},
 	{
