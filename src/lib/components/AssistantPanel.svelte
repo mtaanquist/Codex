@@ -541,7 +541,7 @@
 		// a space in front of the "/" makes it a message.
 		if ((text ?? input).startsWith('/')) {
 			// Commands wait for the reply in progress, and the line stays put.
-			if ((busy || switching) && !runsWhileBusy(slashName(line))) return;
+			if ((busy || switching) && !runsWhileBusy(line)) return;
 			runSlashCommand(line);
 			return;
 		}
@@ -662,8 +662,11 @@
 	// box when it closes; one opened by its button returns it to the button.
 	let popoverFromComposer = false;
 	// These only open a popover, so they need not wait for a reply in progress.
-	function runsWhileBusy(name: string): boolean {
-		if (switching) return false;
+	// Only the bare command: anything else would answer with a message, and a
+	// message added now would take the rest of the reply being written.
+	function runsWhileBusy(raw: string): boolean {
+		if (switching || slashArgs(raw) !== '') return false;
+		const name = slashName(raw);
 		return name === 'context' || (name === 'model' && !settingsLocked);
 	}
 	function runSlashCommand(raw: string, typed = true) {
@@ -789,7 +792,7 @@
 			return;
 		}
 		// Like a typed command, it waits for the reply in progress.
-		if ((busy || switching) && !runsWhileBusy(command.name)) {
+		if ((busy || switching) && !runsWhileBusy(`/${command.name}`)) {
 			if (draft) {
 				flashActivity(
 					'failed',

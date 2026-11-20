@@ -732,6 +732,11 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await composer.fill('/who');
 	await composer.press('Enter');
 	await expect(composer).toHaveValue('/who');
+	// Words after it would be answered with a message, so that line waits too.
+	await composer.fill('/context chapter three');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('/context chapter three');
+	await expect(chat).not.toContainText('takes nothing after it');
 	// Adding context only opens a list, so it does not wait; closing the list
 	// goes back to the chat box it was opened from.
 	await composer.fill('/context');
