@@ -239,6 +239,8 @@ export async function storySkeleton(
 			id: scenes.id,
 			title: scenes.title,
 			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt,
 			status: scenes.status,
 			chapterId: scenes.chapterId
 		})
@@ -247,8 +249,11 @@ export async function storySkeleton(
 		.orderBy(asc(scenes.globalPosition));
 
 	const byChapter = new Map<string, SceneSummary[]>();
+	const rowsByChapter = new Map<string, typeof sceneRows>();
 	const orphans: SceneSummary[] = [];
 	for (const scene of sceneRows) {
+		if (scene.chapterId)
+			rowsByChapter.set(scene.chapterId, [...(rowsByChapter.get(scene.chapterId) ?? []), scene]);
 		const summary: SceneSummary = {
 			id: scene.id,
 			title: scene.title,
@@ -269,10 +274,7 @@ export async function storySkeleton(
 			return {
 				id: chapter.id,
 				title: chapter.title,
-				summaryMd: chapterSummaryToSend(
-					chapter,
-					chapterScenes.map((scene) => scene.summaryMd)
-				),
+				summaryMd: chapterSummaryToSend(chapter, rowsByChapter.get(chapter.id) ?? []),
 				scenes: chapterScenes
 			};
 		}),
@@ -462,7 +464,8 @@ async function buildScopeEntities(
 	);
 	// An out-of-date arc may retell a story the Assistant has since been turned
 	// off for, and that story's text must not be sent. So it is left out unless
-	// every story it was written from is still there and still read. The list
+	// every story it was written from is still there, out of the trash, and
+	// still read. The list
 	// is stored with the arc, so this holds after the scenes that mentioned the
 	// character are gone. (A current arc was built from stories read now.)
 	const stale = shown.filter((c) => outOfDate.has(c.id));
@@ -473,7 +476,9 @@ async function buildScopeEntities(
 					await db
 						.select({ id: stories.id })
 						.from(stories)
-						.where(and(inArray(stories.id, readStoryIds), storyAssistantOn()))
+						.where(
+							and(inArray(stories.id, readStoryIds), isNull(stories.deletedAt), storyAssistantOn())
+						)
 				).map((row) => row.id)
 			: []
 	);

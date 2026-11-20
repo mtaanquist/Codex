@@ -5,6 +5,7 @@ import { storyAssistantOn } from '../universe-scope.ts';
 import { buildArcMessage, type ArcScene } from './prompts/arc.ts';
 import { requestHash } from './request-hash.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { usableSceneSummary } from '../summary-currency.ts';
 
 // The request a character's arc is written from, and the check that a stored
 // arc still matches it. Kept apart from the job (arc-summary.ts) so the
@@ -28,7 +29,8 @@ export type ArcRequest = { messages: ChatMessage[]; input: string; storyIds: str
 // The request an arc refresh would send for each of these characters as
 // things stand, with its fingerprint, in one read. The scenes are the live
 // ones in the universe that mention the character, in reading order, each as
-// its summary or else the passage around its first mention. A character no
+// its summary (while that is current) or else the passage around its first
+// mention. A character no
 // live scene the Assistant reads mentions has no entry.
 export async function arcRequests(
 	db: Database,
@@ -68,6 +70,8 @@ export async function arcRequests(
 			characterId: first.characterId,
 			sceneTitle: scenes.title,
 			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt,
 			storyId: stories.id,
 			storyTitle: stories.title,
 			snippet: first.snippet
@@ -86,7 +90,9 @@ export async function arcRequests(
 		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt), asc(scenes.globalPosition));
 	const found = new Map<string, (ArcScene & { storyId: string })[]>();
 	for (const row of rows) {
-		const text = row.summaryMd?.trim() || row.snippet.trim();
+		// A summary the Assistant wrote before the scene last changed tells an
+		// older scene, so the passage is read instead until it is rewritten.
+		const text = usableSceneSummary(row) || row.snippet.trim();
 		if (!text) continue;
 		let arcScenes = found.get(row.characterId);
 		if (!arcScenes) found.set(row.characterId, (arcScenes = []));

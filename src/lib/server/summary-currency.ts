@@ -20,3 +20,20 @@ export function copiedSummaryStamp(
 	if (!generatedAt) return null;
 	return current ? copyUpdatedAt : generatedAt;
 }
+
+export type SceneSummarySource = {
+	summaryMd: string | null;
+	summaryGeneratedAt: Date | null;
+	updatedAt: Date;
+};
+
+// The summary of a scene that something else (an arc, a chapter summary) may
+// be written from: the writer's own, or the Assistant's while it is current.
+// One the Assistant wrote before the scene last changed tells an older scene,
+// so it counts as no summary until the summaries pass rewrites it.
+export function usableSceneSummary(scene: SceneSummarySource): string | null {
+	const text = scene.summaryMd?.trim();
+	if (!text) return null;
+	if (!scene.summaryGeneratedAt) return text;
+	return summaryIsCurrent(scene.summaryGeneratedAt, scene.updatedAt) ? text : null;
+}
