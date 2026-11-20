@@ -1383,21 +1383,28 @@ calls the gateway, which proxies through the egress guard.
   and the two keeping choices carry `base`, the md5 of the text the window
   last saw (`textVersion`); when the stored text differs they are refused
   with 409 ("This draft was changed in another window.") and the card offers
-  to load the current text. A blank PATCH is refused; Discard is how a
-  draft is dropped. Asking and
+  to load the current text. Text that is already what is stored is never a
+  conflict (a save that landed with its answer lost, sent again), and a save
+  made as the page is left names the text of the save still on its way
+  (`sent`), so either may land first. A blank PATCH is refused; Discard is
+  how a draft is dropped. Asking and
   counting are gated on the Assistant being on for the account and story;
   reading a staged draft back, editing it and deciding it need only its
   owner, so a draft written before a mute or a switch-off is not stranded.
   The story page keeps the Assistant tab while such drafts wait
-  (`hasWaitingDrafts`, which counts only drafts whose scene is live and in
-  the story), showing only the draft cards and a line saying the Assistant
-  is off for the account; nothing there can ask for a new draft, and the tab
-  goes when the last draft is decided. Links from notices and lists open the
+  (`waitingDrafts`: the writer's pending, running, ready and failed drafts
+  whose scene is live and in the story, so one still being written can be
+  seen and stopped), showing only the draft cards, a list of links to the
+  drafts on other scenes (also on a muted story), and a line saying the
+  Assistant is off for the account; nothing there can ask for a new draft,
+  and the tab goes when the last draft is decided. Links from notices and lists open the
   card without the form (`draft=show`); the scene menu's link opens the form
   (`draft=1`). In the panel a start is ignored for 700 ms after the estimate
   appears and on a double click or key repeat (`confirm-guard.ts`), unsaved
   edits live in module state by draft id and are flushed when the page is
-  hidden (`draft-edits.ts`), and an open brief form is kept in
+  hidden (`draft-edits.ts`, which listens once for every edit held, with or
+  without a card, never takes back a version the window has saved over, and
+  stops on 401, 403 and 404), and an open brief form is kept in
   `sessionStorage` until it is started, cancelled, or the writer signs out
   (`draft-forms.ts`).
 - [built] Chapter drafts (#1168, step 2): the same queue and table. The

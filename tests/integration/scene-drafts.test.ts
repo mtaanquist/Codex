@@ -72,6 +72,8 @@ const {
 	requestSceneDraft,
 	sceneDraftFor,
 	hasWaitingDrafts,
+	saveDraftText,
+	waitingDrafts,
 	DRAFT_DID_NOT_FINISH
 } = await import('../../src/lib/server/scene-drafts');
 const { saveSceneBody } = await import('../../src/lib/server/scene-save');
@@ -741,6 +743,49 @@ describe('the endpoint', () => {
 		expect((await sceneRow(target)).bodyMd).toBe('Edited again.');
 	});
 
+	it('takes a save sent again after its answer was lost, and one sent beside another', async () => {
+		const draftId = await readyDraft('As written.');
+		const send = (method: 'PATCH' | 'POST', body: Record<string, unknown>) =>
+			call(
+				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
+				event({ id: ownerId }, { method, params: { id: draftId }, body })
+			);
+		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		// The save lands; its answer never arrives, so it is sent again with
+		// the base it had. That is the same text, not a change from elsewhere.
+		const first = await send('PATCH', { text: 'Edited once.', base: seen });
+		expect(first.status).toBe(200);
+		const again = await send('PATCH', { text: 'Edited once.', base: seen });
+		expect(again.status).toBe(200);
+		expect(again.body.textVersion).toBe(first.body.textVersion);
+		// Keeping it with that stale base and the same text goes the same way.
+		// (Checked on Add below, after the saves.)
+
+		// A save sent as the page is left names the one still on its way. It is
+		// taken whether that one landed first...
+		const beside = await send('PATCH', { text: 'Edited twice.', base: seen, sent: 'Edited once.' });
+		expect(beside.status).toBe(200);
+		expect((await draftRow(draftId)).textMd).toBe('Edited twice.');
+		// ...but not over text from somewhere else.
+		const other = await send('PATCH', { text: 'Third.', base: seen, sent: 'Edited once.' });
+		expect(other.status).toBe(409);
+		expect((await send('PATCH', { text: 'x', base: seen, sent: 7 })).status).toBe(400);
+		expect((await draftRow(draftId)).textMd).toBe('Edited twice.');
+
+		const kept = await send('POST', { action: 'add', text: 'Edited twice.', base: seen });
+		expect(kept.status).toBe(200);
+	});
+
+	it('fills from text already stored when the save that stored it was not answered', async () => {
+		const draftId = await readyDraft('As written.');
+		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		expect((await saveDraftText(db, ownerId, draftId, 'Edited once.', seen)).ok).toBe(true);
+		expect(await fillSceneFromDraft(db, ownerId, draftId, 'Edited once.', seen)).toMatchObject({
+			ok: true
+		});
+		expect((await sceneRow(target)).bodyMd).toBe('Edited once.');
+	});
+
 	it('refuses a save that would leave the draft blank', async () => {
 		const draftId = await readyDraft('As written.');
 		const patch = (text: string) =>
@@ -1122,6 +1167,45 @@ describe('reading a draft back', () => {
 		expect(await hasWaitingDrafts(db, strangerId, storyId)).toBe(false);
 		await discardSceneDraft(db, ownerId, draftId);
 		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+	});
+
+	it('lists the drafts still to decide in story order, one being written among them', async () => {
+		expect(await waitingDrafts(db, ownerId, storyId)).toEqual([]);
+		// Still being written: listed, so it can be seen and stopped.
+		await request();
+		expect(await waitingDrafts(db, ownerId, storyId)).toEqual([
+			{ sceneId: target, sceneTitle: 'The Crossing', status: 'pending' }
+		]);
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		await db.insert(assistantDrafts).values({
+			userId: ownerId,
+			storyId,
+			sceneId: before,
+			brief: 'b',
+			targetWords: 500,
+			status: 'ready',
+			textMd: 'Text.'
+		});
+		await db.insert(assistantDrafts).values({
+			userId: ownerId,
+			storyId,
+			sceneId: after,
+			brief: 'b',
+			targetWords: 500,
+			status: 'accepted',
+			textMd: 'Kept.'
+		});
+		expect(
+			(await waitingDrafts(db, ownerId, storyId)).map((draft) => [draft.sceneId, draft.status])
+		).toEqual([
+			[before, 'ready'],
+			[target, 'pending']
+		]);
+		expect(await waitingDrafts(db, strangerId, storyId)).toEqual([]);
+		await trashScene(db, ownerId, before);
+		expect((await waitingDrafts(db, ownerId, storyId)).map((draft) => draft.sceneId)).toEqual([
+			target
+		]);
 	});
 
 	it('does not count a draft whose scene is in the trash or has left the story', async () => {

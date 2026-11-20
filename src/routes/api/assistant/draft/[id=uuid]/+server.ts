@@ -26,15 +26,20 @@ import { rateLimitWrites } from '#lib/server/write-guard';
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) error(401, 'Sign in to edit a draft.');
 	rateLimitWrites(locals.user.id);
-	const payload = await readJson<{ text?: unknown; base?: unknown }>(request);
+	const payload = await readJson<{ text?: unknown; base?: unknown; sent?: unknown }>(request);
 	if (typeof payload.text !== 'string') error(400, 'text must be a string.');
 	checkProseLength(payload.text);
+	if (payload.sent !== undefined && typeof payload.sent !== 'string') {
+		error(400, 'sent must be a string.');
+	}
+	if (payload.sent) checkProseLength(payload.sent);
 	const result = await saveDraftText(
 		db,
 		locals.user.id,
 		params.id!,
 		payload.text,
-		baseOf(payload.base)
+		baseOf(payload.base),
+		payload.sent
 	);
 	if (!result.ok) throwActionError(result);
 	return Response.json({ ok: true, textVersion: result.textVersion });

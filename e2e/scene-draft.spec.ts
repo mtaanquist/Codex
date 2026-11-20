@@ -112,6 +112,13 @@ test('a scene draft is costed first, waits for the writer, and fills the empty s
 	expect(asked).toEqual([]);
 	await expect(card.getByRole('button', { name: 'Draft the scene' })).toBeVisible();
 	await page.waitForTimeout(800);
+	// The second click of a double click starts nothing either, however long
+	// the cost has been up.
+	await card.getByRole('button', { name: 'Draft the scene' }).hover();
+	await page.mouse.down({ clickCount: 2 });
+	await page.mouse.up({ clickCount: 2 });
+	await page.waitForTimeout(300);
+	expect(asked).toEqual([]);
 	await page.keyboard.press('Enter');
 
 	// The finished draft waits in the panel; the scene is still empty.
@@ -123,13 +130,37 @@ test('a scene draft is costed first, waits for the writer, and fills the empty s
 	// An edit is saved to the draft, so it is still there after a reload from
 	// the link the draft's notice carries. The link opens the draft once: its
 	// marker is then gone from the address.
-	const edited = `${DRAFT}\n\nShe did not look back.`;
-	const saved = page.waitForResponse(
-		(response) => response.request().method() === 'PATCH' && response.ok()
-	);
+	let edited = `${DRAFT}\n\nShe did not look back.`;
+	const patched = () => page.waitForResponse((response) => response.request().method() === 'PATCH');
+	let saved = patched();
 	await text.fill(edited);
 	await text.blur();
-	await saved;
+	expect((await saved).status()).toBe(200);
+
+	// Asking again for the same scene brings the draft into view as it is. The
+	// saved edit stays in the box, and the next edit saves over it.
+	await openRowMenu(page, page.locator('.scene-row').first());
+	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
+	await page.locator('.row-submenu').getByRole('menuitem', { name: 'Draft this scene...' }).click();
+	await expect(card).toBeFocused();
+	await expect(text).toHaveValue(edited);
+	await page.getByPlaceholder('Ask about your story', { exact: false }).fill('/draft');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Enter');
+	await expect(card).toBeFocused();
+	await expect(text).toHaveValue(edited);
+	edited = `${edited}\n\nThe bell rang on.`;
+	saved = patched();
+	await text.fill(edited);
+	await text.blur();
+	expect((await saved).status()).toBe(200);
+	await expect(card).not.toContainText('changed in another window');
+
+	// A link that also names the whole-story view opens the scene and its draft.
+	await gotoReady(page, `/stories/crossing-${stamp}?view=story&scene=${sceneId}&draft=show`);
+	await expect(text).toHaveValue(edited);
+	await expect(page).not.toHaveURL(/view=story/);
+	await expect(page.getByText('no longer in this story')).toHaveCount(0);
 	await gotoReady(page, `/stories/crossing-${stamp}?scene=${sceneId}&draft=show`);
 	await expect(text).toHaveValue(edited);
 	await expect(page).not.toHaveURL(/draft=/);

@@ -69,6 +69,25 @@
 		pov: string;
 		scenes: Record<string, { chosen: boolean; brief: string }>;
 	};
+	function isOpenForm(value: unknown): value is OpenForm {
+		if (typeof value !== 'object' || value === null) return false;
+		const form = value as Record<string, unknown>;
+		const scenes = form.scenes;
+		return (
+			typeof form.brief === 'string' &&
+			typeof form.targetWords === 'number' &&
+			typeof form.pov === 'string' &&
+			typeof scenes === 'object' &&
+			scenes !== null &&
+			Object.values(scenes).every(
+				(scene) =>
+					typeof scene === 'object' &&
+					scene !== null &&
+					typeof scene.chosen === 'boolean' &&
+					typeof scene.brief === 'string'
+			)
+		);
+	}
 	type Row = { sceneId: string; title: string | null; brief: string; chosen: boolean } & Pick<
 		ChapterDraftDefaults['scenes'][number],
 		'hasText' | 'hasDraft'
@@ -150,6 +169,7 @@
 	// Shows the chapter's drafts and keeps the list current while scenes are
 	// still being written.
 	function show(found: ChapterDraftView) {
+		opening += 1;
 		run = found;
 		chapterTitle = found.chapterTitle;
 		error = '';
@@ -192,9 +212,14 @@
 		card?.scrollIntoView({ block: 'nearest' });
 	}
 
+	// Counts what has taken the card over, so a form still loading does not
+	// open over it.
+	let opening = 0;
+
 	// Opens the brief form: with what was typed into it before, when it was
 	// left open, else empty with the chapter's scenes to choose from.
 	async function openForm(typed: string, focus = true) {
+		const mine = ++opening;
 		error = '';
 		estimate = null;
 		leftOut = 0;
@@ -204,8 +229,10 @@
 			{ ...scope(), defaults: true },
 			'Could not open the draft form.'
 		);
-		if (!alive) return;
-		const open = readDraftForm<OpenForm>('chapter', chapterId);
+		// Something else took the card meanwhile (a link showed the chapter's
+		// drafts, or the form was asked for again).
+		if (!alive || mine !== opening) return;
+		const open = readDraftForm('chapter', chapterId, isOpenForm);
 		brief = typed || open?.brief || '';
 		pov = open?.pov ?? '';
 		if (!response.ok) {
@@ -246,7 +273,7 @@
 	});
 
 	onMount(() => {
-		if (canDraft && readDraftForm('chapter', chapterId)) void openForm('', false);
+		if (canDraft && readDraftForm('chapter', chapterId, isOpenForm)) void openForm('', false);
 		else {
 			void readRunSurely().then((found) => {
 				if (!alive || view !== 'hidden') return;
@@ -319,6 +346,7 @@
 		working = true;
 		error = '';
 		estimate = null;
+		const counting = JSON.stringify(formBody());
 		try {
 			const response = await fetch('/api/assistant/draft/chapter', {
 				method: 'POST',
@@ -326,8 +354,13 @@
 				body: JSON.stringify({ ...formBody(), estimate: true })
 			});
 			if (response.ok) {
-				estimate = (await response.json()) as ChapterDraftEstimate;
-				guard.shown();
+				const counted = (await response.json()) as ChapterDraftEstimate;
+				// The form changed while it was counted: this is the cost of
+				// something else.
+				if (view === 'form' && JSON.stringify(formBody()) === counting) {
+					estimate = counted;
+					guard.shown();
+				}
 			} else error = await apiErrorMessage(response, 'The Assistant could not count the draft.');
 		} catch {
 			error = 'Something went wrong reaching the Assistant.';
@@ -341,13 +374,15 @@
 		working = true;
 		error = '';
 		const started = await startChapterDraft({ ...formBody(), label });
+		// Before anything else: the card may have gone, and the form must not
+		// come back for a run that was started.
+		if (started.ok) dropDraftForm('chapter', chapterId);
 		if (!alive) return;
 		working = false;
 		if (!started.ok) {
 			error = started.message;
 			return;
 		}
-		dropDraftForm('chapter', chapterId);
 		const skipped = started.skipped;
 		const found = await readRunSurely();
 		if (!alive) return;
@@ -378,7 +413,9 @@
 	};
 
 	async function cancelForm() {
-		dropDraftForm('chapter', chapterId);
+		// A form whose scenes could not be loaded is only closed: what was typed
+		// into it before is still there the next time it opens.
+		if (rows.length > 0) dropDraftForm('chapter', chapterId);
 		estimate = null;
 		error = '';
 		// Back to the chapter's waiting drafts, when it has some.

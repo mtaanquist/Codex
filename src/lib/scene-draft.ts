@@ -114,6 +114,14 @@ export type SceneDraftDefaults = {
 	sceneTitle: string | null;
 };
 
+// A draft still to be decided, for the list the Assistant tab shows while the
+// Assistant is off.
+export type WaitingDraft = {
+	sceneId: string;
+	sceneTitle: string | null;
+	status: SceneDraftStatus;
+};
+
 export type SceneDraftStatus =
 	'pending' | 'running' | 'ready' | 'accepted' | 'discarded' | 'failed';
 

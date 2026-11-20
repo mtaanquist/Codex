@@ -5,7 +5,13 @@
 	import { pollPause, trackedJobs } from '#lib/activity.svelte';
 	import { followSceneDraft, startSceneDraft } from '#lib/assistant-actions';
 	import { createConfirmGuard } from '#lib/confirm-guard';
-	import { adoptStored, draftEdit, dropDraftEdit, type DraftEdit } from '#lib/draft-edits';
+	import {
+		adoptStored,
+		draftEdit,
+		dropDraftEdit,
+		releaseDraftEdit,
+		type DraftEdit
+	} from '#lib/draft-edits';
 	import { dropDraftForm, keepDraftForm, readDraftForm } from '#lib/draft-forms';
 	import {
 		DRAFT_CHANGED_ELSEWHERE,
@@ -75,6 +81,16 @@
 
 	// The brief form. It is remembered as it is typed (see draft-forms).
 	type OpenForm = { brief: string; targetWords: number; pov: string; sceneTitle: string | null };
+	function isOpenForm(value: unknown): value is OpenForm {
+		if (typeof value !== 'object' || value === null) return false;
+		const form = value as Record<string, unknown>;
+		return (
+			typeof form.brief === 'string' &&
+			typeof form.targetWords === 'number' &&
+			typeof form.pov === 'string' &&
+			(form.sceneTitle === null || typeof form.sceneTitle === 'string')
+		);
+	}
 	let brief = $state('');
 	let targetWords = $state(800);
 	let pov = $state('');
@@ -159,12 +175,16 @@
 	function mirrorEdit() {
 		saveError = edit?.error ?? '';
 		changedElsewhere = edit?.conflict ?? false;
+		// The card's copy of the draft follows each save, so it is never older
+		// than what the box holds.
+		if (edit && draft?.status === 'ready' && draft.textVersion !== edit.version) {
+			draft = { ...draft, textMd: edit.saved, textVersion: edit.version };
+		}
 	}
 	// Leaves the draft's edit state to save on its own.
 	function releaseEdit() {
 		if (!edit) return;
-		edit.onChange = undefined;
-		edit.autosave.flushSoon();
+		releaseDraftEdit(edit);
 		edit = null;
 	}
 
@@ -278,7 +298,7 @@
 	});
 
 	onMount(() => {
-		const open = canDraft ? readDraftForm<OpenForm>('scene', sceneId) : undefined;
+		const open = canDraft ? readDraftForm('scene', sceneId, isOpenForm) : undefined;
 		if (open) {
 			({ brief, targetWords, pov, sceneTitle } = open);
 			view = 'form';
@@ -322,6 +342,13 @@
 				briefEl?.focus();
 				return;
 			}
+			// A draft already in the box stays as the writer has it: it is brought
+			// into view, not shown again from an older copy.
+			if (view === 'draft' && draft?.status === 'ready') {
+				await reveal();
+				card?.focus();
+				return;
+			}
 			const found = draft ?? (await readDraftSurely());
 			if (!alive) return;
 			if (found) {
@@ -356,6 +383,7 @@
 		working = true;
 		error = '';
 		estimate = null;
+		const counting = JSON.stringify(formBody());
 		try {
 			const response = await fetch('/api/assistant/draft', {
 				method: 'POST',
@@ -363,8 +391,13 @@
 				body: JSON.stringify({ ...formBody(), estimate: true })
 			});
 			if (response.ok) {
-				estimate = (await response.json()) as SceneDraftEstimate;
-				guard.shown();
+				const counted = (await response.json()) as SceneDraftEstimate;
+				// The form changed while it was counted (a new "/draft ..." typed
+				// in the chat): this is the cost of something else.
+				if (JSON.stringify(formBody()) === counting) {
+					estimate = counted;
+					guard.shown();
+				}
 			} else error = await apiErrorMessage(response, 'The Assistant could not count the draft.');
 		} catch {
 			error = 'Something went wrong reaching the Assistant.';
@@ -378,10 +411,12 @@
 		working = true;
 		error = '';
 		const started = await startSceneDraft({ ...formBody(), label });
+		// Before anything else: the card may have gone, and the form must not
+		// come back for a draft that was started.
+		if (started.ok) dropDraftForm('scene', sceneId);
 		if (!alive) return;
 		working = false;
 		if (!started.ok) error = started.message;
-		else dropDraftForm('scene', sceneId);
 		// On a refusal the scene may have a draft from another window by now.
 		const found = started.ok ? await readDraftSurely() : await readDraft();
 		if (!alive) return;
@@ -399,14 +434,16 @@
 		edit.text = text;
 		edit.autosave.schedule();
 	}
-	function pageHidden() {
-		if (document.visibilityState === 'hidden') edit?.autosave.flushSoon();
-	}
 
 	// Takes the draft as it is stored now, over this card's copy.
 	async function loadCurrent() {
+		error = '';
 		const fresh = await readDraft();
 		if (!alive) return;
+		if (fresh === undefined) {
+			error = 'Could not load the current text. Check your connection and try again.';
+			return;
+		}
 		if (!fresh || !edit || fresh.id !== draft?.id || fresh.status !== 'ready') {
 			// Kept or discarded elsewhere: there is nothing to load.
 			if (fresh !== undefined) {
@@ -501,12 +538,6 @@
 		else void tick().then(() => card?.focus());
 	}
 </script>
-
-<svelte:window
-	onpagehide={() => edit?.autosave.flushOnPageHide()}
-	onbeforeunload={(event) => edit?.autosave.warnBeforeUnload(event)}
-/>
-<svelte:document onvisibilitychange={pageHidden} />
 
 {#if view !== 'hidden'}
 	<div

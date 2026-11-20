@@ -14,7 +14,7 @@ import { readingPageRef } from '#lib/server/publish';
 import { createSceneNote, listSceneNotes, listStoryNotes } from '#lib/server/notes';
 import { isUuid } from '#lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
-import { hasWaitingDrafts } from '#lib/server/scene-drafts';
+import { waitingDrafts } from '#lib/server/scene-drafts';
 import { loadAssistantChat } from '#lib/server/llm/chat-history';
 import { listTrashedScenes } from '#lib/server/scene-lifecycle';
 import { lastTouchedScene } from '#lib/server/scene-access';
@@ -168,8 +168,13 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
 	// With the Assistant off for the account its tab is hidden, unless drafts
 	// it wrote before still wait here to be kept or discarded.
-	const draftsWaiting =
-		!assistant.tabEnabled && (await hasWaitingDrafts(db, locals.user!.id, story.id));
+	// They are listed there, and on a muted story, where the panel shows only
+	// the drafts too.
+	const waiting =
+		!assistant.tabEnabled || assistant.muted
+			? await waitingDrafts(db, locals.user!.id, story.id)
+			: [];
+	const draftsWaiting = !assistant.tabEnabled && waiting.length > 0;
 
 	// The stored conversation seeds the Assistant tab; nothing to load while
 	// the tab is gated off.
@@ -204,7 +209,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		view,
 		storyDoc,
 		pageSetup,
-		assistant: { ...assistant, draftsWaiting },
+		assistant: { ...assistant, draftsWaiting, waitingDrafts: waiting },
 		// Carried through the story view so toggling back lands on the scene
 		// that was open before.
 		returnSceneId: url.searchParams.get('scene')

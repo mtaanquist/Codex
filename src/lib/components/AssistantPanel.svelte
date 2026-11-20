@@ -46,10 +46,12 @@
 		startSummariesJob,
 		reviewSceneWithAssistant,
 		startBackgroundReview,
+		sceneDraftPath,
 		startContinuityReview,
 		startEnrichJob
 	} from '#lib/assistant-actions';
 	import { openReviewModal } from '#lib/review-modal.svelte';
+	import type { WaitingDraft } from '#lib/scene-draft';
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
@@ -114,6 +116,7 @@
 		getSelection,
 		onLandDraft,
 		onDraftDecided,
+		waitingDrafts = [],
 		reviewHref
 	}: {
 		// The conversation this panel serves: a single story (Write, Review, story
@@ -176,6 +179,9 @@
 		) => Promise<string | null>;
 		// Called once a draft is kept or discarded.
 		onDraftDecided?: () => void;
+		// The story's undecided drafts, listed while the Assistant is off so the
+		// ones on other scenes can be reached.
+		waitingDrafts?: WaitingDraft[];
 		// The story's review page, for /copyedit to open when notes are staged.
 		// Story surfaces pass it; the universe surface does not.
 		reviewHref?: ResolvedPathname;
@@ -1317,6 +1323,22 @@
 	let modelTrigger = $state<HTMLButtonElement>();
 	const commandListId = `assistant-commands-${newChatId().slice(0, 8)}`;
 
+	// The story's waiting drafts that are not on the open scene (that one has
+	// its card).
+	const draftsElsewhere = $derived(waitingDrafts.filter((waiting) => waiting.sceneId !== sceneId));
+	const WAITING_STATE: Partial<Record<WaitingDraft['status'], string>> = {
+		pending: 'Being written',
+		running: 'Being written',
+		ready: 'Ready',
+		failed: 'Not written'
+	};
+	// Where the keyboard goes when a draft card closes: the chat box, or the
+	// scene's text while the Assistant is off and there is no chat box.
+	function focusAfterDraft() {
+		if (composer) composer.focus();
+		else document.querySelector<HTMLElement>('.cm-content')?.focus();
+	}
+
 	// The mute switch is a form action; the command menu submits it.
 	let muteForm = $state<HTMLFormElement>();
 
@@ -1561,7 +1583,7 @@
 					onDraftDecided?.();
 				}}
 				onRequestTaken={() => (draftRequest = null)}
-				onClose={() => composer?.focus()}
+				onClose={focusAfterDraft}
 			/>
 		{/key}
 	{/if}
@@ -1575,7 +1597,7 @@
 				canDraft={!muted}
 				decided={draftsDecided}
 				onRequestTaken={() => (chapterRequest = null)}
-				onClose={() => composer?.focus()}
+				onClose={focusAfterDraft}
 			/>
 		{/key}
 	{/if}
@@ -1598,7 +1620,24 @@
 				<button class="btn btn-primary" type="submit">Turn on for this story</button>
 			</form>
 		{/if}
-		<div class="muted-drafts">{@render draftCards()}</div>
+		<div class="muted-drafts">
+			{@render draftCards()}
+			{#if 'storyId' in scope && draftsElsewhere.length > 0}
+				<p class="muted-drafts-head" id="muted-drafts-head">
+					{sceneId ? 'Drafts on other scenes' : 'Drafts in this story'}
+				</p>
+				<ul class="muted-drafts-list" aria-labelledby="muted-drafts-head">
+					{#each draftsElsewhere as waiting (waiting.sceneId)}
+						<li>
+							<a href={sceneDraftPath(scope.storyId, waiting.sceneId)}>
+								{waiting.sceneTitle || 'Untitled scene'}
+							</a>
+							<span class="muted-drafts-state">{WAITING_STATE[waiting.status] ?? ''}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	</div>
 {:else}
 	<div class="assistant">
@@ -2323,6 +2362,27 @@
 	/* Draft cards read left to right, under the centred note. */
 	.muted-drafts {
 		text-align: left;
+	}
+	.muted-drafts-head {
+		font-size: 12.5px;
+		font-weight: 600;
+		margin: 16px 0 6px;
+	}
+	.muted-drafts-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		font-size: 13px;
+	}
+	.muted-drafts-list li {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 4px 0;
+	}
+	.muted-drafts-state {
+		color: var(--text-faint);
+		white-space: nowrap;
 	}
 	.assistant-muted .muted-hint {
 		font-size: 12.5px;
