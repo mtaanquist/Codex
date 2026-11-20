@@ -723,7 +723,9 @@
 			<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
 			<div class="arc-text reply-md">{@html renderReplyMarkdown(arc.summaryMd)}</div>
 			{#if arc.stale}
-				<p class="field-hint">Scenes with this character have changed since this was written.</p>
+				<p class="field-hint">
+					This is out of date. Select Refresh arc to write it again from the scenes as they are now.
+				</p>
 			{/if}
 		{:else}
 			<p class="field-hint">

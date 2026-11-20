@@ -10,6 +10,7 @@ import {
 	characterStoryMemberships,
 	characterStoryNotes,
 	entityCategories,
+	entityMentions,
 	loreEntries,
 	notes,
 	scenes,
@@ -19,6 +20,7 @@ import {
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
+import { arcRequest } from '../../src/lib/server/llm/arc-request';
 
 const { assembleContext, assembleRecapContext, assembleSceneDelta, assembleStoryFrame } =
 	await import('../../src/lib/server/llm/context/assemble');
@@ -41,7 +43,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	await pool.query(
-		'truncate table notes, lore_story_notes, lore_entries, character_story_notes, character_story_memberships, characters, entity_categories, scenes, chapters, stories, universes, users cascade'
+		'truncate table entity_mentions, notes, lore_story_notes, lore_entries, character_story_notes, character_story_memberships, characters, entity_categories, scenes, chapters, stories, universes, users cascade'
 	);
 	const [owner] = await db
 		.insert(users)
@@ -122,6 +124,20 @@ beforeEach(async () => {
 		})
 		.returning({ id: characters.id });
 	await db.insert(characterStoryMemberships).values({ characterId: alice.id, storyId });
+	// The arc as the job leaves it: stored with the fingerprint of its request.
+	await db.insert(entityMentions).values({
+		sourceType: 'scene',
+		sourceId: scene1Id,
+		targetType: 'character',
+		targetId: alice.id,
+		position: 0,
+		surroundingText: 'Alice met Bram'
+	});
+	const arc = await arcRequest(db, { id: alice.id, name: 'Alice', universeId });
+	await db
+		.update(characters)
+		.set({ arcSummaryInput: arc!.input })
+		.where(eq(characters.id, alice.id));
 	await db
 		.insert(characterStoryNotes)
 		.values({ characterId: alice.id, storyId, notesMd: 'Wounded in the first chapter.' });
@@ -204,6 +220,14 @@ describe('assembleContext', () => {
 				.set({ establishedSetting: false })
 				.where(eq(universes.id, universeId));
 		}
+	});
+
+	it('leaves out an arc that is out of date', async () => {
+		// The arc retold the scene from its summary.
+		await db.update(scenes).set({ summaryMd: 'Alice leaves Bram.' }).where(eq(scenes.id, scene1Id));
+		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.text).toContain('A brave knight.');
+		expect(context!.text).not.toContain('Across the stories');
 	});
 
 	it('includes the current scene body and a member entity with its details and story note', async () => {

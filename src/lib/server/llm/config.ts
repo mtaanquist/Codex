@@ -935,29 +935,10 @@ export async function saveStoryLlmOverride(
 			.where(eq(stories.id, storyId))
 			.for('update');
 		await tx.update(stories).set({ llmConfig: expression }).where(eq(stories.id, storyId));
-		if (patch.enabled === false && !before?.muted) {
-			// A character arc written before the mute may retell this story, and
-			// it is sent with every other story's context. Which stories an arc
-			// read is not kept, and today's mentions can differ from the ones it
-			// was written from, so every arc in the universe goes; a rewrite
-			// leaves the muted story out. The rows are locked lowest id first, the
-			// order a rebuild's marks take them in, so the two cannot deadlock.
-			// The update clears exactly the rows locked: re-running the filter could
-			// take, out of that order, an arc committed after the select.
-			const locked = await tx.execute<{ id: string }>(sql`
-				select id from characters
-				where arc_summary_md is not null
-					and universe_id = (select universe_id from stories where id = ${storyId})
-				order by id for update
-			`);
-			const ids = locked.rows.map((row) => row.id);
-			if (ids.length > 0) {
-				await tx.execute(sql`
-					update characters set arc_summary_md = null, arc_summary_at = null
-					where id in ${ids}
-				`);
-			}
-		} else if (patch.enabled === null && before?.muted) {
+		// A mute clears nothing: an arc that retells this story no longer matches
+		// the request it would be written from now, so it reads as out of date
+		// and is kept out of every context (see arc-request.ts).
+		if (patch.enabled === null && before?.muted) {
 			// Unmuted: the story's scenes are older than the arcs and the enrich
 			// pass's marks, so neither would notice them without this.
 			await markMentionsStale(tx, { storyId }, { enrich: true });

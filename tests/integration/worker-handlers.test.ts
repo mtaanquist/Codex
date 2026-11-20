@@ -44,7 +44,6 @@ import {
 	ReplyCutOffError,
 	ReplyRefusedError
 } from '../../src/lib/server/llm/gateway';
-import { ArcStoryMutedError } from '../../src/lib/server/llm/arc-summary';
 import { EndpointReplyError, stoppedByWriter } from '../../src/lib/server/llm/providers/types';
 import { ReviewRunLoadError } from '../../src/lib/server/review-runs';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -312,44 +311,6 @@ describe('assistant notices link by id', () => {
 		]);
 	});
 
-	it('says so when an out-of-date arc had nothing new to read', async () => {
-		const { owner, universe } = await seedStory();
-		const [character] = await db
-			.insert(characters)
-			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
-			.returning({ id: characters.id });
-		const { handlers } = harness({
-			summariseCharacterArc: async () => ({ outcome: 'unchanged' as const })
-		});
-
-		await handlers.assistantEnrich([
-			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
-		]);
-
-		expect(await titles(owner.id)).toEqual([
-			'The arc for Bram is up to date. Nothing it reads has changed since it was written.'
-		]);
-	});
-
-	it('says the arc is still out of date when a change landed while it was checked', async () => {
-		const { owner, universe } = await seedStory();
-		const [character] = await db
-			.insert(characters)
-			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
-			.returning({ id: characters.id });
-		const { handlers } = harness({
-			summariseCharacterArc: async () => ({ outcome: 'changed' as const })
-		});
-
-		await handlers.assistantEnrich([
-			job({ userId: owner.id, universeId: universe.id, characterId: character.id })
-		]);
-
-		const [title] = await titles(owner.id);
-		expect(title).toContain('still out of date');
-		expect(title).not.toContain('up to date.');
-	});
-
 	it('says no model is chosen when that stopped an arc, without retrying', async () => {
 		const { owner, universe } = await seedStory();
 		const [character] = await db
@@ -512,35 +473,6 @@ describe('assistant notices link by id', () => {
 			"The Assistant is turned off, so it did not write the arc for Bram. Switch it back on in your settings, then try again from the character's entry in Plan."
 		]);
 		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
-	});
-
-	it('says a story was muted when that dropped the arc, on the last attempt only', async () => {
-		const { owner, universe } = await seedStory();
-		const [character] = await db
-			.insert(characters)
-			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
-			.returning({ id: characters.id });
-		// The job is still active while the handler runs, as it is in pg-boss
-		// when a handler throws.
-		const { handlers } = harness(
-			{
-				summariseCharacterArc: async () => {
-					throw new ArcStoryMutedError();
-				}
-			},
-			{ state: 'active', startedOn: STARTED }
-		);
-		const data = { userId: owner.id, universeId: universe.id, characterId: character.id };
-
-		// Still thrown, so the retry writes the arc without the muted story.
-		await expect(handlers.assistantEnrich([job(data)])).rejects.toThrow(ArcStoryMutedError);
-		expect(await titles(owner.id)).toEqual([]);
-
-		const last = { ...job(data), retryCount: 2 };
-		await expect(handlers.assistantEnrich([last])).rejects.toThrow(ArcStoryMutedError);
-		expect(await titles(owner.id)).toEqual([
-			'A story was muted while the Assistant was writing the arc for Bram, so the arc was not saved. Select Write arc to try again.'
-		]);
 	});
 
 	it('words a pass that stopped early before leaving anything', async () => {

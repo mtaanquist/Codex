@@ -16,6 +16,7 @@ import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
 import { storyAssistantOn } from '../../universe-scope.ts';
+import { arcIsCurrent, arcRequests } from '../arc-request.ts';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.
@@ -428,7 +429,8 @@ async function buildScopeEntities(
 				summaryMd: table.summaryMd,
 				details: table.details,
 				aliases: table.aliases,
-				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`
+				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`,
+				arcSummaryInput: 'arcSummaryInput' in table ? table.arcSummaryInput : sql<null>`null`
 			})
 			.from(table)
 			.where(inArray(table.id, ids))
@@ -436,6 +438,16 @@ async function buildScopeEntities(
 	};
 	const characterRows = await detailRows('character', characterIds);
 	const placeRows = await detailRows('place', placeIds);
+	// An arc that is out of date is left out: it may retell scenes that have
+	// changed, gone, or belong to a story the Assistant is now muted on.
+	const arcs = await arcRequests(
+		db,
+		universeId,
+		characterRows.filter((c) => c.arcSummaryMd)
+	);
+	for (const row of characterRows) {
+		if (!arcIsCurrent(row, arcs.get(row.id) ?? null)) row.arcSummaryMd = null;
+	}
 
 	// The per-story overlay note only exists with a story in focus; the
 	// universe surface has no such overlay, so it skips these queries.

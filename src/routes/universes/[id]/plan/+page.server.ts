@@ -157,7 +157,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 		selected
 			? listPendingForEntity(db, locals.user!.id, selectedKind, selected.id)
 			: Promise.resolve([] as EntitySuggestion[]),
-		planArc(resolved)
+		planArc(db, resolved)
 	]);
 
 	return {

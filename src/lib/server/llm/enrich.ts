@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
@@ -43,6 +42,7 @@ import {
 	type ProposedSuggestion
 } from '../entity-suggestions.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { requestHash } from './request-hash.ts';
 
 // Inline per-entity enrichment: gather where an entity appears (in one story, or
 // across its universe), ask the Assistant for new aliases, quick details, and a
@@ -124,13 +124,6 @@ export function spreadAppearances<T extends { storyId: string }>(rows: T[], max:
 		if (picked.length === before) break;
 	}
 	return picked.sort((a, b) => a - b).map((index) => rows[index]);
-}
-
-// A fingerprint of a request's messages, stored with the watermark so a marked
-// entity or arc whose request would be the same is not sent again. Marks are
-// set for any passage change, but enrich and arcs send only some passages.
-export function requestHash(messages: ChatMessage[]): string {
-	return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
 }
 
 function snippetLine(a: PlanAppearance, withStory: boolean): string {

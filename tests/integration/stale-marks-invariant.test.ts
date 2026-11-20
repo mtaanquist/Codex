@@ -85,8 +85,8 @@ import {
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'stale-marks-invariant-secret';
 
-const { arcIsStale, arcRequest, summariseCharacterArc } =
-	await import('../../src/lib/server/llm/arc-summary');
+const { planArc, summariseCharacterArc } = await import('../../src/lib/server/llm/arc-summary');
+const { arcRequest } = await import('../../src/lib/server/llm/arc-request');
 const { enrichRequest, enrichUniverse, MAX_APPEARANCES } =
 	await import('../../src/lib/server/llm/enrich');
 const { entityAppearances } = await import('../../src/lib/server/plan-data');
@@ -985,17 +985,14 @@ async function bringCurrent() {
 		if (await storyMuted(story.id)) continue;
 		await summariseStory(db, { userId, storyId: story.id }, deps);
 	}
-	for (const character of await db
-		.select({
-			id: characters.id,
-			arcSummaryMd: characters.arcSummaryMd,
-			arcSummaryAt: characters.arcSummaryAt
-		})
+	for (const entity of await db
+		.select()
 		.from(characters)
 		.where(eq(characters.universeId, universeId))
 		.orderBy(asc(characters.name))) {
-		if (character.arcSummaryMd && !arcIsStale(character)) continue;
-		await summariseCharacterArc(db, { userId, characterId: character.id }, deps);
+		const arc = await planArc(db, { kind: 'character', entity });
+		if (arc?.summaryMd && !arc.stale) continue;
+		await summariseCharacterArc(db, { userId, characterId: entity.id }, deps);
 	}
 	await enrichUniverse(db, { userId, universeId }, deps);
 
@@ -1072,25 +1069,18 @@ async function checkMarks(before?: Map<string, Set<string>>): Promise<Finding[]>
 		judge(chapter, chapter.input);
 	}
 
-	for (const character of await db
-		.select({
-			id: characters.id,
-			name: characters.name,
-			universeId: characters.universeId,
-			arcSummaryMd: characters.arcSummaryMd,
-			arcSummaryAt: characters.arcSummaryAt,
-			arcSummaryInput: characters.arcSummaryInput
-		})
+	// An arc is out of date exactly when its request changed: no save marks it.
+	for (const entity of await db
+		.select()
 		.from(characters)
 		.where(eq(characters.universeId, universeId))
 		.orderBy(asc(characters.name))) {
-		if (!character.arcSummaryMd) continue;
-		const request = await arcRequest(db, character);
-		const changed = (request?.input ?? null) !== character.arcSummaryInput;
-		const stale = arcIsStale(character);
-		if (changed && !stale) missed(`arc of ${character.name}`);
-		// No paid call: the arc pass skips a request the same as the last.
-		if (!changed && stale) extra(`arc of ${character.name}`, false);
+		if (!entity.arcSummaryMd) continue;
+		const request = await arcRequest(db, entity);
+		const changed = (request?.input ?? null) !== entity.arcSummaryInput;
+		const stale = (await planArc(db, { kind: 'character', entity }))!.stale;
+		if (changed && !stale) missed(`arc of ${entity.name}`);
+		if (!changed && stale) extra(`arc of ${entity.name}`);
 	}
 
 	const eligible = await enrichEligible();
