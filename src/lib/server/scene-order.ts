@@ -2,7 +2,6 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
-import { markMentionsStale } from './scene-lifecycle.ts';
 import { lockStoryScenes } from './row-locks.ts';
 
 export type SceneOrder = {
@@ -157,9 +156,6 @@ async function applyLocked(
 			) as v
 			where scenes.id = v.id
 		`);
-		// Arcs retell the character's scenes in reading order. Only what a
-		// moved scene mentions can read in a new order.
-		await markMentionsStale(tx, { sceneIds: moved });
 	}
 	return { ok: true };
 }

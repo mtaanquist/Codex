@@ -16,7 +16,7 @@ import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
-import { restoreScene, STALE_MARK_BEFORE, trashScene } from '../../src/lib/server/scene-lifecycle';
+import { restoreScene, trashScene } from '../../src/lib/server/scene-lifecycle';
 import { standaloneUniverse } from '../../src/lib/server/story-create';
 import { mergeScenes } from '../../src/lib/server/scene-split-merge';
 import { restoreStory, trashStory } from '../../src/lib/server/story-lifecycle';
@@ -406,7 +406,7 @@ describe('the arc job and the spend cap (#1105)', () => {
 });
 
 describe('arc staleness', () => {
-	// A scene indexed the way the worker does it, so the marks it sets are real.
+	// A scene indexed the way the worker does it, so the mention rows are real.
 	async function sceneWithProse(bodyMd: string, storyId = firstStoryId) {
 		const [scene] = await db
 			.insert(scenes)
@@ -460,7 +460,7 @@ describe('arc staleness', () => {
 		expect(await arcStale(bram.id)).toBe(false);
 	});
 
-	it('goes stale, without an enrich mark, when mentioning scenes change order', async () => {
+	it('goes stale when mentioning scenes change order', async () => {
 		const bram = await makeCharacter();
 		const first = await sceneWithProse('Bram at the harbour.');
 		const [second] = await db
@@ -487,7 +487,7 @@ describe('arc staleness', () => {
 		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
 	});
 
-	it('goes stale, and is marked for enrichment, when a mentioning scene is renamed', async () => {
+	it('goes stale when a mentioning scene is renamed', async () => {
 		const bram = await makeCharacter();
 		const sceneId = await sceneWithProse('Bram at the harbour.');
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
@@ -508,8 +508,8 @@ describe('arc staleness', () => {
 		expect((await saveSceneBody(db, sceneId, { ...save, title: 'Low tide' })).ok).toBe(true);
 		const after = await readCharacter(bram.id);
 		expect(await arcStale(bram.id)).toBe(true);
-		// The enrich pass quotes each passage under its scene title.
-		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+		// The save itself writes nothing to the character.
+		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
 	});
 
 	it('stays current through a universe trash and restore that changed nothing', async () => {
@@ -528,7 +528,7 @@ describe('arc staleness', () => {
 		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
 	});
 
-	it('goes stale, and is marked for enrichment, when a passage changes while its universe is in the trash', async () => {
+	it('goes stale when a passage changes while its universe is in the trash', async () => {
 		const bram = await makeCharacter();
 		const cass = await db
 			.insert(characters)
@@ -543,9 +543,7 @@ describe('arc staleness', () => {
 		await db.update(scenes).set({ bodyMd: 'Bram on the quay.' }).where(eq(scenes.id, sceneId));
 		await rebuildSceneMentions(db, sceneId);
 		expect(await restoreUniverse(db, ownerId, universeId)).toBe(true);
-		const after = await readCharacter(bram.id);
 		expect(await arcStale(bram.id)).toBe(true);
-		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 		// Only what changed is marked.
 		expect(await arcStale(cass.id)).toBe(false);
 	});
@@ -579,10 +577,10 @@ describe('arc staleness', () => {
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		const result = await mergeScenes(db, ownerId, firstStoryId, [target.id, merged]);
 		expect(result.ok).toBe(true);
-		expect((await readArc(bram.id)).arcSummaryAt! < STALE_MARK_BEFORE).toBe(true);
+		expect(await arcStale(bram.id)).toBe(true);
 	});
 
-	it('goes stale, and is marked for enrichment, when a deleted scene is restored and reindexed', async () => {
+	it('goes stale when a deleted scene is restored and reindexed', async () => {
 		const bram = await makeCharacter();
 		const sceneId = await sceneWithProse('Bram at the harbour.');
 		const [kept] = await db
@@ -593,17 +591,11 @@ describe('arc staleness', () => {
 		expect(await trashScene(db, ownerId, sceneId)).toBe(true);
 		// Rewritten without the deleted scene, then the scene comes back.
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
-		await db
-			.update(characters)
-			.set({ assistantEnrichedAt: new Date() })
-			.where(eq(characters.id, bram.id));
 		expect(await arcStale(bram.id)).toBe(false);
 
 		expect(await restoreScene(db, ownerId, sceneId)).toBe(true);
 		await rebuildSceneMentions(db, sceneId);
-		const after = await readCharacter(bram.id);
 		expect(await arcStale(bram.id)).toBe(true);
-		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 
 	it('stays current when a trashed standalone home is revived', async () => {
@@ -618,17 +610,11 @@ describe('arc staleness', () => {
 			.returning({ id: characters.id });
 		await sceneMentioning(story.id, bram.id, { position: 1, snippet: 'Bram at the quay' });
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
-		await db
-			.update(characters)
-			.set({ assistantEnrichedAt: new Date() })
-			.where(eq(characters.id, bram.id));
 		await db.update(universes).set({ deletedAt: new Date() }).where(eq(universes.id, home.id));
 
 		// Asking for the standalone home again brings it back, with nothing changed.
 		expect((await standaloneUniverse(db, ownerId)).deletedAt).toBeNull();
-		const after = await readCharacter(bram.id);
 		expect(await arcStale(bram.id)).toBe(false);
-		expect(after.assistantEnrichedAt! > STALE_MARK_BEFORE).toBe(true);
 	});
 
 	// Wider than a passage's window, so each passage quotes only the filler.
@@ -691,7 +677,7 @@ describe('arc staleness', () => {
 		expect(await arcStale(cass.id)).toBe(true);
 	});
 
-	it('goes stale, and is marked for enrichment, when a story it reads is renamed', async () => {
+	it('goes stale when a story it reads is renamed', async () => {
 		const bram = await makeCharacter();
 		await sceneWithProse('Bram at the harbour.');
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
@@ -718,10 +704,10 @@ describe('arc staleness', () => {
 		await saveStoryDetails(db, ownerId, story, { ...details, title: 'The Deep Tide' });
 		const after = await readCharacter(bram.id);
 		expect(await arcStale(bram.id)).toBe(true);
-		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
+		expect(after.assistantEnrichedAt).toEqual(enrichedAt);
 	});
 
-	it('goes stale, without an enrich mark, when the character is renamed', async () => {
+	it('goes stale when the character is renamed', async () => {
 		const bram = await makeCharacter();
 		await sceneWithProse('Bram at the harbour.');
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
@@ -809,24 +795,17 @@ describe('arc staleness', () => {
 		expect((await readCharacter(bram.id)).arcSummaryMd).toBe('A different arc.');
 	});
 
-	it('does not deadlock with a save that holds the scene row and then marks entities', async () => {
+	it('reindexes a scene while the characters it mentions are locked', async () => {
 		const bram = await makeCharacter();
 		const sceneId = await sceneWithProse('Bram at the harbour.');
 		await db.update(scenes).set({ bodyMd: 'Bram on the quay.' }).where(eq(scenes.id, sceneId));
-		// A title save takes the scene row first, as saveSceneBody does.
+		// An entity save in another tab holds the character row.
 		const save = await pool.connect();
 		try {
 			await save.query('begin');
-			await save.query('select id from scenes where id = $1 for update', [sceneId]);
-			const rebuild = rebuildSceneMentions(db, sceneId).catch((err: unknown) => err);
-			await new Promise((resolve) => setTimeout(resolve, 200));
-			// Then marks what the scene mentions.
-			await save.query(
-				`update characters set arc_summary_at = clock_timestamp() - interval '50 years' where id = $1`,
-				[bram.id]
-			);
+			await save.query('select id from characters where id = $1 for update', [bram.id]);
+			expect(await rebuildSceneMentions(db, sceneId)).toEqual({ ok: true, count: 1 });
 			await save.query('commit');
-			expect(await rebuild).toEqual({ ok: true, count: 1 });
 		} finally {
 			// Dropped rather than pooled, in case a failure left it mid-transaction.
 			save.release(true);
@@ -844,36 +823,40 @@ describe('arc staleness', () => {
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
 		expect(await arcStale(bram.id)).toBe(false);
 		expect(await restoreStory(db, ownerId, secondStoryId)).toBe(true);
-		const [restored] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(await arcStale(bram.id)).toBe(true);
-		expect(restored.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 });
 
-describe('a restore that cannot mark what it brings back', () => {
-	// Any update to characters fails, the way a dropped connection would fail the
-	// mark after the row was revived.
-	async function withFailingMark(run: () => Promise<unknown>) {
+describe('saves that change what an arc reads', () => {
+	// Any update to characters fails: these saves must not write to them.
+	async function withoutCharacterWrites(run: () => Promise<unknown>) {
 		await pool.query(`create or replace function arc_test_fail() returns trigger as $$
-			begin raise exception 'mark failed'; end $$ language plpgsql`);
+			begin raise exception 'a save wrote to characters'; end $$ language plpgsql`);
 		await pool.query(
 			'create trigger arc_test_fail before update on characters for each statement execute function arc_test_fail()'
 		);
 		try {
-			await expect(run()).rejects.toThrow();
+			await run();
 		} finally {
 			await pool.query('drop trigger arc_test_fail on characters');
 			await pool.query('drop function arc_test_fail()');
 		}
 	}
 
-	it('leaves a story in the trash', async () => {
+	it('write nothing to the characters: trash, restore, mute and unmute a story', async () => {
 		const bram = await makeCharacter();
 		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram' });
-		expect(await trashStory(db, ownerId, secondStoryId)).toBe(true);
-		await withFailingMark(() => restoreStory(db, ownerId, secondStoryId));
-		const [story] = await db.select().from(stories).where(eq(stories.id, secondStoryId));
-		expect(story.deletedAt).not.toBeNull();
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await withoutCharacterWrites(async () => {
+			expect(await trashStory(db, ownerId, secondStoryId)).toBe(true);
+			expect(await arcStale(bram.id)).toBe(true);
+			expect(await restoreStory(db, ownerId, secondStoryId)).toBe(true);
+			expect(await arcStale(bram.id)).toBe(false);
+			await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+			expect(await arcStale(bram.id)).toBe(true);
+			await saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+			expect(await arcStale(bram.id)).toBe(false);
+		});
 	});
 });
 
@@ -925,16 +908,12 @@ describe('muting and unmuting a story', () => {
 		expect((await readArc(bram.id)).arcSummaryMd).not.toBeNull();
 	});
 
-	it('marks arcs out of date and entities for another enrich pass on an unmute', async () => {
+	it('shows arcs as out of date on an unmute', async () => {
 		const bram = await makeCharacter();
 		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram' });
 		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
 		await sceneMentioning(secondStoryId, bram.id, { position: 1, snippet: 'Bram in private' });
 		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
-		await db
-			.update(characters)
-			.set({ assistantEnrichedAt: new Date() })
-			.where(eq(characters.id, bram.id));
 		const [before] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(await arcStale(bram.id)).toBe(false);
 
@@ -942,6 +921,5 @@ describe('muting and unmuting a story', () => {
 		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(after.arcSummaryMd).toBe(before.arcSummaryMd);
 		expect(await arcStale(bram.id)).toBe(true);
-		expect(after.assistantEnrichedAt! < STALE_MARK_BEFORE).toBe(true);
 	});
 });

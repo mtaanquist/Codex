@@ -1023,6 +1023,60 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Assistant staleness by fingerprint (2026-11-20)
+
+#1197, branch `feat/assistant-staleness-by-hash`. Arcs, enrich reads and
+chapter summaries were kept honest by marks: every save that could change
+what one reads set its stored time fifty years back, inside the save's
+transaction and under row locks on the entities. Each review round found a
+write path that missed a mark or made a needless one, and the marks were the
+reason for most of the lock-order rules.
+
+- Now each result is stored with `requestHash` of the messages it was
+  written from, and "out of date" is worked out on read and in the passes by
+  building the request again and comparing. Design in `assistant.md`, "Out of
+  date by fingerprint". Arcs and enrich already stored the hash (0082);
+  chapters gained `summary_input` (0092).
+- Removed: `markMentionsStale`, `markEntitiesStale`,
+  `markChapterSummariesStale`, `markStale`, `STALE_MARK_BEFORE`, and their
+  calls in scene save (title), trash and restore of scenes and stories,
+  reorder, split, duplicate, merge, story rename, character rename, mute and
+  unmute, draft add back, the mention reindex (with its `changedTargets`
+  compare and the story share lock), and the summaries pass. The request
+  builders moved to gateway-free modules (`arc-request.ts`,
+  `chapter-summary-request.ts`, `request-hash.ts`) so the context builders
+  can use them.
+- Muting a story no longer clears every arc in the universe. An arc that
+  read the muted story is out of date by its hash and left out of context;
+  its text stays and reads as current again on unmute.
+  `ArcStoryMutedError` and the compare-and-set after the model call went
+  with it: a job stores the hash of what it sent, so anything that changed
+  meanwhile leaves the result out of date.
+- Enrich follows the plain rule, which changes what is paid for: a read is
+  sent again when passages are taken away (trash, mute) or the entry's own
+  name, aliases or details change, since those are in the request. The old
+  rule skipped these on purpose. Whether a summary is asked for stays out of
+  the fingerprint.
+- Upgrades: nothing is sent automatically for arcs (one without a
+  fingerprint shows as out of date until refreshed). Chapter summaries
+  without one are rewritten once by the next summaries pass; adopting them
+  as current was rejected because a change made after the upgrade would
+  have been blessed. Enrich reads without one are adopted free when no
+  mentioning scene changed since, otherwise sent.
+- Scene summaries were left on their timestamp rule: they read only their
+  own row and never used the marks.
+- The invariant test became
+  `tests/integration/assistant-staleness-invariant.test.ts`. The fake model
+  replies with a hash of the request, so a stored arc or chapter summary
+  names the request it was written from; after each action the test checks
+  that what the app shows as out of date is exactly what changed, that the
+  passes call the model for exactly those and a second pass for none, and
+  that the action wrote no Assistant column. `character-arc.test.ts` also
+  runs saves with a trigger that fails any write to `characters`, and a
+  reindex with the mentioned characters locked.
+- A release that rewords a prompt puts every result of that kind out of
+  date. Accepted: the stored result was written from other instructions.
+
 ## Background jobs list (2026-11-20)
 
 #1271. A slow local model can keep a review or a details read going for many

@@ -2,7 +2,6 @@ import { and, eq, isNull, like } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { stories, universes } from './db/schema.ts';
-import { markMentionsStale } from './scene-lifecycle.ts';
 import { isUuid, slugify } from '../slug.ts';
 
 // Suffix room: a deduped slug must still fit the column conventions.
@@ -63,11 +62,11 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 					.from(stories)
 					.where(eq(stories.id, id));
 	if (!row) return;
-	const revive = (tx: Database, slug?: string) => {
+	const revive = (slug?: string) => {
 		const values = slug ? { deletedAt: null, slug } : { deletedAt: null };
 		return table === 'universes'
-			? tx.update(universes).set(values).where(eq(universes.id, id))
-			: tx.update(stories).set(values).where(eq(stories.id, id));
+			? db.update(universes).set(values).where(eq(universes.id, id))
+			: db.update(stories).set(values).where(eq(stories.id, id));
 	};
 	const fallback = table === 'universes' ? 'universe' : 'story';
 	const fresh = () => uniqueSlug(db, table, row.ownerId, row.name, fallback);
@@ -75,10 +74,7 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 	for (const [i, pick] of attempts.entries()) {
 		try {
 			const slug = pick && (await pick());
-			await db.transaction(async (tx) => {
-				await revive(tx, slug);
-				if (table === 'stories') await markMentionsStale(tx, { storyId: id }, { enrich: true });
-			});
+			await revive(slug);
 			return;
 		} catch (err) {
 			if (!isUniqueViolation(err) || i === attempts.length - 1) throw err;

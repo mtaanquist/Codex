@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	chapters,
@@ -12,7 +12,6 @@ import {
 	scenes,
 	stories
 } from './db/schema.ts';
-import type { EntityType } from './entity-lookups.ts';
 import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { lockStoryChapters, lockStoryScenes } from './row-locks.ts';
 import { storyIsLive } from './universe-scope.ts';
@@ -111,104 +110,11 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 			.update(scenes)
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(eq(scenes.id, scene.id));
-		await markMentionsStale(tx, { sceneIds: [scene.id] });
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 	});
 	return true;
-}
-
-/** A watermark before this is a mark set by markStale below, not a time an
- * arc was written or an entity read. */
-export const STALE_MARK_BEFORE = new Date('2000-01-01T00:00:00Z');
-
-/** Marks what these scenes (or this story's scenes) mention for
- * a fresh look: the characters' arcs show as out of date, and with `enrich` the
- * entities are read again on the next enrich pass. Call it before mention rows
- * are deleted, since it reads them. */
-export async function markMentionsStale(
-	tx: Database,
-	source: { sceneIds: string[] } | { storyId: string },
-	opts: { enrich?: boolean } = {}
-): Promise<void> {
-	if ('sceneIds' in source && !source.sceneIds.length) return;
-	const from =
-		'sceneIds' in source
-			? sql`m.source_id in ${source.sceneIds}`
-			: sql`m.source_id in (select id from scenes where story_id = ${source.storyId})`;
-	await markStale(
-		tx,
-		(type) =>
-			sql`(select m.target_id from entity_mentions m where m.source_type = 'scene' and m.target_type = ${type} and ${from})`,
-		opts.enrich ?? false
-	);
-}
-
-/** Marks these entities as markMentionsStale does, arcs and enrichment both
- * unless `enrich` is false: what the Assistant reads about them changed. */
-export async function markEntitiesStale(
-	tx: Database,
-	targets: { targetType: EntityType; targetId: string }[],
-	opts: { enrich?: boolean } = {}
-): Promise<void> {
-	await markStale(
-		tx,
-		(type) => {
-			const ids = targets.filter((t) => t.targetType === type).map((t) => t.targetId);
-			return ids.length ? sql`${ids}` : null;
-		},
-		opts.enrich ?? true
-	);
-}
-
-// The mark is the clock fifty years back: older than any real watermark, and
-// different each time, so a job that started from an earlier mark still sees a
-// new one. `ids` gives the entities of a type to mark, or null for none.
-async function markStale(
-	tx: Database,
-	ids: (type: EntityType) => SQL | null,
-	enrich: boolean
-): Promise<void> {
-	const mark = sql`clock_timestamp() - interval '50 years'`;
-	const characterIds = ids('character');
-	const placeIds = enrich ? ids('place') : null;
-	const loreIds = enrich ? ids('lore_entry') : null;
-	// Lock every target lowest id first, table by table, before any update: an
-	// update takes its rows in whatever order its plan meets them, so two marks
-	// over the same entities could otherwise each hold a row the other needs.
-	for (const [table, targets] of [
-		['characters', characterIds],
-		['places', placeIds],
-		['lore_entries', loreIds]
-	] as const) {
-		if (targets) {
-			await tx.execute(
-				sql`select id from ${sql.identifier(table)} where id in ${targets} order by id for update`
-			);
-		}
-	}
-	if (characterIds) {
-		await tx.execute(
-			sql`update characters set arc_summary_at = ${mark} where id in ${characterIds}`
-		);
-	}
-	if (!enrich) return;
-	if (characterIds) {
-		await tx.execute(
-			sql`update characters set assistant_enriched_at = ${mark} where id in ${characterIds}`
-		);
-	}
-	if (placeIds) {
-		await tx.execute(
-			sql`update places set assistant_enriched_at = ${mark} where id in ${placeIds}`
-		);
-	}
-	if (loreIds) {
-		await tx.execute(
-			sql`update lore_entries set assistant_enriched_at = ${mark} where id in ${loreIds}`
-		);
-	}
 }
 
 /** Brings a scene back from the trash, at the end of its chapter (or of the

@@ -11,7 +11,6 @@ import {
 } from './providers/presets.ts';
 import { suggestedModel } from './providers/model-guide.ts';
 import { RESERVED_PARAM_KEYS, reservedParamKeys } from './providers/reserved.ts';
-import { markMentionsStale } from '../scene-lifecycle.ts';
 import {
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
@@ -928,20 +927,8 @@ export async function saveStoryLlmOverride(
 	for (const key of clear) {
 		expression = sql`(${expression}) - ${key}::text`;
 	}
-	await db.transaction(async (tx) => {
-		const [before] = await tx
-			.select({ muted: sql<boolean>`(${stories.llmConfig} ->> 'enabled') = 'false'` })
-			.from(stories)
-			.where(eq(stories.id, storyId))
-			.for('update');
-		await tx.update(stories).set({ llmConfig: expression }).where(eq(stories.id, storyId));
-		// A mute clears nothing: an arc that retells this story no longer matches
-		// the request it would be written from now, so it reads as out of date
-		// and is kept out of every context (see arc-request.ts).
-		if (patch.enabled === null && before?.muted) {
-			// Unmuted: the story's scenes are older than the arcs and the enrich
-			// pass's marks, so neither would notice them without this.
-			await markMentionsStale(tx, { storyId }, { enrich: true });
-		}
-	});
+	// Nothing else to write: arcs, enrich reads and chapter summaries are out of
+	// date by their request fingerprints, and a mute or an unmute changes the
+	// requests of exactly the ones that read this story.
+	await db.update(stories).set({ llmConfig: expression }).where(eq(stories.id, storyId));
 }
