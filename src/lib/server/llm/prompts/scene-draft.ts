@@ -11,8 +11,12 @@ export type SceneDraftBrief = {
 	// Whose point of view to write from, in the writer's words; empty leaves it
 	// to the established voice.
 	pov?: string | null;
-	// The prose the scene already holds, or its closing part when it is long.
-	// The draft carries on from it instead of starting over.
+	// The scene already holds prose, which the draft carries on from instead of
+	// starting over. The context shows the scene's text, so it is not repeated
+	// here.
+	continues?: boolean;
+	// That prose (or its closing part), only for a request that has no context
+	// to show it.
 	existingProse?: string | null;
 	// The scene that comes next, so this one ends where that one can begin:
 	// its summary when it has a current one, else how it opens. In a chapter
@@ -57,13 +61,18 @@ export function buildSceneDraftMessage(input: SceneDraftBrief): string {
 			''
 		);
 	}
-	const existing = input.existingProse?.trim();
+	const shown = input.existingProse?.trim();
+	const existing = Boolean(shown) || input.continues === true;
+	if (shown) {
+		parts.push('The current scene already has this prose, written by the writer:', '', shown, '');
+	} else if (existing) {
+		parts.push(
+			'The current scene already has prose, written by the writer. It is shown in your context as the current scene.',
+			''
+		);
+	}
 	if (existing) {
 		parts.push(
-			'The current scene already has this prose, written by the writer:',
-			'',
-			existing,
-			'',
 			'Write the rest of the scene from exactly where it stops. Do not repeat or rewrite what is already there.',
 			''
 		);

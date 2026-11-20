@@ -430,7 +430,9 @@ primitive's own class too, but do not copy the pattern.
   tints the hover for a destructive action. Defined in `theme.css`; also
   styles `a.icon-btn`. There are two icon sizes and no third.
 - Scoped exceptions that stay: `.md-tool` (editor toolbar), `.seg-btn`
-  (segmented strips).
+  (segmented strips), `.pop-link` (the text links in an entity hover card's
+  `.pop-footer`, below a divider; "Open full details" there is a button
+  styled the same, since it opens the sidebar card rather than a page).
 - An icon-only button always carries an `aria-label` (`src/lib/icon-buttons.test.ts`
   fails the build on one without). The formatting bar is a `role="toolbar"`
   with one tab stop and arrow keys between tools (`#lib/toolbar`).
@@ -461,6 +463,13 @@ primitive's own class too, but do not copy the pattern.
   the rest with room for each control's own `.field-hint`. Placeholder text
   is not a label, and a control whose label is truncated to "Te" is the
   signal to move.
+- Cards the Assistant puts under the chat (a split proposal, a scene or
+  chapter draft): `.assist-card`, with `.assist-card-head`,
+  `.assist-card-note` and `.assist-card-actions`; add `.assist-card-stack`
+  when the card holds fields, so it spaces its own rows. Hints inside are
+  `.field-hint` and errors are `FormStatus`; do not add per-card note, hint
+  or error classes. What a run would cost is said with the sentences in
+  `src/lib/cost-notes.ts` (`DraftCostNote.svelte` for a draft).
 - Inline result messages: the `FormStatus.svelte` component. The older
   `.form-error`/`.form-saved` classes remain in some routes; do not spread
   them further.
@@ -992,7 +1001,7 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 `EditorToolbar`, `SelectionMenu`, `NotesWorkspace`, `NotesSidebar`, `PlanSidebar`,
 `StoryOutline`, `StoryRowMenu`, `StoryDraftsMenu`, `RevisionHistory`, `EntityBadgePicker`,
 `EntityRelationships`, `ReviewSurface`, `ReviewPanel`, `ReviewCommentCard`,
-`ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`, `AssistantDraft`, `AssistantChapterDraft`.
+`ReviewSuggestionCard`, `ReviewSceneHead`, `AssistantProposal`, `AssistantDraft`, `AssistantChapterDraft`, `DraftCostNote`.
 
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,

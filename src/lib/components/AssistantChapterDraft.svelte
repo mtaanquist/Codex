@@ -1,19 +1,35 @@
+<script module lang="ts">
+	// Brief forms the writer has open, by chapter, so one half typed is still
+	// there after the panel was closed or another chapter was opened. Kept for
+	// the page's life; a reload starts fresh.
+	type OpenForm = {
+		brief: string;
+		targetWords: number;
+		pov: string;
+		scenes: Record<string, { chosen: boolean; brief: string }>;
+	};
+	const openForms: Record<string, OpenForm | undefined> = {};
+</script>
+
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { apiErrorMessage, formatNumber } from '#lib/format';
+	import { apiErrorMessage } from '#lib/format';
 	import { post } from '#lib/api';
-	import { trackedJobs } from '#lib/activity.svelte';
+	import { pollPause, trackedJobs } from '#lib/activity.svelte';
 	import { followChapterDraft, sceneDraftPath, startChapterDraft } from '#lib/assistant-actions';
 	import {
 		MAX_DRAFT_BRIEF_CHARS,
 		MAX_DRAFT_POV_CHARS,
 		MAX_DRAFT_WORDS,
 		MIN_DRAFT_WORDS,
+		CHAPTER_CAP_ADVICE,
 		type ChapterDraftDefaults,
 		type ChapterDraftEstimate,
 		type ChapterDraftView,
 		type SceneDraftStatus
 	} from '#lib/scene-draft';
+	import DraftCostNote from './DraftCostNote.svelte';
+	import FormStatus from './FormStatus.svelte';
 	import Icon from './Icon.svelte';
 
 	// A chapter draft in the Assistant panel: the brief form with a line per
@@ -25,16 +41,25 @@
 		storyId,
 		chapterId,
 		request = null,
-		decided = 0
+		decided = 0,
+		onRequestTaken,
+		onClose
 	}: {
 		storyId: string;
 		chapterId: string;
 		// Set when the writer asked to draft this chapter (the /draft-chapter
-		// command or the chapter's menu); a new object each time.
-		request?: { brief: string } | null;
+		// command or the chapter's menu); a new object each time. showOnly (a
+		// link to the chapter's drafts) shows the drafts waiting and opens no
+		// form.
+		request?: { brief: string; showOnly?: boolean } | null;
 		// Goes up each time a scene's draft is kept or discarded in its own
 		// card, so the list here is read again.
 		decided?: number;
+		// Called once a request has been acted on, so it is not acted on again.
+		onRequestTaken?: () => void;
+		// Called when the card closes while the writer was in it, so the panel
+		// can put keyboard focus somewhere useful.
+		onClose?: () => void;
 	} = $props();
 
 	type View = 'hidden' | 'loading' | 'form' | 'run';
@@ -59,6 +84,8 @@
 	let error = $state('');
 	// Scenes left out of the run just started, because they had a draft waiting.
 	let leftOut = $state(0);
+	// The drafts could not be read back; the card keeps what it has and retries.
+	let unread = $state(false);
 
 	const label = $derived(chapterTitle ? `"${chapterTitle}"` : 'this chapter');
 	const writing = $derived(
@@ -74,21 +101,50 @@
 		run?.jobId ? trackedJobs.list.find((tracked) => tracked.id === run?.jobId) : undefined
 	);
 
-	const POLL_MS = 4000;
-
 	function scope() {
 		return { storyId, chapterId };
 	}
 
-	async function readRun(): Promise<ChapterDraftView | null> {
+	// The chapter's undecided drafts, null when it has none, undefined when
+	// they could not be read (offline, a server fault): not the same as none.
+	async function readRun(): Promise<ChapterDraftView | null | undefined> {
 		try {
 			const query = new URLSearchParams(scope());
 			const response = await fetch(`/api/assistant/draft/chapter?${query}`);
-			if (!response.ok) return null;
+			if (!response.ok) return undefined;
 			return ((await response.json()) as { run: ChapterDraftView | null }).run;
 		} catch {
-			return null;
+			return undefined;
 		}
+	}
+
+	// Reads the drafts, trying again until there is an answer. Null also when
+	// the card has gone meanwhile; callers check `alive`.
+	async function readRunSurely(): Promise<ChapterDraftView | null> {
+		const startedAt = Date.now();
+		for (;;) {
+			const found = await readRun();
+			if (!alive) return null;
+			if (found !== undefined) {
+				unread = false;
+				return found;
+			}
+			unread = true;
+			await pollPause(startedAt);
+			if (!alive) return null;
+		}
+	}
+
+	// Runs a change to what the card shows, and keeps keyboard focus when the
+	// control that had it went away: on the card while it still shows, else
+	// back with the panel.
+	async function step(change: () => void) {
+		const inside = card?.contains(document.activeElement) ?? false;
+		change();
+		await tick();
+		if (!inside || card?.contains(document.activeElement)) return;
+		if (card) card.focus();
+		else onClose?.();
 	}
 
 	let polling = false;
@@ -107,19 +163,25 @@
 	async function poll() {
 		if (polling) return;
 		polling = true;
+		const startedAt = Date.now();
 		try {
 			while (alive && view === 'run' && writing) {
-				await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+				await pollPause(startedAt);
 				if (!alive || view !== 'run') return;
 				const fresh = await readRun();
 				if (!alive || view !== 'run') return;
+				// Not read this time: the list stays, and the next round tries again.
+				unread = fresh === undefined;
+				if (fresh === undefined) continue;
 				if (!fresh) {
 					// Stopped before anything was written, or all decided elsewhere.
-					run = null;
-					view = 'hidden';
+					await step(() => {
+						run = null;
+						view = 'hidden';
+					});
 					return;
 				}
-				run = fresh;
+				await step(() => (run = fresh));
 			}
 		} finally {
 			polling = false;
@@ -131,7 +193,9 @@
 		card?.scrollIntoView({ block: 'nearest' });
 	}
 
-	async function openForm(typed: string) {
+	// Opens the brief form: with what was typed into it before, when it was
+	// left open, else empty with the chapter's scenes to choose from.
+	async function openForm(typed: string, focus = true) {
 		error = '';
 		estimate = null;
 		leftOut = 0;
@@ -142,50 +206,76 @@
 			'Could not open the draft form.'
 		);
 		if (!alive) return;
-		brief = typed;
-		pov = '';
+		const open = openForms[chapterId];
+		brief = typed || open?.brief || '';
+		pov = open?.pov ?? '';
 		if (!response.ok) {
 			error = response.message;
 			rows = [];
 		} else {
 			chapterTitle = response.chapterTitle;
-			targetWords = response.targetWords;
-			rows = response.scenes.map((scene) => ({
-				...scene,
-				// A scene with text is left for the writer to choose: its draft could
-				// only be added as a new scene.
-				chosen: !scene.hasDraft && !scene.hasText
-			}));
+			targetWords = open?.targetWords ?? response.targetWords;
+			rows = response.scenes.map((scene) => {
+				const was = open?.scenes[scene.sceneId];
+				return {
+					...scene,
+					brief: was?.brief || scene.brief,
+					// A scene with text is left for the writer to choose: its draft could
+					// only be added as a new scene.
+					chosen: !scene.hasDraft && (was ? was.chosen : !scene.hasText)
+				};
+			});
 		}
 		view = 'form';
+		if (!focus) return;
 		await reveal();
 		briefEl?.focus();
 	}
 
+	// The open form is remembered as it is typed.
+	$effect(() => {
+		if (view !== 'form' || rows.length === 0) return;
+		openForms[chapterId] = {
+			brief,
+			targetWords,
+			pov,
+			scenes: Object.fromEntries(
+				rows.map((row) => [row.sceneId, { chosen: row.chosen, brief: row.brief }])
+			)
+		};
+	});
+
 	onMount(() => {
-		void readRun().then((found) => {
-			if (!alive || view !== 'hidden') return;
-			if (found) show(found);
-		});
+		if (openForms[chapterId]) void openForm('', false);
+		else {
+			void readRunSurely().then((found) => {
+				if (!alive || view !== 'hidden') return;
+				if (found) show(found);
+			});
+		}
 		return () => {
 			alive = false;
 		};
 	});
 
-	// The writer asked to draft this chapter. A run still under way shows
-	// instead; drafts only waiting to be decided do not stand in the way.
+	// The writer asked to draft this chapter, or followed a link to its
+	// drafts. A run still under way shows instead of the form; drafts only
+	// waiting to be decided do not stand in the way of a new run, but they are
+	// what a link is for.
 	let handled: { brief: string } | null = null;
 	$effect(() => {
 		const asked = request;
 		if (!asked || asked === handled) return;
 		handled = asked;
+		onRequestTaken?.();
 		void (async () => {
-			const found = await readRun();
+			const found = await readRunSurely();
 			if (!alive) return;
-			if (found?.jobId) {
+			if (found && (found.jobId || asked.showOnly)) {
 				show(found);
 				await reveal();
-			} else await openForm(asked.brief);
+				card?.focus();
+			} else if (!asked.showOnly) await openForm(asked.brief);
 		})();
 	});
 
@@ -195,10 +285,12 @@
 		if (decided === seenDecided) return;
 		seenDecided = decided;
 		if (untrack(() => view) !== 'run') return;
-		void readRun().then((fresh) => {
+		void readRunSurely().then((fresh) => {
 			if (!alive || view !== 'run') return;
-			run = fresh;
-			if (!fresh) view = 'hidden';
+			void step(() => {
+				run = fresh;
+				if (!fresh) view = 'hidden';
+			});
 		});
 	});
 
@@ -253,25 +345,20 @@
 			error = started.message;
 			return;
 		}
-		leftOut = started.skipped;
-		const found = await readRun();
+		delete openForms[chapterId];
+		const skipped = started.skipped;
+		const found = await readRunSurely();
 		if (!alive) return;
-		if (!found) {
-			view = 'hidden';
-			return;
-		}
-		show(found);
+		await step(() => {
+			if (found) show(found);
+			else view = 'hidden';
+			leftOut = skipped;
+		});
 		await reveal();
 	}
 
-	function costPhrase(est: ChapterDraftEstimate): string {
-		const count = `${est.scenes} ${est.scenes === 1 ? 'scene' : 'scenes'}`;
-		const size = `This drafts ${count}. It sends about ${formatNumber(est.estTokens)} tokens and writes about ${formatNumber(est.estCompletionTokens)}`;
-		if (est.estCostUsd === undefined) return `${size}.`;
-		return est.estCostUsd < 0.01
-			? `${size} (less than $0.01).`
-			: `${size} (about $${est.estCostUsd.toFixed(2)}).`;
-	}
+	// The form's one main button: it counts the cost, then starts the run.
+	const confirmed = $derived(estimate !== null && !estimate.overCap);
 
 	const STATUS: Record<SceneDraftStatus, string> = {
 		pending: 'Waiting',
@@ -282,27 +369,40 @@
 		discarded: 'Discarded'
 	};
 
-	function cancelForm() {
+	async function cancelForm() {
+		delete openForms[chapterId];
 		estimate = null;
 		error = '';
 		// Back to the chapter's waiting drafts, when it has some.
-		view = 'hidden';
-		void readRun().then((found) => {
-			if (alive && view === 'hidden' && found) show(found);
-		});
+		const found = await readRun();
+		if (!alive) return;
+		if (found) {
+			show(found);
+			await tick();
+			card?.focus();
+		} else {
+			view = 'hidden';
+			onClose?.();
+		}
 	}
 </script>
 
 {#if view !== 'hidden'}
-	<div class="draft-card" bind:this={card} role="group" aria-label="Chapter draft">
-		<div class="draft-head">
+	<div
+		class="assist-card assist-card-stack"
+		bind:this={card}
+		role="group"
+		aria-label="Chapter draft"
+		tabindex="-1"
+	>
+		<div class="assist-card-head">
 			<Icon name="sparkles" size={13} />
 			{view === 'run' ? 'Drafts in' : 'Draft'}
 			{label}
 		</div>
 
 		{#if view === 'loading'}
-			<p class="draft-note">Loading...</p>
+			<p class="assist-card-note">Loading...</p>
 		{:else if view === 'form'}
 			{#if rows.length > 0}
 				<div class="field">
@@ -342,7 +442,7 @@
 						/>
 					</div>
 				</div>
-				<p class="draft-note">
+				<p class="assist-card-note">
 					Tick the scenes to draft, and say what happens in each. They are drafted in order.
 				</p>
 				<ul class="draft-scenes">
@@ -388,60 +488,46 @@
 				</ul>
 			{/if}
 			{#if estimate}
-				<p class="draft-note" role="status">{costPhrase(estimate)}</p>
+				<DraftCostNote {estimate} scenes={estimate.scenes} capAdvice={CHAPTER_CAP_ADVICE} />
 				{#if estimate.skipped.length > 0}
-					<p class="draft-note">
+					<p class="assist-card-note">
 						{estimate.skipped.length === 1
 							? 'One scene you chose has a draft waiting, so it is left out.'
 							: `${estimate.skipped.length} scenes you chose have a draft waiting, so they are left out.`}
 					</p>
 				{/if}
-				{#if estimate.overCap && estimate.capUsd !== undefined}
-					<p class="draft-error" role="alert">
-						That is over your spend cap of ${estimate.capUsd.toFixed(2)}, so the draft will not run.
-						Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.
-					</p>
-				{:else if estimate.limitedToWords !== undefined}
-					<p class="draft-note">
-						The reply length set for Write stops each scene at about {formatNumber(
-							estimate.limitedToWords
-						)} words. For longer scenes, raise Longest reply for Write in its Tune window under Account,
-						Assistant.
-					</p>
-				{/if}
 			{/if}
-			{#if error}
-				<p class="draft-error" role="alert">{error}</p>
-			{/if}
-			<div class="draft-actions">
+			<FormStatus block {error} />
+			<div class="assist-card-actions">
 				{#if rows.length > 0}
-					{#if estimate && !estimate.overCap}
-						<button class="btn btn-primary" type="button" disabled={working} onclick={start}>
+					<!-- One button for both steps, so the keyboard stays on it. It is
+					     not disabled while it works, which would drop focus. -->
+					<button
+						class="btn btn-primary"
+						type="button"
+						disabled={!formReady}
+						aria-busy={working}
+						onclick={confirmed ? start : checkCost}
+					>
+						{#if confirmed}
 							{working ? 'Starting...' : 'Draft the chapter'}
-						</button>
-					{:else}
-						<button
-							class="btn btn-primary"
-							type="button"
-							disabled={working || !formReady}
-							onclick={checkCost}
-						>
+						{:else}
 							{working ? 'Counting...' : 'Check the cost'}
-						</button>
-					{/if}
+						{/if}
+					</button>
 				{/if}
 				<button class="btn" type="button" onclick={cancelForm}>
 					{rows.length > 0 ? 'Cancel' : 'Close'}
 				</button>
 			</div>
 			{#if rows.length > 0}
-				<p class="draft-hint">
+				<p class="field-hint">
 					Each scene's draft is shown to you first. Your scenes stay as they are until you choose
 					what to do with each draft.
 				</p>
 			{/if}
 		{:else if run}
-			<p class="draft-note" role="status">
+			<p class="assist-card-note" role="status">
 				{#if writing}
 					The Assistant is drafting these scenes in the background, one at a time: {settledCount} of
 					{run.scenes.length} done. You can keep working, and you will be notified when it finishes.
@@ -452,7 +538,7 @@
 				{/if}
 			</p>
 			{#if leftOut > 0}
-				<p class="draft-note">
+				<p class="assist-card-note">
 					{leftOut === 1
 						? 'One scene you chose had a draft waiting, so it was left out.'
 						: `${leftOut} scenes you chose had a draft waiting, so they were left out.`}
@@ -472,11 +558,12 @@
 					</li>
 				{/each}
 			</ul>
-			{#if job?.stopError}
-				<p class="draft-error" role="alert">{job.stopError}</p>
+			{#if unread}
+				<p class="assist-card-note" role="status">Could not check on these drafts. Trying again.</p>
 			{/if}
+			<FormStatus block error={job?.stopError} />
 			{#if writing}
-				<div class="draft-actions">
+				<div class="assist-card-actions">
 					<button
 						class="btn"
 						type="button"
@@ -486,39 +573,17 @@
 						{job?.stopping ? 'Stopping...' : 'Stop'}
 					</button>
 				</div>
-				<p class="draft-hint">Stopping keeps the scenes already drafted.</p>
+				<p class="field-hint">Stopping keeps the scenes already drafted.</p>
 			{/if}
 		{/if}
 	</div>
 {/if}
 
 <style>
-	/* The scene draft card (AssistantDraft), with a row per scene. */
-	.draft-card {
-		margin-top: 8px;
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		background: var(--bg-card);
-		padding: 10px 12px;
-		font-size: 13px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-	.draft-card .field {
-		margin-bottom: 0;
-	}
-	.draft-head {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		font-weight: 600;
-		color: var(--text);
-	}
 	.draft-pair {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-		gap: 8px;
+		gap: var(--space-2);
 	}
 	.draft-scenes {
 		list-style: none;
@@ -526,37 +591,17 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: var(--space-2);
 	}
 	.draft-row {
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
-		gap: 10px;
+		gap: var(--space-3);
 	}
 	.draft-state {
 		flex: none;
-		font-size: 12px;
+		font-size: var(--text-meta);
 		color: var(--text-faint);
-	}
-	.draft-actions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-	.draft-note {
-		margin: 0;
-		color: var(--text-muted);
-	}
-	.draft-hint {
-		margin: 0;
-		font-size: 12px;
-		color: var(--text-faint);
-	}
-	.draft-error {
-		margin: 0;
-		font-size: 12.5px;
-		color: var(--danger-ink);
 	}
 </style>

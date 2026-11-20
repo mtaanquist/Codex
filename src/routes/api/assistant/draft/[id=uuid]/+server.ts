@@ -2,19 +2,37 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import { throwActionError } from '#lib/server/action-result';
 import { queueSceneMentions, stopRunningAssistantJob } from '#lib/server/jobs';
-import { addDraftAsScene, discardSceneDraft, fillSceneFromDraft } from '#lib/server/scene-drafts';
-import { readJson } from '#lib/server/validation';
+import {
+	addDraftAsScene,
+	discardSceneDraft,
+	fillSceneFromDraft,
+	saveDraftText
+} from '#lib/server/scene-drafts';
+import { checkProseLength, readJson } from '#lib/server/validation';
 import { rateLimitWrites } from '#lib/server/write-guard';
-import { MAX_DRAFT_WORDS } from '#lib/scene-draft';
 
 // The writer's decision on a scene draft. 'fill' puts it into its own scene,
 // only while that scene is empty; 'add' makes it a new scene after that one;
 // 'discard' throws it away (stopping its job when it is still being written).
 // There is no action that replaces a scene's text. text is the draft as the
-// writer edited it in the panel.
+// writer edited it in the panel, held to the length a scene may be.
+//
+// Deciding or editing a staged draft sends nothing to the provider, so these
+// need only the draft's owner: they work while the story is muted or the
+// Assistant is off, so a draft already written is never stranded.
 
-// Far past the longest draft, so an edited draft still fits.
-const MAX_TEXT_CHARS = MAX_DRAFT_WORDS * 20;
+// Saves the writer's edits to a ready draft, so they outlive the panel. Only
+// the draft row changes.
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) error(401, 'Sign in to edit a draft.');
+	rateLimitWrites(locals.user.id);
+	const payload = await readJson<{ text?: unknown }>(request);
+	if (typeof payload.text !== 'string') error(400, 'text must be a string.');
+	checkProseLength(payload.text);
+	const result = await saveDraftText(db, locals.user.id, params.id!, payload.text);
+	if (!result.ok) throwActionError(result);
+	return Response.json({ ok: true });
+};
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) error(401, 'Sign in to decide a draft.');
@@ -24,7 +42,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	if (payload.text !== undefined && typeof payload.text !== 'string') {
 		error(400, 'text must be a string.');
 	}
-	if (payload.text && payload.text.length > MAX_TEXT_CHARS) error(400, 'That draft is too long.');
+	if (payload.text) checkProseLength(payload.text);
 	const draftId = params.id!;
 
 	if (payload.action === 'fill') {

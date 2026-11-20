@@ -270,7 +270,7 @@
 		pins: data.mentionPins,
 		onPin: pinMention,
 		entityHref: (entity: { id: string }) =>
-			`/universes/${data.universe.slug}/plan?entity=${entity.id}`,
+			withQuery(resolve('/stories/[id]/plan', { id: data.story.slug }), { entity: entity.id }),
 		onOpenCard: (entityId: string) => openCard(entityId)
 	});
 
@@ -618,25 +618,35 @@
 		rowMenu = null;
 		assistantIntent.pending = { kind: 'draft-chapter', chapterId };
 	}
-	// A link to a chapter's drafts (the notice, the background jobs list)
-	// carries draftChapter: open the Assistant panel on them.
-	const chapterDraftAsked = $derived(page.url.searchParams.get('draftChapter'));
-	$effect(() => {
-		const chapterId = chapterDraftAsked;
-		if (chapterId && draftable && data.chapters.some((chapter) => chapter.id === chapterId)) {
-			untrack(() => (assistantIntent.pending = { kind: 'draft-chapter', chapterId }));
-		}
-	});
+	// The Assistant tab shows: the account has it on, or it is off but drafts
+	// it wrote before still wait here.
+	const assistantTab = $derived(data.assistant.tabEnabled || data.assistant.draftsWaiting);
 	// A link to a scene's draft (its notice, the background jobs list, the
-	// scene's menu) carries draft=1: open the Assistant panel on that draft.
+	// scene's menu) carries draft=1; one to a chapter's drafts (the notice,
+	// the background jobs list) carries draftChapter. Either opens the
+	// Assistant panel on what it names, once: the parameter is then taken off
+	// the address, so a refresh of the page's data, or a reload, does not open
+	// it again.
 	const draftAsked = $derived(
 		page.url.searchParams.get('draft') === '1' ? page.url.searchParams.get('scene') : null
 	);
-	const draftable = $derived(data.assistant.surfacesEnabled);
+	const chapterDraftAsked = $derived(page.url.searchParams.get('draftChapter'));
 	$effect(() => {
-		if (draftAsked && draftable) {
-			untrack(() => (assistantIntent.pending = { kind: 'draft' }));
-		}
+		const sceneId = draftAsked;
+		const chapterId = chapterDraftAsked;
+		if (!sceneId && !chapterId) return;
+		untrack(() => {
+			if (assistantTab) {
+				if (chapterId && data.chapters.some((chapter) => chapter.id === chapterId)) {
+					assistantIntent.pending = { kind: 'draft-chapter', chapterId, showOnly: true };
+				} else if (sceneId) assistantIntent.pending = { kind: 'draft' };
+			}
+			const url = new URL(page.url.href);
+			url.searchParams.delete('draft');
+			url.searchParams.delete('draftChapter');
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page's own address
+			void goto(url, { replace: true, reset: false });
+		});
 	});
 
 	// Keeps a scene draft the way the writer chose in the Assistant panel. The
@@ -752,7 +762,7 @@
 	const panels = $derived(
 		visiblePanels({
 			reference: true,
-			assistant: data.assistant.tabEnabled,
+			assistant: assistantTab,
 			history: Boolean(data.selectedScene),
 			notes: data.storyNotes.length
 		})
@@ -763,7 +773,7 @@
 	// An Assistant intent (from a menu here or the command palette) opens the
 	// panel; the panel consumes the intent itself once it renders.
 	$effect(() => {
-		if (assistantIntent.pending && data.assistant.tabEnabled) {
+		if (assistantIntent.pending && assistantTab) {
 			chosenPanel = 'assistant';
 			untrack(() => showPane('notes'));
 		}
@@ -1161,6 +1171,8 @@
 										null}
 									name={data.assistant.name}
 									muted={data.assistant.muted}
+									off={!data.assistant.tabEnabled}
+									revisionPreview={Boolean(data.revisionPreview)}
 									suggestions={assistantSuggestions}
 									chat={data.assistantChat}
 									onConfirmSplit={confirmAssistantSplit}
@@ -1348,7 +1360,7 @@
 		}}
 		onOpenReview={openReviewFor}
 		onSuggestSplit={suggestSplit}
-		onDraftScene={draftScene}
+		onDraftScene={data.revisionPreview ? undefined : draftScene}
 		onDraftChapter={data.revisionPreview ? undefined : draftChapter}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}

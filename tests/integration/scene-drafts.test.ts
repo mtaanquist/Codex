@@ -19,6 +19,7 @@ import {
 	type HttpRequest,
 	type Provider
 } from '../../src/lib/server/llm/providers/types';
+import { cacheWriteRate } from '../../src/lib/assistant-cost';
 import { ensureTestDatabase } from './test-db';
 
 // Scene drafts (#1168): the Assistant drafts one whole scene from the writer's
@@ -41,9 +42,9 @@ vi.mock('#lib/server/db', async () => {
 // Queueing would start pg-boss. The queue hands back a job id; the job itself
 // is run by hand through runSceneDraft.
 const jobs = vi.hoisted(() => ({
-	queueAssistantDraft: vi.fn<(job: unknown) => Promise<string | 'coalesced' | null>>(),
+	queueAssistantDraft: vi.fn<(job: { jobId: string }) => Promise<string | 'coalesced' | null>>(),
 	assistantDraftJobState:
-		vi.fn<(id: string) => Promise<'running' | 'stopped' | 'done' | 'failed'>>(),
+		vi.fn<(id: string) => Promise<'running' | 'stopped' | 'done' | 'failed' | 'missing'>>(),
 	queueSceneMentions: vi.fn(async () => undefined),
 	stopRunningAssistantJob: vi.fn(async () => true)
 }));
@@ -64,6 +65,7 @@ const {
 	fillSceneFromDraft,
 	requestSceneDraft,
 	sceneDraftFor,
+	hasWaitingDrafts,
 	DRAFT_DID_NOT_FINISH
 } = await import('../../src/lib/server/scene-drafts');
 const { saveSceneBody } = await import('../../src/lib/server/scene-save');
@@ -143,8 +145,8 @@ beforeEach(async () => {
 	cutOff = false;
 	whileWriting = null;
 	vi.clearAllMocks();
-	let n = 0;
-	jobs.queueAssistantDraft.mockImplementation(async () => `job-${++n}`);
+	// The queue takes the id the draft's row already carries.
+	jobs.queueAssistantDraft.mockImplementation(async (job) => job.jobId);
 	jobs.assistantDraftJobState.mockResolvedValue('running');
 	resetRateLimits();
 	await pool.query('truncate table users cascade');
@@ -342,6 +344,103 @@ describe('the estimate', () => {
 		expect(estimate).toMatchObject({ estCompletionTokens: 700, limitedToWords: 500 });
 	});
 
+	it('names the context window when that is what holds the draft short', async () => {
+		await saveModelContext(db, ownerId, { 'write-model': 1600 });
+		const estimate = await estimateSceneDraft(db, input());
+		// Half of a 1600 token window.
+		expect(estimate).toMatchObject({
+			estCompletionTokens: 800,
+			limitedToWords: 550,
+			limitedBy: 'window'
+		});
+	});
+
+	it('says whether the cap can be applied, and the warning limit', async () => {
+		await configure({ spendCapUsd: 5 });
+		expect(await estimateSceneDraft(db, input())).toMatchObject({
+			capUsd: 5,
+			capEnforceable: false,
+			warnUsd: 2,
+			overCap: false
+		});
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.0001 } });
+		expect(await estimateSceneDraft(db, input())).toMatchObject({ capEnforceable: true });
+	});
+
+	// What the stub was sent as the reply limit for a draft of this input.
+	async function limitSent() {
+		const { draftId } = await request();
+		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
+		await discardSceneDraft(db, ownerId, draftId);
+		return maxTokensSent.at(-1)!;
+	}
+	const account = (extra: Record<string, unknown>) =>
+		saveAccountLlmConfig(db, ownerId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { coauthor: 'write-model' },
+			...extra
+		});
+
+	it('counts the scene itself when the model does not think, under the limit sent', async () => {
+		const plain = await estimateSceneDraft(db, input());
+		expect(plain!.estCompletionTokens).toBe(1400);
+		expect(plain!.estCompletionUpTo).toBeUndefined();
+		expect(await limitSent()).toBe(1800);
+	});
+
+	it('counts the reply at the limit actually sent on the Claude provider', async () => {
+		// Claude models think on their own, and thinking is billed as reply
+		// tokens: the request goes out with the thinking limit, not the scene's.
+		await account({ provider: 'anthropic' });
+		const claude = await estimateSceneDraft(db, input());
+		expect(claude).toMatchObject({ estCompletionTokens: 16_384, estCompletionUpTo: true });
+		expect(claude!.limitedToWords).toBeUndefined();
+		const sent = await limitSent();
+		expect(sent).toBe(16_384);
+		expect(claude!.estCompletionTokens).toBeGreaterThanOrEqual(sent);
+	});
+
+	it('counts the reply at the limit actually sent with Thinking on elsewhere', async () => {
+		// An OpenAI-compatible endpoint with Thinking switched on for Write.
+		await account({ tuning: { coauthor: { thinking: true } } });
+		const thinking = await estimateSceneDraft(db, input());
+		expect(thinking).toMatchObject({ estCompletionUpTo: true });
+		const sent = await limitSent();
+		expect(sent).toBeGreaterThan(1800);
+		expect(thinking!.estCompletionTokens).toBeGreaterThanOrEqual(sent);
+	});
+
+	it('uses the limit the writer set for Write when the model may think', async () => {
+		await account({ provider: 'anthropic', tuning: { coauthor: { maxTokens: 3000 } } });
+		const estimate = await estimateSceneDraft(db, input());
+		expect(estimate).toMatchObject({ estCompletionTokens: 3000, estCompletionUpTo: true });
+		expect(await limitSent()).toBe(3000);
+	});
+
+	it('refuses over the cap on the thinking figure, not the words alone', async () => {
+		// The scene's words alone would be $1.40; the request can spend $16.38.
+		await account({ provider: 'anthropic', spendCapUsd: 10 });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		expect(await estimateSceneDraft(db, input())).toMatchObject({ overCap: true });
+		const result = await requestSceneDraft(db, input(), { queue: jobs.queueAssistantDraft });
+		expect(result).toMatchObject({ ok: false, code: 'conflict' });
+		expect(!result.ok && result.reason).toMatch(/up to \$16\.38, over your spend cap of \$10\.00/);
+		expect(jobs.queueAssistantDraft).not.toHaveBeenCalled();
+	});
+
+	it('prices the prompt at the cache write rate on the Claude provider', async () => {
+		await account({ provider: 'anthropic' });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0.001, completion: 0 } });
+		const estimate = await estimateSceneDraft(db, input());
+		const rate = cacheWriteRate('5m');
+		expect(rate).toBeGreaterThan(1);
+		expect(estimate!.estCostUsd).toBeCloseTo(estimate!.estTokens * rate * 0.001, 6);
+	});
+
 	it("is not there for another user's scene", async () => {
 		expect(await estimateSceneDraft(db, { ...input(), userId: strangerId })).toBeNull();
 	});
@@ -350,7 +449,9 @@ describe('the estimate', () => {
 describe('asking for a draft', () => {
 	it('stages a pending draft and queues its job', async () => {
 		const { draftId, jobId } = await request({ pov: ' Ilse, close third ' });
+		// The row carries its job's id from the start, and the job takes that id.
 		expect(jobs.queueAssistantDraft).toHaveBeenCalledWith({
+			jobId,
 			userId: ownerId,
 			storyId,
 			sceneId: target,
@@ -459,7 +560,7 @@ describe('the endpoint', () => {
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
 
 		const started = await call(draftRoute.POST, event(owner, { body: body() }));
-		expect(started).toMatchObject({ status: 200, body: { ok: true, jobId: 'job-1' } });
+		expect(started).toMatchObject({ status: 200, body: { ok: true, jobId: expect.any(String) } });
 		const read = await call(
 			draftRoute.GET,
 			event(owner, { method: 'GET', path: `/?storyId=${storyId}&sceneId=${target}` })
@@ -495,8 +596,76 @@ describe('the endpoint', () => {
 			draftRoute.GET,
 			event({ id: ownerId }, { method: 'GET', path: `/?storyId=${storyId}&sceneId=${target}` })
 		);
-		expect(read.status).toBe(403);
+		// Reading a staged draft sends nothing, so it is not gated by the mute.
+		expect(read).toEqual({ status: 200, body: { draft: null } });
 		expect(jobs.queueAssistantDraft).not.toHaveBeenCalled();
+	});
+
+	it('still shows and decides a draft written before the story was muted', async () => {
+		const draftId = await readyDraft('Written before the mute.');
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		const owner = { id: ownerId };
+		const read = await call(
+			draftRoute.GET,
+			event(owner, { method: 'GET', path: `/?storyId=${storyId}&sceneId=${target}` })
+		);
+		expect(read.body.draft).toMatchObject({ id: draftId, status: 'ready' });
+		const edited = await call(
+			decideRoute.PATCH,
+			event(owner, { method: 'PATCH', params: { id: draftId }, body: { text: 'Edited.' } })
+		);
+		expect(edited.status).toBe(200);
+		const filled = await call(
+			decideRoute.POST,
+			event(owner, { params: { id: draftId }, body: { action: 'fill' } })
+		);
+		expect(filled.status).toBe(200);
+		expect((await sceneRow(target)).bodyMd).toBe('Edited.');
+		// Another user's scene is still not readable.
+		const stranger = await call(
+			draftRoute.GET,
+			event({ id: strangerId }, { method: 'GET', path: `/?storyId=${storyId}&sceneId=${target}` })
+		);
+		expect(stranger.status).toBe(404);
+	});
+
+	it('saves edits to a ready draft for its owner, and never touches the scene', async () => {
+		const draftId = await readyDraft('As written.');
+		const snapshot = await scenesSnapshot();
+		const revisionsBefore = await revisionCount();
+		const patch = (user: TestUser | null, text: unknown, id = draftId) =>
+			call(decideRoute.PATCH, event(user, { method: 'PATCH', params: { id }, body: { text } }));
+		expect((await patch({ id: ownerId }, 'As the writer changed it.')).status).toBe(200);
+		expect((await draftRow(draftId)).textMd).toBe('As the writer changed it.');
+		// It is the saved text that is kept when the panel sends none.
+		expect((await sceneDraftFor(db, ownerId, target))?.textMd).toBe('As the writer changed it.');
+
+		expect((await patch({ id: strangerId }, 'Theirs.')).status).toBe(404);
+		expect((await patch(null, 'x')).status).toBe(401);
+		expect((await patch({ id: ownerId }, 42)).status).toBe(400);
+		expect((await patch({ id: ownerId }, 'x'.repeat(2_000_001))).status).toBe(413);
+		expect((await draftRow(draftId)).textMd).toBe('As the writer changed it.');
+		expect(await scenesSnapshot()).toEqual(snapshot);
+		expect(await revisionCount()).toBe(revisionsBefore);
+	});
+
+	it('refuses edits to a draft that is not ready, or already kept or discarded', async () => {
+		const pending = await request();
+		const patch = (id: string) =>
+			call(
+				decideRoute.PATCH,
+				event({ id: ownerId }, { method: 'PATCH', params: { id }, body: { text: 'Late.' } })
+			);
+		expect((await patch(pending.draftId)).status).toBe(409);
+		await discardSceneDraft(db, ownerId, pending.draftId);
+		expect((await patch(pending.draftId)).status).toBe(409);
+		expect((await draftRow(pending.draftId)).textMd).toBe('');
+
+		const kept = await readyDraft('Kept as written.');
+		await fillSceneFromDraft(db, ownerId, kept);
+		expect((await patch(kept)).status).toBe(409);
+		expect((await draftRow(kept)).textMd).toBe('Kept as written.');
+		expect((await sceneRow(target)).bodyMd).toBe('Kept as written.');
 	});
 
 	it('refuses an estimate over the cap with the reason', async () => {
@@ -627,8 +796,9 @@ describe('the job', () => {
 		const snapshot = await scenesSnapshot();
 		const { draftId } = await request();
 		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
-		expect(prompts[0]).toContain('The current scene already has this prose');
-		expect(prompts[0]).toContain('The ferryman would not look at her.');
+		// The scene's text is sent once, in the context, and the task points at it.
+		expect(prompts[0]).toContain('The current scene already has prose');
+		expect(prompts[0].split('The ferryman would not look at her.')).toHaveLength(2);
 		expect(prompts[0]).toContain('Do not repeat or rewrite what is already there.');
 		expect(await scenesSnapshot()).toEqual(snapshot);
 	});
@@ -743,7 +913,10 @@ describe('the job', () => {
 		whileWriting = async () => {
 			await discardSceneDraft(db, ownerId, draftId);
 		};
-		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
+		// Nothing was kept, so there is no draft to tell the writer about.
+		expect(await runSceneDraft(db, { userId: ownerId, draftId }, deps)).toEqual({
+			outcome: 'missing'
+		});
 		expect(await draftRow(draftId)).toMatchObject({ status: 'discarded', textMd: '' });
 	});
 
@@ -786,6 +959,15 @@ describe('reading a draft back', () => {
 		expect(await sceneDraftFor(db, ownerId, before)).toBeNull();
 	});
 
+	it('says whether the story has drafts waiting, for the panel of an Assistant that is off', async () => {
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		const draftId = await readyDraft();
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		expect(await hasWaitingDrafts(db, strangerId, storyId)).toBe(false);
+		await discardSceneDraft(db, ownerId, draftId);
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+	});
+
 	it('says when the scene is no longer empty', async () => {
 		await readyDraft();
 		await db.update(scenes).set({ bodyMd: 'Now written.' }).where(eq(scenes.id, target));
@@ -812,6 +994,46 @@ describe('reading a draft back', () => {
 			status: 'failed',
 			note: DRAFT_DID_NOT_FINISH
 		});
+	});
+
+	it('settles a draft whose job was never queued, once it has had time to be', async () => {
+		// The request died between writing the row and queueing its job.
+		const { draftId } = await request();
+		jobs.assistantDraftJobState.mockResolvedValue('missing');
+		// Just written: the job may be on its way, so the draft still waits.
+		expect((await sceneDraftFor(db, ownerId, target, jobs.assistantDraftJobState))?.status).toBe(
+			'pending'
+		);
+		const refused = await requestSceneDraft(db, input(), {
+			queue: jobs.queueAssistantDraft,
+			jobState: jobs.assistantDraftJobState
+		});
+		expect(refused.ok).toBe(false);
+
+		await pool.query(
+			`update assistant_drafts set created_at = now() - interval '5 minutes' where id = $1`,
+			[draftId]
+		);
+		expect(await sceneDraftFor(db, ownerId, target, jobs.assistantDraftJobState)).toMatchObject({
+			id: draftId,
+			status: 'failed',
+			note: DRAFT_DID_NOT_FINISH
+		});
+		// It no longer holds the scene.
+		expect((await request()).draftId).not.toBe(draftId);
+	});
+
+	it('settles an old draft with no job id at all', async () => {
+		const [row] = await db
+			.insert(assistantDrafts)
+			.values({ userId: ownerId, storyId, sceneId: target, brief: 'b', targetWords: 500 })
+			.returning({ id: assistantDrafts.id });
+		await pool.query(
+			`update assistant_drafts set created_at = now() - interval '5 minutes' where id = $1`,
+			[row.id]
+		);
+		expect((await request()).draftId).not.toBe(row.id);
+		expect((await draftRow(row.id)).status).toBe('discarded');
 	});
 
 	it('leaves a finished draft alone whatever the queue says', async () => {
@@ -1064,7 +1286,8 @@ describe('the assistant_drafts table', () => {
 			order by kcu.column_name
 		`);
 		expect(rows).toEqual([
-			{ column: 'chapter_id', rule: 'CASCADE' },
+			// A deleted chapter leaves its scenes, so it leaves their drafts.
+			{ column: 'chapter_id', rule: 'SET NULL' },
 			{ column: 'scene_id', rule: 'CASCADE' },
 			{ column: 'story_id', rule: 'CASCADE' },
 			{ column: 'user_id', rule: 'CASCADE' }

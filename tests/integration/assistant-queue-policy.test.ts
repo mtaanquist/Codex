@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PgBoss } from 'pg-boss';
 import pg from 'pg';
@@ -144,13 +145,23 @@ describe('assistant queue policy', () => {
 	});
 
 	it('holds one unfinished draft per scene, and reads how its job ended', async () => {
-		const input = { userId: 'u1', storyId: 's1', sceneId: 'scene-1', draftId: 'd1' };
+		const data = { userId: 'u1', storyId: 's1', sceneId: 'scene-1', draftId: 'd1' };
+		const input = { ...data, jobId: randomUUID() };
+		// A job the queue has never seen is told apart from one that finished.
+		expect(await jobs.assistantDraftJobState(input.jobId)).toBe('missing');
+		// The job takes the id the draft's row was written with.
 		const first = await jobs.queueAssistantDraft(input);
-		expect(first).toEqual(expect.any(String));
-		expect(first).not.toBe('coalesced');
-		expect(await jobs.queueAssistantDraft({ ...input, draftId: 'd2' })).toBe('coalesced');
+		expect(first).toBe(input.jobId);
+		expect((await boss.getJobById(ASSISTANT_DRAFT_QUEUE, input.jobId))?.data).toEqual(data);
+		expect(await jobs.queueAssistantDraft({ ...input, jobId: randomUUID(), draftId: 'd2' })).toBe(
+			'coalesced'
+		);
 		// Another scene is its own job.
-		const other = await jobs.queueAssistantDraft({ ...input, sceneId: 'scene-2' });
+		const other = await jobs.queueAssistantDraft({
+			...input,
+			jobId: randomUUID(),
+			sceneId: 'scene-2'
+		});
 		expect(other).toEqual(expect.any(String));
 		expect(await unfinished(ASSISTANT_DRAFT_QUEUE)).toBe(2);
 
@@ -161,7 +172,9 @@ describe('assistant queue policy', () => {
 		expect(await jobs.assistantDraftJobState(first as string)).toBe('stopped');
 		expect(await jobs.getAssistantJobState('draft', first as string)).toBe('failed');
 		// Stopping frees the scene for a new draft.
-		expect(await jobs.queueAssistantDraft(input)).toEqual(expect.any(String));
+		expect(await jobs.queueAssistantDraft({ ...input, jobId: randomUUID() })).toEqual(
+			expect.any(String)
+		);
 
 		const [running] = await boss.fetch(ASSISTANT_DRAFT_QUEUE);
 		await boss.complete(ASSISTANT_DRAFT_QUEUE, running.id, { failed: true });
@@ -170,23 +183,30 @@ describe('assistant queue policy', () => {
 	});
 
 	it('holds one unfinished chapter draft per chapter, beside the scene drafts', async () => {
-		const input = {
+		const data = {
 			userId: 'u1',
 			storyId: 's1',
 			chapterId: 'chapter-1',
 			draftIds: ['d1', 'd2'],
 			brief: 'The chapter.'
 		};
+		const input = { ...data, jobId: randomUUID() };
 		const first = await jobs.queueAssistantChapterDraft(input);
-		expect(first).toEqual(expect.any(String));
-		expect(first).not.toBe('coalesced');
-		expect(await jobs.queueAssistantChapterDraft({ ...input, draftIds: ['d3'] })).toBe('coalesced');
-		expect(await jobs.queueAssistantChapterDraft({ ...input, chapterId: 'chapter-2' })).toEqual(
-			expect.any(String)
-		);
+		expect(first).toBe(input.jobId);
+		expect(
+			await jobs.queueAssistantChapterDraft({ ...input, jobId: randomUUID(), draftIds: ['d3'] })
+		).toBe('coalesced');
+		expect(
+			await jobs.queueAssistantChapterDraft({
+				...input,
+				jobId: randomUUID(),
+				chapterId: 'chapter-2'
+			})
+		).toEqual(expect.any(String));
 		// A scene draft is keyed by its scene, so it queues alongside.
 		expect(
 			await jobs.queueAssistantDraft({
+				jobId: randomUUID(),
 				userId: 'u1',
 				storyId: 's1',
 				sceneId: 'scene-9',
@@ -196,7 +216,7 @@ describe('assistant queue policy', () => {
 		expect(await unfinished(ASSISTANT_DRAFT_QUEUE)).toBe(3);
 		expect(await jobs.assistantDraftJobState(first as string)).toBe('running');
 		const queued = await boss.getJobById(ASSISTANT_DRAFT_QUEUE, first as string);
-		expect(queued?.data).toEqual(input);
+		expect(queued?.data).toEqual(data);
 		await boss.deleteAllJobs(ASSISTANT_DRAFT_QUEUE);
 	});
 

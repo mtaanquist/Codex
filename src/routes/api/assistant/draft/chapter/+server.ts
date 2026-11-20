@@ -3,6 +3,7 @@ import { db } from '#lib/server/db';
 import { throwActionError } from '#lib/server/action-result';
 import { readAssistantPayload, requireAssistantStory } from '#lib/server/llm/assistant-route';
 import { NoModelError } from '#lib/server/llm/gateway';
+import { ownedStory } from '#lib/server/story-access';
 import { assistantDraftJobState, queueAssistantChapterDraft } from '#lib/server/jobs';
 import {
 	CHAPTER_HAS_NO_SCENES,
@@ -19,7 +20,8 @@ import { clampDraftWords, MAX_DRAFT_BRIEF_CHARS, MAX_DRAFT_POV_CHARS } from '#li
 // here, by the writer's own request (the /draft-chapter command or "Draft this
 // chapter" on the chapter's menu), and it is not a tool the model can call.
 // Each drafted scene is kept or discarded on its own through the scene draft
-// route. Refused when the Assistant is off for the account or the story.
+// route. Asking and counting are refused when the Assistant is off for the
+// account or the story; reading the staged drafts back needs only their owner.
 
 const NO_MODEL = 'No model is chosen for Write. Pick one under Account, Assistant.';
 
@@ -27,7 +29,7 @@ const NO_MODEL = 'No model is chosen for Write. Pick one under Account, Assistan
 // null when there are none.
 export const GET: RequestHandler = async ({ url, locals }) => {
 	if (!locals.user) error(401, 'Sign in to read a draft.');
-	const story = await requireAssistantStory(locals.user.id, url.searchParams.get('storyId'));
+	const { story } = await ownedStory(url.searchParams.get('storyId') ?? '', locals.user.id);
 	const chapterId = url.searchParams.get('chapterId') ?? '';
 	if (!isUuid(chapterId)) error(404, 'Chapter not found');
 	return Response.json({

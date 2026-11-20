@@ -32,8 +32,8 @@
 	} = $props();
 </script>
 
-<div class="proposal">
-	<div class="proposal-head">
+<div class="assist-card">
+	<div class="assist-card-head">
 		<Icon name="split" size={13} />
 		Split {proposal.sceneTitle ? `"${proposal.sceneTitle}"` : 'this scene'}
 	</div>
@@ -72,21 +72,6 @@
 </div>
 
 <style>
-	.proposal {
-		margin-top: 8px;
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		background: var(--bg-card);
-		padding: 10px 12px;
-		font-size: 13px;
-	}
-	.proposal-head {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		font-weight: 600;
-		color: var(--text);
-	}
 	.proposal-why {
 		margin: 6px 0 0;
 		color: var(--text-muted);

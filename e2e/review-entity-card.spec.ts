@@ -37,12 +37,12 @@ test('review: hovering an entity mention opens its quick card', async ({ page })
 	await expect(mention).toBeVisible();
 
 	// Hovering it opens the quick card with the entity's name; the author's card
-	// offers the full-details link (a reviewer's would not).
+	// offers the Plan view link (a reviewer's would not).
 	await mention.hover();
 	const card = page.locator('.entity-card');
 	await expect(card).toBeVisible();
 	await expect(card.locator('.pop-name')).toHaveText('Veylan');
-	await expect(card.locator('.btn-primary')).toBeVisible();
+	await expect(card.getByRole('link', { name: 'Open in Plan view' })).toBeVisible();
 
 	// Moving the pointer away dismisses it.
 	await page.mouse.move(2, 2);

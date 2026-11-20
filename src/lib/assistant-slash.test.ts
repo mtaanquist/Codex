@@ -39,6 +39,23 @@ describe('matchSlash', () => {
 		expect(matchSlash('/w').map((c) => c.name)).toEqual(['write', 'who']);
 	});
 
+	it('puts the command named ahead of one that only has the word in its label', () => {
+		// /write is about drafting too, but /draft must not run it.
+		expect(matchSlash('/draft').map((c) => c.name)).toEqual(['draft', 'draft-chapter']);
+		expect(matchSlash('/dr').map((c) => c.name)).toEqual(['draft', 'draft-chapter']);
+		expect(matchSlash('/draft-chapter').map((c) => c.name)).toEqual(['draft-chapter']);
+		expect(matchSlash('/draft-')[0].name).toBe('draft-chapter');
+		// A name the query starts beats a label word it starts: "Switch model"
+		// is ahead of /summaries in the menu.
+		expect(matchSlash('/s')[0].name).toBe('summaries');
+		expect(matchSlash('/s').map((c) => c.name)).toContain('model');
+		expect(matchSlash('/re').map((c) => c.name)).toEqual([
+			'rewrite',
+			'review',
+			'continuity-review'
+		]);
+	});
+
 	it('lists every command for a bare slash on a story', () => {
 		expect(matchSlash('/')).toHaveLength(SLASH_COMMANDS.length);
 	});

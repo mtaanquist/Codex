@@ -1,5 +1,5 @@
 {
-	"id": "55903104-5674-4b70-ab8f-6fed1afae4d4",
+	"id": "df963570-5b16-4ddd-9fd6-6665eb7cd690",
 	"prevId": "bcc2a681-26d9-4b9d-9328-66446809f5e9",
 	"version": "7",
 	"dialect": "postgresql",
@@ -637,195 +637,6 @@
 					"value": "(\"assistant_chats\".\"story_id\" is null) <> (\"assistant_chats\".\"universe_id\" is null)"
 				}
 			},
-			"isRLSEnabled": false
-		},
-		"public.assistant_drafts": {
-			"name": "assistant_drafts",
-			"schema": "",
-			"columns": {
-				"id": {
-					"name": "id",
-					"type": "uuid",
-					"primaryKey": true,
-					"notNull": true,
-					"default": "gen_random_uuid()"
-				},
-				"user_id": {
-					"name": "user_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"story_id": {
-					"name": "story_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"chapter_id": {
-					"name": "chapter_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"scene_id": {
-					"name": "scene_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"position": {
-					"name": "position",
-					"type": "integer",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"brief": {
-					"name": "brief",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"target_words": {
-					"name": "target_words",
-					"type": "integer",
-					"primaryKey": false,
-					"notNull": true
-				},
-				"pov": {
-					"name": "pov",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"text_md": {
-					"name": "text_md",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "''"
-				},
-				"status": {
-					"name": "status",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "'pending'"
-				},
-				"note": {
-					"name": "note",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"job_id": {
-					"name": "job_id",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"created_at": {
-					"name": "created_at",
-					"type": "timestamp with time zone",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				},
-				"updated_at": {
-					"name": "updated_at",
-					"type": "timestamp with time zone",
-					"primaryKey": false,
-					"notNull": true,
-					"default": "now()"
-				}
-			},
-			"indexes": {
-				"assistant_drafts_story_idx": {
-					"name": "assistant_drafts_story_idx",
-					"columns": [
-						{
-							"expression": "story_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						},
-						{
-							"expression": "user_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
-				},
-				"assistant_drafts_open_scene_idx": {
-					"name": "assistant_drafts_open_scene_idx",
-					"columns": [
-						{
-							"expression": "user_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						},
-						{
-							"expression": "scene_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": true,
-					"where": "\"assistant_drafts\".\"status\" in ('pending', 'running', 'ready')",
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
-				}
-			},
-			"foreignKeys": {
-				"assistant_drafts_user_id_users_id_fk": {
-					"name": "assistant_drafts_user_id_users_id_fk",
-					"tableFrom": "assistant_drafts",
-					"tableTo": "users",
-					"columnsFrom": ["user_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				},
-				"assistant_drafts_story_id_stories_id_fk": {
-					"name": "assistant_drafts_story_id_stories_id_fk",
-					"tableFrom": "assistant_drafts",
-					"tableTo": "stories",
-					"columnsFrom": ["story_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				},
-				"assistant_drafts_chapter_id_chapters_id_fk": {
-					"name": "assistant_drafts_chapter_id_chapters_id_fk",
-					"tableFrom": "assistant_drafts",
-					"tableTo": "chapters",
-					"columnsFrom": ["chapter_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				},
-				"assistant_drafts_scene_id_scenes_id_fk": {
-					"name": "assistant_drafts_scene_id_scenes_id_fk",
-					"tableFrom": "assistant_drafts",
-					"tableTo": "scenes",
-					"columnsFrom": ["scene_id"],
-					"columnsTo": ["id"],
-					"onDelete": "cascade",
-					"onUpdate": "no action"
-				}
-			},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {},
-			"policies": {},
-			"checkConstraints": {},
 			"isRLSEnabled": false
 		},
 		"public.assistant_job_spend": {
@@ -3996,6 +3807,18 @@
 					"primaryKey": false,
 					"notNull": false
 				},
+				"follows_suggestion_id": {
+					"name": "follows_suggestion_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"reason": {
+					"name": "reason",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false
+				},
 				"status": {
 					"name": "status",
 					"type": "text",
@@ -4083,6 +3906,21 @@
 					"concurrently": false,
 					"method": "btree",
 					"with": {}
+				},
+				"review_suggestions_follows_idx": {
+					"name": "review_suggestions_follows_idx",
+					"columns": [
+						{
+							"expression": "follows_suggestion_id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false,
+					"concurrently": false,
+					"method": "btree",
+					"with": {}
 				}
 			},
 			"foreignKeys": {
@@ -4136,6 +3974,15 @@
 					"tableFrom": "review_suggestions",
 					"tableTo": "review_threads",
 					"columnsFrom": ["pattern_thread_id"],
+					"columnsTo": ["id"],
+					"onDelete": "set null",
+					"onUpdate": "no action"
+				},
+				"review_suggestions_follows_suggestion_id_review_suggestions_id_fk": {
+					"name": "review_suggestions_follows_suggestion_id_review_suggestions_id_fk",
+					"tableFrom": "review_suggestions",
+					"tableTo": "review_suggestions",
+					"columnsFrom": ["follows_suggestion_id"],
 					"columnsTo": ["id"],
 					"onDelete": "set null",
 					"onUpdate": "no action"

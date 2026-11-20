@@ -68,18 +68,36 @@ export type SceneDraftEstimate = {
 	// Prompt tokens: the persona, the world and the neighbouring scenes, and the
 	// brief.
 	estTokens: number;
-	// What the scene is expected to take to write.
+	// What the scene is expected to take to write. When the model may think,
+	// thinking is billed as reply tokens too and can fill the reply limit, so
+	// this is the limit itself: the most the reply can cost.
 	estCompletionTokens: number;
+	// estCompletionTokens (and so the price) is an upper figure, not an
+	// expectation.
+	estCompletionUpTo?: boolean;
 	// Present only when the model has a price.
 	estCostUsd?: number;
 	capUsd?: number;
+	// False when the model has no price, so a cap that is set cannot be applied.
+	capEnforceable: boolean;
+	// The spend the writer asked to be warned above.
+	warnUsd: number;
 	// The estimate is over the spend cap, so the draft is not run.
 	overCap: boolean;
-	// The reply length set for this role, or the model's context window, is
-	// shorter than the draft needs, so the scene would stop at about this many
-	// words.
+	// The reply limit is shorter than the draft needs, so the scene would stop
+	// at about this many words.
 	limitedToWords?: number;
+	// What sets that limit: the reply length the writer set for Write, or the
+	// model's context window.
+	limitedBy?: 'setting' | 'window';
 };
+
+// What to do about an estimate over the spend cap, as the card and the
+// server's refusal both say it.
+export const SCENE_CAP_ADVICE =
+	'Ask for a shorter scene, or raise the cap under Account, Assistant.';
+export const CHAPTER_CAP_ADVICE =
+	'Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.';
 
 // What the brief form opens with.
 export type SceneDraftDefaults = {

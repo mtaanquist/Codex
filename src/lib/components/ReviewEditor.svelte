@@ -85,7 +85,7 @@
 		entities: MentionEntity[];
 		mentionMembers: string[];
 		mentionPins: Record<string, string>;
-		// Where a mention's hover card points for full details; null for reviewers.
+		// Where a mention's hover card links to Plan view; null for reviewers.
 		entityHref: ((entity: MentionEntity) => string) | null;
 		onStartComment: (sel: { start: number; end: number; text: string }) => void;
 		onStartSuggest: (sel: { start: number; end: number; text: string }) => void;
@@ -459,7 +459,7 @@
 					mentionExtensions(entities, {
 						storyMembers: mentionMembers,
 						pins: mentionPins,
-						// The hover card's full-details link resolves the entity back to its
+						// The hover card's Plan view link resolves the entity back to its
 						// page; reviewers get no link.
 						entityHref: entityHref
 							? (ref) => {
