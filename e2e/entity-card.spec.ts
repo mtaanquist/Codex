@@ -37,7 +37,11 @@ test('entity card: open from a mention, then back to the tabs', async ({ page })
 	// Hover the mention and open its full details: the card takes over the
 	// right column.
 	await mention.hover();
-	const openLink = page.getByText('Open full details');
+	await expect(page.locator('.entity-card .pop-footer a.pop-link')).toHaveAttribute(
+		'href',
+		/\/stories\/[^/]+\/plan\?entity=/
+	);
+	const openLink = page.getByRole('button', { name: 'Open full details' });
 	await expect(openLink).toBeVisible();
 	await openLink.click();
 

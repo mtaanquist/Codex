@@ -98,7 +98,7 @@ Select a word or phrase and right-click it for a small menu. The top row formats
 
 When you write the name of a character, place, or lore entry the universe already knows, the editor recognises it and underlines it in that entry's colour. Hover the underline to see a short summary and the entry's first few details without leaving the page.
 
-For the full picture, select "Open full details" on that hover, or click an entry in the "In this scene" list on the right. A read-only card takes over the right column with the summary, description, relationships, and details. Click a related entry to follow it in the same card, Back to step back, and "Open in Plan view" to edit the entry.
+For the full picture, select "Open full details" on that hover, or click an entry in the "In this scene" list on the right. A read-only card takes over the right column with the summary, description, relationships, and details. Click a related entry to follow it in the same card, Back to step back, and "Open in Plan view" to edit the entry. To go straight to editing, select "Open in Plan view" on the hover instead.
 
 When two entries share a name, the editor picks one: whoever is declared in the story first, then characters before places before lore. Such a mention gets a dotted underline; hover it to see the alternatives, and pick one to make that the meaning of the name everywhere in this story.
 

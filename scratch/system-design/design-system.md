@@ -430,7 +430,9 @@ primitive's own class too, but do not copy the pattern.
   tints the hover for a destructive action. Defined in `theme.css`; also
   styles `a.icon-btn`. There are two icon sizes and no third.
 - Scoped exceptions that stay: `.md-tool` (editor toolbar), `.seg-btn`
-  (segmented strips).
+  (segmented strips), `.pop-link` (the text links in an entity hover card's
+  `.pop-footer`, below a divider; "Open full details" there is a button
+  styled the same, since it opens the sidebar card rather than a page).
 - An icon-only button always carries an `aria-label` (`src/lib/icon-buttons.test.ts`
   fails the build on one without). The formatting bar is a `role="toolbar"`
   with one tab stop and arrow keys between tools (`#lib/toolbar`).

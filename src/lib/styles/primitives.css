@@ -17,6 +17,7 @@
 .scene-row:focus-visible,
 .chapter-row:focus-visible,
 .chip-x:focus-visible,
+.pop-link:focus-visible,
 .modal-panel:focus-visible,
 .toggle input:focus-visible + .toggle-track {
 	outline: 2px solid var(--accent);

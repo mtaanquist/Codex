@@ -46,7 +46,7 @@
 		entities: MentionEntity[];
 		mentionMembers: string[];
 		mentionPins: Record<string, string>;
-		// Where "Open full details" points; absent for reviewers, who never reach
+		// Where the quick card's "Open in Plan view" link points; absent for reviewers, who never reach
 		// the full entity.
 		entityHref: ((entity: MentionEntity) => ResolvedPathname) | null;
 		onStartComment: (sel: { start: number; end: number; text: string }) => void;

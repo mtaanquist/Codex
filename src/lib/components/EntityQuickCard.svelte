@@ -6,7 +6,7 @@
 
 	// The read-only quick card shown when a mention is clicked in the review
 	// surface - the same fields the editor's hover card shows, never the full
-	// entity. The "Open full details" link appears only when a href is given
+	// entity. The "Open in Plan view" link appears only when a href is given
 	// (the author's own review); a guest never gets one.
 	let { entity, href = null }: { entity: MentionEntity; href?: ResolvedPathname | null } = $props();
 
@@ -56,6 +56,8 @@
 		</div>
 	{/if}
 	{#if href}
-		<a class="btn btn-primary" {href}>Open full details</a>
+		<div class="pop-footer">
+			<a class="pop-link" {href}>Open in Plan view</a>
+		</div>
 	{/if}
 </div>
