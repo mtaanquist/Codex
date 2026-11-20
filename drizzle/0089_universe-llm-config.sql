@@ -1,0 +1,1 @@
+ALTER TABLE "universes" ADD COLUMN "llm_config" jsonb DEFAULT '{}'::jsonb NOT NULL;

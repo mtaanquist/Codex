@@ -1,6 +1,6 @@
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
-import { stories, users } from '../db/schema.ts';
+import { stories, universes, users } from '../db/schema.ts';
 import { decryptSecret, encryptSecret, secretsAvailable } from '../crypto.ts';
 import { normaliseAssistantName, normalisePersona, type Persona } from './prompts/persona.ts';
 import {
@@ -400,6 +400,46 @@ async function storyOverride(db: Database, storyId: string): Promise<StoredStory
 	return normaliseOverride((row?.llmConfig ?? {}) as Record<string, unknown>);
 }
 
+// What a request is about, for the settings that can differ by universe and
+// story. A story brings its own universe; universeId is for work with no one
+// story (a universe chat, a pass over a universe's entries, a character arc).
+export type LlmScope = { storyId?: string; universeId?: string };
+
+// The models chosen on the universe and on the story, each empty when nothing
+// is set there. The universe is the story's own when a story is given. Only
+// the user's own universe counts.
+export async function scopeModels(
+	db: Database,
+	userId: string,
+	scope: LlmScope
+): Promise<{ universe: ModelMap; story: ModelMap }> {
+	let story: ModelMap = {};
+	let universeId = scope.universeId;
+	if (scope.storyId) {
+		const [row] = await db
+			.select({ llmConfig: stories.llmConfig, universeId: stories.universeId })
+			.from(stories)
+			.where(eq(stories.id, scope.storyId));
+		story = normaliseModels((row?.llmConfig as Record<string, unknown> | undefined)?.models);
+		universeId = row?.universeId;
+	}
+	if (!universeId) return { universe: {}, story };
+	const [row] = await db
+		.select({ llmConfig: universes.llmConfig })
+		.from(universes)
+		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
+	return {
+		universe: normaliseModels((row?.llmConfig as Record<string, unknown> | undefined)?.models),
+		story
+	};
+}
+
+// The most specific choice wins, role by role: the story's, then the
+// universe's, then the account's. A role's tuning stays the account's.
+export function layerModels(account: ModelMap, universe: ModelMap, story: ModelMap): ModelMap {
+	return { ...account, ...universe, ...story };
+}
+
 // What the gateway runs with: the account config merged with the story override
 // (story models win, the override can only mute), the key decrypted. The key is
 // plaintext here and must not leave the server.
@@ -434,13 +474,17 @@ export type Resolved = {
 	config: ResolvedConfig;
 };
 
+// scope is a story id, or a story and/or a universe (see LlmScope).
 export async function resolveLlmConfig(
 	db: Database,
 	userId: string,
-	storyId?: string
+	scope?: string | LlmScope
 ): Promise<Resolved> {
+	const where: LlmScope = typeof scope === 'string' ? { storyId: scope } : (scope ?? {});
+	const storyId = where.storyId;
 	const account = await accountLlmConfig(db, userId);
 	const override = storyId ? await storyOverride(db, storyId) : undefined;
+	const chosen = await scopeModels(db, userId, where);
 	const gate = assistantGate(account, override);
 	return {
 		gate,
@@ -450,7 +494,7 @@ export async function resolveLlmConfig(
 			provider: account.provider,
 			endpoint: account.endpoint,
 			apiKey: account.apiKeyEnc ? decryptSecret(account.apiKeyEnc) : '',
-			models: { ...account.models, ...(override?.models ?? {}) },
+			models: layerModels(account.models, chosen.universe, chosen.story),
 			tuning: account.tuning,
 			extraParams: account.extraParams,
 			webSearch: account.webSearch,
@@ -790,6 +834,21 @@ export async function saveAccountLlmConfig(
 	return { ok: true };
 }
 
+// Replaces the models chosen for a universe; an empty map clears them, so the
+// universe runs on the account's again. The caller checks ownership.
+export async function saveUniverseModels(
+	db: Database,
+	universeId: string,
+	models: ModelMap
+): Promise<void> {
+	const clean = normaliseModels(models);
+	const expression: SQL =
+		Object.keys(clean).length > 0
+			? sql`${universes.llmConfig} || ${JSON.stringify({ models: clean })}::jsonb`
+			: sql`${universes.llmConfig} - 'models'`;
+	await db.update(universes).set({ llmConfig: expression }).where(eq(universes.id, universeId));
+}
+
 // Sets or clears a story's override: a value writes the key, null removes it so
 // the story falls back to the account again (the saveStoryPreferences pattern).
 // enabled can only be false (mute) or null (clear); a story cannot turn the
@@ -803,8 +862,9 @@ export async function saveStoryLlmOverride(
 	const clear: string[] = [];
 	if (patch.enabled === null) clear.push('enabled');
 	else if (patch.enabled === false) set.enabled = false;
-	if (patch.models === null) clear.push('models');
-	else if (patch.models) set.models = normaliseModels(patch.models);
+	const models = patch.models ? normaliseModels(patch.models) : undefined;
+	if (patch.models === null || (models && Object.keys(models).length === 0)) clear.push('models');
+	else if (models) set.models = models;
 
 	let expression: SQL = sql`${stories.llmConfig} || ${JSON.stringify(set)}::jsonb`;
 	for (const key of clear) {

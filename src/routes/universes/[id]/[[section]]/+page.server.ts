@@ -17,6 +17,8 @@ import { listUserExports, markExportFailed, requestExport } from '#lib/server/us
 import { queueUserExport } from '#lib/server/jobs';
 import { exportLimit } from '#lib/server/rate-limit';
 import { formText } from '#lib/server/validation';
+import { assistantLayout, saveUniverseModels } from '#lib/server/llm/config';
+import { modelsFromForm, scopeModelSettings } from '#lib/server/llm/scope-models';
 
 // The uploaded file, parsed into a plan: a Codex export zip, or a Word/EPUB
 // manuscript by its extension. Returns a fail() the action passes straight back.
@@ -41,16 +43,26 @@ async function planFromUpload(data: FormData) {
 export const load: PageServerLoad = async ({ params, locals }) => {
 	// Details rests on /universes/<slug> itself; the other sections have
 	// their own page.
-	if (params.section !== undefined && !['categories', 'history', 'export'].includes(params.section))
+	if (
+		params.section !== undefined &&
+		!['categories', 'assistant', 'history', 'export'].includes(params.section)
+	)
 		error(404, 'Not found');
 	const universe = await ownedUniverse(params.id, locals.user!.id);
-	const [contents, categories, timeline, revisionCount] = await Promise.all([
+	const [contents, categories, timeline, revisionCount, assistant] = await Promise.all([
 		universeContents(db, universe.id),
 		listCategories(db, universe.id),
 		universeTimeline(db, universe.id, 100),
-		universeRevisionCount(db, universe.id)
+		universeRevisionCount(db, universe.id),
+		assistantLayout(db, locals.user!.id)
 	]);
+	// The section shows only with the Assistant set up, so its page does too.
+	if (params.section === 'assistant' && !assistant.tabEnabled) error(404, 'Not found');
 	return {
+		// The model pickers of the Assistant section; null hides the section.
+		assistantModels: assistant.tabEnabled
+			? await scopeModelSettings(db, locals.user!.id, { universeId: universe.id })
+			: null,
 		universe,
 		contents,
 		categories,
@@ -148,6 +160,11 @@ export const actions: Actions = {
 		);
 		if (!result.ok) return fail(400, { action: 'categories', message: result.reason });
 		return { action: 'categories', saved: true };
+	},
+	saveAssistantModels: async ({ request, params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		await saveUniverseModels(db, universe.id, modelsFromForm(await request.formData()));
+		return { action: 'assistant-models' as const, saved: true };
 	},
 	delete: async ({ params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);

@@ -206,6 +206,8 @@ export async function summariseCharacterArc(
 			db,
 			{
 				userId,
+				// An arc reads across the universe, so it runs on its models.
+				universeId: character.universeId,
 				role: 'utility',
 				enableTools: false,
 				messages,

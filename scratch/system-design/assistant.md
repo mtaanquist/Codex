@@ -204,6 +204,16 @@ this. They exist now and are inert (`{}`) in v1.
   "use my account setting" clears the override by deleting the jsonb key. A
   per-story override never overrides the account kill switch upward - account
   off is dark everywhere.
+- `universes.llm_config` holds `{ models }` only (#1266). Models resolve role
+  by role, most specific first: story, then the story's universe, then the
+  account (`scopeModels`, `layerModels`, `resolveLlmConfig(db, userId,
+  scope)` where scope is a story id or `{ storyId?, universeId? }`). Work
+  with no one story (universe chat, `/enrich`, the library's "Suggest
+  details", character arcs, universe continuity) passes the universe. A
+  role's tuning, the endpoint, the key, prices and context windows stay the
+  account's. Both levels are set from an Assistant section on the universe's
+  and the story's settings (`ScopeModels.svelte`), shown once the Assistant
+  is set up; the mute stays per story.
 
 Configuration lives in the account settings (a new Assistant section) and,
 for the per-story pieces, in story settings next to the existing editor
@@ -901,10 +911,6 @@ context assembly and the cross-scene pass read them.
 - The tool loop shape for write tools: a constrained propose-once/stage
   (leaned to above) versus a full agentic loop (also viable, especially for
   read-heavy Q&A). The two can coexist - read tools loop, write tools stage.
-- Whether model selection should also be overridable per universe, not only
-  per account and per story (you arguably pick a model for a whole world's
-  voice). A separate question from the tool budget; would add a third merge
-  layer and a universe-level column.
 Settled here, recorded so it is not re-litigated:
 
 - Context-aware grammar and spell-check route through the Assistant's editor
@@ -1034,6 +1040,9 @@ calls the gateway, which proxies through the egress guard.
   - `enabled: false` mutes this story, `null` clears the override (back to the
   account default). A story can only subtract.
 - [built] The mute control on the Assistant tab.
+- [built] Model pickers per story and per universe (#1266):
+  `saveUniverseModels`, the `saveAssistantModels` action on both settings
+  pages, and `GET /api/assistant/models?universeId=` for the list.
 
 ### Chat (the Assistant tab) - sequencing step 2
 

@@ -109,7 +109,7 @@ contacts a model on its own.
   picked; see the list below. Roles with no model chosen fall back to the model
   you picked for Rubber duck. With Claude, a role uses its suggested model when
   neither it nor Rubber duck has one picked, so Test connection works as soon as
-  the key is in. A single story can override these too. When the list is long, type part of a name in the filter box
+  the key is in. A universe or a story can choose its own models; see "Models for one universe or story" below. When the list is long, type part of a name in the filter box
   to narrow it; models you already picked always stay listed. If your endpoint
   publishes prices (OpenRouter does), each model shows what it costs per million
   tokens sent and received. Next to each role, Tune opens a window holding the
@@ -270,6 +270,27 @@ so they answer far faster than their size suggests, as long as they fit in
 memory. A dense model (search for "32B instruct GGUF") uses every parameter for
 every word: slower than a mixture-of-experts model of the same size, but
 steadier at close reading.
+
+### Models for one universe or story
+
+A universe or a story can use different models from your account. For example,
+you can give one long story a model that takes more text at once.
+
+1. Open the universe's settings, or the story's settings, and select
+   "Assistant". The section shows once the Assistant is set up on this page.
+2. For each kind of work, choose a model, or leave the row on "Default". A
+   "Default" row names the model it will use.
+3. Your choice saves as soon as you make it.
+
+The most specific choice is used: the story's, then the universe's, then your
+account's. Work that covers a whole universe, such as a universe chat, `/enrich`
+or a character arc, uses the universe's models. To go back, set the row to
+"Default" again.
+
+The other settings for a kind of work (reply length, temperature, thinking),
+prices and context windows stay the ones on this page. If a model you choose for
+a universe or story has no context window listed, add it under "Context window"
+above.
 
 ## Display
 

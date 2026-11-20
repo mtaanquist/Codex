@@ -231,11 +231,7 @@ export async function entityExcerpts(
 
 // The model a text read runs on and the text each request may carry.
 export async function enrichTextBudget(db: Database, userId: string, scope: Scope) {
-	const resolved = await resolveLlmConfig(
-		db,
-		userId,
-		'storyId' in scope ? scope.storyId : undefined
-	);
+	const resolved = await resolveLlmConfig(db, userId, scope);
 	const model = pickModel(resolved.config, 'utility');
 	const contextWindow = modelContextWindow(resolved.config, 'utility');
 	// The larger of what the read asks for and what the gateway may raise it to

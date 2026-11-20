@@ -422,7 +422,7 @@ async function runConsistencyPass(
 	deps: GatewayDeps = {}
 ): Promise<ConsistencyPassResult> {
 	const story = 'storyId' in opts.scope ? opts.scope.storyId : undefined;
-	const resolved = await resolveLlmConfig(db, opts.userId, story);
+	const resolved = await resolveLlmConfig(db, opts.userId, opts.scope);
 	const budgetTokens = surveyBudgetTokens(modelContextWindow(resolved.config, 'reviewer'));
 
 	const context = story

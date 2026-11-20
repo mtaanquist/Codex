@@ -87,6 +87,9 @@ const reviewRoute = await import('../../src/routes/api/assistant/review/+server'
 const recapRoute = await import('../../src/routes/api/assistant/recap/+server');
 const enrichRoute = await import('../../src/routes/api/assistant/enrich/+server');
 const adminPage = await import('../../src/routes/admin/[[section]]/+page.server');
+const universeSettings = await import('../../src/routes/universes/[id]/[[section]]/+page.server');
+const storySettings =
+	await import('../../src/routes/stories/[id]/settings/[[section]]/+page.server');
 
 type TestUser = { id: string; email: string; role: 'user' | 'admin' };
 type Seed = Awaited<ReturnType<typeof seed>>;
@@ -749,6 +752,45 @@ describe('assistant routes refuse another user', () => {
 			}
 		}
 	});
+});
+
+describe('Assistant models on a universe and a story', () => {
+	function picks() {
+		const form = new FormData();
+		form.set('utility', 'big-local');
+		return form;
+	}
+	const cases = [
+		{
+			name: 'universe',
+			action: () => universeSettings.actions.saveAssistantModels,
+			id: () => s.universeA.id,
+			stored: async () =>
+				(await db.select().from(universes).where(eq(universes.id, s.universeA.id)))[0].llmConfig
+		},
+		{
+			name: 'story',
+			action: () => storySettings.actions.saveAssistantModels,
+			id: () => s.storyA.id,
+			stored: async () =>
+				(await db.select().from(stories).where(eq(stories.id, s.storyA.id)))[0].llmConfig
+		}
+	];
+	for (const c of cases) {
+		it(`a ${c.name}'s models are saved by its owner and by no one else`, async () => {
+			await expectRefused(
+				c.action() as Handler,
+				event(B, { params: { id: c.id() }, form: picks() })
+			);
+			expect(await c.stored()).toEqual({});
+
+			const result = await (c.action() as (ev: never) => Promise<unknown>)(
+				event(A, { params: { id: c.id() }, form: picks() }) as never
+			);
+			expect(result).toMatchObject({ saved: true });
+			expect(await c.stored()).toEqual({ models: { utility: 'big-local' } });
+		});
+	}
 });
 
 describe('admin actions refuse a non-admin', () => {

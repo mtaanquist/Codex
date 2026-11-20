@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ROLE_META } from '#lib/assistant-roles';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { withQuery } from '#lib/href';
@@ -17,42 +18,6 @@
 
 	// The Assistant's kill switch reads inverted: engaged (checked) means off.
 	const assistantOff = $derived(!data.assistant.enabled);
-
-	// Per-role model rows. The ids match the Assistant roles the gateway resolves
-	// a model for; the copy is presentational. Which model to pick comes from the
-	// provider's guide in the page data; tip is advice that holds on any model.
-	const ROLE_META = [
-		{
-			id: 'chat',
-			name: 'Rubber duck',
-			hint: 'Conversational side panel. Best with a smart, chatty model.',
-			tip: ''
-		},
-		{
-			id: 'coauthor',
-			name: 'Co-author',
-			hint: 'Generates passages you can insert or edit. Prefer strong prose quality.',
-			tip: ''
-		},
-		{
-			id: 'continuation',
-			name: 'Continuation',
-			hint: 'Inline ghost-text suggestions. Fast and light is what matters.',
-			tip: 'Turn thinking off.'
-		},
-		{
-			id: 'reviewer',
-			name: 'Reviewer',
-			hint: 'Reads a draft and leaves suggested edits in your name.',
-			tip: 'Set a low temperature; thinking is optional.'
-		},
-		{
-			id: 'utility',
-			name: 'Background work',
-			hint: 'Summaries, suggested entity details, and recaps. Runs while you work.',
-			tip: 'Turn thinking off.'
-		}
-	] as const;
 
 	// The model dropdowns offer whatever the last discovery returned, unioned with
 	// any model already chosen, so a saved pick always shows even before a refresh.
@@ -717,8 +682,8 @@
 			<header class="settings-group-header">
 				<h2 class="settings-group-title">Models per role</h2>
 				<p class="settings-group-subtitle">
-					Different tasks benefit from different models. Individual stories can override these
-					defaults.
+					Different tasks benefit from different models. A universe or a story can choose its own in
+					its settings.
 				</p>
 			</header>
 			<form

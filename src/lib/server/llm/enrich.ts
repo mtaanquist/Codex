@@ -315,7 +315,7 @@ export async function enrichEntityFromText(
 				db,
 				{
 					userId: opts.userId,
-					storyId: 'storyId' in opts.scope ? opts.scope.storyId : undefined,
+					...opts.scope,
 					role: 'utility',
 					enableTools: false,
 					messages: [{ role: 'user', content }],
@@ -483,9 +483,9 @@ async function enrichRead(
 		db,
 		{
 			userId: opts.userId,
-			// A story scope carries its mute and model override; the universe
-			// scope runs on the account settings.
-			storyId: 'storyId' in opts.scope ? opts.scope.storyId : undefined,
+			// A story scope carries its mute and its models; the universe scope
+			// carries the universe's models.
+			...opts.scope,
 			role: 'utility',
 			enableTools: false,
 			messages,
