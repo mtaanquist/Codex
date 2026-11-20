@@ -113,6 +113,12 @@ describe('scene touched_at', () => {
 		expect(new Date(await editedAt()).toISOString()).toBe('2026-01-04T00:00:00.000Z');
 	});
 
+	it('does not move the story card time backwards when the newest scene is trashed', async () => {
+		const before = new Date(await editedAt()).getTime();
+		expect(await trashScene(db, ownerId, firstId)).toBe(true);
+		expect(new Date(await editedAt()).getTime()).toBeGreaterThanOrEqual(before);
+	});
+
 	it('counts the trash and a restore as a change', async () => {
 		expect(await trashScene(db, ownerId, secondId)).toBe(true);
 		expect(await restoreScene(db, ownerId, secondId)).toBe(true);
