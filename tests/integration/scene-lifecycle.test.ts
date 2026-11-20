@@ -22,7 +22,6 @@ import {
 	deleteChapter,
 	destroyScene,
 	listTrashedScenes,
-	markChapterSummariesStale,
 	markEntitiesStale,
 	markMentionsStale,
 	moveChapter,
@@ -421,23 +420,6 @@ describe('marking entities stale', () => {
 		await seedPair();
 		const free = await highFreeWhileBlocked((tx) =>
 			markMentionsStale(tx, { sceneIds: [s1] }, { enrich: true })
-		);
-		expect(free).toBe(true);
-	});
-
-	it('locks chapters lowest id first when marking their summaries', async () => {
-		// The higher id first, so a scan in table order meets it first.
-		for (const [id, position] of [
-			[HIGH, 3],
-			[LOW, 4]
-		] as const) {
-			await db
-				.insert(chapters)
-				.values({ id, storyId, position, summaryMd: 'S', summaryGeneratedAt: new Date() });
-		}
-		const free = await highFreeWhileBlocked(
-			(tx) => markChapterSummariesStale(tx, [HIGH, LOW]),
-			'chapters'
 		);
 		expect(free).toBe(true);
 	});

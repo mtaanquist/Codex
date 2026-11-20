@@ -66,6 +66,10 @@ import {
 } from '../../src/lib/server/mentions';
 import { summaryIsCurrent } from '../../src/lib/server/summary-currency';
 import {
+	chapterSummaryRequest,
+	generatedChapterSummaryIsCurrent
+} from '../../src/lib/server/llm/chapter-summary-request';
+import {
 	buildChapterSummaryMessage,
 	buildSceneSummaryMessage
 } from '../../src/lib/server/llm/prompts/summary';
@@ -815,7 +819,7 @@ async function chapterStates() {
 			title: chapters.title,
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
-			updatedAt: chapters.updatedAt
+			summaryInput: chapters.summaryInput
 		})
 		.from(chapters)
 		.innerJoin(stories, eq(stories.id, chapters.storyId))
@@ -837,7 +841,13 @@ async function chapterStates() {
 			// A chapter with no scene summaries is passed over, not refreshed.
 			input: summaries.length ? buildChapterSummaryMessage(chapter.title, summaries) : null,
 			generated: chapter.summaryGeneratedAt !== null,
-			stale: !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
+			stale: !generatedChapterSummaryIsCurrent(
+				chapter,
+				chapterSummaryRequest(
+					chapter.title,
+					sceneRows.map((s) => s.summaryMd)
+				)
+			)
 		});
 	}
 	return out;
@@ -940,7 +950,6 @@ async function entityStates(): Promise<EntityState[]> {
 		});
 	return out;
 }
-
 
 // The passages of each entity's last enrich read, taken when its stored
 // fingerprint matched. A trash or mute only takes passages away, and by design

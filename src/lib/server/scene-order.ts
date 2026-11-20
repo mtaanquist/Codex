@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { chapters, scenes } from './db/schema';
-import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
+import { markMentionsStale } from './scene-lifecycle.ts';
 import { lockStoryScenes } from './row-locks.ts';
 
 export type SceneOrder = {
@@ -134,22 +134,9 @@ async function applyLocked(
 			.map((row) => row.id);
 		const moved = movedScenes(was, ids);
 		// A scene dropped into another chapter was moved too, even when its
-		// reading order stays the same. Both chapters now hold different scenes.
+		// reading order stays the same.
 		const chapterWas = new Map(sceneRows.map((row) => [row.id, row.chapterId]));
-		const rechaptered: string[] = [];
-		const chaptersChanged = new Set<string>();
-		ids.forEach((id, i) => {
-			const from = chapterWas.get(id) ?? null;
-			if (from === targetChapters[i]) return;
-			rechaptered.push(id);
-			for (const chapter of [from, targetChapters[i]]) if (chapter) chaptersChanged.add(chapter);
-		});
-		// A chapter summary reads its scenes in order, so a reorder inside one
-		// chapter changes it too.
-		for (const chapter of order.chapters) {
-			const before = was.filter((id) => chapterWas.get(id) === chapter.id);
-			if (before.join() !== chapter.sceneIds.join()) chaptersChanged.add(chapter.id);
-		}
+		const rechaptered = ids.filter((id, i) => (chapterWas.get(id) ?? null) !== targetChapters[i]);
 		// Only what the writer moved counts as a change; the scenes it shifted
 		// keep their touched_at.
 		const touched = [...new Set([...moved, ...rechaptered])];
@@ -173,7 +160,6 @@ async function applyLocked(
 		// Arcs retell the character's scenes in reading order. Only what a
 		// moved scene mentions can read in a new order.
 		await markMentionsStale(tx, { sceneIds: moved });
-		await markChapterSummariesStale(tx, [...chaptersChanged]);
 	}
 	return { ok: true };
 }

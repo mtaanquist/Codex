@@ -21,7 +21,6 @@ import {
 } from './db/schema.ts';
 import type { ActionFailure } from './action-result.ts';
 import { recordRevision } from './revisions.ts';
-import { markChapterSummariesStale } from './scene-lifecycle.ts';
 import { lockStoryScenes } from './row-locks.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { uniqueSlug } from './slugs.ts';
@@ -132,7 +131,7 @@ export async function workingOutline(
 			title: chapters.title,
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
-			updatedAt: chapters.updatedAt
+			summaryInput: chapters.summaryInput
 		})
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId))
@@ -158,10 +157,9 @@ export async function workingOutline(
 		.where(and(eq(scenes.storyId, storyId), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
 	return {
-		chapters: chapterRows.map(({ updatedAt, ...row }) => ({
+		chapters: chapterRows.map((row) => ({
 			...row,
-			summaryGeneratedAt: row.summaryGeneratedAt?.toISOString() ?? null,
-			summaryCurrent: summaryIsCurrent(row.summaryGeneratedAt, updatedAt)
+			summaryGeneratedAt: row.summaryGeneratedAt?.toISOString() ?? null
 		})),
 		scenes: sceneRows.map(({ updatedAt, ...row }) => ({
 			...row,
@@ -630,9 +628,6 @@ export async function restoreDraftScene(
 			})
 			.returning({ id: scenes.id });
 		await recordRevision(tx, 'scene', created.id, saved.bodyMd, 'restore', { label });
-		// The added scene's summary may be current, but its chapter now holds
-		// one more scene.
-		if (chapterId) await markChapterSummariesStale(tx, [chapterId]);
 		return { ok: true as const, sceneId: created.id, created: true };
 	});
 }
@@ -715,7 +710,12 @@ export async function newStoryFromDraft(
 						storyId: created.id,
 						title: chapter.title,
 						summaryMd: chapter.summaryMd,
-						summaryGeneratedAt: copiedStamp(chapter, stamp),
+						// With its fingerprint, so it is current exactly when the scenes
+						// below carry the summaries it was written from.
+						summaryGeneratedAt: chapter.summaryGeneratedAt
+							? new Date(chapter.summaryGeneratedAt)
+							: null,
+						summaryInput: chapter.summaryInput ?? null,
 						updatedAt: stamp,
 						position: index + 1
 					})

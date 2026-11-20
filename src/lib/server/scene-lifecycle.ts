@@ -107,40 +107,16 @@ export async function trashScene(db: Database, userId: string, sceneId: string):
 	const scene = await ownedScene(db, userId, sceneId);
 	if (!scene) return false;
 	await db.transaction(async (tx) => {
-		// The chapter as of the trash itself, not the read above: a move can
-		// land in between.
-		const [trashed] = await tx
+		await tx
 			.update(scenes)
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
-			.where(eq(scenes.id, scene.id))
-			.returning({ chapterId: scenes.chapterId });
+			.where(eq(scenes.id, scene.id));
 		await markMentionsStale(tx, { sceneIds: [scene.id] });
-		await markChapterSummariesStale(tx, trashed?.chapterId ? [trashed.chapterId] : []);
 		await tx
 			.delete(entityMentions)
 			.where(and(eq(entityMentions.sourceType, 'scene'), eq(entityMentions.sourceId, scene.id)));
 	});
 	return true;
-}
-
-/** Marks these chapters' Assistant summaries out of date, for a change to
- * which scenes they hold that leaves every scene's own summary current (the
- * trash, a restore). The stamp goes behind updated_at, so the next pass
- * rewrites the summary, and moves on every mark, so a pass already writing
- * from the old scenes does not save over it. A summary the writer wrote (no
- * stamp) is left alone. */
-export async function markChapterSummariesStale(tx: Database, chapterIds: string[]) {
-	if (!chapterIds.length) return;
-	// Lowest id first, the order moveChapter and deleteChapter lock in before
-	// they renumber, so a mark over several chapters cannot deadlock with them.
-	await tx.execute(
-		sql`select id from chapters where id in ${chapterIds} order by id for no key update`
-	);
-	await tx.execute(sql`
-		update chapters
-		set summary_generated_at = least(summary_generated_at, updated_at) - interval '1 millisecond'
-		where id in ${chapterIds} and summary_generated_at is not null
-	`);
 }
 
 /** A watermark before this is a mark set by markStale below, not a time an
@@ -283,7 +259,6 @@ export async function restoreScene(
 				globalPosition: sql`(select coalesce(max(${scenes.globalPosition}), 0) + 1 from ${scenes} where ${scenes.storyId} = ${scene.storyId})`
 			})
 			.where(eq(scenes.id, scene.id));
-		if (chapterId) await markChapterSummariesStale(tx, [chapterId]);
 		return true;
 	});
 }
@@ -366,8 +341,7 @@ export async function renameChapter(
 	return true;
 }
 
-// A chapter's place in the story is not part of what its Assistant summary
-// reads, so renumbering leaves updated_at alone and the summary current.
+// Renumbering is not an edit to the chapter, so it leaves updated_at alone.
 function keepChapterUpdatedAt() {
 	return { updatedAt: sql`${chapters.updatedAt}` };
 }

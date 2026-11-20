@@ -259,8 +259,12 @@ export const chapters = pgTable(
 		summaryMd: text('summary_md'),
 		// When the Assistant last generated this summary. Null means it was never
 		// auto-generated (so a non-null summary here is the writer's own and is never
-		// overwritten). See scenes.summary_generated_at.
+		// overwritten). Unlike a scene's, it is not compared with updated_at.
 		summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
+		// The fingerprint of the request the Assistant's summary was written from
+		// (see llm/chapter-summary-request.ts). The summary is out of date when
+		// the request that would be sent now has a different one, or none is stored.
+		summaryInput: text('summary_input'),
 		metadata: jsonb('metadata').notNull().default({}),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()

@@ -21,6 +21,7 @@ import {
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { arcRequest } from '../../src/lib/server/llm/arc-request';
+import { chapterSummaryRequest } from '../../src/lib/server/llm/chapter-summary-request';
 
 const { assembleContext, assembleRecapContext, assembleSceneDelta, assembleStoryFrame } =
 	await import('../../src/lib/server/llm/context/assemble');
@@ -220,6 +221,32 @@ describe('assembleContext', () => {
 				.set({ establishedSetting: false })
 				.where(eq(universes.id, universeId));
 		}
+	});
+
+	it('leaves out a chapter summary the Assistant wrote once it is out of date', async () => {
+		const assemble = async () =>
+			(await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id }))!.text;
+		// The writer's own summary always stands.
+		expect(await assemble()).toContain('They go under.');
+
+		// The Assistant's, stored with the fingerprint of what it read.
+		const request = chapterSummaryRequest('Descent', [
+			'Alice and Bram meet.',
+			'A calm walk south.'
+		]);
+		await db
+			.update(chapters)
+			.set({ summaryGeneratedAt: new Date(), summaryInput: request!.input })
+			.where(eq(chapters.storyId, storyId));
+		expect(await assemble()).toContain('They go under.');
+
+		await db.update(scenes).set({ summaryMd: 'A storm.' }).where(eq(scenes.id, scene2Id));
+		expect(await assemble()).not.toContain('They go under.');
+
+		// One from before fingerprints were stored is out of date too.
+		await db.update(scenes).set({ summaryMd: 'A calm walk south.' }).where(eq(scenes.id, scene2Id));
+		await db.update(chapters).set({ summaryInput: null }).where(eq(chapters.storyId, storyId));
+		expect(await assemble()).not.toContain('They go under.');
 	});
 
 	it('leaves out an arc that is out of date', async () => {

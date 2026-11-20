@@ -17,6 +17,10 @@ import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
 import { storyAssistantOn } from '../../universe-scope.ts';
 import { arcIsCurrent, arcRequests } from '../arc-request.ts';
+import {
+	chapterSummaryRequest,
+	generatedChapterSummaryIsCurrent
+} from '../chapter-summary-request.ts';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.
@@ -223,7 +227,13 @@ export async function storySkeleton(
 	storyId: string
 ): Promise<{ chapters: ChapterSkeleton[]; orphans: SceneSummary[] }> {
 	const chapterRows = await db
-		.select({ id: chapters.id, title: chapters.title, summaryMd: chapters.summaryMd })
+		.select({
+			id: chapters.id,
+			title: chapters.title,
+			summaryMd: chapters.summaryMd,
+			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			summaryInput: chapters.summaryInput
+		})
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId))
 		.orderBy(asc(chapters.position));
@@ -257,12 +267,26 @@ export async function storySkeleton(
 		}
 	}
 	return {
-		chapters: chapterRows.map((chapter) => ({
-			id: chapter.id,
-			title: chapter.title,
-			summaryMd: chapter.summaryMd,
-			scenes: byChapter.get(chapter.id) ?? []
-		})),
+		chapters: chapterRows.map((chapter) => {
+			const chapterScenes = byChapter.get(chapter.id) ?? [];
+			// A summary the Assistant wrote is left out once it is out of date; the
+			// writer's own (no summary_generated_at) always stands.
+			const current =
+				!chapter.summaryGeneratedAt ||
+				generatedChapterSummaryIsCurrent(
+					chapter,
+					chapterSummaryRequest(
+						chapter.title,
+						chapterScenes.map((scene) => scene.summaryMd)
+					)
+				);
+			return {
+				id: chapter.id,
+				title: chapter.title,
+				summaryMd: current ? chapter.summaryMd : null,
+				scenes: chapterScenes
+			};
+		}),
 		orphans
 	};
 }
