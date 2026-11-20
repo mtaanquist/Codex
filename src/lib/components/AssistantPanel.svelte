@@ -1,4 +1,5 @@
 <script lang="ts" module>
+	import { untrack } from 'svelte';
 	import type {
 		ChatAttachment,
 		ChatModelInfo,
@@ -75,6 +76,8 @@
 		SLASH_COMMANDS,
 		matchSlash,
 		slashName,
+		isSlashCommand,
+		slashQuery,
 		slashArgs,
 		type SlashCommand
 	} from '#lib/assistant-slash';
@@ -511,8 +514,9 @@
 	async function send(text?: string, typed?: string) {
 		const line = (text ?? input).trim();
 		if (!line) return;
-		// A line that starts with "/" is a command, not a message to the model.
-		if (line.startsWith('/')) {
+		// A line that starts with "/" is a command, not a message to the model;
+		// a space in front of the "/" makes it a message.
+		if ((text ?? input).startsWith('/')) {
 			// Commands wait for the reply in progress, and the line stays put.
 			if (busy || switching) return;
 			runSlashCommand(line);
@@ -520,14 +524,15 @@
 		}
 		// A model just picked is saved before the message goes, so it answers;
 		// the draft is read after the wait, so nothing typed meanwhile is lost.
-		if (settingsSaving) await settingsSaving;
+		// A pick made during the wait queues another save, so wait for them all.
+		while (settingsSaving) await settingsSaving;
 		if (busy || switching) {
 			// A /who or /find line the chat box already gave up goes back.
 			if (typed) restoreDraft(typed, {});
 			return;
 		}
 		const question = (text ?? input).trim();
-		if (!question || question.startsWith('/')) return;
+		if (!question || (text ?? input).startsWith('/')) return;
 		// Text passed in (a starter suggestion) leaves the writer's draft alone.
 		if (text === undefined) {
 			input = '';
@@ -627,6 +632,14 @@
 	function runSlashCommand(raw: string, typed = true) {
 		commandSelected = 0;
 		const name = slashName(raw);
+		// Not a command (a path, a subreddit, a typo): the line stays in the
+		// chat box to correct or reword.
+		if (!isSlashCommand(raw)) {
+			assistantSay(
+				`I do not know the command "/${name}". Type /help to see the commands. To send a message that starts with "/", put a space in front of it.`
+			);
+			return;
+		}
 		const story = SLASH_COMMANDS.find((c) => c.name === name)?.scope === 'story';
 		if (story && !isStory) {
 			assistantSay(`/${name} works in a story. Open a story to use it.`);
@@ -709,8 +722,6 @@
 							.join('\n')
 				);
 				break;
-			default:
-				assistantSay(`I do not know the command "/${name}". Type /help to see the commands.`);
 		}
 	}
 
@@ -950,6 +961,12 @@
 	$effect(() => {
 		if (commandSelected >= shownCommands.length) commandSelected = 0;
 	});
+	// A new typed filter starts at its first match, so Enter never runs a row
+	// highlighted under the earlier filter.
+	$effect(() => {
+		void slashQuery(input);
+		commandSelected = 0;
+	});
 	function toggleCommands() {
 		commandsOpen = !commandsOpen;
 		commandQuery = '';
@@ -1008,9 +1025,15 @@
 	// until that message is stored. Saves run one after another so the newest
 	// lands last; if the newest fails, the earlier choice comes back.
 	let settingsSaving: Promise<void> | null = null;
+	// The choice the server last stored for the open chat, which a failed save
+	// goes back to; null until a save is in flight.
+	let storedSettings: ChatModelSettings | null = null;
 	const settingsLocked = $derived(switching || (busy && !chatId));
 	$effect(() => {
-		if (settingsLocked) modelOpen = false;
+		if (settingsLocked && untrack(() => modelOpen)) {
+			modelOpen = false;
+			composer?.focus();
+		}
 	});
 	function changeSettings(next: ChatModelSettings) {
 		if (settingsLocked) return;
@@ -1020,9 +1043,12 @@
 	}
 	function saveSettings(next: ChatModelSettings, previous: ChatModelSettings) {
 		const savingFor = chatId;
+		// A save queued behind one in flight starts from an unsaved pick, so the
+		// stored choice is the one from before the first of them.
+		if (!settingsSaving) storedSettings = previous;
 		const failed = () => {
 			if (settingsSaving !== saving) return;
-			if (chatId === savingFor) chatSettings = previous;
+			if (chatId === savingFor) chatSettings = storedSettings ?? previous;
 			flashActivity(
 				'failed',
 				'Could not save the model',
@@ -1039,6 +1065,7 @@
 			)
 			.then((response) => {
 				if (!response.ok) failed();
+				else storedSettings = next;
 			})
 			.catch(failed)
 			.finally(() => {
@@ -1516,12 +1543,22 @@
 					modelOpen = false;
 					contextOpen = false;
 				},
-				refocus: () =>
-					(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus()
+				refocus: () => {
+					if (document.activeElement === composer) return;
+					(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus();
+				}
 			}}
 		>
 			{#if commandsOpen || slashOpen}
-				<div class="composer-pop">
+				<!-- A press on the typed menu (its scrollbar included) must not blur
+				     the chat box, which would close it. -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="composer-pop"
+					onmousedown={(event) => {
+						if (!commandsOpen) event.preventDefault();
+					}}
+				>
 					<AssistantCommandMenu
 						id={commandListId}
 						commands={shownCommands}

@@ -43,7 +43,7 @@ describe('foldAttachments', () => {
 describe('noteAttachments', () => {
 	it('names what an earlier message carried', () => {
 		expect(noteAttachments('Hi.', [{ kind: 'entity', id, label: 'Mira' }])).toBe(
-			'Hi.\n\n(The writer attached entity "Mira" to this message.)'
+			'Hi.\n\n(The writer attached entity "Mira" to this message. Its text was sent then and is not repeated here.)'
 		);
 	});
 });

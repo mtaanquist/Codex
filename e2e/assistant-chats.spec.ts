@@ -377,6 +377,40 @@ test('context added from the picker goes with the next message', async ({ page }
 	expect(posted[1].at(-1)?.attachments).toBeUndefined();
 });
 
+// A line that only looks like a command stays in the chat box, a space in
+// front sends it as a message, and a new typed filter highlights its first match.
+test('a message starting with a slash is not lost, and the typed menu follows the filter', async ({
+	page
+}) => {
+	const { panel } = await freshStoryPanel(page, 'Slash');
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+
+	await composer.fill('/r/fantasy says this trope is overdone');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'I do not know the command "/r/fantasy"'
+	);
+	await expect(composer).toHaveValue('/r/fantasy says this trope is overdone');
+
+	const posted: { content: string }[][] = [];
+	await page.route('**/api/assistant/chat', (route) => {
+		posted.push(route.request().postDataJSON().messages);
+		return route.fulfill({ status: 429, contentType: 'application/json', body: '{}' });
+	});
+	await composer.fill(' /r/fantasy says this trope is overdone');
+	await composer.press('Enter');
+	await expect.poll(() => posted.length).toBe(1);
+	expect(posted[0].at(-1)?.content).toBe('/r/fantasy says this trope is overdone');
+
+	// Arrow down the full list, then narrow it: the highlight is the first match.
+	await composer.fill('/');
+	await composer.press('ArrowDown');
+	await composer.press('ArrowDown');
+	await composer.pressSequentially('h');
+	await expect(composer).toHaveValue('/h');
+	await expect(composer).toHaveAttribute('aria-activedescendant', /-history$/);
+});
+
 test('the command menu and Tab keep a draft, and a refused send comes back', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Draft');
 	const composer = page.getByPlaceholder('Ask about your story', { exact: false });

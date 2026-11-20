@@ -252,7 +252,7 @@ export function foldAttachments(content: string, resolved: ResolvedAttachment[])
 export function noteAttachments(content: string, attachments: ChatAttachment[]): string {
 	if (attachments.length === 0) return content;
 	const names = attachments.map((a) => `${a.kind} "${a.label}"`).join(', ');
-	return `${content}\n\n(The writer attached ${names} to this message.)`;
+	return `${content}\n\n(The writer attached ${names} to this message. Its text was sent then and is not repeated here.)`;
 }
 
 export type ContextItem = {
@@ -305,7 +305,13 @@ export async function searchContext(
 			})
 			.from(chapters)
 			.innerJoin(stories, eq(chapters.storyId, stories.id))
-			.where(and(storyAllowed(userId), ilike(chapters.title, like)))
+			// A chapter with no title is found by the name it is shown under.
+			.where(
+				and(
+					storyAllowed(userId),
+					sql`(case when coalesce(trim(${chapters.title}), '') = '' then 'Chapter ' || ${chapterOrdinal} else ${chapters.title} end) ilike ${like}`
+				)
+			)
 			.orderBy(asc(chapters.title))
 			.limit(PER_KIND),
 		db
