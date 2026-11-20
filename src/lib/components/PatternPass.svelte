@@ -19,6 +19,7 @@
 		scene,
 		sceneOf,
 		skipped,
+		rereading,
 		position,
 		total,
 		onAccepted,
@@ -38,6 +39,8 @@
 		sceneOf: (sceneId: string) => { title: string | null; chapterTitle: string } | null;
 		// Skipped in this pass: still pending, but behind the writer.
 		skipped: (id: string) => boolean;
+		// A re-read after an accept is still running, so a follow-up may yet come.
+		rereading: boolean;
 		position: number;
 		total: number;
 		onAccepted: (
@@ -288,7 +291,14 @@
 			{/if}
 		{/each}
 
-		{#if !step}
+		{#if !step && rereading}
+			<div class="empty-state tight pp-end">
+				<div class="empty-state-icon"><Icon name="sparkles" size={22} /></div>
+				<p class="empty-state-text">
+					The Assistant is still re-reading your last changes and may suggest a follow-up.
+				</p>
+			</div>
+		{:else if !step}
 			<div class="empty-state tight pp-end">
 				<div class="empty-state-icon"><Icon name="check-circle" size={22} /></div>
 				<p class="empty-state-text">You have been through every change in this note.</p>

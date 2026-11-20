@@ -485,6 +485,8 @@
 		done: SvelteSet<string>;
 		// The ones of done the writer skipped.
 		skipped: SvelteSet<string>;
+		// Re-reads after an accept still running.
+		rereading: number;
 		currentId: string | null;
 		// The writer is rewording or accepting the current step.
 		held: boolean;
@@ -519,6 +521,7 @@
 			threadId,
 			done: new SvelteSet(),
 			skipped: new SvelteSet(),
+			rereading: 0,
 			currentId: queue[0]?.id ?? null,
 			held: false
 		};
@@ -595,6 +598,7 @@
 		const token = ++rereadToken;
 		const card = startActivity('Re-reading the last change');
 		rereadCards.add(card);
+		current.rereading += 1;
 		let ok: boolean;
 		let ids: string[] = [];
 		try {
@@ -613,7 +617,14 @@
 			rereadCards.delete(card);
 			return;
 		}
-		if (ok) await refreshAll();
+		// Refreshed after a failure too: a re-read that timed out or failed late
+		// may still have staged its follow-up. The count drops only after the
+		// refresh, so the end of the pass is not offered in between.
+		try {
+			await refreshAll();
+		} finally {
+			current.rereading -= 1;
+		}
 		rereadCards.delete(card);
 		if (!ok) resolveActivity(card, { state: 'failed', label: 'Could not re-read the last change' });
 		else if (ids.length > 0) resolveActivity(card, { state: 'done', label: 'Follow-up added' });
@@ -800,6 +811,7 @@
 						scene={passScene}
 						sceneOf={(id) => orderedScenes.find((scene) => scene.id === id) ?? null}
 						skipped={(id) => pass?.skipped.has(id) ?? false}
+						rereading={pass.rereading > 0}
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
 						onAccepted={passAccepted}
