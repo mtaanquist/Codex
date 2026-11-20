@@ -104,6 +104,8 @@
 	// already moved it somewhere outside the pass.
 	$effect(() => {
 		const id = stepId;
+		// The end of the pass swaps from waiting to done without a new step.
+		void rereading;
 		if (!scroller) return;
 		void tick().then(() => {
 			const card = id ? cardOf(id) : scroller?.querySelector<HTMLElement>('.pp-end');

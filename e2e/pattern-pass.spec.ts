@@ -431,8 +431,10 @@ test.describe('with the Assistant on', () => {
 			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
 			await note.getByRole('button', { name: /Work through this/ }).click();
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
-			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			// Skip, so only the re-read from before the restart is running.
+			await pass.getByRole('button', { name: 'Skip' }).click();
 			await expect(pass.getByText('The Assistant is still re-reading')).toBeVisible();
+			await expect(pass.getByRole('button', { name: 'Resolve the note' })).toHaveCount(0);
 			release();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 		} finally {

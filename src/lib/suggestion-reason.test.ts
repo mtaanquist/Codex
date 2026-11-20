@@ -29,9 +29,8 @@ describe('normaliseReason', () => {
 		expect(out).toBe(`${'x'.repeat(MAX_REASON_LENGTH - 3)}...`);
 	});
 
-	it('never splits an emoji', () => {
+	it('never leaves half of a surrogate pair', () => {
 		const out = normaliseReason('\u{1F600}'.repeat(400))!;
-		expect(out).not.toContain('\uFFFD');
-		expect(Array.from(out).length).toBe(MAX_REASON_LENGTH);
+		expect(out).toBe(`${'\u{1F600}'.repeat(MAX_REASON_LENGTH - 3)}...`);
 	});
 });
