@@ -446,6 +446,22 @@ describe('the chapter pattern pass', () => {
 		expect(applies.some((text) => text.includes(sceneIds[1]))).toBe(false);
 	});
 
+	it('drops a habit quietly when every scene it showed in is gone', async () => {
+		const { provider, seen } = patternProvider(async (messages) => {
+			if (!isSurvey(messages)) return;
+			await db.update(scenes).set({ bodyMd: '' }).where(eq(scenes.id, sceneIds[0]));
+			await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneIds[1]));
+		});
+		const result = await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter' },
+			{ provider }
+		);
+		expect(seen.filter(isApply)).toHaveLength(0);
+		expect(result.failures.filter((f) => f.message.includes('could not be left'))).toEqual([]);
+		expect(await db.select({ id: reviewThreads.id }).from(reviewThreads)).toHaveLength(0);
+	});
+
 	it('fixes a scene restored from the trash when the run is continued', async () => {
 		const controller = new AbortController();
 		const first = patternProvider(async (messages) => {

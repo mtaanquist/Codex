@@ -4,6 +4,7 @@ import { assistantJobSpend } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
 import { REVIEW_RUN_RETENTION_DAYS } from '../review-runs.ts';
 import { resolveLlmConfig } from './config.ts';
+import { adapterKind } from './providers/presets.ts';
 import { SpendMeter } from './spend.ts';
 
 // The spend meter for one queued Assistant job. pg-boss retries a job under the
@@ -15,7 +16,11 @@ export async function jobSpendMeter(
 	opts: { userId: string; storyId?: string; jobId?: string }
 ): Promise<SpendMeter> {
 	const { config } = await resolveLlmConfig(db, opts.userId, opts.storyId);
-	const base = { pricing: config.modelPricing, capUsd: config.spendCapUsd };
+	const base = {
+		pricing: config.modelPricing,
+		capUsd: config.spendCapUsd,
+		claude: adapterKind(config.provider) === 'anthropic'
+	};
 	const jobId = opts.jobId;
 	if (!jobId || !base.capUsd) return new SpendMeter(base);
 	const [row] = await db

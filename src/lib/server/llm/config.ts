@@ -747,7 +747,9 @@ function withoutExtraParams(tuning: TuningMap): TuningMap {
 	return out;
 }
 
-export type SaveResult = { ok: true } | { ok: false; reason: string };
+// clearedPrices names the models whose typed prices this save dropped because
+// the provider or the endpoint's host changed, so the caller can say so.
+export type SaveResult = { ok: true; clearedPrices?: string[] } | { ok: false; reason: string };
 
 export async function saveAccountLlmConfig(
 	db: Database,
@@ -827,6 +829,10 @@ export async function saveAccountLlmConfig(
 		input.modelPricingManual === undefined
 			? undefined
 			: (normalisePricing(input.modelPricingManual) ?? {});
+	const dropPrices =
+		serverChanged &&
+		(pricingManual === undefined || carried(pricingManual, existing.modelPricingManual ?? {}));
+	const clearedPrices = dropPrices ? Object.keys(existing.modelPricingManual ?? {}) : [];
 	const value: StoredAccountConfig = {
 		enabled: input.enabled,
 		assistantName: normaliseAssistantName(input.assistantName),
@@ -862,8 +868,7 @@ export async function saveAccountLlmConfig(
 		// would meter at the old one. So a connection change drops the typed
 		// prices unless this save sent new ones, and the cap then reports the
 		// model as unpriced until the writer enters them again.
-		...(serverChanged &&
-		(pricingManual === undefined || carried(pricingManual, existing.modelPricingManual ?? {}))
+		...(dropPrices
 			? { modelPricingManual: {} }
 			: pricingManual === undefined
 				? {}
@@ -912,7 +917,7 @@ export async function saveAccountLlmConfig(
 				.where(and(eq(stories.ownerId, userId), sql`${stories.llmConfig} ? 'models'`));
 		}
 	});
-	return { ok: true };
+	return clearedPrices.length > 0 ? { ok: true, clearedPrices } : { ok: true };
 }
 
 // Replaces the models chosen for a universe; an empty map clears them, so the

@@ -229,6 +229,19 @@ describe('saveAssistantModels prices', () => {
 		}
 	});
 
+	it('says nothing about half a price for a model the same save unassigned', async () => {
+		await storeConfig({ models: { reviewer: 'big-model' } });
+		const result = await saveModels({
+			reviewer: 'small-model',
+			'price-in-big-model': '3',
+			'price-out-big-model': ''
+		});
+		expect(result).toEqual({ scope: 'assistant-models', saved: true });
+		const view = await stored();
+		expect(view.models.reviewer).toBe('small-model');
+		expect(view.modelPricingManual).toBeUndefined();
+	});
+
 	it('keeps entries for models the form did not render', async () => {
 		await storeConfig({
 			modelPricingManual: {
@@ -264,6 +277,38 @@ describe('typed prices when the endpoint changes (#1274)', () => {
 		await storeConfig({ modelPricingManual: typed });
 		await saveEndpoint({ provider: 'anthropic' });
 		expect((await stored()).modelPricingManual).toBeUndefined();
+	});
+
+	it('says which prices an endpoint save cleared (staging review 2)', async () => {
+		await storeConfig({
+			modelPricingManual: { ...typed, 'small-model': { prompt: 3, completion: 4 } }
+		});
+		const moved = await saveEndpoint({ endpoint: 'http://127.0.0.1/v1' });
+		expect(moved).toMatchObject({
+			scope: 'assistant-endpoint',
+			saved: true,
+			message: expect.stringMatching(
+				/prices you typed for big-model, small-model were cleared.*spend cap/
+			)
+		});
+		// Nothing left to clear, and a save that clears nothing says nothing.
+		const again = await saveEndpoint({ endpoint: 'http://elsewhere/v1' });
+		expect(again).toEqual({ scope: 'assistant-endpoint', saved: true });
+		await storeConfig({ modelPricingManual: typed });
+		const same = await saveEndpoint({ endpoint: 'http://local/v2' });
+		expect(same).toEqual({ scope: 'assistant-endpoint', saved: true });
+	});
+
+	it('carries the cleared prices on a Test connection reply too', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		const form = new FormData();
+		form.set('provider', 'custom');
+		form.set('endpoint', 'http://elsewhere/v1');
+		expect(await call('testAssistant', form)).toMatchObject({
+			scope: 'assistant-test',
+			reply: 'Hello.',
+			message: expect.stringMatching(/prices you typed for big-model were cleared/)
+		});
 	});
 
 	it('keeps them when the endpoint stays on the same host', async () => {

@@ -26,10 +26,11 @@ export const CAP_NOT_APPLIED_NO_USAGE_MESSAGE =
 export function requestCostUsd(
 	pricing: ModelPricing | undefined,
 	model: string,
-	usage: TokenUsage
+	usage: TokenUsage,
+	claude = false
 ): number | undefined {
 	const price = pricing?.[model];
-	return price ? usageCostUsd(price, usage) : undefined;
+	return price ? usageCostUsd(price, usage, claude) : undefined;
 }
 
 // What a stopped run reports it spent: the figure, and whether it includes
@@ -44,6 +45,7 @@ export function spentFields(meter: SpendMeter): { spentUsd: number; spentEstimat
 export class SpendMeter {
 	readonly capUsd: number | undefined;
 	private readonly pricing: ModelPricing | undefined;
+	private readonly claude: boolean;
 	private usd: number;
 	private unpriced = false;
 	private unreported = false;
@@ -55,13 +57,17 @@ export class SpendMeter {
 	// already spent, so a retry does not get the whole ceiling again. persist is
 	// handed the running total after every priced request; writes run one after
 	// another, and flush waits for the last.
+	// claude says the requests go to the Claude provider, whose cache read
+	// rate is known; without it cached tokens are metered at the full price.
 	constructor(opts: {
 		pricing?: ModelPricing;
+		claude?: boolean;
 		capUsd?: number;
 		spentUsd?: number;
 		persist?: (spentUsd: number) => Promise<void>;
 	}) {
 		this.pricing = opts.pricing;
+		this.claude = opts.claude ?? false;
 		this.capUsd = opts.capUsd;
 		this.usd = opts.spentUsd ?? 0;
 		this.persist = opts.persist;
@@ -80,7 +86,7 @@ export class SpendMeter {
 			this.unreported = true;
 			return;
 		}
-		const cost = requestCostUsd(this.pricing, model, usage);
+		const cost = requestCostUsd(this.pricing, model, usage, this.claude);
 		if (cost === undefined) {
 			this.unpriced = true;
 			return;

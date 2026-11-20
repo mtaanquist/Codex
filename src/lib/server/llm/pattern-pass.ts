@@ -472,21 +472,23 @@ async function scenesWithText(
 }
 
 // The pattern's note, on the first scene where it shows. A note already open
-// with the same text (an earlier attempt of this run) is reused.
+// with the same text (an earlier attempt of this run) is reused. 'gone' means
+// every scene the pattern showed in was deleted or emptied since the survey,
+// so there is nowhere to leave a note and nothing to fix.
 async function ensureNote(
 	db: Database,
 	storyId: string,
 	pattern: PatternState,
 	unit: PatternUnit
-): Promise<boolean> {
-	if (pattern.threadId) return true;
+): Promise<'created' | 'reused' | 'gone' | 'failed'> {
+	if (pattern.threadId) return 'reused';
 	const present = await scenesWithText(db, storyId, pattern.sceneIds);
 	const live = patternLiveScenes(
 		pattern.sceneIds,
 		unit.scenes.map((s) => s.id)
 	).filter((id) => present.has(id));
 	const first = live[0];
-	if (!first) return false;
+	if (!first) return 'gone';
 	const body = patternNoteBody(pattern, noteWhere(live, unit)) + fixLimitLine(live.length);
 	const created = await createThread(db, {
 		storyId,
@@ -496,10 +498,10 @@ async function ensureNote(
 		body
 	});
 	const threadId = created.ok ? created.threadId : await openAssistantNote(db, first, body);
-	if (!threadId) return false;
+	if (!threadId) return 'failed';
 	pattern.threadId = threadId;
 	pattern.noteBody = body;
-	return created.ok;
+	return created.ok ? 'created' : 'reused';
 }
 
 // A note the writer resolved or cleared since an earlier attempt of this run
@@ -609,8 +611,11 @@ export async function runPatternPass(
 		const byId = new Map(unit.scenes.map((s) => [s.id, s]));
 		for (const pattern of entry.patterns) {
 			if (!pattern.threadId) {
+				let gone = false;
 				try {
-					if (await ensureNote(db, opts.storyId, pattern, unit)) notes += 1;
+					const outcome = await ensureNote(db, opts.storyId, pattern, unit);
+					if (outcome === 'created') notes += 1;
+					gone = outcome === 'gone';
 				} catch (err) {
 					logEvent('error', 'assistant.patterns.note_failed', {
 						storyId: opts.storyId,
@@ -618,7 +623,9 @@ export async function runPatternPass(
 					});
 				}
 				if (!pattern.threadId) {
-					failures.push({ message: `The note for "${pattern.name}" could not be left.` });
+					if (!gone) {
+						failures.push({ message: `The note for "${pattern.name}" could not be left.` });
+					}
 					// Not retried: the scenes are marked so a resumed run moves on.
 					pattern.applied = [...pattern.sceneIds];
 				}

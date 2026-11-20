@@ -101,7 +101,8 @@ export async function summariseCharacterArc(
 	// Stored with the fingerprint of the request that was sent, not of the
 	// scenes as they are now: anything that changed while the model was writing
 	// (an edit, a deleted scene, a story muted) leaves the fingerprint behind,
-	// so the arc reads as out of date and is kept out of the context.
+	// so the arc reads as out of date. It is still sent as context, labelled
+	// (see arcLine), unless a story it read is muted, trashed or gone.
 	await db
 		.update(characters)
 		.set({

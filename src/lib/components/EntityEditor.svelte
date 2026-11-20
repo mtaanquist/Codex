@@ -724,7 +724,10 @@
 			<div class="arc-text reply-md">{@html renderReplyMarkdown(arc.summaryMd)}</div>
 			{#if arc.stale}
 				<p class="field-hint">
-					This is out of date. Select Refresh arc to write it again from the scenes as they are now.
+					This is out of date.
+					{#if assistantEnabled && entity.universeId}
+						Select Refresh arc to write it again from the scenes as they are now.
+					{/if}
 				</p>
 			{/if}
 		{:else}
