@@ -464,7 +464,8 @@ async function buildScopeEntities(
 	);
 	// An out-of-date arc may retell a story the Assistant has since been turned
 	// off for, and that story's text must not be sent. So it is left out unless
-	// every story it was written from is still there and still read. The list
+	// every story it was written from is still there, out of the trash, and
+	// still read. The list
 	// is stored with the arc, so this holds after the scenes that mentioned the
 	// character are gone. (A current arc was built from stories read now.)
 	const stale = shown.filter((c) => outOfDate.has(c.id));
@@ -475,7 +476,9 @@ async function buildScopeEntities(
 					await db
 						.select({ id: stories.id })
 						.from(stories)
-						.where(and(inArray(stories.id, readStoryIds), storyAssistantOn()))
+						.where(
+							and(inArray(stories.id, readStoryIds), isNull(stories.deletedAt), storyAssistantOn())
+						)
 				).map((row) => row.id)
 			: []
 	);

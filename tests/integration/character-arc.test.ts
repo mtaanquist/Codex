@@ -1143,6 +1143,15 @@ describe('an out-of-date arc and a muted story', () => {
 		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram leaves/);
 	});
 
+	it('is left out while a story it read is in the trash, and comes back with it', async () => {
+		await db.update(scenes).set({ summaryMd: 'Bram sails.' }).where(eq(scenes.id, sceneA));
+		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram leaves/);
+		expect(await trashStory(db, ownerId, secondStoryId)).toBe(true);
+		expect(await contextText()).not.toContain(ARC);
+		expect(await restoreStory(db, ownerId, secondStoryId)).toBe(true);
+		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram leaves/);
+	});
+
 	it('is left out when the stories it read were never recorded', async () => {
 		await db.update(scenes).set({ summaryMd: 'Bram sails.' }).where(eq(scenes.id, sceneA));
 		await pool.query('update characters set arc_summary_stories = null where id = $1', [bramId]);

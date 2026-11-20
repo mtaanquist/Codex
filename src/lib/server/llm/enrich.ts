@@ -413,6 +413,8 @@ export async function enrichRequest(
 	kind: 'character' | 'place' | 'lore';
 	messages: ChatMessage[];
 	input: string;
+	// The same request's fingerprint as releases up to 3.21.4 stored it.
+	inputAsOf3_21: string;
 } | null> {
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
 		universeId: table.universeId,
@@ -462,7 +464,21 @@ export async function enrichRequest(
 			)
 		}
 	]);
-	return { kind, messages, input };
+	return { kind, messages, input, inputAsOf3_21: enrichInputAsOf3_21(fields, snippets) };
+}
+
+// The enrich fingerprint as releases 3.21.3 and 3.21.4 stored it: the entry's
+// aliases and details were part of it. A read stored by one of them is
+// recognised by this on the first pass after the upgrade and kept without a
+// call. Delete it, and inputAsOf3_21, once upgrades straight from those
+// releases no longer matter.
+function enrichInputAsOf3_21(
+	fields: Omit<Parameters<typeof buildEnrichMessage>[0], 'hasSummary'>,
+	snippets: string[]
+): string {
+	return requestHash([
+		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
+	]);
 }
 
 type EnrichRequest = NonNullable<Awaited<ReturnType<typeof enrichRequest>>>;
@@ -659,7 +675,13 @@ export async function enrichUniverse(
 				unchanged += 1;
 				continue;
 			}
-			if (last.input === null && (await readBeforeFingerprintsIsCurrent(db, entity, universeId))) {
+			// A read an earlier release stored: the same request under that
+			// release's fingerprint, or from before fingerprints and nothing it
+			// read has changed. Kept under today's fingerprint, with no call.
+			if (
+				last.input === request.inputAsOf3_21 ||
+				(last.input === null && (await readBeforeFingerprintsIsCurrent(db, entity, universeId)))
+			) {
 				await db
 					.update(table)
 					.set({ assistantEnrichedInput: request.input, updatedAt: sql`${table.updatedAt}` })

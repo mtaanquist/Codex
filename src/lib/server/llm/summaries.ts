@@ -281,6 +281,15 @@ export async function summariseStory(
 		}
 		const request = chapterSummaryRequest(chapter.title, summariesByChapter.get(chapter.id) ?? []);
 		if (!request) continue;
+		// A summary kept through the upgrade (migration 0094) gets its real
+		// fingerprint, with no call.
+		if (chapter.summaryGeneratedAt && chapter.summaryInput === request.inputAtUpgrade) {
+			await db.execute(sql`
+				update chapters set summary_input = ${request.input}
+				where id = ${chapter.id} and summary_input = ${chapter.summaryInput}
+			`);
+			continue;
+		}
 		if (
 			!needsSummary({
 				summaryMd: chapter.summaryMd,

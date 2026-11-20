@@ -1119,11 +1119,28 @@ reason for most of the lock-order rules.
   scene summaries in the context (outline lines, neighbours, `list_scenes`,
   attached outlines, the review survey) send a stale one as it is, as on
   main; left for an issue.
+- Same round, upgrade from the release that actually shipped. 3.21.3 and
+  3.21.4 already store enrich fingerprints, hashed with the entry's aliases
+  and details, so the first pass after the upgrade would have sent every
+  entry that has either. The pass now also tries the release's formula
+  (`enrichInputAsOf3_21`) and keeps a matching read without a call. Not
+  covered: an entry whose aliases or details were edited after its last read
+  in the release matches neither formula and is read once more. Chapter
+  summaries are kept by migration 0094 where the release counted them as
+  current (see `assistant.md`); adopting at read time by the release's
+  timestamp rule was rejected, because nothing moves that stamp any more and
+  a change after the upgrade would have been blessed. The upgrade fixture
+  now starts at 3.21.4 (91 migrations) with fingerprints checked against
+  that tag's prompt builders; arcs that were current in the release are
+  still current after the upgrade.
+- Same round: an out-of-date arc is also left out while a story it read is
+  in the trash, like every other Assistant read.
 - Known and accepted:
   - A release that rewords a prompt puts every result of that kind out of
     date: the stored result was written from other instructions.
-  - The upgrade costs one call per Assistant-written chapter summary on the
-    first summaries pass.
+  - The upgrade costs one call per Assistant-written chapter summary that
+    the release counted as out of date, or whose scenes had an out-of-date
+    summary, on the first summaries pass.
   - The enrich pass runs a handful of queries per mentioned entry even when
     nothing changed, to build the request it compares.
   - A summary is not offered again after the writer clears theirs until the

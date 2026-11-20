@@ -659,6 +659,13 @@
 			"when": 1795192248791,
 			"tag": "0093_arc-summary-stories",
 			"breakpoints": true
+		},
+		{
+			"idx": 94,
+			"version": "7",
+			"when": 1795194841294,
+			"tag": "0094_chapter-summary-adopt",
+			"breakpoints": true
 		}
 	]
 }

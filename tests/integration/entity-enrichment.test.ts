@@ -31,6 +31,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-test-secret';
 const { stageEntitySuggestions, decideEntitySuggestion, listPendingForEntity } =
 	await import('../../src/lib/server/entity-suggestions');
 const { enrichEntity, enrichUniverse } = await import('../../src/lib/server/llm/enrich');
+const { requestHash } = await import('../../src/lib/server/llm/request-hash');
 const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniverseModels } =
 	await import('../../src/lib/server/llm/config');
 
@@ -581,6 +582,46 @@ describe('enrichUniverse', () => {
 			await db.update(characters).set(change).where(eq(characters.id, bram));
 			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
 		}
+		expect(calls).toBe(2);
+	});
+
+	it('keeps a read stored under the fingerprint of releases up to 3.21.4', async () => {
+		const bram = await makeCharacter({
+			name: 'Bram',
+			aliases: ['The Grey'],
+			details: [{ label: 'Eyes', value: 'grey' }]
+		});
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		// Those releases hashed the request as it was sent, aliases and details
+		// included (less the persona the gateway puts first).
+		const asStoredThen = requestHash(JSON.parse(lastPrompt).slice(1));
+		const stored = async () =>
+			(
+				await db
+					.select({ input: characters.assistantEnrichedInput })
+					.from(characters)
+					.where(eq(characters.id, bram))
+			)[0].input;
+		const today = await stored();
+		expect(asStoredThen).not.toBe(today);
+		await db
+			.update(characters)
+			.set({ assistantEnrichedInput: asStoredThen })
+			.where(eq(characters.id, bram));
+
+		expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
+		expect(await stored()).toBe(today);
+		expect(calls).toBe(1);
+
+		// One whose passages have changed since is read again.
+		await db
+			.update(characters)
+			.set({ assistantEnrichedInput: asStoredThen })
+			.where(eq(characters.id, bram));
+		await rewrite(sceneId, 'Bram on the quay.');
+		expect((await pass()).entities).toBe(1);
 		expect(calls).toBe(2);
 	});
 
