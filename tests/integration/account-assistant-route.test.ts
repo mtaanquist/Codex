@@ -271,6 +271,12 @@ describe('typed prices when the endpoint changes (#1274)', () => {
 		await saveEndpoint({ endpoint: 'http://local/v2' });
 		expect((await stored()).modelPricingManual).toEqual(typed);
 	});
+
+	it('keeps them when only the port or the scheme changes', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ endpoint: 'https://local:8443/v1' });
+		expect((await stored()).modelPricingManual).toEqual(typed);
+	});
 });
 
 describe('saveAssistantEndpoint cache lifetime', () => {

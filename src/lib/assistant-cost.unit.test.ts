@@ -26,4 +26,17 @@ describe('usageCostUsd', () => {
 			10
 		);
 	});
+
+	it('prices a mixed row share by share', () => {
+		// 1000 prompt tokens: 400 read from the cache, 300 written (100 of them
+		// to the one hour cache), 300 fresh.
+		const cost = usageCostUsd(price, {
+			promptTokens: 1000,
+			completionTokens: 50,
+			cachedPromptTokens: 400,
+			cacheWriteTokens: 300,
+			cacheWrite1hTokens: 100
+		});
+		expect(cost).toBeCloseTo((300 + 400 * 0.1 + 200 * 1.25 + 100 * 2) * 0.001 + 50 * 0.002, 10);
+	});
 });

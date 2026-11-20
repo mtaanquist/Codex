@@ -730,6 +730,14 @@ function originOf(endpoint: string): string {
 	}
 }
 
+function hostOf(endpoint: string): string {
+	try {
+		return new URL(endpoint).hostname;
+	} catch {
+		return endpoint;
+	}
+}
+
 function withoutExtraParams(tuning: TuningMap): TuningMap {
 	const out: TuningMap = {};
 	for (const [role, own] of Object.entries(tuning) as [AssistantRole, RoleTuning][]) {
@@ -794,6 +802,12 @@ export async function saveAccountLlmConfig(
 	const connectionChanged =
 		providerChanged ||
 		(!preset && !!existing.endpoint && originOf(endpoint) !== originOf(existing.endpoint));
+	// Typed prices go only when the server itself changes: a new port or
+	// scheme on the same machine is the same models at the same prices, and
+	// dropping the prices there would leave the spend cap with nothing to meter.
+	const serverChanged =
+		providerChanged ||
+		(!preset && !!existing.endpoint && hostOf(endpoint) !== hostOf(existing.endpoint));
 	let apiKeyEnc = connectionChanged ? null : existing.apiKeyEnc;
 	if (input.apiKey) {
 		if (!secretsAvailable()) {
@@ -849,7 +863,7 @@ export async function saveAccountLlmConfig(
 		// would meter at the old one. So a connection change drops the typed
 		// prices unless this save sent new ones, and the cap then reports the
 		// model as unpriced until the writer enters them again.
-		...(connectionChanged &&
+		...(serverChanged &&
 		(pricingManual === undefined || carried(pricingManual, existing.modelPricingManual ?? {}))
 			? { modelPricingManual: {} }
 			: pricingManual === undefined
