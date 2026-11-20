@@ -1291,6 +1291,16 @@ export const reviewSuggestions = pgTable(
 		patternThreadId: uuid('pattern_thread_id').references((): AnyPgColumn => reviewThreads.id, {
 			onDelete: 'set null'
 		}),
+		// The accepted edit whose re-read staged this one as a follow-up, so the
+		// guided pass can link the two after a reload. Deleting that edit leaves
+		// this one standing on its own.
+		followsSuggestionId: uuid('follows_suggestion_id').references(
+			(): AnyPgColumn => reviewSuggestions.id,
+			{ onDelete: 'set null' }
+		),
+		// The Assistant's short reason for the change, shown to the author. Null
+		// for people's suggestions and for edits from before the column.
+		reason: text('reason'),
 		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
 			.notNull()
 			.default('pending'),
@@ -1304,7 +1314,9 @@ export const reviewSuggestions = pgTable(
 		index('review_suggestions_scene_idx').on(table.sceneId),
 		index('review_suggestions_story_idx').on(table.storyId),
 		index('review_suggestions_base_revision_idx').on(table.baseRevisionId),
-		index('review_suggestions_pattern_thread_idx').on(table.patternThreadId)
+		index('review_suggestions_pattern_thread_idx').on(table.patternThreadId),
+		// Every suggestion delete checks this foreign key.
+		index('review_suggestions_follows_idx').on(table.followsSuggestionId)
 	]
 );
 

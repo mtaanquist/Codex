@@ -1023,6 +1023,41 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Guided pass UI and edit reasons (2026-11-20)
+
+#1295, #1296, #1297, #1298, #1304, #1306 on `staging/guided-pass-ui`, from
+Mads's first use of the guided pass on a long note with a slow local model.
+
+- The re-read status line above the step made the step jump; it now uses the
+  corner activity card, one per re-read, dismissed when the pass stops.
+- The pass shows every edit of the note as one list. The current card keeps
+  its paragraph and buttons; the rest are faded with their outcome. Focus
+  moves to the new step, because the pressed button leaves with the old card.
+  The scroll and focus effect is keyed on the step (or, at the end, on whether
+  it is still waiting), so a re-read finishing under a step being reworded
+  does not take focus from the box.
+- Follow-ups used to jump in as the next step, guarded by a `held` flag and a
+  token so a late re-read could not pull the pass back. Mads found the jump
+  back jarring, so follow-ups now join the back of the queue (sorted by
+  `follows_suggestion_id` being set, then oldest first) and the guards are
+  gone. The link to the original is stored on the suggestion so it survives
+  a reload (Mads's call on #1297).
+- #1306: accepting fast reached the end while re-reads ran. Re-reads are now
+  counted per note outside the pass (a restarted pass still waits), and any
+  answered re-read refreshes the page, even after a failure or Stop, since a
+  timed-out one may already have staged its follow-up. Mads saw no error, so
+  the likely cause was simply minutes-long queued re-reads.
+- #1304: an optional `reason` on `suggest_edit` and pattern note edits, shown
+  as "Why:". Mads: no reason for typos and punctuation; the prompts say so.
+  Existing suggestions have none. It costs one sentence of output per edit.
+- Migrations were first numbered 0091/0092 against main while #1294 also
+  added 0091-0094. #1294 landed first, so they were regenerated as one 0095,
+  because drizzle skips a migration whose `when` is older than the last
+  applied one.
+- Deferred lows in #1317 (clearing finished notes cuts a follow-up's link, the
+  count after a restart, an accepted deletion's card moving, a way back from
+  the link).
+
 ## Assistant staleness by fingerprint (2026-11-20)
 
 #1197, branch `feat/assistant-staleness-by-hash`. Arcs, enrich reads and

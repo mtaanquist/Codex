@@ -158,6 +158,9 @@
 		{#if suggestion.original}<span class="rv-diff-del">{suggestion.original}</span>{/if}
 		{#if suggestion.replacement}<span class="rv-diff-ins">{suggestion.replacement}</span>{/if}
 	</div>
+	{#if suggestion.reason}
+		<p class="rv-reason"><span class="rv-reason-k">Why:</span>{suggestion.reason}</p>
+	{/if}
 
 	{#if pending && suggestion.anchorLost}
 		<div class="rv-anchor-lost">

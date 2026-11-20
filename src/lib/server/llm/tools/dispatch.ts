@@ -41,6 +41,9 @@ export type ToolScope = {
 	// Link every suggest_edit this turn stages to this pattern note (the
 	// chapter pattern pass and the re-read after an accept).
 	patternThreadId?: string;
+	// Mark every suggest_edit this turn stages as a follow-up to this accepted
+	// edit (the re-read after an accept).
+	followsSuggestionId?: string;
 	// Refuse a suggest_edit outside this stretch of this scene (the re-read
 	// after an accept looks at one paragraph and its neighbours).
 	editWindow?: { sceneId: string; start: number; end: number };
@@ -169,7 +172,8 @@ export async function dispatchToolCall(
 				return suggestEdit(ctx, {
 					sceneId: asString(args.sceneId),
 					original: asString(args.original),
-					replacement: asString(args.replacement)
+					replacement: asString(args.replacement),
+					reason: asString(args.reason)
 				});
 			case 'leave_comment':
 				return leaveComment(ctx, {
@@ -183,7 +187,8 @@ export async function dispatchToolCall(
 					comment: asString(args.comment),
 					edits: asList(args.edits).map((edit) => ({
 						original: asString(edit.original),
-						replacement: asString(edit.replacement)
+						replacement: asString(edit.replacement),
+						reason: asString(edit.reason)
 					})),
 					kept: asList(args.kept).map((entry) => ({
 						quote: asString(entry.quote),
@@ -352,7 +357,7 @@ async function searchText(ctx: ToolContext, query: string): Promise<string> {
 
 async function suggestEdit(
 	ctx: ToolContext,
-	input: { sceneId: string; original: string; replacement: string }
+	input: { sceneId: string; original: string; replacement: string; reason: string }
 ): Promise<ToolOutcome> {
 	if (!input.original) return { result: 'Provide the exact text to replace.', staged: false };
 	const limit = ctx.scope?.maxEdits;
@@ -395,7 +400,9 @@ async function suggestEdit(
 		range: { start: found.start, end: found.end },
 		original: scene.bodyMd.slice(found.start, found.end),
 		replacement: input.replacement,
-		patternThreadId: ctx.scope?.patternThreadId
+		reason: input.reason,
+		patternThreadId: ctx.scope?.patternThreadId,
+		followsSuggestionId: ctx.scope?.followsSuggestionId
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
 	if (limit !== undefined) stagedEdits.set(ctx, (stagedEdits.get(ctx) ?? 0) + 1);
@@ -517,7 +524,7 @@ async function leavePatternNote(
 	input: {
 		sceneId: string;
 		comment: string;
-		edits: { original: string; replacement: string }[];
+		edits: { original: string; replacement: string; reason: string }[];
 		kept: { quote: string; reason: string }[];
 	}
 ): Promise<ToolOutcome> {
@@ -591,6 +598,7 @@ async function leavePatternNote(
 			range: { start: found.start, end: found.end },
 			original: scene.bodyMd.slice(found.start, found.end),
 			replacement: edit.replacement,
+			reason: edit.reason,
 			patternThreadId: threadId
 		});
 		if (result.ok) edits += 1;
