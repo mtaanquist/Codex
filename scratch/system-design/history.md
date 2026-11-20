@@ -987,6 +987,7 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
+<<<<<<< HEAD
 - #1238: the upgrade fixture seeds a second character (Tam) whose arc and read
   were out of date under the previous release's rule, so migration 0083's
   backfill is exercised: after the upgrade his arc is marked stale and enrich
@@ -998,6 +999,26 @@ triage.
   scenes through it and anchor suggestions by offset into the stored text, so
   changing the text there is not safe; the export keeps the stored bytes and
   the next save of the scene normalises them.
+=======
+- #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
+  `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
+  `index.ts` runs at import and could not be tested. The test registers them
+  on a real pg-boss and compares against a second written-out list on purpose,
+  so a dropped sweep or a changed cron fails. The backup schedule stays in
+  `index.ts` since it depends on saved settings.
+- #1239: no selector can follow a variable into a later `.set()`, so the
+  one-clock rule now refuses `const x = new Date()` outright in server code,
+  and covers `src/routes/**/*.ts` and `src/worker/**` too. Nothing on main
+  tripped it. A `new Date()` written where it is compared is still fine.
+- #1155: payload tests for the split route sit in `route-authz.test.ts`, which
+  already calls the real handler. The editor half was not added: the position
+  maths is covered by the `withoutRanges` tests, and what is left of
+  `cursorOffset` is one line joining it to the selection.
+- #861: CI retries once, not twice, and uses Playwright's github reporter, which
+  lists tests that needed the retry as "flaky" on the run summary. Failing the
+  run on any retry was the other option; it was left out because a load hiccup
+  on an unrelated PR would then block a merge.
+>>>>>>> origin/staging/tooling-issues
 
 ## Issue triage fixes (2026-11-20)
 
