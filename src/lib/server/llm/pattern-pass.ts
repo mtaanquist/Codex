@@ -4,6 +4,7 @@ import {
 	chapters,
 	reviewComments,
 	reviewThreads,
+	scenes,
 	type PatternUnitState,
 	type ReviewFailure
 } from '../db/schema.ts';
@@ -483,6 +484,17 @@ async function dropClosedNotes(db: Database, entry: PatternUnitState): Promise<v
 	}
 }
 
+async function currentScene(
+	db: Database,
+	sceneId: string
+): Promise<{ title: string | null; bodyMd: string } | undefined> {
+	const [row] = await db
+		.select({ title: scenes.title, bodyMd: scenes.bodyMd })
+		.from(scenes)
+		.where(and(eq(scenes.id, sceneId), isNull(scenes.deletedAt)));
+	return row;
+}
+
 function closePattern(pattern: PatternState): void {
 	pattern.applied = [...pattern.sceneIds];
 	delete pattern.noteBody;
@@ -591,8 +603,8 @@ export async function runPatternPass(
 					capped = true;
 					break units;
 				}
-				const scene = byId.get(sceneId);
-				if (!scene) continue;
+				const listed = byId.get(sceneId);
+				if (!listed) continue;
 				// The writer may resolve or clear the note while its fixes are still
 				// being asked for; stop paying for a pattern nobody wants.
 				if (!(await noteOpen(db, pattern.threadId))) {
@@ -600,6 +612,17 @@ export async function runPatternPass(
 					await save();
 					break;
 				}
+				// The scene as it reads now, not as it read when the run started: a
+				// long run reaches a scene well after the writer may have edited it,
+				// and a fix quoted from old text would be refused when staged.
+				const current = await currentScene(db, sceneId);
+				if (!current) {
+					// Deleted since the run started: nothing to fix, nothing to send.
+					pattern.applied.push(sceneId);
+					await save();
+					continue;
+				}
+				const scene = { ...listed, ...current };
 				const task: ChatMessage = {
 					role: 'user',
 					content: buildPatternApplyMessage(pattern, scene, bodyChars)
