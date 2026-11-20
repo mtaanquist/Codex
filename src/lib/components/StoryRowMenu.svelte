@@ -24,7 +24,8 @@
 		onOpenReview,
 		onSuggestSplit,
 		onDuplicateScene,
-		onMergeSelected
+		onMergeSelected,
+		onFindReplace
 	}: {
 		menu: RowMenuState;
 		chapterCount: number;
@@ -41,6 +42,8 @@
 		onSuggestSplit?: (sceneId: string) => void;
 		onDuplicateScene: (sceneId: string) => void;
 		onMergeSelected: () => void;
+		// Write only: opens find and replace across the chapter.
+		onFindReplace?: (chapterId: string) => void;
 	} = $props();
 
 	const target = $derived(menu.target);
@@ -85,6 +88,16 @@
 		>
 			<Icon name="pencil" size={13} /> Rename chapter
 		</button>
+		{#if onFindReplace}
+			<button
+				class="menu-item"
+				type="button"
+				role="menuitem"
+				onclick={() => onFindReplace(target.id)}
+			>
+				<Icon name="search" size={13} /> Find and replace in chapter...
+			</button>
+		{/if}
 		{#if assistantEnabled}
 			<div
 				class="row-sub"

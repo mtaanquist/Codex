@@ -76,7 +76,13 @@ For a clean read, select Preview. It is on the toolbar in both the single-scene 
 
 ## Find and replace
 
-Press Ctrl+F in the editor to search the open scene. The panel finds as you type; Enter jumps to the next match, and the replace field swaps one match or all of them. Press Escape to close it. To search across every scene, use Ctrl+K instead.
+Press Ctrl+F in the editor to search the open scene. The panel finds as you type; Enter jumps to the next match, and the replace field swaps one match or all of them. Press Escape to close it.
+
+To change a word in more than one scene, use "Search in" under the panel and pick "This chapter" or "Whole story". You can also right-click a chapter in the sidebar and choose "Find and replace in chapter...", or press Ctrl+K and choose "Find and replace in the story". The window that opens lists every match, scene by scene, with the new text shown beside the old. Untick any match or scene you want to keep as it is, then select Replace. Nothing changes until you do.
+
+Each scene that changed gets an entry in its History tab, so you can restore any scene to how it was. If a scene was edited somewhere else after you searched, it is left alone and listed, so search again to include it. Match case and Whole words narrow what counts as a match; scenes in Deleted scenes are not searched.
+
+To only look for text across every scene, use Ctrl+K.
 
 The field at the top of the sidebar filters the chapter and scene list by name as you type, which is the quick way to find a scene in a long story.
 

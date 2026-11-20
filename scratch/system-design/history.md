@@ -1023,6 +1023,33 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Find and replace across a chapter or story (2026-11-20)
+
+#1302. The editor's Ctrl+F is CodeMirror's own search panel and only sees the
+open scene, so changing a word through a book meant visiting every scene.
+Decided with Mads: a "Search in" row under the find panel (this scene, this
+chapter, whole story), plus the chapter row menu and a palette command; story
+and chapter only, no universe scope (entity renames already sweep the
+universe); no one-step undo of a whole batch, since each changed scene gets its
+own History checkpoint.
+
+The work is two calls on `/api/stories/[id]/find-replace`. GET lists every
+match per scene in reading order, with a snippet and a fingerprint
+(`textHash`) of the stored text it was found in. POST takes, per scene, the
+fingerprint and the start offsets the writer kept, and each scene is its own
+transaction under the row lock: the text is read again, a changed fingerprint
+skips the scene (reported back, never replaced over), and only offsets that
+are still matches are replaced. History gets the old text first (a no-op when
+it already ends there; it covers scenes that never went through the editor)
+and then a labelled checkpoint, the rename sweep's pattern. Marker anchors ride
+through `replaceMatches`, which generalises the rename sweep's arithmetic to
+matches of any length (a case-insensitive match can differ from the needle),
+and the rename sweep now runs on it too. The page lands pending saves before
+the search and the replace, then reloads and remounts the open editors so none
+saves the old text back; another tab with unsaved typing gets the usual save
+conflict. The preview stops listing at 1000 matches. The new write path is in
+the stale-marks invariant test and the lock-order harness.
+
 ## Background jobs list (2026-11-20)
 
 #1271. A slow local model can keep a review or a details read going for many
