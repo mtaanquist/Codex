@@ -1,5 +1,5 @@
 import type { EntityCardData } from '#lib/wire-types';
-import { and, asc, count, eq, isNull } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import {
 	characters,
@@ -64,25 +64,22 @@ export async function planEntityLists(db: Database, universeId: string) {
 	return { characters: characterList, places: placeList, categories, lore: loreList };
 }
 
-// An entity id arriving from the page URL could be any of the three kinds;
-// try them in turn, scoped to the universe so a foreign id resolves to
-// nothing. Lore rows expose their title as "name" for the shared editor.
+// An entity id arriving from the page URL could be any of the three kinds.
+// One query looks in all three tables, scoped to the universe so a foreign id
+// resolves to nothing. Lore rows expose their title as "name" for the shared
+// editor.
 export async function resolvePlanEntity(db: Database, universeId: string, entityId: string) {
-	const [characterRow] = await db
-		.select()
-		.from(characters)
-		.where(and(eq(characters.id, entityId), eq(characters.universeId, universeId)));
-	if (characterRow) return { kind: 'character' as const, entity: characterRow };
-	const [placeRow] = await db
-		.select()
-		.from(places)
-		.where(and(eq(places.id, entityId), eq(places.universeId, universeId)));
-	if (placeRow) return { kind: 'place' as const, entity: placeRow };
-	const [loreRow] = await db
-		.select()
-		.from(loreEntries)
-		.where(and(eq(loreEntries.id, entityId), eq(loreEntries.universeId, universeId)));
-	if (loreRow) return { kind: 'lore' as const, entity: { ...loreRow, name: loreRow.title } };
+	const inUniverse = (table: EntityTable) =>
+		and(eq(table.id, entityId), eq(table.universeId, universeId));
+	const [row] = await db
+		.select({ character: characters, place: places, lore: loreEntries })
+		.from(sql`(select 1) as one`)
+		.leftJoin(characters, inUniverse(characters))
+		.leftJoin(places, inUniverse(places))
+		.leftJoin(loreEntries, inUniverse(loreEntries));
+	if (row?.character) return { kind: 'character' as const, entity: row.character };
+	if (row?.place) return { kind: 'place' as const, entity: row.place };
+	if (row?.lore) return { kind: 'lore' as const, entity: { ...row.lore, name: row.lore.title } };
 	return null;
 }
 
