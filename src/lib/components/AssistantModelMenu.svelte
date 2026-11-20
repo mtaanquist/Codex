@@ -81,62 +81,65 @@
 	}
 </script>
 
-<div
-	class="model-menu popover"
-	role="menu"
-	aria-label="Model for this chat"
-	use:menu={{ close, refocus }}
->
-	<div class="menu-heading">Model for this chat</div>
-	<div class="model-list">
-		<button
-			class="menu-item model-row"
-			type="button"
-			role="menuitemradio"
-			aria-checked={!settings.model}
-			onclick={() => pickModel(undefined)}
-		>
-			<span class="model-name">Default</span>
-			<span class="model-hint">{info.model || 'not set'}</span>
-			{#if !settings.model}<Icon name="check" size={13} />{/if}
-		</button>
-		{#each choices as id (id)}
+<div class="model-menu popover">
+	<div
+		class="model-items"
+		role="menu"
+		aria-label="Model for this chat"
+		use:menu={{ close, refocus }}
+	>
+		<div class="menu-heading" aria-hidden="true">Model for this chat</div>
+		<div class="model-list" role="group" aria-label="Model">
 			<button
 				class="menu-item model-row"
 				type="button"
 				role="menuitemradio"
-				aria-checked={settings.model === id}
-				onclick={() => pickModel(id)}
+				aria-checked={!settings.model}
+				onclick={() => pickModel(undefined)}
 			>
-				<span class="model-name">{id}</span>
-				{#if settings.model === id}<Icon name="check" size={13} />{/if}
+				<span class="model-name">Default</span>
+				<span class="model-hint">{info.model || 'not set'}</span>
+				{#if !settings.model}<Icon name="check" size={13} />{/if}
 			</button>
-		{/each}
-		{#if loading}
-			<p class="model-note">Loading models...</p>
-		{:else if !complete}
-			<p class="model-note">
-				Could not list the models your endpoint offers. Check the endpoint on your account page.
-			</p>
-		{/if}
-	</div>
-	{#if showEffort}
-		<div class="menu-heading">Effort</div>
-		<div class="seg full effort-seg" role="group" aria-label="Effort">
-			{#each EFFORT_LEVELS as level (level)}
+			{#each choices as id (id)}
 				<button
-					class="seg-btn"
-					class:active={effort === level}
+					class="menu-item model-row"
 					type="button"
 					role="menuitemradio"
-					aria-checked={effort === level}
-					onclick={() => pickEffort(level)}
+					aria-checked={settings.model === id}
+					onclick={() => pickModel(id)}
 				>
-					{EFFORT_LABELS[level]}
+					<span class="model-name">{id}</span>
+					{#if settings.model === id}<Icon name="check" size={13} />{/if}
 				</button>
 			{/each}
 		</div>
-	{/if}
+		{#if showEffort}
+			<div class="menu-heading" aria-hidden="true">Effort</div>
+			<div class="seg full effort-seg" role="group" aria-label="Effort">
+				{#each EFFORT_LEVELS as level (level)}
+					<button
+						class="seg-btn"
+						class:active={effort === level}
+						type="button"
+						role="menuitemradio"
+						aria-checked={effort === level}
+						onclick={() => pickEffort(level)}
+					>
+						{EFFORT_LABELS[level]}
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+	<!-- Outside the menu, so the menu holds only its items. -->
+	<p class="model-note" class:quiet={!loading && complete} role="status">
+		{#if loading}
+			Loading models...
+		{:else if !complete}
+			Could not list the models your endpoint offers. Check the endpoint on your account page.
+		{/if}
+	</p>
 </div>
 
 <style>
@@ -145,6 +148,12 @@
 		flex-direction: column;
 		gap: 2px;
 		max-height: min(400px, 60vh);
+	}
+	.model-items {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-height: 0;
 	}
 	.menu-heading {
 		padding: 6px 7px 3px;
@@ -173,6 +182,9 @@
 		white-space: nowrap;
 		font-size: var(--text-meta);
 		color: var(--text-faint);
+	}
+	.model-note.quiet {
+		display: none;
 	}
 	.model-note {
 		margin: 6px 7px;

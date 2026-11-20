@@ -713,6 +713,10 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await composer.press('Enter');
 	await expect(chat).toContainText('Commands you can type here');
 
+	// The highlighted command is read out as it is typed.
+	await composer.fill('/cont');
+	await expect(panel.locator('.composer [aria-live="polite"]')).toContainText('/context');
+
 	await composer.fill('Where is the boat?');
 	await composer.press('Enter');
 	await expect.poll(() => sent.length).toBe(1);
@@ -720,6 +724,15 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await composer.fill('/who');
 	await composer.press('Enter');
 	await expect(composer).toHaveValue('/who');
+	// Adding context only opens a list, so it does not wait; closing the list
+	// goes back to the chat box it was opened from.
+	await composer.fill('/context');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('');
+	const search = panel.getByRole('combobox', { name: 'Search for context to add' });
+	await expect(search).toBeFocused();
+	await search.press('Escape');
+	await expect(composer).toBeFocused();
 	release();
 	await expect(chat).toContainText('At the quay.');
 	await expect(chat).not.toContainText('Name who to look up');
