@@ -6,7 +6,12 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { refreshAll } from '$app/navigation';
-	import { flashActivity } from '#lib/activity.svelte';
+	import {
+		dismissActivity,
+		flashActivity,
+		resolveActivity,
+		startActivity
+	} from '#lib/activity.svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
@@ -25,6 +30,7 @@
 	import type { MarkVisibility } from '#lib/editor';
 	import {
 		anchorPos,
+		patternEdits,
 		patternQueue,
 		pendingPatternCounts,
 		suggestionInFilter,
@@ -471,27 +477,28 @@
 	// ---- the guided pass over an Assistant pattern note ----
 	// Works through the note's pending edits in reading order, one at a time.
 	// done holds what this pass accepted or skipped (a skip leaves the edit
-	// pending); followUps are the edits a re-read staged. currentId keeps the
-	// step on screen steady while the queue changes around it.
+	// pending). currentId keeps the step on screen steady while the queue
+	// changes around it.
 	const patternCounts = $derived(pendingPatternCounts(liveSuggestions));
 	let pass = $state<{
 		threadId: string;
-		followUps: SvelteSet<string>;
 		done: SvelteSet<string>;
+		// The ones of done the writer skipped.
+		skipped: SvelteSet<string>;
 		currentId: string | null;
-		reread: 'idle' | 'running' | 'failed';
-		// The writer is rewording or accepting the current step.
-		held: boolean;
 	} | null>(null);
 	const passNote = $derived(pass ? (threads.find((t) => t.id === pass!.threadId) ?? null) : null);
-	const passOpen = $derived(
+	const passEdits = $derived(
 		pass
-			? patternQueue(
+			? patternEdits(
 					liveSuggestions,
 					pass.threadId,
 					orderedScenes.map((scene) => scene.id)
-				).filter((s) => !pass!.done.has(s.id))
+				)
 			: []
+	);
+	const passOpen = $derived(
+		pass ? passEdits.filter((s) => s.status === 'pending' && !pass!.done.has(s.id)) : []
 	);
 	const passStep = $derived(
 		pass ? (passOpen.find((s) => s.id === pass!.currentId) ?? passOpen[0] ?? null) : null
@@ -508,11 +515,9 @@
 		);
 		pass = {
 			threadId,
-			followUps: new SvelteSet(),
 			done: new SvelteSet(),
-			currentId: queue[0]?.id ?? null,
-			reread: 'idle',
-			held: false
+			skipped: new SvelteSet(),
+			currentId: queue[0]?.id ?? null
 		};
 		composer = null;
 		chosenPanel = 'comments';
@@ -520,7 +525,9 @@
 
 	// Each new step opens its scene and points the manuscript at the change.
 	// Only a new step does: the writer may open another scene mid-pass to read
-	// around, and is not pulled back until the next step.
+	// around, and is not pulled back until the next step. Nor is a writer
+	// typing in the manuscript when a step turns up on its own (a follow-up
+	// arriving at the end of the pass): the step shows in the pane only.
 	let lastStepId: string | null = null;
 	$effect(() => {
 		const step = passStep;
@@ -533,6 +540,7 @@
 		untrack(() => {
 			if (!pass) return;
 			pass.currentId = step.id;
+			if (document.activeElement?.closest('.review-edit')) return;
 			if (step.sceneId !== selectedSceneId && orderedScenes.some((s) => s.id === step.sceneId)) {
 				selectScene(step.sceneId);
 			}
@@ -562,16 +570,46 @@
 	}
 
 	// The Assistant re-reads the changed paragraph and its neighbours and may
-	// stage one follow-up edit on the same note, which the pass then reaches.
-	// Only the latest re-read reports its status; an earlier one finishing late
-	// must not clear the running note of the one after it.
-	let rereadToken = 0;
+	// stage one follow-up edit on the same note. A follow-up joins the back of
+	// the queue (patternEdits), so the pass only moves forward. Each re-read
+	// shows as a card in the corner rather than in the pane, so the step being
+	// read does not move when one starts or ends.
+	// Not state: only read to dismiss the cards.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const rereadCards = new Set<number>();
+	function clearRereadCards() {
+		for (const id of rereadCards) dismissActivity(id);
+		rereadCards.clear();
+	}
+	// A stopped pass, or a page left, takes its re-read cards with it.
+	$effect(() => {
+		if (!pass) untrack(clearRereadCards);
+	});
+	let destroyed = false;
+	$effect(() => () => {
+		destroyed = true;
+		clearRereadCards();
+	});
+	// Re-reads still running, by note. Kept outside the pass, so a pass stopped
+	// and started again on the same note still waits for the earlier ones.
+	const rereading = new SvelteMap<string, number>();
+	function countRereading(threadId: string, by: number) {
+		const left = (rereading.get(threadId) ?? 0) + by;
+		if (left > 0) rereading.set(threadId, left);
+		else rereading.delete(threadId);
+	}
+
 	async function rereadAfter(suggestionId: string) {
 		const current = pass;
 		if (!current) return;
-		const token = ++rereadToken;
-		current.reread = 'running';
+		const threadId = current.threadId;
+		const card = startActivity('Re-reading the last change');
+		rereadCards.add(card);
+		countRereading(threadId, 1);
 		let ok: boolean;
+		// Whether the server answered at all; a request that never got through
+		// staged nothing, so there is nothing to load.
+		let answered = false;
 		let ids: string[] = [];
 		try {
 			const response = await fetch('/api/assistant/pattern-reread', {
@@ -579,20 +617,32 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ suggestionId })
 			});
+			answered = true;
 			ok = response.ok;
 			if (ok) ids = ((await response.json()) as { ids?: string[] }).ids ?? [];
 		} catch {
 			ok = false;
 		}
-		if (pass !== current) return;
-		if (ok) await refreshAll();
-		for (const id of ids) current.followUps.add(id);
-		if (token !== rereadToken) return;
-		current.reread = ok ? 'idle' : 'failed';
-		// The follow-up is the next step, ahead of whatever the pass moved on to,
-		// unless the writer is already rewording that step; it then comes after.
-		const next = ids.find((id) => passOpen.some((s) => s.id === id));
-		if (next && !current.held) current.currentId = next;
+		try {
+			if (destroyed) return;
+			// Refreshed even when the pass was stopped, so a pass started again
+			// later sees the follow-up, and after a failed answer too: a re-read
+			// that timed out may still have staged one. The count drops only after
+			// the refresh, so the end of the pass is not offered in between.
+			if (answered) await refreshAll();
+		} catch {
+			ok = false;
+		} finally {
+			countRereading(threadId, -1);
+			rereadCards.delete(card);
+		}
+		if (destroyed || pass !== current) {
+			dismissActivity(card);
+			return;
+		}
+		if (!ok) resolveActivity(card, { state: 'failed', label: 'Could not re-read the last change' });
+		else if (ids.length > 0) resolveActivity(card, { state: 'done', label: 'Follow-up added' });
+		else dismissActivity(card);
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
@@ -765,19 +815,22 @@
 				{#if pass && passNote}
 					<PatternPass
 						note={passNote}
+						edits={passEdits}
 						step={passStep}
 						scene={passScene}
+						sceneOf={(id) => orderedScenes.find((scene) => scene.id === id) ?? null}
+						skipped={(id) => pass?.skipped.has(id) ?? false}
+						accepted={(id) => (pass?.done.has(id) && !pass.skipped.has(id)) ?? false}
+						rereading={rereading.has(pass.threadId)}
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
-						followUp={passStep !== null && pass.followUps.has(passStep.id)}
-						reread={pass.reread}
 						onAccepted={passAccepted}
-						onSkip={(id) => pass?.done.add(id)}
+						onSkip={(id) => {
+							pass?.skipped.add(id);
+							pass?.done.add(id);
+						}}
 						beforeAccept={flushEditor}
 						onStop={() => (pass = null)}
-						onHeld={(held) => {
-							if (pass) pass.held = held;
-						}}
 					/>
 				{:else if selectedScene}
 					<ReviewPanel

@@ -77,6 +77,8 @@ function suggestion(over: Partial<ReviewSuggestion> = {}): ReviewSuggestion {
 		anchor: { start: 4, end: 7 },
 		anchorLost: false,
 		patternThreadId: null,
+		followsId: null,
+		reason: null,
 		createdAt: '2026-01-01',
 		...over
 	};

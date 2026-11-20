@@ -670,8 +670,15 @@
 		{
 			"idx": 95,
 			"version": "7",
-			"when": 1795199542547,
-			"tag": "0095_assistant-drafts",
+			"when": 1795199282020,
+			"tag": "0095_suggestion-follows-and-reason",
+			"breakpoints": true
+		},
+		{
+			"idx": 96,
+			"version": "7",
+			"when": 1795203889256,
+			"tag": "0096_assistant-drafts",
 			"breakpoints": true
 		}
 	]

@@ -438,6 +438,18 @@
 	line-height: 1.55;
 	margin-bottom: 10px;
 }
+/* The Assistant's short reason for a suggested edit, under the change. */
+.rv-reason {
+	margin: -4px 0 10px;
+	font-size: var(--text-sm);
+	line-height: 1.45;
+	color: var(--text-muted);
+}
+.rv-reason-k {
+	font-weight: 650;
+	color: var(--text-faint);
+	margin-right: 4px;
+}
 .rv-diff-del {
 	color: var(--text-faint);
 	text-decoration: line-through;

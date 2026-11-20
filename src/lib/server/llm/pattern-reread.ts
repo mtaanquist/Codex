@@ -11,9 +11,9 @@ import type { ChatMessage } from './providers/types';
 
 // The re-read after the writer accepts one fix from a pattern note during the
 // guided pass: the Assistant reads the changed paragraph and one either side,
-// and stages at most one follow-up edit there, linked to the same note so the
-// pass picks it up as its next step. Only suggest_edit is offered, held to that
-// stretch of the scene.
+// and stages at most one follow-up edit there, linked to the same note and to
+// the accepted edit, so the pass adds it at the end of its queue. Only
+// suggest_edit is offered, held to that stretch of the scene.
 
 // Each side of the changed paragraph.
 const NEIGHBOURS = 1;
@@ -28,8 +28,8 @@ const REREAD_TOOL_BUDGET = 3;
 const reread = new Set<string>();
 const REREAD_MEMORY = 5000;
 
-// ids are the follow-up edits this re-read staged, so the pass can show them
-// next rather than mistake them for edits from a review still running.
+// ids are the follow-up edits this re-read staged, so the pass can say one was
+// added.
 export type RereadResult =
 	{ staged: number; ids: string[] } | { skipped: 'gone' | 'not-found' | 'done' };
 
@@ -103,6 +103,7 @@ export async function rereadPatternEdit(
 			toolBudget: REREAD_TOOL_BUDGET,
 			toolScope: {
 				patternThreadId: edit.patternThreadId,
+				followsSuggestionId: input.suggestionId,
 				editWindow: { sceneId: edit.sceneId, ...window },
 				maxEdits: 1,
 				storyOnly: true

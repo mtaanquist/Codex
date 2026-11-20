@@ -270,7 +270,7 @@
 		pins: data.mentionPins,
 		onPin: pinMention,
 		entityHref: (entity: { id: string }) =>
-			`/universes/${data.universe.slug}/plan?entity=${entity.id}`,
+			withQuery(resolve('/stories/[id]/plan', { id: data.story.slug }), { entity: entity.id }),
 		onOpenCard: (entityId: string) => openCard(entityId)
 	});
 

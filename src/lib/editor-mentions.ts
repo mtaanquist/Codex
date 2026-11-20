@@ -38,10 +38,10 @@ export type MentionOptions = {
 	pins?: Record<string, string>;
 	// Called when the author picks which entity an ambiguous name means.
 	onPin?: (name: string, target: { type: MentionTarget['type']; id: string }) => void;
-	// Where "Open full details" points for an entity.
+	// Where the hover card's "Open in Plan view" link points for an entity.
 	entityHref?: (entity: { type: MentionTarget['type']; id: string }) => string;
-	// When set, "Open full details" opens the read-only card in the right
-	// column instead of navigating to the plan.
+	// When set, the hover card offers "Open full details", which opens the
+	// read-only card in the right column.
 	onOpenCard?: (entityId: string) => void;
 };
 
@@ -251,20 +251,6 @@ export function mentionExtensions(
 					}
 					dom.appendChild(chips);
 				}
-				if (options.onOpenCard || options.entityHref) {
-					const open = el('a', 'btn btn-primary', 'Open full details') as HTMLAnchorElement;
-					if (options.entityHref) {
-						open.href = options.entityHref({ type: entity.type, id: entity.id });
-					}
-					if (options.onOpenCard) {
-						const entityId = entity.id;
-						open.addEventListener('click', (event) => {
-							event.preventDefault();
-							options.onOpenCard!(entityId);
-						});
-					}
-					dom.appendChild(open);
-				}
 				if (others.length > 0 && options.onPin) {
 					const section = el('div', 'entity-tip-ambiguous');
 					section.appendChild(el('div', 'entity-tip-ambiguous-label', `"${text}" also matches`));
@@ -281,6 +267,23 @@ export function mentionExtensions(
 						section.appendChild(pick);
 					}
 					dom.appendChild(section);
+				}
+				// The footer stays last, below the alternatives of an ambiguous name.
+				if (options.onOpenCard || options.entityHref) {
+					const footer = el('div', 'pop-footer');
+					if (options.onOpenCard) {
+						const open = el('button', 'pop-link', 'Open full details') as HTMLButtonElement;
+						open.type = 'button';
+						const entityId = entity.id;
+						open.addEventListener('click', () => options.onOpenCard!(entityId));
+						footer.appendChild(open);
+					}
+					if (options.entityHref) {
+						const plan = el('a', 'pop-link', 'Open in Plan view') as HTMLAnchorElement;
+						plan.href = options.entityHref({ type: entity.type, id: entity.id });
+						footer.appendChild(plan);
+					}
+					dom.appendChild(footer);
 				}
 				return { dom };
 			}

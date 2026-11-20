@@ -14,6 +14,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
+import { MAX_REASON_LENGTH } from '../../src/lib/suggestion-reason';
 import type {
 	ChatMessage,
 	Provider,
@@ -104,7 +105,10 @@ function tool(
 	);
 }
 
-const patternArgs = (edits: { original: string; replacement: string }[], kept?: unknown[]) => ({
+const patternArgs = (
+	edits: { original: string; replacement: string; reason?: string }[],
+	kept?: unknown[]
+) => ({
 	sceneId,
 	comment: 'Pattern note (POV epithets): Kara is often called the elf.',
 	edits,
@@ -117,7 +121,11 @@ describe('leave_pattern_note', () => {
 			'leave_pattern_note',
 			patternArgs(
 				[
-					{ original: 'The elf crossed', replacement: 'Kara crossed' },
+					{
+						original: 'The elf crossed',
+						replacement: 'Kara crossed',
+						reason: '  Her name keeps\nus close to her. '
+					},
 					{ original: 'The elf had seen', replacement: 'She had seen' }
 				],
 				[{ quote: 'the elf heard horns', reason: 'rhythm' }]
@@ -141,6 +149,12 @@ describe('leave_pattern_note', () => {
 			'The elf crossed',
 			'The elf had seen'
 		]);
+		// Each edit keeps its own reason, on one line; one without has none.
+		const reasons = Object.fromEntries(suggestions.map((s) => [s.original, s.reason]));
+		expect(reasons).toEqual({
+			'The elf crossed': 'Her name keeps us close to her.',
+			'The elf had seen': null
+		});
 	});
 
 	it('reports edits that do not locate, and a retry adds to the same note', async () => {
@@ -434,7 +448,8 @@ describe('rereadPatternEdit', () => {
 						arguments: JSON.stringify({
 							sceneId,
 							original: 'Mira followed her',
-							replacement: 'Mira followed Kara'
+							replacement: 'Mira followed Kara',
+							reason: `  "Her" could be either woman here.\n  ${'Naming her keeps it clear. '.repeat(20)}`
 						})
 					}
 				]
@@ -452,6 +467,13 @@ describe('rereadPatternEdit', () => {
 			(s) => s.status === 'pending'
 		);
 		expect(followUp?.patternThreadId).toBe(threadId);
+		// Linked to the accept it follows, so the pass can show the link after a
+		// reload.
+		expect(followUp?.followsSuggestionId).toBe(suggestionId);
+		// The reason is kept on one line and cut at a word near the cap.
+		expect(followUp?.reason).toMatch(/^"Her" could be either woman here\. Naming her/);
+		expect(Array.from(followUp!.reason!).length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
+		expect(followUp!.reason!.endsWith('...')).toBe(true);
 		expect(result).toEqual({ staged: 1, ids: [followUp!.id] });
 	});
 
