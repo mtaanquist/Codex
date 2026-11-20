@@ -1023,18 +1023,21 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
-## Background work list (2026-11-20)
+## Background jobs list (2026-11-20)
 
 #1271. A slow local model can keep a review or a details read going for many
 minutes, and the corner card was the only place a running job showed; once
 dismissed, the job could not be found or stopped outside its own page.
 
-- `BackgroundWork.svelte` sits in the author bar before the notification
-  bell. It is always there (Mads: other kinds of background work may join
+- `BackgroundJobs.svelte` sits in the author bar before the notification
+  bell. It is always there (Mads: other kinds of background jobs may join
   it later), showing a spinner with a count while `trackedJobs.list` is not
   empty and a plain icon with "Nothing is running." otherwise. It opens a
   dialog popover (same pattern as the bell) that lists
   each job's label, how long ago it started, its progress, and Open and Stop.
+- It is labelled "Background jobs", not "Background work" as first shipped:
+  that is the name of a model role on the Assistant settings, and the two
+  read as the same thing.
 - No new store or endpoint. The list is the activity center's own
   `trackedJobs`, which now carries the label, start time, result link and
   stop function. `/api/assistant/jobs` returns `startedAt` (the pg-boss
