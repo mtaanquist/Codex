@@ -982,6 +982,10 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Issue triage fixes (2026-11-20)
+
+- **Review editor (#1173).** Text the review editor takes from the server no longer queues a save, so a second outside change inside the save delay cannot be refused and raise the conflict banner for a writer who typed nothing. After a merge or duplicate the editor remounts even when the reload fails, with a notice. The base-revision ordering point was left: it needs a comment to land in the same instant as an autosave commit, and History corrects itself on the next save.
+
 ## Upgrade-path test (2026-11-19)
 
 Several findings were data or jobs left by the previous version, while the
