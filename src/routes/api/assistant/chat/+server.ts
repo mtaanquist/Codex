@@ -26,6 +26,7 @@ import {
 	appendChat,
 	dropChatIfEmpty,
 	getChat,
+	mergeAdjacentTurns,
 	setChatSettings,
 	type ChatScope
 } from '#lib/server/llm/chat-history';
@@ -216,8 +217,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				]
 			: fitted.messages;
 	const messages: ChatMessage[] = context
-		? [buildSystemMessage(context, { tools: true }), ...fittedMessages]
-		: fittedMessages;
+		? [buildSystemMessage(context, { tools: true }), ...mergeAdjacentTurns(fittedMessages)]
+		: mergeAdjacentTurns(fittedMessages);
 
 	return assistantSseResponse({
 		request,
