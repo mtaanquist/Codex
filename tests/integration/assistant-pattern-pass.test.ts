@@ -50,7 +50,11 @@ const isApply = (m: ChatMessage[]) => asked(m).includes('apply stage of a patter
 // (then plain text), and every scene review with no notes.
 function patternProvider(
 	onRequest?: (messages: ChatMessage[]) => void | Promise<unknown>,
-	opts: { editScene?: (shown: string) => string; failFor?: () => string } = {}
+	opts: {
+		editScene?: (shown: string) => string;
+		failFor?: () => string;
+		surveyIds?: () => string[];
+	} = {}
 ): {
 	provider: Provider;
 	seen: ChatMessage[][];
@@ -70,7 +74,7 @@ function patternProvider(
 						{
 							name: 'Sighing',
 							description: 'Characters sigh to show every feeling.',
-							sceneIds: [sceneIds[0], sceneIds[1], 'invented-id'],
+							sceneIds: opts.surveyIds?.() ?? [sceneIds[0], sceneIds[1], 'invented-id'],
 							examples: ['Mara sighed.']
 						}
 					]),
@@ -368,6 +372,104 @@ describe('the chapter pattern pass', () => {
 		}
 		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
 		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[0]]);
+	});
+
+	// Grows the chapter to this many scenes, every one of them with the habit.
+	async function sighingChapter(total: number) {
+		const [{ chapterId }] = await db
+			.select({ chapterId: scenes.chapterId })
+			.from(scenes)
+			.where(eq(scenes.id, sceneIds[0]));
+		await db.update(scenes).set({ bodyMd: 'Ana sighed.' }).where(eq(scenes.id, sceneIds[2]));
+		const added = await db
+			.insert(scenes)
+			.values(
+				Array.from({ length: total - sceneIds.length }, (_, i) => ({
+					storyId,
+					chapterId,
+					globalPosition: sceneIds.length + i + 1,
+					title: `Scene ${sceneIds.length + i + 1}`,
+					bodyMd: 'Someone sighed.',
+					summaryMd: 'Summary.'
+				}))
+			)
+			.returning({ id: scenes.id, position: scenes.globalPosition });
+		added.sort((a, b) => a.position - b.position);
+		sceneIds.push(...added.map((row) => row.id));
+	}
+
+	// A pass over a chapter where every scene has the habit and the writer
+	// deletes the second scene while the survey runs.
+	async function passWithSceneDeletedMidSurvey(total: number) {
+		await sighingChapter(total);
+		const { provider } = patternProvider(
+			async (messages) => {
+				if (!isSurvey(messages)) return;
+				await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneIds[1]));
+			},
+			{ surveyIds: () => sceneIds }
+		);
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'chapter' }, { provider });
+		const [note] = (
+			await db
+				.select({ body: reviewComments.bodyMd })
+				.from(reviewComments)
+				.where(eq(reviewComments.assistant, true))
+		).filter((n) => n.body.startsWith('Pattern note'));
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		return { note: note.body, fixed: new Set(edits.map((e) => e.sceneId)) };
+	}
+
+	it('says "first 25" by the scenes that still exist, and fixes that many', async () => {
+		const { note, fixed } = await passWithSceneDeletedMidSurvey(27);
+		expect(note).toContain('Fixes are suggested in the first 25 of those scenes.');
+		expect(note).not.toContain('Scene 2,');
+		// The deleted scene takes no place: the 26th live scene is the first left out.
+		const expected = sceneIds.filter((_, i) => i !== 1 && i !== 26);
+		expect([...fixed].sort()).toEqual([...expected].sort());
+	});
+
+	it('leaves the "first 25" line out when 25 scenes are left after a deletion', async () => {
+		const { note, fixed } = await passWithSceneDeletedMidSurvey(26);
+		expect(note).not.toContain('Fixes are suggested in the first');
+		expect(fixed.size).toBe(25);
+	});
+
+	it('sends no fix request for a scene emptied since the run started', async () => {
+		const { provider, seen } = patternProvider(async (messages) => {
+			if (!isSurvey(messages)) return;
+			await db.update(scenes).set({ bodyMd: ' \n' }).where(eq(scenes.id, sceneIds[1]));
+		});
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'chapter' }, { provider });
+		const applies = seen.filter(isApply).map(asked);
+		expect(applies.length).toBeGreaterThan(0);
+		expect(applies.some((text) => text.includes(sceneIds[1]))).toBe(false);
+	});
+
+	it('fixes a scene restored from the trash when the run is continued', async () => {
+		const controller = new AbortController();
+		const first = patternProvider(async (messages) => {
+			if (isSurvey(messages)) {
+				await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneIds[1]));
+			} else if (!isApply(messages)) controller.abort();
+		});
+		const stopped = await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter', jobId: 'restore-1', signal: controller.signal },
+			{ provider: first.provider }
+		);
+		expect(stopped.aborted).toBe(true);
+		await db.update(scenes).set({ deletedAt: null }).where(eq(scenes.id, sceneIds[1]));
+
+		const second = patternProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'chapter', jobId: 'restore-1' },
+			{ provider: second.provider }
+		);
+		expect(second.seen.some(isSurvey)).toBe(false);
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		expect(edits.map((e) => e.sceneId).sort()).toEqual([sceneIds[0], sceneIds[1]].sort());
 	});
 
 	it('keeps each fix in the scene it was asked about', async () => {
