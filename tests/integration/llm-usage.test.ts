@@ -16,7 +16,7 @@ import {
 } from '../../src/lib/server/llm/providers/types';
 
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
-const { complete, stream } = await import('../../src/lib/server/llm/gateway');
+const { complete, completeDetailed, stream } = await import('../../src/lib/server/llm/gateway');
 const { recentAssistantUsage, recordAssistantUsage } =
 	await import('../../src/lib/server/llm/usage');
 
@@ -246,6 +246,53 @@ describe('gateway usage recording', () => {
 			webSearchRequests: 2
 		});
 	});
+
+	it('sums the cache shares of a failed attempt and its retry (#1274)', async () => {
+		await configure();
+		let attempts = 0;
+		const provider: Provider = {
+			async *chatStream() {
+				yield { type: 'done' };
+			},
+			async respond() {
+				attempts += 1;
+				if (attempts === 1) {
+					throw withBilledUsage(new Error('Endpoint returned 529: overloaded'), {
+						promptTokens: 100,
+						completionTokens: 1,
+						cacheWriteTokens: 80,
+						cacheWrite1hTokens: 50
+					});
+				}
+				return {
+					content: 'ok',
+					toolCalls: [],
+					usage: {
+						promptTokens: 100,
+						completionTokens: 10,
+						cachedPromptTokens: 70,
+						cacheWriteTokens: 20,
+						cacheWrite1hTokens: 5
+					}
+				};
+			},
+			async listModels() {
+				return [];
+			}
+		};
+		const result = await completeDetailed(
+			db,
+			{ userId, role: 'chat', messages: [] },
+			{ provider, http: noHttp, sleep: async () => {} }
+		);
+		expect(result.usage).toEqual({
+			promptTokens: 200,
+			completionTokens: 11,
+			cachedPromptTokens: 70,
+			cacheWriteTokens: 100,
+			cacheWrite1hTokens: 55
+		});
+	});
 });
 
 // Structured logs are the only output here; the tests read them off stdout.
@@ -351,7 +398,13 @@ describe('recentAssistantUsage', () => {
 			userId,
 			role: 'coauthor',
 			model: 'a',
-			usage: { promptTokens: 30, completionTokens: 8 }
+			usage: {
+				promptTokens: 30,
+				completionTokens: 8,
+				cachedPromptTokens: 4,
+				cacheWriteTokens: 20,
+				cacheWrite1hTokens: 12
+			}
 		});
 		await recordAssistantUsage(db, {
 			userId,
@@ -368,9 +421,56 @@ describe('recentAssistantUsage', () => {
 			webSearchRequests: 0
 		});
 		expect(summary.byModel.sort((x, y) => x.model.localeCompare(y.model))).toEqual([
-			{ model: 'a', promptTokens: 40, completionTokens: 10 },
-			{ model: 'b', promptTokens: 5, completionTokens: 1 }
+			{
+				model: 'a',
+				promptTokens: 40,
+				completionTokens: 10,
+				cachedPromptTokens: 4,
+				cacheWriteTokens: 20,
+				cacheWrite1hTokens: 12
+			},
+			{
+				model: 'b',
+				promptTokens: 5,
+				completionTokens: 1,
+				cachedPromptTokens: 0,
+				cacheWriteTokens: 0,
+				cacheWrite1hTokens: 0
+			}
 		]);
+	});
+
+	it('keeps the cache shares on a row, and null where none were reported (#1274)', async () => {
+		await recordAssistantUsage(db, {
+			userId,
+			role: 'chat',
+			model: 'a',
+			usage: { promptTokens: 10, completionTokens: 2 }
+		});
+		await recordAssistantUsage(db, {
+			userId,
+			role: 'chat',
+			model: 'a',
+			usage: {
+				promptTokens: 100,
+				completionTokens: 5,
+				cachedPromptTokens: 30,
+				cacheWriteTokens: 60,
+				cacheWrite1hTokens: 60
+			}
+		});
+		const { recent } = await recentAssistantUsage(db, userId);
+		expect(recent[0]).toMatchObject({
+			promptTokens: 100,
+			cachedPromptTokens: 30,
+			cacheWriteTokens: 60,
+			cacheWrite1hTokens: 60
+		});
+		expect(recent[1]).toMatchObject({
+			cachedPromptTokens: null,
+			cacheWriteTokens: null,
+			cacheWrite1hTokens: null
+		});
 	});
 
 	it('pages fifty at a time, newest first', async () => {

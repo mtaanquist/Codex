@@ -3,7 +3,6 @@ import type { Database } from './auth';
 import { scenes } from './db/schema';
 import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
-import { markMentionsStale } from './scene-lifecycle.ts';
 import { inLiveStory } from './universe-scope.ts';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
@@ -54,10 +53,6 @@ export async function saveSceneBody(
 				ok: false as const,
 				conflict: { bodyMd: current.bodyMd, title: current.title }
 			};
-		}
-		// Arcs and enrich passages name the scenes they quote.
-		if (current.title !== save.title) {
-			await markMentionsStale(tx, { sceneIds: [sceneId] }, { enrich: true });
 		}
 		const count = wordCount(save.bodyMd);
 		// An idle editor keeps resending the same text. History already ends on

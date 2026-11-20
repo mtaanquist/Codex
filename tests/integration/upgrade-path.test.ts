@@ -8,7 +8,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
 import * as schema from '../../src/lib/server/db/schema';
-import { characters, scenes } from '../../src/lib/server/db/schema';
+import { chapters, characters, scenes } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
@@ -22,7 +22,9 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 // that release's row shapes (upgrade/seed.sql), migrated to head, and then put
 // through what a writer does first after an upgrade: open, summarise, enrich,
 // continue a capped review, export, save, restore from the trash. Nothing may
-// be lost, asked of the model twice or started over. Refresh both fixture
+// be lost, asked of the model twice or started over. The fingerprints in the
+// seed are the ones that release stored; a change to the wording of an arc or
+// enrich prompt puts every stored one out of date, and fails this test. Refresh both fixture
 // files when a release ships (see CLAUDE.md, Branches and releases).
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'upgrade-path-test-secret';
@@ -30,7 +32,8 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'upgrade-path-test-secret';
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { enrichUniverse } = await import('../../src/lib/server/llm/enrich');
-const { arcIsStale } = await import('../../src/lib/server/llm/arc-summary');
+const { planArc } = await import('../../src/lib/server/llm/arc-summary');
+const { storySkeleton } = await import('../../src/lib/server/llm/context/sources');
 const { adoptCappedRun, legacyReviewScopeKey, reviewScopeKey } =
 	await import('../../src/lib/server/review-runs');
 const { gatherStory } = await import('../../src/lib/server/export');
@@ -47,6 +50,8 @@ const BEFORE = id('c2');
 const [QUAY, SALE, WAIT, LONG_AGO] = ['e1', 'e2', 'e3', 'e4'].map(id);
 const MARA = id('f1');
 const TAM = id('f2');
+const NETS = id('d2');
+const STORM = id('d3');
 const LEGACY_JOB = id('aa');
 
 const url = new URL(TEST_DATABASE_URL);
@@ -183,7 +188,28 @@ describe('upgrading from the previous release', () => {
 		}
 	});
 
-	it('summarises only what has no summary, and keeps the writer summary', async () => {
+	it('summarises only what has no summary or an out-of-date one, and keeps the writer summary', async () => {
+		const chapterRows = async () =>
+			Object.fromEntries(
+				(
+					await db
+						.select({
+							id: chapters.id,
+							summaryMd: chapters.summaryMd,
+							summaryInput: chapters.summaryInput
+						})
+						.from(chapters)
+						.where(eq(chapters.storyId, TIDE))
+				).map((row) => [row.id, row])
+			);
+		// Before any pass: the chapter summary that was current in the release
+		// is still read, the one that was out of date is not.
+		const outline = Object.fromEntries(
+			(await storySkeleton(db, TIDE)).chapters.map((chapter) => [chapter.id, chapter.summaryMd])
+		);
+		expect(outline[NETS]).toBe('The nets are mended.');
+		expect(outline[STORM]).toBeNull();
+
 		calls = [];
 		await summariseStory(db, { userId: USER, storyId: TIDE }, deps);
 		const rows = await db
@@ -194,34 +220,49 @@ describe('upgrading from the previous release', () => {
 		expect(summary[QUAY]).toBe('Mara arrives at low tide.');
 		expect(summary[SALE]).toBe('My own summary.');
 		expect(summary[WAIT]).toMatch(/^SUMMARY-/);
-		// The scene without a summary, then its chapter.
-		expect(calls).toHaveLength(2);
+		const after = await chapterRows();
+		// Kept as it was, now under a fingerprint of its request.
+		expect(after[NETS].summaryMd).toBe('The nets are mended.');
+		expect(after[NETS].summaryInput).toMatch(/^[0-9a-f]{64}$/);
+		expect(after[STORM].summaryMd).toMatch(/^SUMMARY-/);
+		// The scene without a summary, its chapter, and the chapter whose
+		// summary was out of date.
+		expect(calls).toHaveLength(3);
+
+		calls = [];
+		await summariseStory(db, { userId: USER, storyId: TIDE }, deps);
+		expect(calls).toHaveLength(0);
 	});
 
-	it('re-reads what was out of date before the upgrade, and nothing else', async () => {
-		const stamps = async () => {
-			const rows = await db
-				.select({
-					id: characters.id,
-					arcSummaryAt: characters.arcSummaryAt,
-					enrichedAt: characters.assistantEnrichedAt
-				})
-				.from(characters);
-			return Object.fromEntries(rows.map((row) => [row.id, row]));
-		};
-		const upgraded = await stamps();
-		expect(arcIsStale(upgraded[MARA])).toBe(false);
-		// Tam's scene changed after his arc and his read: the upgrade keeps both
-		// marked out of date.
-		expect(arcIsStale(upgraded[TAM])).toBe(true);
+	it('keeps what the Assistant read and wrote of the entries, and re-reads only what was out of date', async () => {
+		const row = async (characterId: string) =>
+			(await db.select().from(characters).where(eq(characters.id, characterId)))[0];
+		// An arc that was current is current, one that was out of date still is.
+		// The upgrade itself asks the model nothing.
+		expect((await planArc(db, { kind: 'character', entity: await row(MARA) }))!.stale).toBe(false);
+		expect((await planArc(db, { kind: 'character', entity: await row(TAM) }))!.stale).toBe(true);
+		// Which stories they read was not recorded, so the upgrade lists every
+		// story of the universe (migration 0093): muting or deleting any of
+		// them keeps an out-of-date arc from the Assistant.
+		for (const characterId of [MARA, TAM])
+			expect((await row(characterId)).arcSummaryStories).toEqual([TIDE]);
+
+		const upgraded = { mara: await row(MARA), tam: await row(TAM) };
+		calls = [];
+		const result = await enrichUniverse(db, { userId: USER, universeId: HARBOUR }, deps);
+		// Tam's read was out of date. Mara's was stored under the release's
+		// fingerprint and the Quay's before fingerprints; neither is sent again.
+		expect(calls).toHaveLength(1);
+		expect(calls[0]).toContain('Enrich the character "Tam"');
+		expect(result).toMatchObject({ entities: 1, unchanged: 2 });
+		const mara = await row(MARA);
+		expect(mara.assistantEnrichedAt).toEqual(upgraded.mara.assistantEnrichedAt);
+		expect(mara.assistantEnrichedInput).not.toBe(upgraded.mara.assistantEnrichedInput);
+		expect((await row(TAM)).assistantEnrichedAt!.getFullYear()).toBeGreaterThan(2000);
 
 		calls = [];
 		await enrichUniverse(db, { userId: USER, universeId: HARBOUR }, deps);
-		expect(calls.length).toBeGreaterThan(0);
-		const after = await stamps();
-		expect(after[MARA].enrichedAt).toEqual(upgraded[MARA].enrichedAt);
-		expect(after[TAM].enrichedAt!.getTime()).toBeGreaterThan(upgraded[TAM].enrichedAt!.getTime());
-		expect(after[TAM].enrichedAt!.getFullYear()).toBeGreaterThan(2000);
+		expect(calls).toHaveLength(0);
 	});
 
 	it('exports every scene, including the one with the old line endings', async () => {
@@ -239,7 +280,7 @@ describe('upgrading from the previous release', () => {
 			'Mara sold the boat to Tam.'
 		])
 			expect(text).toContain(line);
-		expect(content.scenes).toHaveLength(3);
+		expect(content.scenes).toHaveLength(5);
 	});
 
 	it('saves an edit to a scene with the old line endings', async () => {

@@ -123,7 +123,10 @@ contacts a model on its own.
   need them. What you type is kept when you discover models again and is used
   instead of a price the endpoint reports. Leave both boxes empty to go back
   to what the endpoint reports. Check the boxes again when your provider
-  changes its prices.
+  changes its prices. If you fill only one of a model's two boxes, the rest of
+  the form still saves and a message asks you to finish that price or empty
+  both boxes. If you switch provider, or move a custom endpoint to another
+  server, the prices you typed are cleared, so enter them again.
 - **Keep repeated text ready for** (Claude only): Claude charges much less for
   text it was sent a short while ago, such as your story notes going out again
   with each message. Normally it remembers that text for 5 minutes. Choose 1
@@ -228,9 +231,15 @@ Your words are sent only to the endpoint you set here.
 - **Cached context**: with the Claude provider, repeated context (your world
   details, earlier turns) is cached by the API and billed far cheaper on reuse.
   Text sent for the first time is billed a little higher so it can be reused.
-  The cost in the list counts every token sent at the plain price, so it runs
-  high when most of the text was reused and low when most of it was new. The spend cap counts reused text at a tenth of the
-  price and first-time text at Claude's higher rate.
+  The cost in the list and the spend cap both count reused text at a tenth of
+  the price and first-time text at Claude's higher rate. With any other
+  provider, reused text is counted at the full price, because what an endpoint
+  charges for it is not known. If your provider gives a discount, the cost
+  shown can run well above what you were charged, and a spend cap can stop
+  well before the figure you set. Requests made before
+  Codex kept those counts are priced with every token sent at the plain price.
+  The estimate shown before a review counts each scene's first read, and the
+  passes over the whole story, at the higher first-time rate.
 - **Web searches**: with the Claude provider, the list shows how many web
   searches a request ran. Claude charges for each search on top of tokens; that
   fee is not in the cost shown here or counted by the spend cap.

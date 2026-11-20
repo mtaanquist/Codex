@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sampleEvenly } from './arc-summary';
+import { sampleEvenly } from './arc-request';
 import { buildArcMessage } from './prompts/arc';
 
 describe('sampleEvenly', () => {

@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-import { and, asc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, eq, getTableName, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { entityMentions, scenes, stories } from '../db/schema.ts';
 import { errorFields, logEvent } from '../log.ts';
@@ -34,8 +33,6 @@ import {
 	resolveOwnedEntity
 } from '../entity-lookups.ts';
 import { inLiveUniverse, storyAssistantOn } from '../universe-scope.ts';
-import { STALE_MARK_BEFORE } from '../scene-lifecycle.ts';
-import { dbNow } from '../db-clock.ts';
 import {
 	stageEntitySuggestions,
 	summarySuggestionClosed,
@@ -43,6 +40,7 @@ import {
 	type ProposedSuggestion
 } from '../entity-suggestions.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { requestHash } from './request-hash.ts';
 
 // Inline per-entity enrichment: gather where an entity appears (in one story, or
 // across its universe), ask the Assistant for new aliases, quick details, and a
@@ -126,13 +124,6 @@ export function spreadAppearances<T extends { storyId: string }>(rows: T[], max:
 	return picked.sort((a, b) => a - b).map((index) => rows[index]);
 }
 
-// A fingerprint of a request's messages, stored with the watermark so a marked
-// entity or arc whose request would be the same is not sent again. Marks are
-// set for any passage change, but enrich and arcs send only some passages.
-export function requestHash(messages: ChatMessage[]): string {
-	return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
-}
-
 function snippetLine(a: PlanAppearance, withStory: boolean): string {
 	const where = [withStory ? a.storyTitle : '', a.sceneTitle ?? ''].filter(Boolean).join(' / ');
 	return where ? `[${where}] ${a.snippet}` : a.snippet;
@@ -151,7 +142,9 @@ export async function enrichEntity(
 	opts: EnrichOptions,
 	deps: GatewayDeps = {}
 ): Promise<EntitySuggestion[]> {
-	return (await enrichRead(db, opts, deps)).suggestions;
+	const request = await enrichRequest(db, opts);
+	if (!request) return [];
+	return await sendEnrichRequest(db, opts, request, deps);
 }
 
 // Proposals from a later part of a long read added to those found so far. An
@@ -420,6 +413,8 @@ export async function enrichRequest(
 	kind: 'character' | 'place' | 'lore';
 	messages: ChatMessage[];
 	input: string;
+	// The same request's fingerprint as releases up to 3.21.4 stored it.
+	inputAsOf3_21: string;
 } | null> {
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
 		universeId: table.universeId,
@@ -456,29 +451,45 @@ export async function enrichRequest(
 	const messages: ChatMessage[] = [
 		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary }, snippets) }
 	];
-	// Hashed as if no summary were known: a read that stages a summary would
-	// otherwise change the next request, and an unchanged passage set would be
-	// sent again just to be told not to propose one.
+	// Hashed as if nothing were recorded on the entry: accepting what a read
+	// suggested (an alias, a detail, a summary) would otherwise change the next
+	// request, and the same passages would be sent again. An entry is read
+	// again when its name or its passages change.
 	const input = requestHash([
-		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
+		{
+			role: 'user',
+			content: buildEnrichMessage(
+				{ ...fields, aliases: [], details: [], hasSummary: false },
+				snippets
+			)
+		}
 	]);
-	return { kind, messages, input };
+	return { kind, messages, input, inputAsOf3_21: enrichInputAsOf3_21(fields, snippets) };
 }
 
-// enrichEntity, plus the hash of the request it built. With `unlessInput`, a
-// request with that hash is not sent (unchanged: true).
-async function enrichRead(
-	db: Database,
-	opts: EnrichOptions & { unlessInput?: string | null },
-	deps: GatewayDeps
-): Promise<{ suggestions: EntitySuggestion[]; input: string | null; unchanged: boolean }> {
-	const request = await enrichRequest(db, opts);
-	if (!request) return { suggestions: [], input: null, unchanged: false };
-	const { kind, messages, input } = request;
-	if (opts.unlessInput && input === opts.unlessInput) {
-		return { suggestions: [], input, unchanged: true };
-	}
+// The enrich fingerprint as releases 3.21.3 and 3.21.4 stored it: the entry's
+// aliases and details were part of it. A read stored by one of them is
+// recognised by this on the first pass after the upgrade and kept without a
+// call. Delete it, and inputAsOf3_21, once upgrades straight from those
+// releases no longer matter.
+function enrichInputAsOf3_21(
+	fields: Omit<Parameters<typeof buildEnrichMessage>[0], 'hasSummary'>,
+	snippets: string[]
+): string {
+	return requestHash([
+		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
+	]);
+}
 
+type EnrichRequest = NonNullable<Awaited<ReturnType<typeof enrichRequest>>>;
+
+// Sends a request enrichRequest built and stages what comes back.
+async function sendEnrichRequest(
+	db: Database,
+	opts: EnrichOptions,
+	request: EnrichRequest,
+	deps: GatewayDeps
+): Promise<EntitySuggestion[]> {
 	const result = await completeDetailed(
 		db,
 		{
@@ -488,15 +499,15 @@ async function enrichRead(
 			...opts.scope,
 			role: 'utility',
 			enableTools: false,
-			messages,
+			messages: request.messages,
 			maxTokens: MAX_ENRICH_TOKENS,
 			meter: opts.meter,
 			signal: opts.signal
 		},
 		deps
 	);
-	// Cut-off JSON parses to nothing; failing keeps the entity unmarked so the
-	// next pass reads it again.
+	// Cut-off JSON parses to nothing; failing keeps the read from being stored,
+	// so the next pass reads the entity again.
 	if (result.cutOff) {
 		throw new ReplyCutOffError(
 			'The suggestions were cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
@@ -504,21 +515,19 @@ async function enrichRead(
 	}
 
 	const proposals = parseEnrichResponse(result.content);
-	if (proposals.length === 0) return { suggestions: [], input, unchanged: false };
-	const suggestions = await stageEntitySuggestions(db, {
+	if (proposals.length === 0) return [];
+	return await stageEntitySuggestions(db, {
 		ownerId: opts.userId,
-		kind,
+		kind: request.kind,
 		entityId: opts.entityId,
 		proposals
 	});
-	return { suggestions, input, unchanged: false };
 }
 
 export type UniverseEnrichResult = {
 	// Entities the pass read, and how many suggestions it staged across them.
 	entities: number;
-	// Entities passed over because the request would have been the same as
-	// their last read.
+	// Entities passed over because the request is the same as their last read.
 	unchanged?: number;
 	staged: number;
 	failed: number;
@@ -542,10 +551,10 @@ export type UniverseEnrichResult = {
 	capNotApplied?: string;
 };
 
-// The universe's entities worth enriching: those mentioned in at least one live
-// scene, never enriched or marked since the last pass (a passage that mentions
-// them changed, or a scene or story holding them was deleted, restored, or
-// unmuted). Characters, then places, then lore, each by name.
+// The universe's entities an enrich pass looks at: those mentioned in at least
+// one live scene the Assistant reads. Characters, then places, then lore, each
+// by name. Which of them are out of date is worked out one by one, from the
+// request each would send.
 async function entitiesToEnrich(db: Database, userId: string, universeId: string) {
 	const out: { id: string; type: (typeof ENTITY_TYPES)[number] }[] = [];
 	for (const type of ENTITY_TYPES) {
@@ -571,8 +580,7 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 					isNull(stories.deletedAt),
 					isNull(scenes.deletedAt),
 					storyAssistantOn(),
-					inLiveUniverse(table.universeId),
-					or(isNull(table.assistantEnrichedAt), lt(table.assistantEnrichedAt, STALE_MARK_BEFORE))
+					inLiveUniverse(table.universeId)
 				)
 			)
 			.groupBy(table.id, entityNameColumn(table))
@@ -582,13 +590,46 @@ async function entitiesToEnrich(db: Database, userId: string, universeId: string
 	return out;
 }
 
-// The background pass: enrich every entity in the universe that has new prose
-// to read, staging suggestions for the writer exactly as the inline button does.
-// Each entity is marked with the time its read started, so an edit made while
-// the pass runs is picked up next time. A failed entity is not marked, so the
-// next pass tries it again. Stops between entities at the spend cap or when the
-// job is stopped, and stops early when the Assistant is turned off or the
-// endpoint keeps failing.
+// A watermark before this is a mark an earlier release set to say "read this
+// again", not the time of a read. Only read for entities with no fingerprint.
+const LEGACY_MARK_BEFORE = '2000-01-01T00:00:00Z';
+
+// Whether a read stored before fingerprints were (a time, no request hash) is
+// still good by the rule of the release that stored it: the time is a real one
+// and no live scene that mentions the entity has changed since. Such a read is
+// given its fingerprint without paying for it again; any other is read.
+async function readBeforeFingerprintsIsCurrent(
+	db: Database,
+	entity: { id: string; type: (typeof ENTITY_TYPES)[number] },
+	universeId: string
+): Promise<boolean> {
+	const table = sql.identifier(getTableName(entityTable(entity.type)));
+	const { rows } = await db.execute<{ current: boolean | null }>(sql`
+		select e.assistant_enriched_at >= ${LEGACY_MARK_BEFORE}::timestamptz and not exists (
+			select 1 from entity_mentions m
+			join scenes s on s.id = m.source_id
+			join stories on stories.id = s.story_id
+			where m.source_type = 'scene' and m.target_type = ${entity.type} and m.target_id = e.id
+				and stories.universe_id = ${universeId}
+				and stories.deleted_at is null and s.deleted_at is null
+				and ${storyAssistantOn()}
+				and s.updated_at > e.assistant_enriched_at
+		) as current
+		from ${table} e where e.id = ${entity.id}
+	`);
+	return rows[0]?.current === true;
+}
+
+// The background pass: enrich every entity in the universe whose request has
+// changed since its last read, staging suggestions for the writer exactly as
+// the inline button does. An entity is out of date when the request that
+// would be sent now has a different fingerprint from the one stored with its
+// last read (assistant_enriched_input); no save marks it. A read is stored
+// with the fingerprint of the request it sent, so an edit made while the model
+// reads is picked up next time. A failed read is not stored, so the next pass
+// tries it again. Stops between entities at the spend cap or when the job is
+// stopped, and stops early when the Assistant is turned off or the endpoint
+// keeps failing.
 export async function enrichUniverse(
 	db: Database,
 	opts: { userId: string; universeId: string; jobId?: string; signal?: AbortSignal },
@@ -620,56 +661,53 @@ export async function enrichUniverse(
 			capped = true;
 			break;
 		}
-		// A real time, so any mark set while the model reads stands apart from it.
-		const startedAt = await dbNow(db);
 		const table = entityTable(entity.type);
-		// As text, so the check below compares to the microsecond; a JS Date
-		// keeps only milliseconds, and marks land often.
-		const [last] = await db
-			.select({
-				before: sql<string | null>`${table.assistantEnrichedAt}::text`,
-				lastInput: table.assistantEnrichedInput
-			})
-			.from(table)
-			.where(eq(table.id, entity.id));
-		// Deleted since the pass listed it: nothing left to read.
-		if (!last) continue;
-		const { before, lastInput } = last;
 		try {
-			const read = await enrichRead(
-				db,
-				{
-					userId,
-					scope: { universeId },
-					entityId: entity.id,
-					meter,
-					signal,
-					unlessInput: lastInput
-				},
-				deps
-			);
-			// An unmute while the model was reading cleared the mark so the next
-			// pass reads the entity again; that stands. A request the same as the
-			// last one only clears the mark.
-			await db
-				.update(table)
-				.set({
-					assistantEnrichedAt: startedAt,
-					...(read.input ? { assistantEnrichedInput: read.input } : {}),
-					updatedAt: sql`${table.updatedAt}`
-				})
-				.where(
-					and(
-						eq(table.id, entity.id),
-						sql`${table.assistantEnrichedAt} is not distinct from ${before}::timestamptz`
-					)
-				);
-			if (read.unchanged) {
+			const [last] = await db
+				.select({ input: table.assistantEnrichedInput })
+				.from(table)
+				.where(eq(table.id, entity.id));
+			const scope = { universeId };
+			const request = await enrichRequest(db, { userId, scope, entityId: entity.id });
+			// Deleted since the pass listed it: nothing left to read.
+			if (!last || !request) continue;
+			if (request.input === last.input) {
 				unchanged += 1;
 				continue;
 			}
+			// A read an earlier release stored: the same request under that
+			// release's fingerprint, or from before fingerprints and nothing it
+			// read has changed. Kept under today's fingerprint, with no call.
+			if (
+				last.input === request.inputAsOf3_21 ||
+				(last.input === null && (await readBeforeFingerprintsIsCurrent(db, entity, universeId)))
+			) {
+				await db
+					.update(table)
+					.set({ assistantEnrichedInput: request.input, updatedAt: sql`${table.updatedAt}` })
+					.where(eq(table.id, entity.id));
+				unchanged += 1;
+				continue;
+			}
+			const suggestions = await sendEnrichRequest(
+				db,
+				{ userId, scope, entityId: entity.id, meter, signal },
+				request,
+				deps
+			);
+			// The fingerprint of the request that was sent, not of the entity as it
+			// is now: a change made while the model was reading leaves it behind,
+			// and the next pass reads the entity again.
+			await db
+				.update(table)
+				.set({
+					assistantEnrichedAt: sql`now()`,
+					assistantEnrichedInput: request.input,
+					updatedAt: sql`${table.updatedAt}`
+				})
+				.where(eq(table.id, entity.id));
 			entities += 1;
-			staged += read.suggestions.length;
+			staged += suggestions.length;
 			failedInARow = 0;
 		} catch (err) {
 			if (signal?.aborted) {

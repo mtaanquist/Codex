@@ -1,5 +1,5 @@
 {
-	"id": "493c6651-f262-4f85-960b-1e76b39924c0",
+	"id": "cc36834c-6a80-4184-bdfb-74b646be72b8",
 	"prevId": "25f285c0-ca14-463d-8285-0711a023c69d",
 	"version": "7",
 	"dialect": "postgresql",
@@ -778,6 +778,24 @@
 				},
 				"completion_tokens": {
 					"name": "completion_tokens",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"cached_prompt_tokens": {
+					"name": "cached_prompt_tokens",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"cache_write_tokens": {
+					"name": "cache_write_tokens",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"cache_write_1h_tokens": {
+					"name": "cache_write_1h_tokens",
 					"type": "integer",
 					"primaryKey": false,
 					"notNull": false
@@ -3777,12 +3795,6 @@
 					"primaryKey": false,
 					"notNull": false
 				},
-				"follows_suggestion_id": {
-					"name": "follows_suggestion_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": false
-				},
 				"status": {
 					"name": "status",
 					"type": "text",
@@ -3870,21 +3882,6 @@
 					"concurrently": false,
 					"method": "btree",
 					"with": {}
-				},
-				"review_suggestions_follows_idx": {
-					"name": "review_suggestions_follows_idx",
-					"columns": [
-						{
-							"expression": "follows_suggestion_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
 				}
 			},
 			"foreignKeys": {
@@ -3938,15 +3935,6 @@
 					"tableFrom": "review_suggestions",
 					"tableTo": "review_threads",
 					"columnsFrom": ["pattern_thread_id"],
-					"columnsTo": ["id"],
-					"onDelete": "set null",
-					"onUpdate": "no action"
-				},
-				"review_suggestions_follows_suggestion_id_review_suggestions_id_fk": {
-					"name": "review_suggestions_follows_suggestion_id_review_suggestions_id_fk",
-					"tableFrom": "review_suggestions",
-					"tableTo": "review_suggestions",
-					"columnsFrom": ["follows_suggestion_id"],
 					"columnsTo": ["id"],
 					"onDelete": "set null",
 					"onUpdate": "no action"

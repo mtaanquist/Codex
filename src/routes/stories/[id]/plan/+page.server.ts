@@ -71,14 +71,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const entityId = url.searchParams.get('entity');
 	let selected = null;
 	let selectedKind: EntityKind = 'character';
-	let arc: ReturnType<typeof planArc> = null;
+	let arc: Awaited<ReturnType<typeof planArc>> = null;
 	let storyNotesMd = '';
 	if (entityId && isUuid(entityId)) {
 		const resolved = await resolvePlanEntity(db, universe.id, entityId);
 		if (resolved) {
 			selected = resolved.entity;
 			selectedKind = resolved.kind;
-			arc = planArc(resolved);
+			arc = await planArc(db, resolved);
 			// The per-story "In this book" notes live in a table per kind.
 			let notes: { notesMd: string } | undefined;
 			if (resolved.kind === 'character') {

@@ -187,7 +187,7 @@ describe('saveDraft', () => {
 				title: 'Departure',
 				summaryMd: null,
 				summaryGeneratedAt: null,
-				summaryCurrent: false
+				summaryInput: null
 			}
 		]);
 		expect(content.scenes.map((scene) => [scene.id, scene.chapterId, scene.bodyMd])).toEqual([
@@ -327,7 +327,7 @@ describe('restoreDraftScene', () => {
 		expect(scene.globalPosition).toBeGreaterThan(2);
 	});
 
-	it('marks the chapter summary out of date when it adds a scene back', async () => {
+	it('writes nothing to the chapter when it adds a scene back', async () => {
 		const id = await save();
 		await db.delete(notes);
 		await db.delete(scenes).where(eq(scenes.id, sceneId));
@@ -336,10 +336,11 @@ describe('restoreDraftScene', () => {
 			.update(chapters)
 			.set({ summaryMd: 'From the Assistant', summaryGeneratedAt: stamp, updatedAt: stamp })
 			.where(eq(chapters.id, chapterId));
+		const [before] = await db.select().from(chapters).where(eq(chapters.id, chapterId));
 		const result = await restoreDraftScene(db, storyId, id, sceneId);
 		expect(result).toMatchObject({ ok: true, created: true });
 		const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId));
-		expect(chapter.summaryGeneratedAt!.getTime()).toBeLessThan(chapter.updatedAt.getTime());
+		expect(chapter).toEqual(before);
 	});
 
 	it('keeps an Assistant summary refreshable on a scene it adds back', async () => {

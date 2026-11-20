@@ -1050,12 +1050,218 @@ Mads's first use of the guided pass on a long note with a slow local model.
 - #1304: an optional `reason` on `suggest_edit` and pattern note edits, shown
   as "Why:". Mads: no reason for typos and punctuation; the prompts say so.
   Existing suggestions have none. It costs one sentence of output per edit.
-- Migrations 0091/0092 were numbered against main while #1294 also added
-  0091-0093; whichever lands second regenerates its own, because drizzle
-  skips a migration whose `when` is older than the last applied one.
+- Migrations were first numbered 0091/0092 against main while #1294 also
+  added 0091-0094. #1294 landed first, so they were regenerated as one 0095,
+  because drizzle skips a migration whose `when` is older than the last
+  applied one.
 - Deferred lows in #1317 (clearing finished notes cuts a follow-up's link, the
   count after a restart, an accepted deletion's card moving, a way back from
   the link).
+
+## Assistant staleness by fingerprint (2026-11-20)
+
+#1197, branch `feat/assistant-staleness-by-hash`. Arcs, enrich reads and
+chapter summaries were kept honest by marks: every save that could change
+what one reads set its stored time fifty years back, inside the save's
+transaction and under row locks on the entities. Each review round found a
+write path that missed a mark or made a needless one, and the marks were the
+reason for most of the lock-order rules.
+
+- Now each result is stored with `requestHash` of the messages it was
+  written from, and "out of date" is worked out on read and in the passes by
+  building the request again and comparing. Design in `assistant.md`, "Out of
+  date by fingerprint". Arcs and enrich already stored the hash (0082);
+  chapters gained `summary_input` (0092).
+- Removed: `markMentionsStale`, `markEntitiesStale`,
+  `markChapterSummariesStale`, `markStale`, `STALE_MARK_BEFORE`, and their
+  calls in scene save (title), trash and restore of scenes and stories,
+  reorder, split, duplicate, merge, story rename, character rename, mute and
+  unmute, draft add back, the mention reindex (with its `changedTargets`
+  compare and the story share lock), and the summaries pass. The request
+  builders moved to gateway-free modules (`arc-request.ts`,
+  `chapter-summary-request.ts`, `request-hash.ts`) so the context builders
+  can use them.
+- Muting a story no longer clears every arc in the universe. An arc that
+  read the muted story is out of date by its hash; its text stays and reads
+  as current again on unmute.
+- An out-of-date arc stays in the Assistant's context with a short label
+  (written before later changes, may be out of date, the scenes are right
+  where they differ). The first cut left it out, but any scene edit plus a
+  summaries pass puts every arc of that scene's characters out of date, and
+  after an upgrade none has a fingerprint, so the Assistant would lose each
+  lead's history until the writer refreshed arcs one by one. `arcLine` in
+  `context/assemble.ts` is the one place that decides; returning null there
+  for an out-of-date arc goes back to leaving it out.
+- Since mute no longer clears arcs, an out-of-date arc must not carry a
+  muted story's text to the model. The first rule left out the arc of a
+  character with a mention in a muted story; the staging review showed the
+  mention goes while the arc stays (the scene is deleted or merged, the
+  character is written out, the muted story is deleted for good), and the
+  arc was then sent. Fixed on `fix/staging-review-1`: the arc job stores the
+  stories it read in `characters.arc_summary_stories` (migration 0093), and
+  an out-of-date arc is left out unless every one still exists and is still
+  read. A story deleted for good counts whether or not it was muted, since
+  the two cannot be told apart afterwards. Nothing is written on mute or on
+  any other save.
+- Arcs from before the column: the migration gives each every story of its
+  universe, trashed ones too (more than it read, never less). Treating a
+  missing list as unknown at read time was considered: the previous release
+  cleared every arc of the universe on mute, so no arc held a muted story's
+  text at upgrade, but nothing on the row would say which stories to watch
+  afterwards (upgrade, mute B, delete B), so the only safe reading of
+  "unknown" is to leave every such arc out, and the owner wants them sent
+  labelled. The backfill writes only this derived column. A missing list is
+  still read as "leave out".
+  `ArcStoryMutedError` and the compare-and-set after the model call went
+  with it: a job stores the hash of what it sent, so anything that changed
+  meanwhile leaves the result out of date.
+- Enrich: a read is sent again when its passages change, which now includes
+  passages taken away (trash, mute; the old rule skipped these on purpose),
+  or when the entry is renamed. What is recorded on the entry (aliases,
+  details, whether a summary is asked for) is left out of the fingerprint:
+  the review found that accepting a staged alias or detail bought another
+  read of the same passages, once per accept. An accepted alias that finds
+  new passages after the reindex is read once more, for the passages.
+- Upgrades: nothing is sent automatically for arcs (one without a
+  fingerprint shows as out of date until refreshed). Chapter summaries
+  without one are rewritten once by the next summaries pass; adopting them
+  as current was rejected because a change made after the upgrade would
+  have been blessed. Enrich reads without one are adopted free when no
+  mentioning scene changed since, otherwise sent.
+- Scene summaries were left on their timestamp rule: they read only their
+  own row and never used the marks.
+- The invariant test became
+  `tests/integration/assistant-staleness-invariant.test.ts`. The fake model
+  replies with a hash of the request, so a stored arc or chapter summary
+  names the request it was written from; after each action the test checks
+  that what the app shows as out of date is exactly what changed, that the
+  passes call the model for exactly those and a second pass for none, and
+  that the action wrote no Assistant column. `character-arc.test.ts` also
+  runs saves with a trigger that fails any write to `characters`, and a
+  reindex with the mentioned characters locked.
+- Staging review round 2 (`fix/staging-review-2`). An arc or chapter summary
+  written from a scene's Assistant summary read as current after the scene
+  was rewritten, until a summaries pass ran: the request builders read
+  `scenes.summary_md` without asking whether it was current, and the removed
+  marks used to cover this. Both now take a scene summary only while it is
+  usable (`usableSceneSummary`); an arc falls back to the passage and a
+  chapter leaves the scene out. The pass rewriting the scene summary changes
+  the request again (a real change of input, unless the new summary is the
+  same text, in which case both read as current again). The invariant test
+  gained a check that does not go through the builders: from the prompts the
+  fake model was sent, nothing written from a scene's summary may read as
+  current once that scene's text or title has changed. Other readers of
+  scene summaries in the context (outline lines, neighbours, `list_scenes`,
+  attached outlines, the review survey) send a stale one as it is, as on
+  main; left for an issue.
+- Same round, upgrade from the release that actually shipped. 3.21.3 and
+  3.21.4 already store enrich fingerprints, hashed with the entry's aliases
+  and details, so the first pass after the upgrade would have sent every
+  entry that has either. The pass now also tries the release's formula
+  (`enrichInputAsOf3_21`) and keeps a matching read without a call. Not
+  covered: an entry whose aliases or details were edited after its last read
+  in the release matches neither formula and is read once more. Chapter
+  summaries are kept by migration 0094 where the release counted them as
+  current (see `assistant.md`); adopting at read time by the release's
+  timestamp rule was rejected, because nothing moves that stamp any more and
+  a change after the upgrade would have been blessed. The upgrade fixture
+  now starts at 3.21.4 (91 migrations) with fingerprints checked against
+  that tag's prompt builders; arcs that were current in the release are
+  still current after the upgrade.
+- Same round: an out-of-date arc is also left out while a story it read is
+  in the trash, like every other Assistant read.
+- Known and accepted:
+  - A release that rewords a prompt puts every result of that kind out of
+    date: the stored result was written from other instructions.
+  - The upgrade costs one call per Assistant-written chapter summary that
+    the release counted as out of date, or whose scenes had an out-of-date
+    summary, on the first summaries pass.
+  - The enrich pass runs a handful of queries per mentioned entry even when
+    nothing changed, to build the request it compares.
+  - A summary is not offered again after the writer clears theirs until the
+    entry's passages change.
+- `arcRequests` picks the first mention per character and scene in the
+  database (`distinct on`), so a context build reads one row per scene, not
+  per mention, and only for the characters that make the entity cap. A test
+  pins the messages and fingerprint; it passes on the old query too.
+
+## Assistant price and cache lows (2026-11-20)
+
+#1274, lane `fix/assistant-price-lows` on `staging/assistant-remaining`: the
+low findings from the quick wins staging review.
+
+- The cache rates moved out of `spend.ts` into `$lib/assistant-cost.ts` so
+  the account page can price with them; the meter, the estimate and the usage
+  list now share one function.
+- Usage rows store the cache shares (migration 0091, three nullable integer
+  columns on `assistant_usage`, no backfill). A row without them prices at
+  the plain rate as before, so old rows do not change.
+- The review estimate prices a first read at the cache write rate on Claude.
+  Pricing every estimated prompt token at that rate was considered and
+  dropped: the agentic multiplier stands for rounds that resend cached text,
+  and doubling those would put the figure far above any real run. Only the
+  first request of each scene and the survey requests take the write rate;
+  the resent rounds stay at the plain price, which is still above what a
+  cache read bills. `estTokens` is unchanged.
+- A half price pair no longer refuses the Models form: that pair is skipped
+  (its stored entry untouched), the rest saves, and the reply carries a
+  message naming the model. The box keeps what was typed.
+- Typed prices are cleared when the provider or the endpoint host changes.
+  The alternative was a hint beside the boxes; clearing was chosen because a
+  stale price meters silently, while a missing one makes the cap say it was
+  not applied. Typed context windows are still kept: a wrong window costs a
+  failed request, not money, and a local server's window is the writer's own
+  launch setting. The switch-provider prompt now says the prices go too.
+- The streaming Claude path merges `message_delta`'s running input totals
+  the way the buffered path does (shared `mergeDeltaUsage`).
+- Still not verified against the live API (no key in the build
+  environment): `cache_control.ttl: "1h"`, the `usage.cache_creation` split,
+  and whether `message_delta` carries input totals on a web search turn.
+  The first two match the published API reference.
+
+Second staging review, branch `fix/staging-review-2-cost`: the tenth for cache
+reads was applied to every endpoint, but OpenAI-compatible endpoints report
+cached tokens too and charge anything from a tenth to the full price for
+them, so a cap could stop late. `cacheReadRate` now gives the tenth to the
+Claude provider only and the full price elsewhere. A flat half was
+considered: it matches the dearest published discount known at the time, but
+a custom endpoint can be any server, and no rate under the full price is safe
+for all of them. Usage rows do not record their provider and no column was
+added: the list prices with the saved provider, and a row from before a
+provider switch seldom has a price left, since a switch drops both the
+discovered and the typed prices. An endpoint save that drops typed prices now
+says which, in the form's status line (and on a Test connection reply). The
+half-price message skips a model the same save took off its last role. A
+pattern whose scenes were all deleted or emptied during the survey is dropped
+without a failure line. The out-of-date arc hint names "Refresh arc" only
+when the button is shown.
+
+## Find and replace across a chapter or story (2026-11-20)
+
+#1302. The editor's Ctrl+F is CodeMirror's own search panel and only sees the
+open scene, so changing a word through a book meant visiting every scene.
+Decided with Mads: a row under the find panel that widens it to the chapter
+or the whole story, plus the chapter row menu and a palette command; story
+and chapter only, no universe scope (entity renames already sweep the
+universe); no one-step undo of a whole batch, since each changed scene gets its
+own History checkpoint.
+
+The work is two calls on `/api/stories/[id]/find-replace`. GET lists every
+match per scene in reading order, with a snippet and a fingerprint
+(`textHash`) of the stored text it was found in. POST takes, per scene, the
+fingerprint and the start offsets the writer kept, and each scene is its own
+transaction under the row lock: the text is read again, a changed fingerprint
+skips the scene (reported back, never replaced over), and only offsets that
+are still matches are replaced. History gets the old text first (a no-op when
+it already ends there; it covers scenes that never went through the editor)
+and then a labelled checkpoint, the rename sweep's pattern. Marker anchors ride
+through `replaceMatches`, which generalises the rename sweep's arithmetic to
+matches of any length (a case-insensitive match can differ from the needle),
+and the rename sweep now runs on it too. The page lands pending saves before
+the search and the replace, then reloads and remounts the open editors so none
+saves the old text back; another tab with unsaved typing gets the usual save
+conflict. The preview stops listing at 1000 matches. The new write path is in
+the stale-marks invariant test and the lock-order harness.
 
 ## Background jobs list (2026-11-20)
 
@@ -1197,6 +1403,26 @@ name. It now reads full scenes.
 
 Staging branch `staging/assistant-quick-wins`.
 
+- #1275 (lows from the staging review). Pattern pass: the note checks
+  which of the pattern's scenes exist and have text when it is written, not
+  when the attempt read its scenes, so its "Shows up in" list and "first 25"
+  line leave out a scene deleted or emptied during the survey. The fix loop
+  no longer cuts the list to 25 up front; it stops once 25 scenes have been
+  asked about, so a scene skipped as deleted or empty gives its place to the
+  next one and the note's count matches the scenes that get fixes. A skipped
+  scene is not marked done: a continued run asks about it if it was restored
+  in between, and skips it again (no request) if not. An emptied
+  scene is skipped like a deleted one. Chat: `listChat` fills in the entry
+  type of an entity attachment stored before #1185 by looking the id up in
+  the three entity tables, so old chips get the right icon with no stored
+  row rewritten; an entry that is gone keeps the person icon. Tests: the
+  hostile Markdown cases run through `renderReplyBlocks` too, the chat route
+  has checks for a forged `entityType` and for a cut and renamed entry, and
+  `e2e/assistant-reply-blocks.spec.ts` covers a reply arriving in two parts
+  and a notice replacing a longer reply. Left alone: a tab loaded before
+  #1276 misreading a renamed entry in the attachments header. Only the
+  server could fix it, by keeping the old header format and sending names
+  in a second header for good, and a reload already clears it.
 - #1031 (prices for Claude): the Anthropic models list reports no prices, so
   the meter had none and a cap on Claude never applied. Each model a role
   runs on now has a typed price pair on the account page, stored per token
@@ -1219,7 +1445,7 @@ Staging branch `staging/assistant-quick-wins`.
   scene deleted since the run started is skipped with no request.
 - #1185: a stored entity attachment carries its entry type, read on the
   server and never taken from the browser, so the chip shows the right icon.
-  Attachments stored before this keep the person icon.
+  Attachments stored before this kept the person icon until #1275.
 - #1003: asked for a frame throttle on the streaming reply. A throttle would
   not have fixed the lost selection, so the bubble renders one `{@html}` per
   top-level Markdown block (`renderReplyBlocks`) and finished blocks keep

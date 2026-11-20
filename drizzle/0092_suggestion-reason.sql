@@ -1,1 +1,0 @@
-ALTER TABLE "review_suggestions" ADD COLUMN "reason" text;

@@ -26,6 +26,7 @@
 	import { continuationExtensions } from '#lib/editor-continuation';
 	import { hasPendingUploads, imageUploadExtension, storedText } from '#lib/editor-images';
 	import { markerExtensions, type MarkerHandle, type SceneMarker } from '#lib/editor-markers';
+	import type { WiderSearch } from '#lib/editor-search-scope';
 	import EditorToolbar from './EditorToolbar.svelte';
 	import CoauthorPanel from './CoauthorPanel.svelte';
 	import SceneConflictBanner from './SceneConflictBanner.svelte';
@@ -63,6 +64,7 @@
 		onToggleNonPrinting,
 		onToggleCommandMarkers,
 		onStatus,
+		widerSearch,
 		leaving = false
 	}: {
 		sceneId: string;
@@ -84,6 +86,9 @@
 		// The page is switching to another scene: the text stays on screen but
 		// takes no input, so nothing is typed into a scene about to be replaced.
 		leaving?: boolean;
+		// The story page's find and replace across the chapter or the story,
+		// offered from the find panel.
+		widerSearch?: WiderSearch;
 		// When set, pasted and dropped images upload into this universe and
 		// land as markdown.
 		imageUniverseId?: string;
@@ -506,7 +511,14 @@
 						compartments: {
 							nonPrinting: nonPrintingCompartment,
 							alignment: alignmentCompartment
-						}
+						},
+						// Read through the prop each time, so the page can change it.
+						widerSearch: widerSearch
+							? {
+									hasChapter: () => widerSearch?.hasChapter() ?? false,
+									open: (scope, query) => widerSearch?.open(scope, query)
+								}
+							: undefined
 					}),
 					mentionsCompartment.of(mentionExtensions(entities, mentionOptions)),
 					autocompleteCompartment.of(autocompleteExtensions(entities, autocompleteMode)),

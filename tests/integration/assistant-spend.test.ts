@@ -75,7 +75,13 @@ function cancelledAfterOneScene(controller: AbortController) {
 	return stub;
 }
 
-async function configure(opts: { spendCapUsd?: number | null; spendWarnUsd?: number | null } = {}) {
+async function configure(
+	opts: {
+		spendCapUsd?: number | null;
+		spendWarnUsd?: number | null;
+		modelPricingManual?: Record<string, { prompt: number; completion: number }>;
+	} = {}
+) {
 	await saveAccountLlmConfig(db, userId, {
 		enabled: true,
 		assistantName: '',
@@ -227,6 +233,34 @@ describe('pre-flight review estimate (#548)', () => {
 		);
 	});
 
+	it("prices a first read at Claude's cache write rate (#1274)", async () => {
+		const storyId = await seedStory(1);
+		const claude = (cacheTtl: '5m' | '1h') =>
+			saveAccountLlmConfig(db, userId, {
+				enabled: true,
+				assistantName: '',
+				persona: 'balanced',
+				provider: 'anthropic',
+				endpoint: '',
+				apiKey: 'sk',
+				models: { reviewer: 'claude-review' },
+				toolCallBudget: 8,
+				cacheTtl,
+				modelPricingManual: { 'claude-review': { prompt: PRICE_PER_TOKEN, completion: 0 } }
+			});
+		// One scene on the static basis: 2.5 requests' worth of prompt, the first
+		// of them written to the cache at 2x (one hour) or 1.25x (five minutes).
+		await claude('1h');
+		const hour = await estimateStoryReview(db, { userId, storyId });
+		expect(hour.multiplier).toBe(2.5);
+		expect(hour.estCostUsd! / (hour.estTokens * PRICE_PER_TOKEN)).toBeCloseTo(3.5 / 2.5, 3);
+
+		await claude('5m');
+		const minutes = await estimateStoryReview(db, { userId, storyId });
+		expect(minutes.estTokens).toBe(hour.estTokens);
+		expect(minutes.estCostUsd! / (minutes.estTokens * PRICE_PER_TOKEN)).toBeCloseTo(2.75 / 2.5, 3);
+	});
+
 	it('draws the completion figure from history once there is enough of it', async () => {
 		const storyId = await seedStory(1);
 		const bare = await estimateStoryReview(db, { userId, storyId });
@@ -290,6 +324,69 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.total).toBe(3);
 		expect(result.capped).toBe(true);
 		expect(result.spentUsd).toBeCloseTo(2, 6);
+	});
+
+	it('stops on a price the writer typed, with nothing discovered (#1274)', async () => {
+		const storyId = await seedStory(3);
+		await configure({
+			spendCapUsd: 1.5,
+			modelPricingManual: { [MODEL]: { prompt: PRICE_PER_TOKEN, completion: 0 } }
+		});
+		expect((await accountLlmView(db, userId)).modelPricing).toBeUndefined();
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: p });
+
+		expect(result.reviewed).toBe(2);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(2, 6);
+		expect(result.failures).toHaveLength(0);
+	});
+
+	// 900 of every 1000 prompt tokens come back as read from the endpoint's cache.
+	function mostlyCached() {
+		const stub = provider();
+		const respond = stub.provider.respond.bind(stub.provider);
+		stub.provider.respond = async (...args) => {
+			const reply = await respond(...args);
+			return {
+				...reply,
+				usage: { promptTokens: PROMPT_TOKENS, completionTokens: 0, cachedPromptTokens: 900 }
+			};
+		};
+		return stub.provider;
+	}
+
+	it('counts cached text at the full price on an OpenAI-compatible endpoint', async () => {
+		const storyId = await seedStory(3);
+		await priceModel();
+		await configure({ spendCapUsd: 1.5 });
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: mostlyCached() });
+
+		// No discount is assumed, so a scene still costs a dollar.
+		expect(result.reviewed).toBe(2);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(2, 6);
+	});
+
+	it('counts cached text at a tenth on Claude, as before', async () => {
+		const storyId = await seedStory(3);
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'anthropic',
+			endpoint: '',
+			apiKey: 'sk',
+			models: { reviewer: 'claude-review' },
+			toolCallBudget: 8,
+			spendCapUsd: 1.5,
+			modelPricingManual: { 'claude-review': { prompt: PRICE_PER_TOKEN, completion: 0 } }
+		});
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: mostlyCached() });
+
+		// 100 fresh + 900 at a tenth = 19 cents a scene.
+		expect(result.reviewed).toBe(3);
+		expect(result.capped).toBeUndefined();
 	});
 
 	it('is its own outcome, not a failure or a cancellation', async () => {

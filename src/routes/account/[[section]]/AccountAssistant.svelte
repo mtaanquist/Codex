@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { enhance } from '#lib/enhance';
 	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import { usageCostUsd } from '#lib/assistant-cost';
 	import { askConfirm } from '#lib/confirm.svelte';
 	import { formatDateTime, formatNumber, pluralSuffix, spentPhrase } from '#lib/format';
 	import { resolveRoleModel, type AssistantRole } from '#lib/assistant-tuning';
@@ -112,8 +113,9 @@
 	const modelPricing = $derived({ ...discoveredPricing, ...manualPricing });
 	// A stored per-token price back as the dollars per million tokens that were
 	// typed, without the rounding noise of the division.
-	// The form saves on every change, and half a price is refused, so a pair
-	// with one box filled waits for the other before it saves.
+	// The form saves on every change, and half a price cannot be stored, so a
+	// pair with one box filled waits for the other before it saves. A change
+	// elsewhere on the form still saves, and the reply names the unfinished pair.
 	function holdHalfPrice(event: Event & { currentTarget: HTMLElement }) {
 		const filled = [...event.currentTarget.querySelectorAll('input')].filter(
 			(box) => box.value.trim() !== ''
@@ -162,16 +164,36 @@
 		].filter(Boolean);
 		return parts.length > 0 ? `${id} (${parts.join(', ')})` : id;
 	}
-	function usageCost(model: string, promptTokens: number | null, completionTokens: number | null) {
-		const price = modelPricing[model];
-		if (!price || (promptTokens === null && completionTokens === null)) return null;
-		return (promptTokens ?? 0) * price.prompt + (completionTokens ?? 0) * price.completion;
+	// A row's cost at the same cache rates the spend cap uses. A row with no
+	// cache shares is priced at the plain price. Rows do not record their
+	// provider, so the saved one decides the cache read rate; a row from
+	// before a provider switch seldom has a price left to show a cost with.
+	const claudeSaved = $derived(data.assistant.provider === 'anthropic');
+	function usageCost(row: {
+		model: string;
+		promptTokens: number | null;
+		completionTokens: number | null;
+		cachedPromptTokens: number | null;
+		cacheWriteTokens: number | null;
+		cacheWrite1hTokens: number | null;
+	}) {
+		const price = modelPricing[row.model];
+		if (!price || (row.promptTokens === null && row.completionTokens === null)) return null;
+		return usageCostUsd(
+			price,
+			{
+				...row,
+				promptTokens: row.promptTokens ?? 0,
+				completionTokens: row.completionTokens ?? 0
+			},
+			claudeSaved
+		);
 	}
 	const usageTotalCost = $derived.by(() => {
 		let total = 0;
 		let known = false;
 		for (const row of data.assistantUsage.byModel) {
-			const cost = usageCost(row.model, row.promptTokens, row.completionTokens);
+			const cost = usageCost(row);
 			if (cost !== null) {
 				total += cost;
 				known = true;
@@ -208,14 +230,14 @@
 		const select = event.currentTarget;
 		if (select.value === data.assistant.provider) return;
 		const hasPicks = Object.values(savedModels).some(Boolean);
-		const ask = data.assistant.hasKey || hasPicks;
+		const ask = data.assistant.hasKey || hasPicks || Object.keys(manualPricing).length > 0;
 		// Hold the form's autosave until the answer; a yes saves it below.
 		if (ask) event.stopPropagation();
 		const go =
 			!ask ||
 			(await askConfirm({
 				title: 'Switch provider?',
-				body: 'Your saved API key and the models picked for each role are cleared.',
+				body: 'Your saved API key, the models picked for each role, and any prices you typed are cleared.',
 				confirmLabel: 'Switch provider'
 			}));
 		if (!go) {
@@ -664,6 +686,7 @@
 				<div class="settings-actions">
 					{#if form?.scope === 'assistant-test' && 'reply' in form && form.reply}
 						<FormStatus success={`Reply: ${form.reply}`} />
+						<FormStatus error={form.message ?? null} />
 					{:else}
 						<FormStatus
 							error={(form?.scope === 'assistant-test' || form?.scope === 'assistant-endpoint') &&
@@ -836,7 +859,8 @@
 						back (out). If your endpoint does not report prices, look them up on your provider's
 						pricing page and type both in. Cost estimates and the spend cap need them. What you type
 						is kept when you discover models again; leave both boxes empty to use what your endpoint
-						reports.
+						reports. If you switch provider or move a custom endpoint to another server, the prices
+						you typed are cleared, so enter them again.
 					</p>
 				{/if}
 				<div class="settings-actions">
@@ -895,7 +919,7 @@
 				{/if}
 				<div>
 					{#each data.assistantUsage.recent as entry (entry.id)}
-						{@const cost = usageCost(entry.model, entry.promptTokens, entry.completionTokens)}
+						{@const cost = usageCost(entry)}
 						<div class="list-row">
 							<div class="list-main">
 								<div class="list-title">{entry.model}</div>

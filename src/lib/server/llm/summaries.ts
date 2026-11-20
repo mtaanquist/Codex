@@ -8,13 +8,16 @@ import {
 	NoModelError,
 	type GatewayDeps
 } from './gateway.ts';
-import { buildChapterSummaryMessage, buildSceneSummaryMessage } from './prompts/summary.ts';
+import { buildSceneSummaryMessage } from './prompts/summary.ts';
 import { spentFields, type SpendMeter } from './spend.ts';
 import { jobSpendMeter } from './job-spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
-import { markChapterSummariesStale, markMentionsStale } from '../scene-lifecycle.ts';
-import { summaryIsCurrent } from '../summary-currency.ts';
+import { summaryIsCurrent, type SceneSummarySource } from '../summary-currency.ts';
+import {
+	chapterSummaryRequest,
+	generatedChapterSummaryIsCurrent
+} from './chapter-summary-request.ts';
 
 // Summary maintenance: the Assistant drafts and refreshes scene and chapter
 // summary_md, the derived metadata that feeds recap and context assembly. Shared
@@ -22,11 +25,17 @@ import { summaryIsCurrent } from '../summary-currency.ts';
 // writer to accept: a summary is generated metadata, not authored prose, so it
 // is written directly - but it never overwrites a summary the writer wrote by
 // hand (see needsSummary), and it leaves the row's updated_at alone so a summary
-// write does not register as an edit. The write only lands if the row is as it
-// was read before the model call, so a summary typed or an edit made while the
-// model was writing is kept. It is stamped with that same updated_at rather
-// than a clock reading, so currency (see summary-currency.ts) compares one
-// column with a copy of itself and no two clocks are ever compared.
+// write does not register as an edit.
+//
+// A scene summary reads only the scene's own row, so it is current while the
+// row has not changed since: it is stamped with the updated_at it was written
+// from (see summary-currency.ts), and the write only lands if the row is as it
+// was read before the model call.
+//
+// A chapter summary reads other rows (its scenes' summaries), so it is stored
+// with the fingerprint of the request it was written from (summary_input) and
+// is out of date when the request that would be sent now differs (see
+// chapter-summary-request.ts). No save marks it.
 
 const MAX_SUMMARY_TOKENS = 200;
 
@@ -59,8 +68,8 @@ function blank(value: string | null): boolean {
 }
 
 // Whether the summary job should write this summary. It fills a blank summary
-// and refreshes one it generated when the source changed after the watermark;
-// it leaves a non-blank summary with no watermark alone (the writer's own).
+// and refreshes one it generated when what it was written from has changed; it
+// leaves a non-blank summary it did not generate alone (the writer's own).
 export function needsSummary(opts: {
 	summaryMd: string | null;
 	summaryGeneratedAt: Date | null;
@@ -76,13 +85,12 @@ async function generate(
 	opts: {
 		userId: string;
 		storyId: string;
-		content: string;
+		messages: ChatMessage[];
 		meter?: SpendMeter;
 		signal?: AbortSignal;
 	},
 	deps: GatewayDeps
 ): Promise<string> {
-	const messages: ChatMessage[] = [{ role: 'user', content: opts.content }];
 	const result = await completeDetailed(
 		db,
 		{
@@ -90,7 +98,7 @@ async function generate(
 			storyId: opts.storyId,
 			role: 'utility',
 			enableTools: false,
-			messages,
+			messages: opts.messages,
 			maxTokens: MAX_SUMMARY_TOKENS,
 			meter: opts.meter,
 			signal: opts.signal
@@ -185,35 +193,29 @@ export async function summariseStory(
 				{
 					userId,
 					storyId,
-					content: buildSceneSummaryMessage(scene.title, scene.bodyMd),
+					messages: [
+						{ role: 'user', content: buildSceneSummaryMessage(scene.title, scene.bodyMd) }
+					],
 					meter,
 					signal
 				},
 				deps
 			);
 			if (!text) continue;
-			const stored = await db.transaction(async (tx) => {
-				// Raw SQL so updated_at's $onUpdate does not fire. A scene edited, or
-				// given a summary, since it was read keeps what it has; the next run
-				// looks at it again.
-				const { rows } = await tx.execute(sql`
-					update scenes set summary_md = ${text}, summary_generated_at = updated_at
-					where id = ${scene.id}
-						and updated_at = ${scene.updatedAtText}::timestamptz
-						and summary_md is not distinct from ${scene.summaryMd}
-						and summary_generated_at is not distinct from ${scene.generatedAtText}::timestamptz
-						and deleted_at is null
-					returning chapter_id
-				`);
-				if (rows.length === 0) return false;
-				// Character arcs read scene summaries.
-				await markMentionsStale(tx, { sceneIds: [scene.id] });
-				// So does the chapter's summary. Marked here rather than remembered
-				// for the chapter pass, so a run that stops first leaves it due.
-				const sceneChapter = (rows[0] as { chapter_id: string | null }).chapter_id;
-				if (sceneChapter) await markChapterSummariesStale(tx, [sceneChapter]);
-				return true;
-			});
+			// Raw SQL so updated_at's $onUpdate does not fire. A scene edited, or
+			// given a summary, since it was read keeps what it has; the next run
+			// looks at it again. The chapter's summary and the arcs that read this
+			// one need no telling: their requests no longer match.
+			const { rows } = await db.execute(sql`
+				update scenes set summary_md = ${text}, summary_generated_at = updated_at
+				where id = ${scene.id}
+					and updated_at = ${scene.updatedAtText}::timestamptz
+					and summary_md is not distinct from ${scene.summaryMd}
+					and summary_generated_at is not distinct from ${scene.generatedAtText}::timestamptz
+					and deleted_at is null
+				returning id
+			`);
+			const stored = rows.length > 0;
 			if (!stored) {
 				changed += 1;
 				continue;
@@ -232,8 +234,8 @@ export async function summariseStory(
 			title: chapters.title,
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
-			updatedAt: chapters.updatedAt,
-			updatedAtText: sql<string>`${chapters.updatedAt}::text`,
+			summaryInput: chapters.summaryInput,
+			// As text, so the write below compares to the microsecond.
 			generatedAtText: sql<string | null>`${chapters.summaryGeneratedAt}::text`
 		})
 		.from(chapters)
@@ -243,10 +245,15 @@ export async function summariseStory(
 
 	// Every chapter's scene summaries in one read, read after the scene pass so
 	// the summaries it just wrote are included.
-	const summariesByChapter = new Map<string, string[]>();
+	const summariesByChapter = new Map<string, SceneSummarySource[]>();
 	if (chapterRows.length > 0) {
 		const sceneSummaries = await db
-			.select({ chapterId: scenes.chapterId, summaryMd: scenes.summaryMd })
+			.select({
+				chapterId: scenes.chapterId,
+				summaryMd: scenes.summaryMd,
+				summaryGeneratedAt: scenes.summaryGeneratedAt,
+				updatedAt: scenes.updatedAt
+			})
 			.from(scenes)
 			.where(
 				and(
@@ -259,10 +266,9 @@ export async function summariseStory(
 			)
 			.orderBy(asc(scenes.globalPosition));
 		for (const row of sceneSummaries) {
-			const summary = row.summaryMd?.trim();
-			if (!row.chapterId || !summary) continue;
+			if (!row.chapterId) continue;
 			const list = summariesByChapter.get(row.chapterId) ?? [];
-			list.push(summary);
+			list.push(row);
 			summariesByChapter.set(row.chapterId, list);
 		}
 	}
@@ -273,17 +279,22 @@ export async function summariseStory(
 			capped = true;
 			break;
 		}
-		const summaries = summariesByChapter.get(chapter.id) ?? [];
-		if (summaries.length === 0) continue;
-
-		const changedSince = chapter.summaryGeneratedAt
-			? !summaryIsCurrent(chapter.summaryGeneratedAt, chapter.updatedAt)
-			: false;
+		const request = chapterSummaryRequest(chapter.title, summariesByChapter.get(chapter.id) ?? []);
+		if (!request) continue;
+		// A summary kept through the upgrade (migration 0094) gets its real
+		// fingerprint, with no call.
+		if (chapter.summaryGeneratedAt && chapter.summaryInput === request.inputAtUpgrade) {
+			await db.execute(sql`
+				update chapters set summary_input = ${request.input}
+				where id = ${chapter.id} and summary_input = ${chapter.summaryInput}
+			`);
+			continue;
+		}
 		if (
 			!needsSummary({
 				summaryMd: chapter.summaryMd,
 				summaryGeneratedAt: chapter.summaryGeneratedAt,
-				changedSince
+				changedSince: !generatedChapterSummaryIsCurrent(chapter, request)
 			})
 		) {
 			continue;
@@ -291,23 +302,18 @@ export async function summariseStory(
 		try {
 			const text = await generate(
 				db,
-				{
-					userId,
-					storyId,
-					content: buildChapterSummaryMessage(chapter.title, summaries),
-					meter,
-					signal
-				},
+				{ userId, storyId, messages: request.messages, meter, signal },
 				deps
 			);
 			if (!text) continue;
-			// As for scenes: only over the chapter as it was read. The stamp check
-			// also catches a scene trashed or restored meanwhile (see
-			// markChapterSummariesStale).
+			// Stored with the fingerprint of the request that was sent, so a scene
+			// added, removed, moved or summarised again while the model was writing
+			// leaves the summary out of date. The checks keep a summary the writer
+			// typed meanwhile.
 			const { rows } = await db.execute(sql`
-				update chapters set summary_md = ${text}, summary_generated_at = updated_at
+				update chapters
+				set summary_md = ${text}, summary_generated_at = now(), summary_input = ${request.input}
 				where id = ${chapter.id}
-					and updated_at = ${chapter.updatedAtText}::timestamptz
 					and summary_md is not distinct from ${chapter.summaryMd}
 					and summary_generated_at is not distinct from ${chapter.generatedAtText}::timestamptz
 				returning id

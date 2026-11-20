@@ -198,21 +198,48 @@ describe('saveAssistantModels prices', () => {
 		expect((await stored()).modelPricingManual?.['big-model']).toBeUndefined();
 	});
 
-	it('refuses half a price, or a negative one, and stores nothing', async () => {
-		for (const [priceIn, priceOut] of [
-			['3', ''],
-			['', '15'],
-			['-1', '15'],
-			['abc', '15']
+	it('saves the rest of the form around half a price, or a negative one, and says so (#1274)', async () => {
+		await storeConfig({ modelPricingManual: { 'big-model': { prompt: 1, completion: 2 } } });
+		for (const [priceIn, priceOut, context] of [
+			['3', '', '1000'],
+			['', '15', '2000'],
+			['-1', '15', '3000'],
+			['abc', '15', '4000']
 		]) {
 			const result = await saveModels({
 				reviewer: 'big-model',
+				'context-big-model': context,
 				'price-in-big-model': priceIn,
-				'price-out-big-model': priceOut
+				'price-out-big-model': priceOut,
+				'price-in-small-model': '5',
+				'price-out-small-model': '6'
 			});
-			expect(result).toMatchObject({ status: 400 });
+			expect(result).toMatchObject({
+				saved: true,
+				message: expect.stringMatching(/except the price for big-model\. Enter both prices/)
+			});
+			const view = await stored();
+			expect(view.models.reviewer).toBe('big-model');
+			expect(view.modelContextManual).toEqual({ 'big-model': Number(context) });
+			// The unfinished pair leaves its stored entry alone; a whole pair saves.
+			expect(view.modelPricingManual).toEqual({
+				'big-model': { prompt: 1, completion: 2 },
+				'small-model': { prompt: 5 / 1_000_000, completion: 6 / 1_000_000 }
+			});
 		}
-		expect((await stored()).modelPricingManual).toBeUndefined();
+	});
+
+	it('says nothing about half a price for a model the same save unassigned', async () => {
+		await storeConfig({ models: { reviewer: 'big-model' } });
+		const result = await saveModels({
+			reviewer: 'small-model',
+			'price-in-big-model': '3',
+			'price-out-big-model': ''
+		});
+		expect(result).toEqual({ scope: 'assistant-models', saved: true });
+		const view = await stored();
+		expect(view.models.reviewer).toBe('small-model');
+		expect(view.modelPricingManual).toBeUndefined();
 	});
 
 	it('keeps entries for models the form did not render', async () => {
@@ -231,6 +258,69 @@ describe('saveAssistantModels prices', () => {
 			'big-model': { prompt: 5 / 1_000_000, completion: 6 / 1_000_000 },
 			'small-model': { prompt: 3, completion: 4 }
 		});
+	});
+});
+
+describe('typed prices when the endpoint changes (#1274)', () => {
+	const typed = { 'big-model': { prompt: 1, completion: 2 } };
+
+	it('drops them when the endpoint moves to another host', async () => {
+		await storeConfig({ modelPricingManual: typed, modelContextManual: { 'big-model': 4096 } });
+		await saveEndpoint({ endpoint: 'http://elsewhere/v1' });
+		const view = await stored();
+		expect(view.endpoint).toBe('http://elsewhere/v1');
+		expect(view.modelPricingManual).toBeUndefined();
+		expect(view.modelContextManual).toEqual({ 'big-model': 4096 });
+	});
+
+	it('drops them when the provider changes', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ provider: 'anthropic' });
+		expect((await stored()).modelPricingManual).toBeUndefined();
+	});
+
+	it('says which prices an endpoint save cleared (staging review 2)', async () => {
+		await storeConfig({
+			modelPricingManual: { ...typed, 'small-model': { prompt: 3, completion: 4 } }
+		});
+		const moved = await saveEndpoint({ endpoint: 'http://127.0.0.1/v1' });
+		expect(moved).toMatchObject({
+			scope: 'assistant-endpoint',
+			saved: true,
+			message: expect.stringMatching(
+				/prices you typed for big-model, small-model were cleared.*spend cap/
+			)
+		});
+		// Nothing left to clear, and a save that clears nothing says nothing.
+		const again = await saveEndpoint({ endpoint: 'http://elsewhere/v1' });
+		expect(again).toEqual({ scope: 'assistant-endpoint', saved: true });
+		await storeConfig({ modelPricingManual: typed });
+		const same = await saveEndpoint({ endpoint: 'http://local/v2' });
+		expect(same).toEqual({ scope: 'assistant-endpoint', saved: true });
+	});
+
+	it('carries the cleared prices on a Test connection reply too', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		const form = new FormData();
+		form.set('provider', 'custom');
+		form.set('endpoint', 'http://elsewhere/v1');
+		expect(await call('testAssistant', form)).toMatchObject({
+			scope: 'assistant-test',
+			reply: 'Hello.',
+			message: expect.stringMatching(/prices you typed for big-model were cleared/)
+		});
+	});
+
+	it('keeps them when the endpoint stays on the same host', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ endpoint: 'http://local/v2' });
+		expect((await stored()).modelPricingManual).toEqual(typed);
+	});
+
+	it('keeps them when only the port or the scheme changes', async () => {
+		await storeConfig({ modelPricingManual: typed });
+		await saveEndpoint({ endpoint: 'https://local:8443/v1' });
+		expect((await stored()).modelPricingManual).toEqual(typed);
 	});
 });
 

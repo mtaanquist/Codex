@@ -9,6 +9,7 @@ import { enterKeymap } from './editor-enter';
 import { alignmentExtension } from './editor-alignment';
 import { indentExtension } from './editor-indent';
 import { nonPrintingExtension } from './editor-nonprinting';
+import { searchScopeExtension, type WiderSearch } from './editor-search-scope';
 
 export type EditingMode = 'markdown' | 'rich';
 export type MarkVisibility = 'shown' | 'hidden';
@@ -47,6 +48,9 @@ export function proseExtensions(opts: {
 	nonPrintingMarks?: MarkVisibility;
 	commandMarkers?: MarkVisibility;
 	compartments?: { nonPrinting?: Compartment; alignment?: Compartment };
+	// The scene editors on the story page: the find panel can widen the
+	// search to the chapter or the whole story.
+	widerSearch?: WiderSearch;
 }): Extension[] {
 	const commandMarkers = commandMarkerExtensions(opts.commandMarkers ?? 'shown');
 	const nonPrinting = nonPrintingFor(opts.nonPrintingMarks ?? 'hidden');
@@ -59,6 +63,7 @@ export function proseExtensions(opts: {
 		opts.plain ? [] : formatKeymap(),
 		// Find and replace within the scene; Ctrl+F opens the panel.
 		search(),
+		opts.widerSearch ? searchScopeExtension(opts.widerSearch) : [],
 		opts.plain
 			? []
 			: [

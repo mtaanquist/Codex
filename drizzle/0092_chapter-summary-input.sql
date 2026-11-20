@@ -1,0 +1,1 @@
+ALTER TABLE "chapters" ADD COLUMN "summary_input" text;

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -17,6 +18,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'llm-summaries-test-secret';
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
+const { storySkeleton } = await import('../../src/lib/server/llm/context/sources');
 const { duplicateScene, mergeScenes, splitScene } =
 	await import('../../src/lib/server/scene-split-merge');
 const { setSceneStatus } = await import('../../src/lib/server/scene-status');
@@ -460,6 +462,7 @@ async function readChapter(id: string) {
 		.select({
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			summaryInput: chapters.summaryInput,
 			updatedAt: chapters.updatedAt
 		})
 		.from(chapters)
@@ -467,20 +470,22 @@ async function readChapter(id: string) {
 	return row;
 }
 
-// The stamp is the updated_at the summary was built from, not a clock reading,
-// so a server clock that disagrees with the database's does not make a fresh
-// summary read as stale (or a stale one as fresh).
+// A scene summary's stamp is the updated_at it was built from, not a clock
+// reading, so a server clock that disagrees with the database's does not make
+// a fresh summary read as stale (or a stale one as fresh). A chapter summary
+// is stored with the fingerprint of its request instead.
 describe('summary stamp', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 	});
 
-	it('stamps each summary with the updated_at it was built from', async () => {
+	it('stamps a scene summary with the updated_at it was built from, and a chapter summary with its fingerprint', async () => {
 		await summariseStory(db, { userId: ownerId, storyId }, deps);
 		const a = await readScene(sceneAId);
 		expect(a.summaryGeneratedAt!.getTime()).toBe(a.updatedAt.getTime());
 		const chapter = await readChapter(chapterId);
-		expect(chapter.summaryGeneratedAt!.getTime()).toBe(chapter.updatedAt.getTime());
+		expect(chapter.summaryGeneratedAt).not.toBeNull();
+		expect(chapter.summaryInput).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it('stays current when the app clock runs behind the database', async () => {
@@ -494,7 +499,8 @@ describe('summary stamp', () => {
 });
 
 // A scene's own summary is current through the trash and back, so the scene
-// pass does not touch its chapter; the chapter is marked instead.
+// pass does not touch its chapter; the chapter's request no longer matches the
+// fingerprint its summary was stored with.
 describe('chapter summary after a change of scenes', () => {
 	beforeEach(async () => {
 		await summariseStory(db, { userId: ownerId, storyId }, deps);
@@ -520,13 +526,50 @@ describe('chapter summary after a change of scenes', () => {
 		expect(prompts.at(-1)).toContain('SUMMARY-1');
 	});
 
-	it('refreshes the chapter summary after a merge', async () => {
-		const merged = await mergeScenes(db, ownerId, storyId, [sceneBId, sceneCId]);
-		expect(merged.ok).toBe(true);
-		// B keeps the writer's own summary, so only the chapter is due.
+	it('refreshes the chapter summary after a merge that changes what it reads, and not otherwise', async () => {
+		// C has no summary and B keeps the writer's own, so the chapter reads the same.
+		expect((await mergeScenes(db, ownerId, storyId, [sceneBId, sceneCId])).ok).toBe(true);
 		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
 			scenes: 0,
-			chapters: 1
+			chapters: 0
+		});
+		expect((await mergeScenes(db, ownerId, storyId, [sceneAId, sceneBId])).ok).toBe(true);
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+	});
+
+	it('refreshes the chapter summary after a rename, and not after a save that changes nothing', async () => {
+		await db.update(chapters).set({ title: 'Descent' }).where(eq(chapters.id, chapterId));
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(0);
+		await db.update(chapters).set({ title: 'The Descent' }).where(eq(chapters.id, chapterId));
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+		expect(prompts.at(-1)).toContain('The Descent');
+	});
+
+	it('refreshes once a chapter summary stored without a fingerprint', async () => {
+		// As an earlier release left it, stamped current or marked out of date.
+		for (const stamp of ['updated_at', `updated_at - interval '1 millisecond'`]) {
+			await pool.query(
+				`update chapters set summary_generated_at = ${stamp}, summary_input = null where id = $1`,
+				[chapterId]
+			);
+			expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+			expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(0);
+		}
+	});
+
+	it('keeps a chapter summary the writer types while the model is writing one', async () => {
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		duringCall = async () => {
+			await pool.query(
+				`update chapters set summary_md = 'Mine.', summary_generated_at = null where id = $1`,
+				[chapterId]
+			);
+		};
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ chapters: 0, changed: 1 });
+		expect(await readChapter(chapterId)).toMatchObject({
+			summaryMd: 'Mine.',
+			summaryGeneratedAt: null
 		});
 	});
 
@@ -562,15 +605,17 @@ describe('chapter summary after a change of scenes', () => {
 		});
 	});
 
-	it('does not mark a chapter current when a scene is restored while it is being written', async () => {
+	it('stores a chapter summary as out of date when a scene is restored while it is being written', async () => {
 		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
 		duringCall = async () => {
 			await restoreScene(db, ownerId, sceneAId);
 		};
-		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
-		expect(result).toMatchObject({ chapters: 0, changed: 1 });
+		// Written from the chapter without the scene, and stored as such.
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
 		duringCall = null;
 		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+		expect(prompts.at(-1)).toContain('SUMMARY-1');
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(0);
 	});
 });
 
@@ -605,5 +650,102 @@ describe('summary pass stops and reports', () => {
 		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
 		expect(result).toMatchObject({ scenes: 0, chapters: 0, failed: 0, disabled: true });
 		expect(calls).toBe(0);
+	});
+});
+
+// Migration 0094 keeps the chapter summaries an earlier release wrote and
+// counted as current. Its statement is run here over rows as that release
+// left them, so the SQL and the app's reading of what it stores are checked
+// against each other.
+describe('chapter summaries kept through the upgrade (migration 0094)', () => {
+	const adoptSql = readFileSync('drizzle/0094_chapter-summary-adopt.sql', 'utf8');
+	const pass = () => summariseStory(db, { userId: ownerId, storyId }, deps);
+	const outline = async () => (await storySkeleton(db, storyId)).chapters[0].summaryMd;
+	const input = async () =>
+		(await pool.query('select summary_input from chapters where id = $1', [chapterId])).rows[0]
+			.summary_input as string | null;
+
+	// The release's state after a summaries pass: scene summaries written, and
+	// the chapter's stamped with its own updated_at, with no fingerprint.
+	beforeEach(async () => {
+		await pass();
+		// Text the SQL and the app must digest alike.
+		await db
+			.update(scenes)
+			.set({ summaryMd: '  "Quoted" \\\\ line\none\ttab é中😀  ' })
+			.where(eq(scenes.id, sceneBId));
+		await pool.query(
+			`update chapters set summary_md = 'From the release.', summary_generated_at = updated_at,
+			 summary_input = null where id = $1`,
+			[chapterId]
+		);
+		calls = 0;
+	});
+
+	it('keeps one that was current, with no call, and gives it a fingerprint on the next pass', async () => {
+		expect(await outline()).toBeNull();
+		await pool.query(adoptSql);
+		expect(await input()).toMatch(/^at-upgrade:[0-9a-f]{32}$/);
+		expect(await outline()).toBe('From the release.');
+		expect(await pass()).toMatchObject({ scenes: 0, chapters: 0 });
+		expect(await input()).toMatch(/^[0-9a-f]{64}$/);
+		expect(await outline()).toBe('From the release.');
+		expect(await pass()).toMatchObject({ scenes: 0, chapters: 0 });
+		expect(calls).toBe(0);
+	});
+
+	it('puts a kept one out of date when what it reads changes after the upgrade', async () => {
+		await pool.query(adoptSql);
+		await db.update(scenes).set({ summaryMd: 'Another note.' }).where(eq(scenes.id, sceneBId));
+		expect(await outline()).toBeNull();
+		expect(await pass()).toMatchObject({ scenes: 0, chapters: 1 });
+	});
+
+	it('puts a kept one out of date when a scene is edited, deleted or the chapter renamed', async () => {
+		for (const change of [
+			() => db.update(scenes).set({ bodyMd: 'Alice left.' }).where(eq(scenes.id, sceneAId)),
+			() => trashScene(db, ownerId, sceneBId),
+			() => db.update(chapters).set({ title: 'Ascent' }).where(eq(chapters.id, chapterId))
+		]) {
+			await pool.query(
+				`update chapters set summary_generated_at = updated_at, summary_input = null where id = $1`,
+				[chapterId]
+			);
+			await pool.query(adoptSql);
+			expect(await outline()).not.toBeNull();
+			await change();
+			expect(await outline()).toBeNull();
+			await pass();
+		}
+	});
+
+	it('leaves one the release counted as out of date to be rewritten', async () => {
+		await pool.query(
+			`update chapters set summary_generated_at = updated_at - interval '1 millisecond' where id = $1`,
+			[chapterId]
+		);
+		await pool.query(adoptSql);
+		expect(await input()).toBeNull();
+		expect(await pass()).toMatchObject({ chapters: 1 });
+	});
+
+	it('leaves one whose scene has an out-of-date summary to be rewritten', async () => {
+		// The scene was edited after its summary, and the chapter summary, were
+		// written; the release had not yet noticed.
+		await db.update(scenes).set({ bodyMd: 'Alice left.' }).where(eq(scenes.id, sceneAId));
+		await pool.query(adoptSql);
+		expect(await input()).toBeNull();
+		expect(await outline()).toBeNull();
+		expect(await pass()).toMatchObject({ scenes: 1, chapters: 1 });
+	});
+
+	it("leaves the writer's own chapter summary alone", async () => {
+		await pool.query(
+			`update chapters set summary_generated_at = null, summary_input = null where id = $1`,
+			[chapterId]
+		);
+		await pool.query(adoptSql);
+		expect(await input()).toBeNull();
+		expect(await outline()).toBe('From the release.');
 	});
 });

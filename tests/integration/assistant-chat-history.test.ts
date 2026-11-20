@@ -8,6 +8,9 @@ import {
 	assistantChatMessages,
 	assistantChats,
 	assistantChatSummaries,
+	entityCategories,
+	loreEntries,
+	places,
 	scenes,
 	stories,
 	universes,
@@ -104,6 +107,42 @@ describe('chat history', () => {
 		expect(stored.map((m) => m.role)).toEqual(['user', 'assistant']);
 		expect(stored[0].meta?.reference?.text).toBe('The rain fell.');
 		expect(stored[1].meta?.proposals?.[0].before).toBe('The');
+	});
+
+	it('reads the entry type of an entity attachment stored without one', async () => {
+		const [place] = await db
+			.insert(places)
+			.values({ universeId, ownerId: userId, name: 'Saltmarsh' })
+			.returning({ id: places.id });
+		const [category] = await db
+			.insert(entityCategories)
+			.values({ universeId, ownerId: userId, name: 'Lore', sortOrder: 0 })
+			.returning({ id: entityCategories.id });
+		const [lore] = await db
+			.insert(loreEntries)
+			.values({ universeId, ownerId: userId, categoryId: category.id, title: 'The Pact' })
+			.returning({ id: loreEntries.id });
+		const gone = '11111111-1111-4111-8111-111111111111';
+		const chatId = await newChat({ storyId });
+		const attachments = [
+			{ kind: 'entity' as const, id: place.id, label: 'Saltmarsh' },
+			{ kind: 'entity' as const, id: lore.id, label: 'The Pact' },
+			{ kind: 'entity' as const, id: gone, label: 'Gone' }
+		];
+		await appendChat(db, userId, { storyId }, chatId, {
+			role: 'user',
+			content: 'Where is this?',
+			meta: { attachments }
+		});
+		const [turn] = await listChat(db, userId, chatId);
+		expect(turn.meta?.attachments).toEqual([
+			{ ...attachments[0], entityType: 'place' },
+			{ ...attachments[1], entityType: 'lore' },
+			attachments[2]
+		]);
+		// The stored row is not rewritten.
+		const [row] = await db.select({ meta: assistantChatMessages.meta }).from(assistantChatMessages);
+		expect(row.meta?.attachments).toEqual(attachments);
 	});
 
 	it('skips empty turns and keeps chats to their owner', async () => {

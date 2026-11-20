@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { Database } from '../auth';
 import {
 	assistantChatMessages,
@@ -6,8 +6,10 @@ import {
 	assistantChatSummaries,
 	type AssistantChatMeta
 } from '../db/schema';
+import { ENTITY_TYPES, entityTable } from '../entity-lookups.ts';
 import {
 	readChatSettings,
+	type AttachmentEntityType,
 	type ChatModelInfo,
 	type ChatModelSettings,
 	type ChatSummary
@@ -236,7 +238,50 @@ export async function listChat(
 		.from(assistantChatMessages)
 		.where(and(eq(assistantChatMessages.userId, userId), eq(assistantChatMessages.chatId, chatId)))
 		.orderBy(asc(assistantChatMessages.createdAt), asc(assistantChatMessages.id));
-	return rows;
+	return withEntityTypes(db, userId, rows);
+}
+
+// An entity attachment stored before its entry type was kept (#1185) gets the
+// type here, looked up by id, so its chip shows the right icon. The stored
+// rows stay as they are; an entry that is gone keeps the default icon.
+async function withEntityTypes(
+	db: Database,
+	userId: string,
+	rows: StoredChatMessage[]
+): Promise<StoredChatMessage[]> {
+	const untyped = (a: { kind: string; entityType?: string }) =>
+		a.kind === 'entity' && !a.entityType;
+	const ids = [
+		...new Set(
+			rows.flatMap((row) => (row.meta?.attachments ?? []).filter(untyped).map((a) => a.id))
+		)
+	].filter(isUuid);
+	if (!ids.length) return rows;
+	const types = new Map<string, AttachmentEntityType>();
+	await Promise.all(
+		ENTITY_TYPES.map(async (type) => {
+			const table = entityTable(type);
+			const found = await db
+				.select({ id: table.id })
+				.from(table)
+				.where(and(inArray(table.id, ids), eq(table.ownerId, userId)));
+			for (const row of found) types.set(row.id, type === 'lore_entry' ? 'lore' : type);
+		})
+	);
+	if (!types.size) return rows;
+	return rows.map((row) =>
+		row.meta?.attachments?.some((a) => untyped(a) && types.has(a.id))
+			? {
+					...row,
+					meta: {
+						...row.meta,
+						attachments: row.meta.attachments.map((a) =>
+							untyped(a) && types.has(a.id) ? { ...a, entityType: types.get(a.id) } : a
+						)
+					}
+				}
+			: row
+	);
 }
 
 export async function appendChat(

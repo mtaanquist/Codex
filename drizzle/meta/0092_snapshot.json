@@ -1,6 +1,6 @@
 {
-	"id": "c7caa7f2-ab8f-4d33-9799-4a49ed69ed9f",
-	"prevId": "493c6651-f262-4f85-960b-1e76b39924c0",
+	"id": "8a39ee14-7bc0-4c43-8c0f-e5895ebf60bf",
+	"prevId": "cc36834c-6a80-4184-bdfb-74b646be72b8",
 	"version": "7",
 	"dialect": "postgresql",
 	"tables": {
@@ -782,6 +782,24 @@
 					"primaryKey": false,
 					"notNull": false
 				},
+				"cached_prompt_tokens": {
+					"name": "cached_prompt_tokens",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"cache_write_tokens": {
+					"name": "cache_write_tokens",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"cache_write_1h_tokens": {
+					"name": "cache_write_1h_tokens",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false
+				},
 				"estimated": {
 					"name": "estimated",
 					"type": "boolean",
@@ -1026,6 +1044,12 @@
 				"summary_generated_at": {
 					"name": "summary_generated_at",
 					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"summary_input": {
+					"name": "summary_input",
+					"type": "text",
 					"primaryKey": false,
 					"notNull": false
 				},
@@ -3777,18 +3801,6 @@
 					"primaryKey": false,
 					"notNull": false
 				},
-				"follows_suggestion_id": {
-					"name": "follows_suggestion_id",
-					"type": "uuid",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"reason": {
-					"name": "reason",
-					"type": "text",
-					"primaryKey": false,
-					"notNull": false
-				},
 				"status": {
 					"name": "status",
 					"type": "text",
@@ -3876,21 +3888,6 @@
 					"concurrently": false,
 					"method": "btree",
 					"with": {}
-				},
-				"review_suggestions_follows_idx": {
-					"name": "review_suggestions_follows_idx",
-					"columns": [
-						{
-							"expression": "follows_suggestion_id",
-							"isExpression": false,
-							"asc": true,
-							"nulls": "last"
-						}
-					],
-					"isUnique": false,
-					"concurrently": false,
-					"method": "btree",
-					"with": {}
 				}
 			},
 			"foreignKeys": {
@@ -3944,15 +3941,6 @@
 					"tableFrom": "review_suggestions",
 					"tableTo": "review_threads",
 					"columnsFrom": ["pattern_thread_id"],
-					"columnsTo": ["id"],
-					"onDelete": "set null",
-					"onUpdate": "no action"
-				},
-				"review_suggestions_follows_suggestion_id_review_suggestions_id_fk": {
-					"name": "review_suggestions_follows_suggestion_id_review_suggestions_id_fk",
-					"tableFrom": "review_suggestions",
-					"tableTo": "review_suggestions",
-					"columnsFrom": ["follows_suggestion_id"],
 					"columnsTo": ["id"],
 					"onDelete": "set null",
 					"onUpdate": "no action"

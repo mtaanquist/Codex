@@ -22,8 +22,8 @@ import {
 	reconcileMentions
 } from '../../src/lib/server/mentions';
 import { setSceneStatus } from '../../src/lib/server/scene-status';
+import { trashScene } from '../../src/lib/server/scene-lifecycle';
 import { applySceneOrder } from '../../src/lib/server/scene-order';
-import { STALE_MARK_BEFORE } from '../../src/lib/server/scene-lifecycle';
 
 // Storing the account API key encrypts it with APP_SECRET (needed for enrich).
 process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-test-secret';
@@ -31,6 +31,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-test-secret';
 const { stageEntitySuggestions, decideEntitySuggestion, listPendingForEntity } =
 	await import('../../src/lib/server/entity-suggestions');
 const { enrichEntity, enrichUniverse } = await import('../../src/lib/server/llm/enrich');
+const { requestHash } = await import('../../src/lib/server/llm/request-hash');
 const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniverseModels } =
 	await import('../../src/lib/server/llm/config');
 
@@ -471,8 +472,7 @@ describe('enrichUniverse', () => {
 		return scene.id;
 	}
 
-	// A scene indexed the way the worker does it, so the mention rows and the
-	// marks they set are real.
+	// A scene indexed the way the worker does it, so the mention rows are real.
 	async function sceneWithProse(bodyMd: string, globalPosition = 1) {
 		const [scene] = await db
 			.insert(scenes)
@@ -495,29 +495,31 @@ describe('enrichUniverse', () => {
 		expect(lastModel).toBe('universe-model');
 	});
 
-	it('keeps a mark cleared while the entity was being read', async () => {
-		const bram = await makeCharacter({ name: 'Bram' });
+	it('reads an entity again when its prose changes while it is being read', async () => {
+		await makeCharacter({ name: 'Bram' });
 		const sceneId = await sceneWithProse('Bram at the harbour.');
-		await enrichUniverse(db, { userId: ownerId, universeId }, deps);
-		// The prose changes, so the next pass reads Bram again; an unmute clears
-		// the mark while the model is reading.
-		await rewrite(sceneId, 'Bram on the quay.');
 		duringCall = async () => {
-			await pool.query(`update characters set assistant_enriched_at = null where id = $1`, [bram]);
+			duringCall = null;
+			await rewrite(sceneId, 'Bram on the quay.');
 		};
 		try {
 			expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
 		} finally {
 			duringCall = null;
 		}
-		const [row] = await db
-			.select({ at: characters.assistantEnrichedAt })
-			.from(characters)
-			.where(eq(characters.id, bram));
-		expect(row.at).toBeNull();
+		expect(lastPrompt).toContain('Bram at the harbour.');
+		// Stored with what was sent, so the pass after it reads the new passage.
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+		expect(lastPrompt).toContain('Bram on the quay.');
+		expect(calls).toBe(2);
+		expect(await enrichUniverse(db, { userId: ownerId, universeId }, deps)).toMatchObject({
+			entities: 0,
+			unchanged: 1
+		});
+		expect(calls).toBe(2);
 	});
 
-	it('reads only mentioned entities, marks them, and skips them until their prose changes', async () => {
+	it('reads only mentioned entities, and skips them until their prose changes', async () => {
 		const mentioned = await makeCharacter({ name: 'Bram' });
 		const unmentioned = await makeCharacter({ name: 'Cass' });
 		const sceneId = await sceneWithProse('Bram at the harbour.');
@@ -547,51 +549,126 @@ describe('enrichUniverse', () => {
 		expect(calls).toBe(2);
 	});
 
-	it('keeps a mark that lands in the same millisecond as the one it started from', async () => {
-		const bram = await makeCharacter({ name: 'Bram' });
-		await sceneWithProse('Bram at the harbour.');
-		await pool.query(
-			`update characters set assistant_enriched_at = '1976-01-01 00:00:00.123456+00' where id = $1`,
-			[bram]
-		);
-		duringCall = async () => {
-			await pool.query(
-				`update characters set assistant_enriched_at = '1976-01-01 00:00:00.123999+00' where id = $1`,
-				[bram]
-			);
-		};
-		try {
-			expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
-		} finally {
-			duringCall = null;
-		}
-		expect((await enrichedAt(bram))!.getTime()).toBe(Date.parse('1976-01-01T00:00:00.123Z'));
+	it('reads an entity newly mentioned in a story once the story is unmuted', async () => {
+		await makeCharacter({ name: 'Bram' });
+		await makeCharacter({ name: 'Cass' });
+		const sceneId = await sceneWithProse('Bram at the harbour.');
 		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		await rewrite(sceneId, 'Bram and Cass at the harbour.');
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(0);
+		expect(calls).toBe(1);
+
+		await saveStoryLlmOverride(db, storyId, { enabled: null });
+		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(2);
+		expect(calls).toBe(3);
 	});
 
-	it('marks an entity newly mentioned while its story is being unmuted', async () => {
-		await makeCharacter({ name: 'Bram' });
-		const cass = await makeCharacter({ name: 'Cass' });
-		await pool.query(`update characters set assistant_enriched_at = now() where id = $1`, [cass]);
-		const sceneId = await sceneWithProse('Bram at the harbour.');
-		await saveStoryLlmOverride(db, storyId, { enabled: false });
-		await db
-			.update(scenes)
-			.set({ bodyMd: 'Bram and Cass at the harbour.' })
-			.where(eq(scenes.id, sceneId));
-		// An unmute holds the story row while the scene is reindexed.
-		const unmute = await pool.connect();
-		try {
-			await unmute.query('begin');
-			await unmute.query(`update stories set llm_config = '{}'::jsonb where id = $1`, [storyId]);
-			const rebuild = rebuildSceneMentions(db, sceneId);
-			await new Promise((resolve) => setTimeout(resolve, 200));
-			await unmute.query('commit');
-			await rebuild;
-		} finally {
-			unmute.release();
+	it('reads an entity again when its name changes, not when what is recorded on it does', async () => {
+		const bram = await makeCharacter({ name: 'Bram', summaryMd: 'A sailor.' });
+		await sceneMentioning(bram, 'Bram at the harbour');
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		await db.update(characters).set({ name: 'Bram Tull' }).where(eq(characters.id, bram));
+		expect((await pass()).entities).toBe(1);
+		expect(calls).toBe(2);
+		// The entry's own aliases, details, summary and notes do not make it
+		// worth reading the same passages again.
+		for (const change of [
+			{ aliases: ['The Grey'] },
+			{ details: [{ label: 'Eyes', value: 'grey' }] },
+			{ summaryMd: 'A captain.', bodyMd: 'Notes.' }
+		]) {
+			await db.update(characters).set(change).where(eq(characters.id, bram));
+			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
 		}
-		expect((await enrichedAt(cass))! < new Date('2000-01-01T00:00:00Z')).toBe(true);
+		expect(calls).toBe(2);
+	});
+
+	it('keeps a read stored under the fingerprint of releases up to 3.21.4', async () => {
+		const bram = await makeCharacter({
+			name: 'Bram',
+			aliases: ['The Grey'],
+			details: [{ label: 'Eyes', value: 'grey' }]
+		});
+		const sceneId = await sceneWithProse('Bram at the harbour.');
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		// Those releases hashed the request as it was sent, aliases and details
+		// included (less the persona the gateway puts first).
+		const asStoredThen = requestHash(JSON.parse(lastPrompt).slice(1));
+		const stored = async () =>
+			(
+				await db
+					.select({ input: characters.assistantEnrichedInput })
+					.from(characters)
+					.where(eq(characters.id, bram))
+			)[0].input;
+		const today = await stored();
+		expect(asStoredThen).not.toBe(today);
+		await db
+			.update(characters)
+			.set({ assistantEnrichedInput: asStoredThen })
+			.where(eq(characters.id, bram));
+
+		expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
+		expect(await stored()).toBe(today);
+		expect(calls).toBe(1);
+
+		// One whose passages have changed since is read again.
+		await db
+			.update(characters)
+			.set({ assistantEnrichedInput: asStoredThen })
+			.where(eq(characters.id, bram));
+		await rewrite(sceneId, 'Bram on the quay.');
+		expect((await pass()).entities).toBe(1);
+		expect(calls).toBe(2);
+	});
+
+	it('does not read an entity again because its suggestions were accepted', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		const staged = await listPendingForEntity(db, ownerId, 'character', bram);
+		expect(staged.map((s) => s.field).sort()).toEqual(['alias', 'detail', 'summary']);
+		for (const suggestion of staged) {
+			expect((await decideEntitySuggestion(db, ownerId, suggestion.id, 'accept')).ok).toBe(true);
+			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
+		}
+		expect((await readChar(bram)).aliases).toContain('The Grey');
+		expect(calls).toBe(1);
+	});
+
+	it('reads an entity once more when an accepted alias finds new passages', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		await sceneWithProse('The Grey walked the quay alone.', 2);
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		const alias = (await listPendingForEntity(db, ownerId, 'character', bram)).find(
+			(s) => s.field === 'alias'
+		)!;
+		expect((await decideEntitySuggestion(db, ownerId, alias.id, 'accept')).ok).toBe(true);
+		// Before the reindex the passages are the same, so nothing is sent.
+		expect((await pass()).entities).toBe(0);
+		await rebuildUniverseMentions(db, universeId);
+		expect((await pass()).entities).toBe(1);
+		expect(lastPrompt).toContain('walked the quay');
+		expect((await pass()).entities).toBe(0);
+		expect(calls).toBe(2);
+	});
+
+	it('reads an entity again when a scene it was read from is deleted', async () => {
+		const bram = await makeCharacter({ name: 'Bram', summaryMd: 'A sailor.' });
+		await sceneMentioning(bram, 'Bram at the harbour');
+		const sceneId = await sceneMentioning(bram, 'Bram on the road');
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		expect(await trashScene(db, ownerId, sceneId)).toBe(true);
+		expect((await pass()).entities).toBe(1);
+		expect(lastPrompt).not.toContain('Bram on the road');
+		expect(calls).toBe(2);
 	});
 
 	it('does not read an entity again for a status change, a reorder, or an edit away from it', async () => {
@@ -630,7 +707,7 @@ describe('enrichUniverse', () => {
 		expect(lastPrompt).toContain('walked the wall');
 	});
 
-	it('leaves an entity unmarked when its reply is cut off at the cap', async () => {
+	it('stores nothing for an entity whose reply is cut off at the cap', async () => {
 		const bram = await makeCharacter({ name: 'Bram' });
 		await sceneMentioning(bram, 'Bram at the harbour');
 		finish = 'length';
@@ -647,7 +724,7 @@ describe('enrichUniverse', () => {
 		return row.at;
 	}
 
-	it('stops at the spend cap and leaves the rest unmarked for the next pass', async () => {
+	it('stops at the spend cap and leaves the rest for the next pass', async () => {
 		await saveAccountLlmConfig(db, ownerId, {
 			enabled: true,
 			assistantName: '',
@@ -713,7 +790,7 @@ describe('enrichUniverse', () => {
 		expect(calls).toBe(0);
 	});
 
-	it('stops when the job is stopped, marking nothing and saying so', async () => {
+	it('stops when the job is stopped, storing nothing and saying so', async () => {
 		const id = await makeCharacter();
 		await sceneMentioning(id, 'Bram at the harbour');
 		const controller = new AbortController();
@@ -814,7 +891,7 @@ describe('enrichUniverse', () => {
 		expect(result.stoppedFailing).toBeUndefined();
 	});
 
-	it('stops when the Assistant is turned off mid-pass, leaving the rest unmarked', async () => {
+	it('stops when the Assistant is turned off mid-pass, leaving the rest unread', async () => {
 		const alda = await makeCharacter({ name: 'Alda' });
 		const bram = await makeCharacter({ name: 'Bram' });
 		await sceneMentioning(alda, 'Alda at the gate');
@@ -841,9 +918,9 @@ describe('enrichUniverse', () => {
 		expect(await enrichedAt(bram)).toBeNull();
 	});
 
-	it('clears a mark without asking the model when the passages it would send are unchanged', async () => {
+	it('does not ask the model when the passages it would send are unchanged', async () => {
 		// A summary already, so whether to ask for one does not change between passes.
-		const bram = await makeCharacter({ name: 'Bram', summaryMd: 'A sailor.' });
+		await makeCharacter({ name: 'Bram', summaryMd: 'A sailor.' });
 		const ids: string[] = [];
 		for (let i = 1; i <= 17; i++) ids.push(await sceneWithProse(`Bram in scene ${i}.`, i));
 		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
@@ -851,34 +928,92 @@ describe('enrichUniverse', () => {
 		expect(lastPrompt).not.toContain('scene 17.');
 
 		// Only the first sixteen passages are sent, so an edit to the seventeenth
-		// marks Bram without changing what the model would read.
+		// does not change what the model would read.
 		await rewrite(ids[16], 'Bram in the last scene.');
-		expect((await enrichedAt(bram))! < STALE_MARK_BEFORE).toBe(true);
 		const skipped = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
 		expect(skipped).toMatchObject({ entities: 0, unchanged: 1 });
 		expect(calls).toBe(1);
-		expect((await enrichedAt(bram))! > STALE_MARK_BEFORE).toBe(true);
 
 		await rewrite(ids[0], 'Bram in the first scene.');
 		expect((await enrichUniverse(db, { userId: ownerId, universeId }, deps)).entities).toBe(1);
 		expect(calls).toBe(2);
 	});
 
-	it('clears a mark without asking the model after a read that staged a summary', async () => {
-		const bram = await makeCharacter({ name: 'Bram' });
+	it('does not ask the model again after a read that staged a summary', async () => {
+		await makeCharacter({ name: 'Bram' });
 		await sceneWithProse('Bram at the harbour.');
 		const first = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
 		expect(first.staged).toBeGreaterThan(0);
 		expect(lastPrompt).toContain('a one or two sentence summary');
-		// Marked with nothing changed in what it reads; the staged summary only
-		// changes whether the request asks for one.
-		await pool.query(
-			`update characters set assistant_enriched_at = clock_timestamp() - interval '50 years' where id = $1`,
-			[bram]
-		);
+		// The staged summary only changes whether the request asks for one.
 		const second = await enrichUniverse(db, { userId: ownerId, universeId }, deps);
 		expect(second).toMatchObject({ entities: 0, unchanged: 1 });
 		expect(calls).toBe(1);
+	});
+
+	describe('a read stored by an earlier release', () => {
+		async function stored(id: string) {
+			const [row] = await db
+				.select({ at: characters.assistantEnrichedAt, input: characters.assistantEnrichedInput })
+				.from(characters)
+				.where(eq(characters.id, id));
+			return row;
+		}
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+
+		it('is given its fingerprint without asking the model when nothing changed since', async () => {
+			const bram = await makeCharacter({ name: 'Bram' });
+			const sceneId = await sceneWithProse('Bram at the harbour.');
+			await pool.query(`update characters set assistant_enriched_at = now() where id = $1`, [bram]);
+			const before = await stored(bram);
+			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
+			expect(calls).toBe(0);
+			const after = await stored(bram);
+			expect(after.input).not.toBeNull();
+			expect(after.at).toEqual(before.at);
+
+			await rewrite(sceneId, 'Bram on the quay.');
+			expect((await pass()).entities).toBe(1);
+			expect(calls).toBe(1);
+		});
+
+		it('is read again when a scene that mentions the entity changed after it', async () => {
+			const bram = await makeCharacter({ name: 'Bram' });
+			await sceneWithProse('Bram at the harbour.');
+			await pool.query(
+				`update characters set assistant_enriched_at = now() - interval '1 day' where id = $1`,
+				[bram]
+			);
+			expect((await pass()).entities).toBe(1);
+			expect(calls).toBe(1);
+		});
+
+		it('is read again when that release marked it', async () => {
+			const bram = await makeCharacter({ name: 'Bram' });
+			await sceneWithProse('Bram at the harbour.');
+			await pool.query(
+				`update scenes set updated_at = now() - interval '60 years' where story_id = $1`,
+				[storyId]
+			);
+			await pool.query(
+				`update characters set assistant_enriched_at = now() - interval '50 years' where id = $1`,
+				[bram]
+			);
+			expect((await pass()).entities).toBe(1);
+			expect(calls).toBe(1);
+		});
+
+		it('is left alone when it has a fingerprint that still matches, whatever its time says', async () => {
+			const bram = await makeCharacter({ name: 'Bram' });
+			await sceneWithProse('Bram at the harbour.');
+			expect((await pass()).entities).toBe(1);
+			await pool.query(
+				`update characters set assistant_enriched_at = now() - interval '50 years' where id = $1`,
+				[bram]
+			);
+			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
+			expect(calls).toBe(1);
+		});
 	});
 
 	it('passes over an entity deleted while the pass runs', async () => {
@@ -917,7 +1052,7 @@ describe('enrichUniverse', () => {
 		expect(await enrichedAt(bram)).toBeNull();
 	});
 
-	it('does not mark an entity whose read failed, so the next pass tries again', async () => {
+	it('stores nothing for an entity whose read failed, so the next pass tries again', async () => {
 		const id = await makeCharacter();
 		await sceneMentioning(id, 'Bram at the harbour');
 		const failing: GatewayDeps = {
