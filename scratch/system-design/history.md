@@ -982,6 +982,19 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Tooling issues (2026-11-20)
+
+Staging branch `staging/tooling-issues`, the open "tooling" issues after the
+triage.
+
+- #1237: the transcript replay now says what it used to skip. When the endpoint
+  reported no counts, no spend may be recorded (before, the check returned
+  early), which pins the known gap that an OpenAI-style stream cut off before
+  its closing usage frame goes uncounted; the adapter does not guess. The
+  retry or fail label is only checked on the buffered path, because nothing
+  retries a live stream, so the unused flag on the stream side was removed
+  and the file header says so. The unused `# stream: buffered` header is gone.
+
 ## Issue triage fixes (2026-11-20)
 
 The 2026-11-19 triage closed 13 of 78 open issues as not planned or duplicate and ranked the bugs that were left. Fixes, in that order:
