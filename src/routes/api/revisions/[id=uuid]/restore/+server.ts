@@ -10,7 +10,8 @@ import { rateLimitWrites } from '#lib/server/write-guard';
 const REVISABLE = ['scene', 'character', 'place', 'lore_entry', 'note'] as const;
 
 // Replaces the entity's text with the revision's; a new 'restore' revision
-// lands on top of the timeline, so nothing is overwritten.
+// lands on top of the timeline, so nothing is overwritten. A scene that
+// already has that text is left untouched.
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	rateLimitWrites(locals.user!.id);
 	const payload = await readJson<{ entityType?: unknown; entityId?: unknown }>(request);

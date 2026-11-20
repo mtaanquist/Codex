@@ -987,6 +987,15 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
+- Staging review round 1: nothing high. The medium was that accepting a
+  suggestion and a new story from a draft never ran in the default eight
+  seeds of the stale-mark test, so those paths were unchecked in CI. The
+  rare list is longer, the actions pick inputs that apply, and a last test
+  fails when any action never ran. Lows: the lock-order file had two lock
+  targets nothing took (one dropped, the other now taken by a suggestion
+  operation), the upgrade seed had a mention offset three characters short,
+  two comments still said a restore always writes rows, and the one-clock
+  rule matched client files under `src/routes` and missed `hooks.server.ts`.
 - #1237: the transcript replay now says what it used to skip. When the endpoint
   reported no counts, no spend may be recorded (before, the check returned
   early), which pins the known gap that an OpenAI-style stream cut off before
@@ -1012,7 +1021,7 @@ triage.
   again. `restoreRevision` now leaves such a scene alone.
 - #1239: no selector can follow a variable into a later `.set()`, so the
   one-clock rule now refuses `const x = new Date()` outright in server code,
-  and covers `src/routes/**/*.ts` and `src/worker/**` too. Nothing on main
+  and covers `src/routes/**/*server.ts`, `src/hooks.server.ts` and `src/worker/**` too. Nothing on main
   tripped it. A `new Date()` written where it is compared is still fine.
 - #1235: the lock-order harness now counts advisory locks. A holder takes
   each one in turn (story-scenes, a scene's revision lock, draft-restore), and

@@ -133,7 +133,6 @@ const ADVISORY: { name: string; advisory: () => string }[] = [
 	{ name: 'the story-scenes lock', advisory: () => `story-scenes:${S.story}` },
 	{ name: 'the revision lock of scene A', advisory: () => `scene:${S.A}` },
 	{ name: 'the revision lock of scene B', advisory: () => `scene:${S.B}` },
-	{ name: 'the revision lock of scene C', advisory: () => `scene:${S.C}` },
 	{ name: 'the draft-restore lock of scene T', advisory: () => `draft-restore:${S.story}:${S.T}` }
 ];
 
@@ -368,6 +367,20 @@ const OPS: Op[] = [
 			made.revisionId = row.id;
 		},
 		run: async (db) => ok(await restoreRevision(db, S.user, made.revisionId, 'scene', S.B))
+	},
+	{
+		// Pins a base revision under scene B's revision lock.
+		name: 'suggest a change to scene B',
+		run: async (db) =>
+			ok(
+				await createSuggestion(db, {
+					storyId: S.story,
+					sceneId: S.B,
+					author: { userId: S.user },
+					range: { start: 0, end: 'Aldric'.length },
+					replacement: 'He'
+				})
+			)
 	},
 	{
 		name: 'accept review suggestion',
