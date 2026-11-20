@@ -21,8 +21,18 @@ test('two-factor: enrol, sign in with a code, and turn it back off', async ({ pa
 	await page.getByRole('menuitem', { name: 'Account settings' }).click();
 	await page.getByRole('link', { name: 'Security' }).click();
 
+	// A retry after a failed attempt finds the earlier setup still pending;
+	// cancel it so every attempt starts from the same state.
+	const setUp = page.getByRole('button', { name: 'Set up' });
+	const cancel = page.getByRole('button', { name: 'Cancel' }).first();
+	await expect(setUp.or(cancel)).toBeVisible();
+	if (await cancel.isVisible()) {
+		await cancel.click();
+		await expect(setUp).toBeVisible();
+	}
+
 	// Begin setup and read the secret the page shows for manual entry.
-	await page.getByRole('button', { name: 'Set up' }).click();
+	await setUp.click();
 	const secret = await page.locator('#totp-secret').inputValue();
 	expect(secret.length).toBeGreaterThan(0);
 
@@ -32,6 +42,9 @@ test('two-factor: enrol, sign in with a code, and turn it back off', async ({ pa
 	for (let i = 0; i < 6; i++) {
 		await page.getByLabel(`Digit ${i + 1}`).fill(code[i]);
 	}
+	// The form posts a hidden field built from the boxes; wait until it holds
+	// the whole code so a slow update cannot post a short one.
+	await expect(page.locator('#totp-confirm input[name="code"]')).toHaveValue(code);
 	// The page has other "Confirm your password" fields, so target this one.
 	await page.locator('#totp-password').fill('e2e-password');
 	await page.getByRole('button', { name: 'Verify and turn on' }).click();
