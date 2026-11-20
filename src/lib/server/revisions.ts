@@ -538,6 +538,9 @@ export async function restoreRevision(
 				.from(scenes)
 				.where(eq(scenes.id, entityId))
 				.for('update');
+			// Already this text: writing it again would only mark the scene's
+			// summary out of date and pay for the same summary twice.
+			if (current?.bodyMd === revision.bodyMd) return;
 			await tx
 				.update(scenes)
 				.set({ bodyMd: revision.bodyMd, wordCount: wordCount(revision.bodyMd) })
