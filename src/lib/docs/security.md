@@ -31,6 +31,14 @@ passkey" and follow your browser's prompt; name it so you can tell your devices
 apart. Removing a passkey asks for your password. On the sign-in page, "Use a
 passkey instead" signs you in with any passkey registered to the account.
 
+## Sign-in link
+
+If you do not have your password to hand, select "Email me a sign-in link
+instead" on the sign-in page and enter your email address. The email holds a
+link that signs you in once and is good for 15 minutes; asking again replaces
+the earlier link. If two-factor is on, you are still asked for a code. Your
+password stays the same.
+
 ## Active sessions
 
 The sessions list shows where you are signed in. Revoke any one of them, or sign

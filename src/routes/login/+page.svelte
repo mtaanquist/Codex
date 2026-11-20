@@ -92,6 +92,9 @@
 			{passkeyBusy ? 'Waiting for your device...' : 'Use a passkey instead'}
 		</button>
 	</div>
+	<div class="auth-actions">
+		<a class="btn btn-ghost" href={resolve('/login/link')}>Email me a sign-in link instead</a>
+	</div>
 
 	<!-- What to do without an account depends on who can make one here. -->
 	{#if data.signupMode === 'open'}

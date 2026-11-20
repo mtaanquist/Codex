@@ -77,6 +77,21 @@ export function accountDeletionEmail(to: string, cancelLink: string, days: numbe
 	};
 }
 
+export function signInLinkEmail(to: string, link: string, minutes: number): EmailMessage {
+	return {
+		to,
+		subject: 'Your sign-in link',
+		text: [
+			'We received a request to sign in to Codex with a link.',
+			'',
+			'Open this link to sign in:',
+			link,
+			'',
+			`The link is good for ${minutes} minutes and works once. If you did not ask for this, you can ignore this message. Nobody can sign in without the link.`
+		].join('\n')
+	};
+}
+
 export function passwordResetEmail(to: string, link: string): EmailMessage {
 	return {
 		to,

@@ -1,5 +1,5 @@
-// Emails that carry a single-use link (verify, reset, email change, deletion
-// cancel). The request queues only the reserved token's id; the worker arms the
+// Emails that carry a single-use link (verify, reset, sign-in, email change,
+// deletion cancel). The request queues only the reserved token's id; the worker arms the
 // token and writes the link at send time, so the raw token is never stored in
 // the job queue.
 import type { Database } from './auth.ts';
@@ -8,9 +8,11 @@ import {
 	accountDeletionEmail,
 	emailChangeEmail,
 	passwordResetEmail,
+	signInLinkEmail,
 	verificationEmail,
 	type EmailMessage
 } from './email.ts';
+import { SIGN_IN_LINK_TTL_MINUTES } from './sign-in-link.ts';
 import { armToken, type ArmResult, type TokenKind } from './tokens.ts';
 
 export type TokenEmailJob = { tokenId: string; to: string; origin: string };
@@ -23,6 +25,8 @@ const BUILDERS: Record<TokenKind, (to: string, token: string, origin: string) =>
 		verificationEmail(to, `${origin}/verify-email?token=${token}`),
 	password_reset: (to, token, origin) =>
 		passwordResetEmail(to, `${origin}/reset-password?token=${token}`),
+	sign_in: (to, token, origin) =>
+		signInLinkEmail(to, `${origin}/login/link?token=${token}`, SIGN_IN_LINK_TTL_MINUTES),
 	email_change: (to, token, origin) =>
 		emailChangeEmail(to, `${origin}/confirm-email-change?token=${token}`),
 	deletion_cancel: (to, token, origin) =>

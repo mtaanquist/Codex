@@ -3,7 +3,12 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { authTokens } from './db/schema.ts';
 
-export type TokenKind = 'email_verify' | 'password_reset' | 'deletion_cancel' | 'email_change';
+export type TokenKind =
+	'email_verify' | 'password_reset' | 'deletion_cancel' | 'email_change' | 'sign_in';
+
+// A uuid that matches no account, used to run the same query for an unknown
+// address as for a known one.
+export const NO_USER = '00000000-0000-0000-0000-000000000000';
 
 // Only the hash is ever stored, so a leaked database row cannot be turned back
 // into a usable link.
