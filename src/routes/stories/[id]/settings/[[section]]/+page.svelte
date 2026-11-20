@@ -20,6 +20,7 @@
 	import SettingsDrafts from './SettingsDrafts.svelte';
 	import SettingsHistory from './SettingsHistory.svelte';
 	import SettingsDanger from './SettingsDanger.svelte';
+	import ScopeModels from '#lib/components/ScopeModels.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -35,6 +36,7 @@
 		cover: 'publishing',
 		pagesetup: 'publishing',
 		review: 'reviewing',
+		assistant: 'account',
 		editor: 'editor',
 		goals: 'planning',
 		drafts: 'drafts'
@@ -66,6 +68,7 @@
 			{ id: 'cover', label: 'Cover' },
 			{ id: 'publish', label: 'Publish' },
 			{ id: 'review', label: 'Review' },
+			{ id: 'assistant', label: 'Assistant' },
 			{ id: 'export', label: 'Export' },
 			{ id: 'drafts', label: 'Saved drafts' },
 			{ id: 'history', label: 'History' },
@@ -73,6 +76,7 @@
 		]
 			.filter((item) => item.id !== 'cover' || data.assetsConfigured)
 			.filter((item) => item.id !== 'publish' || (data.archive?.enabled && data.archive?.handle))
+			.filter((item) => item.id !== 'assistant' || data.assistantModels)
 	);
 </script>
 
@@ -156,6 +160,20 @@
 	<div class="admin-block" class:active={active === 'review'} id="review">
 		<SettingsReview {data} {form} />
 	</div>
+
+	{#if data.assistantModels}
+		<div class="admin-block" class:active={active === 'assistant'} id="assistant">
+			{#key data.story.id}
+				<ScopeModels
+					level="story"
+					settings={data.assistantModels}
+					modelsQuery="storyId={data.story.id}"
+					active={active === 'assistant'}
+					saved={form?.action === 'assistant-models' && form.saved === true}
+				/>
+			{/key}
+		</div>
+	{/if}
 
 	<div class="admin-block" class:active={active === 'export'} id="export">
 		<SettingsExport {data} />

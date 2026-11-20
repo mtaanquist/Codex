@@ -33,11 +33,12 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
 
 const { summariseCharacterArc, arcIsStale, planArc, ArcStoryMutedError } =
 	await import('../../src/lib/server/llm/arc-summary');
-const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniverseModels } =
 	await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 
 let lastPrompt = '';
+let lastModel = '';
 let calls = 0;
 let reply = 'Bram leaves the harbour and becomes a captain.';
 // Set to 'length' to have the stub report a reply cut off at the cap.
@@ -50,6 +51,7 @@ const stubProvider: Provider = {
 	},
 	async respond(req) {
 		lastPrompt = JSON.stringify(req.messages);
+		lastModel = req.model;
 		calls += 1;
 		if (duringCall) await duringCall();
 		return {
@@ -340,6 +342,16 @@ describe('summariseCharacterArc', () => {
 		expect((await readArc(bram.id)).arcSummaryMd).toBe(
 			'Bram leaves the harbour and becomes a captain.'
 		);
+	});
+});
+
+describe('the model an arc is written with (#1266)', () => {
+	it('is the one chosen for the universe', async () => {
+		const bram = await makeCharacter();
+		await sceneMentioning(firstStoryId, bram.id, { position: 1, snippet: 'Bram at the quay' });
+		await saveUniverseModels(db, universeId, { utility: 'universe-model' });
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		expect(lastModel).toBe('universe-model');
 	});
 });
 

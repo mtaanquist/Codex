@@ -31,7 +31,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-test-secret';
 const { stageEntitySuggestions, decideEntitySuggestion, listPendingForEntity } =
 	await import('../../src/lib/server/entity-suggestions');
 const { enrichEntity, enrichUniverse } = await import('../../src/lib/server/llm/enrich');
-const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniverseModels } =
 	await import('../../src/lib/server/llm/config');
 
 const enrichJson =
@@ -39,6 +39,7 @@ const enrichJson =
 // The last prompt the stub was sent, to check which passages reached it, and
 // how many completions it served.
 let lastPrompt = '';
+let lastModel = '';
 let calls = 0;
 // Set to 'length' to have the stub report a reply cut off at the cap.
 let finish: 'length' | undefined;
@@ -50,6 +51,7 @@ const stubProvider: Provider = {
 	},
 	async respond(req) {
 		lastPrompt = JSON.stringify(req.messages);
+		lastModel = req.model;
 		calls += 1;
 		if (duringCall) await duringCall();
 		return { content: enrichJson, toolCalls: [], finishReason: finish };
@@ -484,6 +486,14 @@ describe('enrichUniverse', () => {
 		await db.update(scenes).set({ bodyMd }).where(eq(scenes.id, sceneId));
 		await rebuildSceneMentions(db, sceneId);
 	}
+
+	it('reads on the model chosen for the universe (#1266)', async () => {
+		await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		await saveUniverseModels(db, universeId, { utility: 'universe-model' });
+		await enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect(lastModel).toBe('universe-model');
+	});
 
 	it('keeps a mark cleared while the entity was being read', async () => {
 		const bram = await makeCharacter({ name: 'Bram' });

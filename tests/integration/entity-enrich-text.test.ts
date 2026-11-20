@@ -25,12 +25,19 @@ const { listPendingForEntity } = await import('../../src/lib/server/entity-sugge
 const { enrichEntityFromText, estimateEntityEnrich } =
 	await import('../../src/lib/server/llm/enrich');
 const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
-const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOverride } =
-	await import('../../src/lib/server/llm/config');
+const {
+	saveAccountLlmConfig,
+	saveModelContext,
+	saveModelPricing,
+	saveStoryLlmOverride,
+	saveUniverseModels
+} = await import('../../src/lib/server/llm/config');
 
 // Every prompt the stub was sent, and the reply (or failure) for each call in
 // turn; the last entry repeats.
 let prompts: string[] = [];
+// The model each call was sent to.
+let sentTo: string[] = [];
 let replies: (string | Error)[] = [];
 // The 1-based calls whose reply is reported as cut off at the reply limit.
 let cutOffCalls: number[] = [];
@@ -40,6 +47,7 @@ const stubProvider: Provider = {
 	},
 	async respond(req) {
 		prompts.push(req.messages.map((m) => m.content).join('\n'));
+		sentTo.push(req.model);
 		const reply = replies[Math.min(prompts.length, replies.length) - 1];
 		if (reply instanceof Error) throw reply;
 		return {
@@ -75,6 +83,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	prompts = [];
+	sentTo = [];
 	cutOffCalls = [];
 	replies = ['{"aliases":["The Grey"],"details":[{"label":"Eyes","value":"grey"}],"summary":null}'];
 	await pool.query(
@@ -289,6 +298,33 @@ describe('an entity and a story from different universes', () => {
 				entityId: bram
 			})
 		).toBeNull();
+	});
+});
+
+describe('the model a read runs on (#1266)', () => {
+	it("is the universe's from the library, and the story's own from a story", async () => {
+		await writeScenes(storyId, ['Bram counted the boats.']);
+		await saveUniverseModels(db, universeId, { utility: 'universe-model' });
+
+		await read('scenes', { universeId });
+		await read('scenes', { storyId });
+		await saveStoryLlmOverride(db, storyId, { models: { utility: 'story-model' } });
+		await read('scenes', { storyId });
+		await read('scenes', { universeId });
+
+		expect(sentTo).toEqual(['universe-model', 'universe-model', 'story-model', 'universe-model']);
+	});
+
+	it('counts the read against the window of the model the scope runs on', async () => {
+		await writeScenes(storyId, ['Bram counted the boats.', 'A second scene.']);
+		await saveModelContext(db, ownerId, { 'chat-model': 8000, 'big-local': 200000 });
+		await saveUniverseModels(db, universeId, { utility: 'big-local' });
+		const counted = await estimateEntityEnrich(db, {
+			userId: ownerId,
+			scope: { storyId },
+			entityId: bram
+		});
+		expect(counted!.model).toBe('big-local');
 	});
 });
 

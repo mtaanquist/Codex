@@ -51,7 +51,8 @@ import {
 	TEXT_ALIGNS
 } from '#lib/page-setup';
 import { ownedStory } from '#lib/server/story-access';
-import { assistantLayout } from '#lib/server/llm/config';
+import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
+import { modelsFromForm, scopeModelSettings } from '#lib/server/llm/scope-models';
 import { formText } from '#lib/server/validation';
 import { isCoverColor } from '#lib/entity-color';
 
@@ -77,6 +78,7 @@ const SECTIONS = [
 	'cover',
 	'publish',
 	'review',
+	'assistant',
 	'export',
 	'drafts',
 	'history',
@@ -124,7 +126,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	if (params.section === 'cover' && !assetsConfigured) error(404, 'Not found');
 	if (params.section === 'publish' && !(archive?.enabled && archive?.handle))
 		error(404, 'Not found');
+	if (params.section === 'assistant' && !assistant.tabEnabled) error(404, 'Not found');
 	return {
+		// The model pickers of the Assistant section; null hides the section.
+		assistantModels: assistant.tabEnabled
+			? await scopeModelSettings(db, locals.user!.id, { storyId: story.id })
+			: null,
 		story,
 		universe,
 		timeline,
@@ -222,6 +229,11 @@ export const actions: Actions = {
 		const deadline = /^\d{4}-\d{2}-\d{2}$/.test(rawDeadline) ? rawDeadline : null;
 		await db.update(stories).set({ targetWords, deadline }).where(eq(stories.id, story.id));
 		return { action: 'goals', saved: true };
+	},
+	saveAssistantModels: async ({ request, params, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		await saveStoryLlmOverride(db, story.id, { models: modelsFromForm(await request.formData()) });
+		return { action: 'assistant-models', saved: true };
 	},
 	savePreferences: async ({ request, params, locals }) => {
 		const { story } = await ownedStory(params.id, locals.user!.id);

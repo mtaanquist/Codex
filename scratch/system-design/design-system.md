@@ -993,7 +993,7 @@ Shared composites: `AppBar`, `SettingsShell`, `DocsShell`, `AuthShell`,
 
 Single-purpose surfaces: `Landing`, `CommandPalette`,
 `SceneEditor`, `StoryPreview`, `NoteEditor`, `RevisionPreview`,
-`ExportPanel`, `AssistantPanel`, `AssistantCommandMenu`, `AssistantModelMenu`, `AssistantContextPicker`, `CoauthorPanel`,
+`ExportPanel`, `AssistantPanel`, `AssistantCommandMenu`, `AssistantModelMenu`, `ScopeModels`, `AssistantContextPicker`, `CoauthorPanel`,
 `ReviewWorkspace`, `ReviewEditor`, `ReviewModal`, `RoleTuningModal`,
 `EntityEditor`,
 `EntityCard`, `RelationshipWeb`, `SceneBoard`, `StoryBoard`.

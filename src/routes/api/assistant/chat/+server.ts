@@ -148,11 +148,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		} else settings = (await getChat(db, userId, chatId))?.settings ?? {};
 
 		// Every budget scales with the context window of the model this chat runs on.
-		const resolved = await resolveLlmConfig(
-			db,
-			userId,
-			'storyId' in scope ? scope.storyId : undefined
-		);
+		const resolved = await resolveLlmConfig(db, userId, scope);
 		contextWindow = modelContextWindow(withRoleOverride(resolved.config, 'chat', settings), 'chat');
 
 		// What the writer attached to the newest message, read by id and cut to
