@@ -488,8 +488,6 @@
 		// Re-reads after an accept still running.
 		rereading: number;
 		currentId: string | null;
-		// The writer is rewording or accepting the current step.
-		held: boolean;
 	} | null>(null);
 	const passNote = $derived(pass ? (threads.find((t) => t.id === pass!.threadId) ?? null) : null);
 	const passEdits = $derived(
@@ -522,8 +520,7 @@
 			done: new SvelteSet(),
 			skipped: new SvelteSet(),
 			rereading: 0,
-			currentId: queue[0]?.id ?? null,
-			held: false
+			currentId: queue[0]?.id ?? null
 		};
 		composer = null;
 		chosenPanel = 'comments';
@@ -573,12 +570,10 @@
 	}
 
 	// The Assistant re-reads the changed paragraph and its neighbours and may
-	// stage one follow-up edit on the same note, which the pass then reaches.
-	// Each re-read shows as a card in the corner rather than in the pane, so
-	// the step being read does not move when one starts or ends. Only the
-	// latest re-read may move the pass to its follow-up; an earlier one
-	// finishing late must not pull the pass back.
-	let rereadToken = 0;
+	// stage one follow-up edit on the same note. A follow-up joins the back of
+	// the queue (patternEdits), so the pass only moves forward. Each re-read
+	// shows as a card in the corner rather than in the pane, so the step being
+	// read does not move when one starts or ends.
 	// Not state: only read to dismiss the cards.
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const rereadCards = new Set<number>();
@@ -595,7 +590,6 @@
 	async function rereadAfter(suggestionId: string) {
 		const current = pass;
 		if (!current) return;
-		const token = ++rereadToken;
 		const card = startActivity('Re-reading the last change');
 		rereadCards.add(card);
 		current.rereading += 1;
@@ -629,11 +623,6 @@
 		if (!ok) resolveActivity(card, { state: 'failed', label: 'Could not re-read the last change' });
 		else if (ids.length > 0) resolveActivity(card, { state: 'done', label: 'Follow-up added' });
 		else dismissActivity(card);
-		if (token !== rereadToken) return;
-		// The follow-up is the next step, ahead of whatever the pass moved on to,
-		// unless the writer is already rewording that step; it then comes after.
-		const next = ids.find((id) => passOpen.some((s) => s.id === id));
-		if (next && !current.held) current.currentId = next;
 	}
 
 	function startComment(sel: { start: number; end: number; text: string }) {
@@ -821,9 +810,6 @@
 						}}
 						beforeAccept={flushEditor}
 						onStop={() => (pass = null)}
-						onHeld={(held) => {
-							if (pass) pass.held = held;
-						}}
 					/>
 				{:else if selectedScene}
 					<ReviewPanel
