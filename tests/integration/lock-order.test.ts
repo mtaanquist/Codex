@@ -131,8 +131,13 @@ const ROWS: { table: string; key: Key }[] = [
 // review.ts, story-drafts.ts).
 const ADVISORY: { name: string; advisory: () => string }[] = [
 	{ name: 'the story-scenes lock', advisory: () => `story-scenes:${S.story}` },
-	{ name: 'the revision lock of scene A', advisory: () => `scene:${S.A}` },
-	{ name: 'the revision lock of scene B', advisory: () => `scene:${S.B}` },
+	...(['A', 'B', 'C', 'D', 'T'] as const).map((key) => ({
+		name: `the revision lock of ${NAMES[key]}`,
+		advisory: () => `scene:${S[key]}`
+	})),
+	{ name: 'the revision lock of character Aldric', advisory: () => `character:${S.aldric}` },
+	{ name: 'the revision lock of place Quay', advisory: () => `place:${S.quay}` },
+	{ name: 'the revision lock of lore entry Toll', advisory: () => `lore_entry:${S.toll}` },
 	{ name: 'the draft-restore lock of scene T', advisory: () => `draft-restore:${S.story}:${S.T}` }
 ];
 
