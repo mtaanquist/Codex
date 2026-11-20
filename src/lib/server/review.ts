@@ -677,6 +677,8 @@ export async function createSuggestion(
 		// The Assistant's pattern note this edit is an instance of. It must be a
 		// standalone thread of the same story; it may sit on another scene.
 		patternThreadId?: string;
+		// The accepted edit whose re-read staged this one as a follow-up.
+		followsSuggestionId?: string;
 		// The text the range was found on, where the caller located it on its
 		// own copy of the scene: refused when the scene no longer has it there.
 		original?: string;
@@ -773,7 +775,8 @@ export async function createSuggestion(
 				rangeStart: start,
 				rangeEnd: end,
 				replacement: input.replacement,
-				patternThreadId: input.patternThreadId ?? null
+				patternThreadId: input.patternThreadId ?? null,
+				followsSuggestionId: input.followsSuggestionId ?? null
 			})
 			.returning({ id: reviewSuggestions.id });
 	});
@@ -808,6 +811,8 @@ export type SuggestionView = {
 	anchorLost: boolean;
 	// The Assistant pattern note this edit belongs to, if any.
 	patternThreadId: string | null;
+	// The edit whose re-read after an accept staged this one, if any.
+	followsId: string | null;
 	createdAt: Date;
 	decidedAt: Date | null;
 };
@@ -933,6 +938,7 @@ export async function listSuggestions(
 			anchor,
 			anchorLost: row.suggestion.status === 'pending' && anchor === null,
 			patternThreadId: row.suggestion.patternThreadId,
+			followsId: row.suggestion.followsSuggestionId,
 			createdAt: row.suggestion.createdAt,
 			decidedAt: row.suggestion.decidedAt
 		};

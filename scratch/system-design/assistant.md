@@ -1125,7 +1125,13 @@ calls the gateway, which proxies through the egress guard.
   After an accept, `/api/assistant/pattern-reread` sends the changed paragraph
   and one either side with the note, offers only `suggest_edit` held to that
   window (`ToolScope.editWindow`) and linked to the note
-  (`ToolScope.patternThreadId`), so a follow-up becomes the next step.
+  (`ToolScope.patternThreadId`) and to the accepted edit
+  (`ToolScope.followsSuggestionId`, stored as
+  `review_suggestions.follows_suggestion_id`, set null when that edit is
+  deleted), so a follow-up becomes the next step. The pass shows every edit of
+  the note as one list (#1297): the current one full with its buttons, the rest
+  faded with their outcome, and a follow-up links back to its original. The
+  re-read's status shows as a corner activity card (#1295).
 - [built] Chapter pattern pass (#1136), opt-in from the review modal
   (`patterns: 'chapter'` on the review job; part of the run's scope key). Runs
   before the scene loop (`pattern-pass.ts`): stage A surveys each chapter with

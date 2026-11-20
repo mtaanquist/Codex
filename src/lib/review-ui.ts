@@ -93,6 +93,8 @@ export type ReviewSuggestion = {
 	anchorLost: boolean;
 	// The Assistant pattern note this edit belongs to, if any.
 	patternThreadId: string | null;
+	// The edit whose re-read after an accept staged this one, if any.
+	followsId: string | null;
 	createdAt: Date | string;
 };
 
@@ -375,10 +377,30 @@ export function pendingPatternCounts(
 	return counts;
 }
 
-// The pending edits of one pattern note in reading order: by the scene's place
-// in the story, then by where the edit sits in the scene. An edit whose passage
-// was rewritten (no anchor) goes last in its scene; a scene not in the order
-// (in the deleted list) goes last of all.
+// Every edit of one pattern note, decided or not, in reading order: by the
+// scene's place in the story, then by where the edit sits in the scene. An
+// edit whose passage was rewritten (no anchor) goes last in its scene; a scene
+// not in the order (in the deleted list) goes last of all.
+export function patternEdits<
+	S extends {
+		id: string;
+		sceneId: string;
+		patternThreadId: string | null;
+		anchor: { start: number; end: number } | null;
+	}
+>(suggestions: S[], threadId: string, sceneOrder: string[]): S[] {
+	const rank = new Map(sceneOrder.map((id, i) => [id, i]));
+	const sceneRank = (s: S) => rank.get(s.sceneId) ?? sceneOrder.length;
+	return suggestions
+		.filter((s) => s.patternThreadId === threadId)
+		.sort(
+			(a, b) =>
+				sceneRank(a) - sceneRank(b) ||
+				(a.anchor?.start ?? Number.MAX_SAFE_INTEGER) - (b.anchor?.start ?? Number.MAX_SAFE_INTEGER)
+		);
+}
+
+// The pending edits of one pattern note, in the order of patternEdits.
 export function patternQueue<
 	S extends {
 		id: string;
@@ -388,15 +410,7 @@ export function patternQueue<
 		anchor: { start: number; end: number } | null;
 	}
 >(suggestions: S[], threadId: string, sceneOrder: string[]): S[] {
-	const rank = new Map(sceneOrder.map((id, i) => [id, i]));
-	const sceneRank = (s: S) => rank.get(s.sceneId) ?? sceneOrder.length;
-	return suggestions
-		.filter((s) => s.patternThreadId === threadId && s.status === 'pending')
-		.sort(
-			(a, b) =>
-				sceneRank(a) - sceneRank(b) ||
-				(a.anchor?.start ?? Number.MAX_SAFE_INTEGER) - (b.anchor?.start ?? Number.MAX_SAFE_INTEGER)
-		);
+	return patternEdits(suggestions, threadId, sceneOrder).filter((s) => s.status === 'pending');
 }
 
 // The note's name for the pass header: the label in its opening

@@ -12,6 +12,7 @@ import {
 	threadInFilter,
 	isWholeSceneNote,
 	patternName,
+	patternEdits,
 	patternQueue,
 	pendingPatternCounts,
 	type MarkSuggestion,
@@ -300,6 +301,21 @@ describe('the guided pass over a pattern note', () => {
 			['s1', 's2']
 		);
 		expect(queue.map((s) => s.id)).toEqual(['first', 'lost', 'early', 'late', 'trashed']);
+	});
+
+	it('lists every edit of the note, decided ones in their reading place', () => {
+		const edits = patternEdits(
+			[
+				edit('late', 's2', 40),
+				edit('accepted', 's1', 20, { status: 'accepted' }),
+				edit('first', 's1', 10),
+				edit('rejected', 's2', 1, { status: 'rejected' }),
+				edit('elsewhere', 's1', 1, { patternThreadId: 'other' })
+			],
+			'note',
+			['s1', 's2']
+		);
+		expect(edits.map((s) => s.id)).toEqual(['first', 'accepted', 'rejected', 'late']);
 	});
 
 	it('names the pattern from its label, or from the first line', () => {

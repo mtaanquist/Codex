@@ -103,6 +103,7 @@ export async function rereadPatternEdit(
 			toolBudget: REREAD_TOOL_BUDGET,
 			toolScope: {
 				patternThreadId: edit.patternThreadId,
+				followsSuggestionId: input.suggestionId,
 				editWindow: { sceneId: edit.sceneId, ...window },
 				maxEdits: 1,
 				storyOnly: true

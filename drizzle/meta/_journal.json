@@ -638,6 +638,13 @@
 			"when": 1795172976619,
 			"tag": "0090_signup-note",
 			"breakpoints": true
+		},
+		{
+			"idx": 91,
+			"version": "7",
+			"when": 1795193169148,
+			"tag": "0091_follows-suggestion",
+			"breakpoints": true
 		}
 	]
 }

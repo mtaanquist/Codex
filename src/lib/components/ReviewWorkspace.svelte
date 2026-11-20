@@ -30,6 +30,7 @@
 	import type { MarkVisibility } from '#lib/editor';
 	import {
 		anchorPos,
+		patternEdits,
 		patternQueue,
 		pendingPatternCounts,
 		suggestionInFilter,
@@ -476,26 +477,30 @@
 	// ---- the guided pass over an Assistant pattern note ----
 	// Works through the note's pending edits in reading order, one at a time.
 	// done holds what this pass accepted or skipped (a skip leaves the edit
-	// pending); followUps are the edits a re-read staged. currentId keeps the
-	// step on screen steady while the queue changes around it.
+	// pending). currentId keeps the step on screen steady while the queue
+	// changes around it.
 	const patternCounts = $derived(pendingPatternCounts(liveSuggestions));
 	let pass = $state<{
 		threadId: string;
-		followUps: SvelteSet<string>;
 		done: SvelteSet<string>;
+		// The ones of done the writer skipped.
+		skipped: SvelteSet<string>;
 		currentId: string | null;
 		// The writer is rewording or accepting the current step.
 		held: boolean;
 	} | null>(null);
 	const passNote = $derived(pass ? (threads.find((t) => t.id === pass!.threadId) ?? null) : null);
-	const passOpen = $derived(
+	const passEdits = $derived(
 		pass
-			? patternQueue(
+			? patternEdits(
 					liveSuggestions,
 					pass.threadId,
 					orderedScenes.map((scene) => scene.id)
-				).filter((s) => !pass!.done.has(s.id))
+				)
 			: []
+	);
+	const passOpen = $derived(
+		pass ? passEdits.filter((s) => s.status === 'pending' && !pass!.done.has(s.id)) : []
 	);
 	const passStep = $derived(
 		pass ? (passOpen.find((s) => s.id === pass!.currentId) ?? passOpen[0] ?? null) : null
@@ -512,8 +517,8 @@
 		);
 		pass = {
 			threadId,
-			followUps: new SvelteSet(),
 			done: new SvelteSet(),
+			skipped: new SvelteSet(),
 			currentId: queue[0]?.id ?? null,
 			held: false
 		};
@@ -609,7 +614,6 @@
 			return;
 		}
 		if (ok) await refreshAll();
-		for (const id of ids) current.followUps.add(id);
 		rereadCards.delete(card);
 		if (!ok) resolveActivity(card, { state: 'failed', label: 'Could not re-read the last change' });
 		else if (ids.length > 0) resolveActivity(card, { state: 'done', label: 'Follow-up added' });
@@ -791,13 +795,18 @@
 				{#if pass && passNote}
 					<PatternPass
 						note={passNote}
+						edits={passEdits}
 						step={passStep}
 						scene={passScene}
+						sceneOf={(id) => orderedScenes.find((scene) => scene.id === id) ?? null}
+						skipped={(id) => pass?.skipped.has(id) ?? false}
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
-						followUp={passStep !== null && pass.followUps.has(passStep.id)}
 						onAccepted={passAccepted}
-						onSkip={(id) => pass?.done.add(id)}
+						onSkip={(id) => {
+							pass?.skipped.add(id);
+							pass?.done.add(id);
+						}}
 						beforeAccept={flushEditor}
 						onStop={() => (pass = null)}
 						onHeld={(held) => {

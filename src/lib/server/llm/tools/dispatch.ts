@@ -41,6 +41,9 @@ export type ToolScope = {
 	// Link every suggest_edit this turn stages to this pattern note (the
 	// chapter pattern pass and the re-read after an accept).
 	patternThreadId?: string;
+	// Mark every suggest_edit this turn stages as a follow-up to this accepted
+	// edit (the re-read after an accept).
+	followsSuggestionId?: string;
 	// Refuse a suggest_edit outside this stretch of this scene (the re-read
 	// after an accept looks at one paragraph and its neighbours).
 	editWindow?: { sceneId: string; start: number; end: number };
@@ -395,7 +398,8 @@ async function suggestEdit(
 		range: { start: found.start, end: found.end },
 		original: scene.bodyMd.slice(found.start, found.end),
 		replacement: input.replacement,
-		patternThreadId: ctx.scope?.patternThreadId
+		patternThreadId: ctx.scope?.patternThreadId,
+		followsSuggestionId: ctx.scope?.followsSuggestionId
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
 	if (limit !== undefined) stagedEdits.set(ctx, (stagedEdits.get(ctx) ?? 0) + 1);

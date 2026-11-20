@@ -452,6 +452,9 @@ describe('rereadPatternEdit', () => {
 			(s) => s.status === 'pending'
 		);
 		expect(followUp?.patternThreadId).toBe(threadId);
+		// Linked to the accept it follows, so the pass can show the link after a
+		// reload.
+		expect(followUp?.followsSuggestionId).toBe(suggestionId);
 		expect(result).toEqual({ staged: 1, ids: [followUp!.id] });
 	});
 
