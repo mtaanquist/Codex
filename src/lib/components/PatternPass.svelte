@@ -19,6 +19,7 @@
 		scene,
 		sceneOf,
 		skipped,
+		accepted,
 		rereading,
 		position,
 		total,
@@ -38,6 +39,8 @@
 		sceneOf: (sceneId: string) => { title: string | null; chapterTitle: string } | null;
 		// Skipped in this pass: still pending, but behind the writer.
 		skipped: (id: string) => boolean;
+		// Accepted in this pass, before the page data says so.
+		accepted: (id: string) => boolean;
 		// A re-read after an accept is still running, so a follow-up may yet come.
 		rereading: boolean;
 		position: number;
@@ -96,12 +99,19 @@
 	function cardOf(id: string): HTMLElement | null {
 		return scroller?.querySelector<HTMLElement>(`[data-edit="${CSS.escape(id)}"]`) ?? null;
 	}
+	// The button the writer pressed goes with the step, so focus moves to the
+	// new step rather than falling back to the page, unless the writer had
+	// already moved it somewhere outside the pass.
 	$effect(() => {
 		const id = stepId;
 		if (!scroller) return;
 		void tick().then(() => {
 			const card = id ? cardOf(id) : scroller?.querySelector<HTMLElement>('.pp-end');
 			card?.scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' });
+			const active = document.activeElement;
+			if (card && (!active || active === document.body || scroller?.contains(active))) {
+				card.focus({ preventScroll: true });
+			}
 		});
 	});
 
@@ -120,7 +130,7 @@
 	const listed = $derived(new Set(edits.map((e) => e.id)));
 
 	function outcome(edit: ReviewSuggestion): string | null {
-		if (edit.status === 'accepted') return 'Accepted';
+		if (edit.status === 'accepted' || accepted(edit.id)) return 'Accepted';
 		if (edit.status === 'rejected') return 'Rejected';
 		if (skipped(edit.id)) return 'Skipped';
 		return null;
@@ -133,7 +143,7 @@
 			<span class="rv-back-ic"><Icon name="chevron" size={14} /></span> Stop
 		</button>
 		<span class="inspector-kind pp-title">{name}</span>
-		<span class="pp-count"
+		<span class="pp-count" aria-live="polite"
 			>{#if step}{position} of {total}{/if}</span
 		>
 	</div>
@@ -158,6 +168,7 @@
 					style="--auth: var(--cat-violet);"
 					data-edit={step.id}
 					aria-current="step"
+					tabindex="-1"
 				>
 					<div class="rv-card-top">
 						<div class="rv-who">
@@ -289,14 +300,14 @@
 		{/each}
 
 		{#if !step && rereading}
-			<div class="empty-state tight pp-end">
+			<div class="empty-state tight pp-end" tabindex="-1">
 				<div class="empty-state-icon"><Icon name="sparkles" size={22} /></div>
 				<p class="empty-state-text">
 					The Assistant is still re-reading your last changes and may suggest a follow-up.
 				</p>
 			</div>
 		{:else if !step}
-			<div class="empty-state tight pp-end">
+			<div class="empty-state tight pp-end" tabindex="-1">
 				<div class="empty-state-icon"><Icon name="check-circle" size={22} /></div>
 				<p class="empty-state-text">You have been through every change in this note.</p>
 				<div class="rv-actions">

@@ -622,11 +622,11 @@
 		}
 		try {
 			if (destroyed) return;
-			// A pass on this note, this one or one started again since, loads the
-			// follow-up. Refreshed after a failed answer too: a re-read that timed
-			// out may still have staged its follow-up. The count drops only after
+			// Refreshed even when the pass was stopped, so a pass started again
+			// later sees the follow-up, and after a failed answer too: a re-read
+			// that timed out may still have staged one. The count drops only after
 			// the refresh, so the end of the pass is not offered in between.
-			if (answered && pass?.threadId === threadId) await refreshAll();
+			if (answered) await refreshAll();
 		} catch {
 			ok = false;
 		} finally {
@@ -817,6 +817,7 @@
 						scene={passScene}
 						sceneOf={(id) => orderedScenes.find((scene) => scene.id === id) ?? null}
 						skipped={(id) => pass?.skipped.has(id) ?? false}
+						accepted={(id) => (pass?.done.has(id) && !pass.skipped.has(id)) ?? false}
 						rereading={rereading.has(pass.threadId)}
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
