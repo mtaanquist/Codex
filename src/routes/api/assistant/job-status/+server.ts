@@ -4,14 +4,14 @@ import { getAssistantJobState, reviewJobState } from '#lib/server/jobs';
 import { loadReviewRun } from '#lib/server/review-runs';
 
 // Where the activity center and the review modal poll a queued Assistant job
-// (review, summaries, enrichment, a character arc, or a details read) to completion. Job ids are unguessable, and the reply
+// (review, summaries, enrichment, a character arc, a details read, or a scene draft) to completion. Job ids are unguessable, and the reply
 // carries only the job's progress, so a signed-in user may read any id they
 // hold; the recorded progress of a review is scoped to the user who started it.
 export const GET: RequestHandler = async ({ url, locals }) => {
 	if (!locals.user) error(401, 'Sign in to check a job.');
 	const kind = url.searchParams.get('kind');
 	const id = url.searchParams.get('id');
-	const known = ['review', 'summaries', 'enrich', 'arc', 'details'] as const;
+	const known = ['review', 'summaries', 'enrich', 'arc', 'details', 'draft'] as const;
 	const isKind = (value: string | null): value is (typeof known)[number] =>
 		known.includes(value as (typeof known)[number]);
 	if (!isKind(kind) || !id) {

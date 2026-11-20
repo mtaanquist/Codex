@@ -32,6 +32,7 @@
 	import {
 		duplicateScene as duplicateSceneAction,
 		flushEditors as flushAll,
+		landSceneDraft as landSceneDraftAction,
 		mergeScenes as mergeScenesAction,
 		persistProposalState,
 		SAVE_FAILED,
@@ -601,6 +602,49 @@
 		};
 	}
 
+	// "Draft this scene" on a scene's menu: the scene opens, and the Assistant
+	// panel shows the draft form (or the draft the scene already has).
+	function draftScene(sceneId: string) {
+		rowMenu = null;
+		if (data.selectedScene?.id === sceneId) {
+			assistantIntent.pending = { kind: 'draft' };
+			return;
+		}
+		void goto(withQuery(storyPath, { scene: sceneId, draft: '1' }));
+	}
+	// A link to a scene's draft (its notice, the background jobs list, the
+	// scene's menu) carries draft=1: open the Assistant panel on that draft.
+	const draftAsked = $derived(
+		page.url.searchParams.get('draft') === '1' ? page.url.searchParams.get('scene') : null
+	);
+	const draftable = $derived(data.assistant.surfacesEnabled);
+	$effect(() => {
+		if (draftAsked && draftable) {
+			untrack(() => (assistantIntent.pending = { kind: 'draft' }));
+		}
+	});
+
+	// Keeps a scene draft the way the writer chose in the Assistant panel. The
+	// server decides against the stored text (Fill is refused once the scene
+	// has any), so pending saves land first; then the scene the draft went to
+	// opens on the stored text.
+	async function landSceneDraft(
+		draftId: string,
+		action: 'fill' | 'add',
+		text: string
+	): Promise<string | null> {
+		if (typingPaused) return BUSY;
+		if (uploading()) return WAIT_UPLOADING;
+		return pauseTypingWhile(async () => {
+			if (!(await flushEditors())) return SAVE_FAILED;
+			const result = await landSceneDraftAction(draftId, action, text);
+			if (!result.ok) return result.message;
+			const target = result.newSceneId ?? result.sceneId;
+			if (target) await openSceneKeepingPane(target);
+			return null;
+		});
+	}
+
 	// Which chapter shows its inline rename field; bound into the outline,
 	// set from the row menu.
 	let renamingChapterId = $state<string | null>(null);
@@ -1105,6 +1149,7 @@
 									onConfirmSplit={confirmAssistantSplit}
 									onRevertSplit={revertAssistantSplit}
 									insertPaused={leavingScene}
+									onLandDraft={data.revisionPreview ? undefined : landSceneDraft}
 									reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 									onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 										? (text) => {
@@ -1286,6 +1331,7 @@
 		}}
 		onOpenReview={openReviewFor}
 		onSuggestSplit={suggestSplit}
+		onDraftScene={draftScene}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}
 		onFindReplace={(chapterId) => {

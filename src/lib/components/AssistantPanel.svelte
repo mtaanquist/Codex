@@ -88,6 +88,7 @@
 	} from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal from './AssistantProposal.svelte';
+	import AssistantDraft from './AssistantDraft.svelte';
 	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
 	import AssistantModelMenu, { EFFORT_LABELS } from './AssistantModelMenu.svelte';
 	import AssistantContextPicker from './AssistantContextPicker.svelte';
@@ -107,6 +108,7 @@
 		onReplaceSelection,
 		insertPaused = false,
 		getSelection,
+		onLandDraft,
 		reviewHref
 	}: {
 		// The conversation this panel serves: a single story (Write, Review, story
@@ -151,6 +153,10 @@
 		// The editor's current selection text, or null when nothing is selected.
 		// /rewrite needs it; only passed when a scene editor is open.
 		getSelection?: () => string | null;
+		// Keeps a scene draft, as the writer chose: into the open scene while it
+		// is empty (fill) or as a new scene after it (add). Resolves to a message
+		// when it did not go through. Only Write passes it, so only Write drafts.
+		onLandDraft?: (draftId: string, action: 'fill' | 'add', text: string) => Promise<string | null>;
 		// The story's review page, for /copyedit to open when notes are staged.
 		// Story surfaces pass it; the universe surface does not.
 		reviewHref?: ResolvedPathname;
@@ -762,6 +768,9 @@
 					if (!done && typed) restoreDraft(raw, {});
 				});
 				break;
+			case 'draft':
+				if (!openSceneDraft(slashArgs(raw)) && typed) restoreDraft(raw, {});
+				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
 				break;
@@ -905,6 +914,24 @@
 			{ role: 'assistant', content: '' }
 		];
 		return runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
+	}
+
+	// /draft and "Draft this scene": the brief form for a draft of the whole
+	// open scene, in a card under the chat (AssistantDraft). The draft is
+	// written by a background job and staged; the card is where the writer
+	// keeps or discards it. Only ever opened by the writer asking for it.
+	let draftRequest = $state<{ brief: string; sceneId: string } | null>(null);
+	function openSceneDraft(brief: string): boolean {
+		if (!('storyId' in scope) || !onLandDraft) {
+			assistantSay('Drafting a scene works in Write. Open the scene there to use /draft.');
+			return false;
+		}
+		if (!sceneId) {
+			assistantSay('Open the scene you want drafted, then type /draft.');
+			return false;
+		}
+		draftRequest = { brief, sceneId };
+		return true;
 	}
 
 	// /rewrite: co-author a rewrite of the editor's current selection to an
@@ -1220,6 +1247,8 @@
 			composer?.focus();
 		} else if (intent.kind === 'prefill') {
 			prefill(intent.text);
+		} else if (intent.kind === 'draft') {
+			openSceneDraft('');
 		} else if (intent.kind === 'catchup') {
 			void catchUp();
 		} else if (intent.kind === 'focus') {
@@ -1596,6 +1625,17 @@
 					</div>
 				{/if}
 			{/each}
+			{#if 'storyId' in scope && sceneId && onLandDraft}
+				<!-- One per scene: it shows the scene's draft, if it has one. -->
+				{#key sceneId}
+					<AssistantDraft
+						storyId={scope.storyId}
+						{sceneId}
+						request={draftRequest?.sceneId === sceneId ? draftRequest : null}
+						onLand={onLandDraft}
+					/>
+				{/key}
+			{/if}
 		</div>
 
 		{#if messages.length <= 1 && !busy && suggestions.length > 0}

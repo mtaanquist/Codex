@@ -1023,6 +1023,59 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafts (2026-11-20)
+
+#1168 step 1, branch `feat/scene-draft` on `staging/scene-drafting`. The
+Assistant writes one whole scene from the writer's brief. Decided by the
+owner beforehand: no setting for it, only ever started by the writer
+(`/draft`, or "Draft this scene..." on the scene's menu), never over the
+writer's text, and counted before it runs.
+
+It is a background job on its own queue (`assistant-draft`) and not a
+stream, because a scene on a local model takes minutes; the job shape is the
+details read's (#1170). The text is staged in a new table, `assistant_drafts`
+(migration 0095), and the scene is only written when the writer chooses in
+the panel card (`AssistantDraft.svelte`). "Fill this scene" takes the scene's
+row lock, refuses when the stored body has any prose, and saves through
+`saveSceneBody`, so it is a revision. "Add as a new scene after this one"
+reuses `lockStoryScene` and `makeRoomAfter` from the split code (now
+exported). Lock order is scenes first, then the draft row.
+
+Choices made while building, none of them settled by the issue:
+
+- One undecided draft per writer and scene (a partial unique index). Asking
+  again while one waits shows it instead.
+- The reply limit is words times 1.4 plus 400 tokens, held to
+  `MAX_REPLY_TOKENS` and half the context window. The app does not know a
+  model's output limit, only its window. A "Longest reply" set for Write in
+  its Tune window still wins in the gateway, as it does everywhere; the
+  estimate tells the writer when that would stop the scene early rather
+  than overriding their setting.
+- A reply cut off at the limit is kept as a ready draft with a note. A stop
+  discards the draft (the worker only notices a cancel at its heartbeat, so
+  reading a draft whose job is gone settles the row: stopped ones are
+  discarded, others marked failed).
+- An estimate over the spend cap is a 409 from the request too, not only a
+  disabled button.
+- A scene that already has prose can still be drafted: the prompt is told to
+  carry on from it, and only "Add as a new scene" is offered.
+- The writer's edits to a ready draft live in the card until it is kept;
+  they are not saved back to the row.
+- Keeping or discarding a draft is not gated by the mute, so muting a story
+  never strands a draft. Reading one and asking for one are gated.
+- A new notification kind, `assistant_draft`. Its link, and the Background
+  jobs row, open the scene with `draft=1`, which opens the panel on the draft.
+- The neighbouring summaries the context reads can be stale (#1321); the two
+  places this code reads a summary itself use `usableSceneSummary`.
+
+Deferred: chapter drafts (step 2; `chapter_id` and `position` are on the
+table for it), streaming the draft into the card as it is written, and a
+replace action (ruled out).
+
+Tests: unit for the prompt and the length maths; integration for the gates,
+the cap, every accept path, ownership, stop and the handler; one Playwright
+journey with the model-facing calls stubbed.
+
 ## Assistant staleness by fingerprint (2026-11-20)
 
 #1197, branch `feat/assistant-staleness-by-hash`. Arcs, enrich reads and

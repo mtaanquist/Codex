@@ -10,6 +10,9 @@ export type AssistantIntent =
 	| { kind: 'reference'; sceneId: string; text: string }
 	// Put a starter prompt into the composer for the writer to edit and send.
 	| { kind: 'prefill'; text: string }
+	// Open the scene draft form for the open scene (or its draft, when it has
+	// one).
+	| { kind: 'draft' }
 	// Run the recap ("catch me up").
 	| { kind: 'catchup' }
 	// Just open the tab and focus the composer.

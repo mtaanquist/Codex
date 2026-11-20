@@ -1,0 +1,116 @@
+// A scene draft: the Assistant writes one whole scene from the writer's brief,
+// staged for the writer to keep or discard. The limits and the wire shapes the
+// panel and the server share.
+
+import { MAX_REPLY_TOKENS } from './assistant-tuning.ts';
+
+export const MAX_DRAFT_BRIEF_CHARS = 4000;
+export const MAX_DRAFT_POV_CHARS = 200;
+// The shortest and longest scene a draft may be asked for, in words.
+export const MIN_DRAFT_WORDS = 100;
+export const MAX_DRAFT_WORDS = 6000;
+// The length offered when the story has no written scene to take one from.
+export const FALLBACK_DRAFT_WORDS = 800;
+// The offered length follows the story's own scenes, within these bounds.
+const MIN_DEFAULT_WORDS = 300;
+const MAX_DEFAULT_WORDS = 3000;
+
+// English prose runs a little over a token and a third per word.
+const TOKENS_PER_WORD = 1.4;
+// Room past the target, so a scene that runs slightly long still ends.
+const DRAFT_HEADROOM_TOKENS = 400;
+// A reply never takes more than this share of a known context window: the
+// brief, the world and the neighbouring scenes have to fit beside it.
+const WINDOW_SHARE = 2;
+
+export function clampDraftWords(words: number): number {
+	if (!Number.isFinite(words)) return FALLBACK_DRAFT_WORDS;
+	return Math.min(Math.max(Math.round(words), MIN_DRAFT_WORDS), MAX_DRAFT_WORDS);
+}
+
+// The target length offered in the brief form: the median length of the
+// story's written scenes, to the nearest fifty words.
+export function defaultDraftWords(sceneWordCounts: number[]): number {
+	const written = sceneWordCounts.filter((count) => count > 0).sort((a, b) => a - b);
+	if (written.length === 0) return FALLBACK_DRAFT_WORDS;
+	const mid = Math.floor(written.length / 2);
+	const median = written.length % 2 ? written[mid] : (written[mid - 1] + written[mid]) / 2;
+	const rounded = Math.round(median / 50) * 50;
+	return Math.min(Math.max(rounded, MIN_DEFAULT_WORDS), MAX_DEFAULT_WORDS);
+}
+
+// How many tokens a scene of this length is expected to take.
+export function draftExpectedTokens(targetWords: number): number {
+	return Math.ceil(clampDraftWords(targetWords) * TOKENS_PER_WORD);
+}
+
+// How many words fit a reply of this many tokens, for saying where a draft
+// would stop.
+export function wordsForTokens(tokens: number): number {
+	return Math.max(0, Math.floor(tokens / TOKENS_PER_WORD / 50) * 50);
+}
+
+// The reply limit a draft of this length asks for: the expected tokens plus
+// headroom, held to what the model can return. The app does not know a model's
+// own output limit, so the bound is half its context window where that is
+// known, and the ceiling a reply length may be set to otherwise.
+export function draftMaxTokens(targetWords: number, contextWindow?: number): number {
+	const wanted = draftExpectedTokens(targetWords) + DRAFT_HEADROOM_TOKENS;
+	const limit = contextWindow
+		? Math.min(MAX_REPLY_TOKENS, Math.floor(contextWindow / WINDOW_SHARE))
+		: MAX_REPLY_TOKENS;
+	return Math.max(1, Math.min(wanted, limit));
+}
+
+// What a draft would send and cost, counted without sending it.
+export type SceneDraftEstimate = {
+	model: string;
+	// Prompt tokens: the persona, the world and the neighbouring scenes, and the
+	// brief.
+	estTokens: number;
+	// What the scene is expected to take to write.
+	estCompletionTokens: number;
+	// Present only when the model has a price.
+	estCostUsd?: number;
+	capUsd?: number;
+	// The estimate is over the spend cap, so the draft is not run.
+	overCap: boolean;
+	// The reply length set for this role, or the model's context window, is
+	// shorter than the draft needs, so the scene would stop at about this many
+	// words.
+	limitedToWords?: number;
+};
+
+// What the brief form opens with.
+export type SceneDraftDefaults = {
+	brief: string;
+	targetWords: number;
+	sceneTitle: string | null;
+};
+
+export type SceneDraftStatus =
+	'pending' | 'running' | 'ready' | 'accepted' | 'discarded' | 'failed';
+
+// A draft as the panel shows it.
+export type SceneDraftView = {
+	id: string;
+	sceneId: string;
+	status: SceneDraftStatus;
+	brief: string;
+	targetWords: number;
+	pov: string | null;
+	textMd: string;
+	note: string | null;
+	jobId: string | null;
+	createdAt: string;
+	// Whether the scene had no prose when this was read. Fill is offered only
+	// then, and checked again when the writer accepts.
+	sceneEmpty: boolean;
+	sceneTitle: string | null;
+};
+
+// Where a story page opens a scene's draft: the notice, the activity card and
+// the background jobs list all link here.
+export function sceneDraftHref(storyId: string, sceneId: string): string {
+	return `/stories/${storyId}?scene=${sceneId}&draft=1`;
+}

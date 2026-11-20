@@ -10,6 +10,7 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	assets,
+	assistantDrafts,
 	characters,
 	notifications,
 	reviewComments,
@@ -786,6 +787,139 @@ describe('a details read for one entry', () => {
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant could not read for details about Bram. Raise Longest reply.'
 		]);
+	});
+});
+
+describe('a scene draft', () => {
+	async function seedDraft() {
+		const { owner, story } = await seedStory();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1, title: 'The Crossing' })
+			.returning();
+		const [draft] = await db
+			.insert(assistantDrafts)
+			.values({
+				userId: owner.id,
+				storyId: story.id,
+				sceneId: scene.id,
+				brief: 'Ilse crosses.',
+				targetWords: 900,
+				status: 'running'
+			})
+			.returning();
+		const data = { userId: owner.id, storyId: story.id, sceneId: scene.id, draftId: draft.id };
+		return { owner, story, scene, draft, data };
+	}
+	const draftRow = async (id: string) =>
+		(await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id)))[0];
+
+	it('tells the writer the draft is ready, with a link to it', async () => {
+		const { owner, story, scene, data } = await seedDraft();
+		const asked: unknown[] = [];
+		const { handlers, completed } = harness({
+			runSceneDraft: async (_db, opts) => {
+				asked.push({ userId: opts.userId, draftId: opts.draftId, jobId: opts.jobId });
+				return { outcome: 'ready', words: 912, cutOff: false };
+			}
+		});
+		const queued = job(data);
+		await handlers.assistantDraft([queued]);
+
+		expect(asked).toEqual([{ userId: owner.id, draftId: data.draftId, jobId: queued.id }]);
+		const rows = await db.select().from(notifications).where(eq(notifications.userId, owner.id));
+		expect(rows.map((row) => [row.kind, row.payload])).toEqual([
+			[
+				'assistant_draft',
+				{
+					title:
+						'The Assistant drafted the scene "The Crossing" (912 words). Open the scene to keep or discard the draft.',
+					href: `/stories/${story.id}?scene=${scene.id}&draft=1`
+				}
+			]
+		]);
+		expect(completed).toEqual([]);
+	});
+
+	it('says how a draft that did not finish ended', async () => {
+		const { owner, data } = await seedDraft();
+		const results = [
+			{ outcome: 'ready' as const, words: 400, cutOff: true },
+			{ outcome: 'stopped' as const },
+			{ outcome: 'off' as const },
+			{ outcome: 'capped' as const, spentUsd: 1.25 }
+		];
+		const { handlers, completed } = harness({ runSceneDraft: async () => results.shift()! });
+		for (let i = 0; i < 4; i++) await handlers.assistantDraft([job(data)]);
+		expect((await titles(owner.id)).sort()).toEqual(
+			[
+				'The Assistant drafted the scene "The Crossing" (400 words). Open the scene to keep or discard the draft. It stopped at the length limit, so it may end mid-scene.',
+				'The draft of the scene "The Crossing" was stopped before it finished, so nothing was kept.',
+				'The Assistant is off for this story, so it did not draft the scene "The Crossing".',
+				'The Assistant did not draft the scene "The Crossing": this job reached the spend cap at about $1.25. Raise the cap in settings, then type /draft in the Assistant chat to ask again.'
+			].sort()
+		);
+		// Off and capped are settled as failed, so the activity card says so.
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }, { failed: true }]);
+	});
+
+	it("says nothing for a draft that is gone or not the writer's", async () => {
+		const { owner, data } = await seedDraft();
+		const { handlers } = harness({ runSceneDraft: async () => ({ outcome: 'missing' }) });
+		await handlers.assistantDraft([job(data)]);
+		expect(await titles(owner.id)).toEqual([]);
+	});
+
+	it('retries a draft that failed, and fails it for the writer on the last attempt', async () => {
+		const { owner, data } = await seedDraft();
+		const { handlers } = harness(
+			{
+				runSceneDraft: async () => {
+					throw new Error('endpoint down');
+				}
+			},
+			{ state: 'active', startedOn: STARTED }
+		);
+
+		await expect(handlers.assistantDraft([job(data)])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([]);
+		// Still the retry's to write.
+		expect((await draftRow(data.draftId)).status).toBe('running');
+
+		const last = { ...job(data), retryCount: 2 };
+		await expect(handlers.assistantDraft([last])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not draft the scene "The Crossing". Check the endpoint in your settings.'
+		]);
+		expect(await draftRow(data.draftId)).toMatchObject({ status: 'failed', textMd: '' });
+	});
+
+	it('ends without retrying when a retry would end the same way, settled as failed', async () => {
+		for (const [error, why] of [
+			[new ReplyRefusedError(), 'The model declined to write this draft.'],
+			[
+				new NoModelError(),
+				'No model is chosen for the Assistant. Pick one under Account, Assistant, Models per role, then type /draft in the Assistant chat to ask again.'
+			],
+			[
+				new AssistantDisabledError(),
+				'The Assistant is turned off. Switch it back on in your settings, then type /draft in the Assistant chat to ask again.'
+			]
+		] as const) {
+			await pool.query('truncate table notifications, stories, universes, users cascade');
+			const { owner, data } = await seedDraft();
+			const { handlers, completed } = harness({
+				runSceneDraft: async () => {
+					throw error;
+				}
+			});
+			await handlers.assistantDraft([job(data)]);
+			expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+			expect(await titles(owner.id)).toEqual([
+				`The Assistant did not draft the scene "The Crossing". ${why}`
+			]);
+			expect(await draftRow(data.draftId)).toMatchObject({ status: 'failed', note: why });
+		}
 	});
 });
 

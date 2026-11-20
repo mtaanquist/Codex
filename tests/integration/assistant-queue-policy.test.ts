@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PgBoss } from 'pg-boss';
 import pg from 'pg';
 import {
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_QUEUE_OPTIONS,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
@@ -51,14 +52,24 @@ beforeAll(async () => {
 	await boss.start();
 	// Start from no queues, so the app creates them with the policy it declares
 	// rather than inheriting one another test file made.
-	for (const queue of [QUEUE, ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE]) {
+	for (const queue of [
+		QUEUE,
+		ASSISTANT_REVIEW_QUEUE,
+		ASSISTANT_SUMMARIES_QUEUE,
+		ASSISTANT_DRAFT_QUEUE
+	]) {
 		await boss.deleteQueue(queue);
 	}
 	await boss.createQueue(QUEUE, ASSISTANT_QUEUE_OPTIONS);
 });
 
 afterAll(async () => {
-	for (const queue of [QUEUE, ASSISTANT_REVIEW_QUEUE, ASSISTANT_SUMMARIES_QUEUE]) {
+	for (const queue of [
+		QUEUE,
+		ASSISTANT_REVIEW_QUEUE,
+		ASSISTANT_SUMMARIES_QUEUE,
+		ASSISTANT_DRAFT_QUEUE
+	]) {
 		await boss.deleteQueue(queue);
 	}
 	for (const b of bosses) await b.stop({ graceful: false });
@@ -130,6 +141,32 @@ describe('assistant queue policy', () => {
 		await boss.fetch(ASSISTANT_SUMMARIES_QUEUE);
 		await boss.complete(ASSISTANT_SUMMARIES_QUEUE, first as string);
 		expect(await jobs.queueAssistantSummaries(input)).toEqual(expect.any(String));
+	});
+
+	it('holds one unfinished draft per scene, and reads how its job ended', async () => {
+		const input = { userId: 'u1', storyId: 's1', sceneId: 'scene-1', draftId: 'd1' };
+		const first = await jobs.queueAssistantDraft(input);
+		expect(first).toEqual(expect.any(String));
+		expect(first).not.toBe('coalesced');
+		expect(await jobs.queueAssistantDraft({ ...input, draftId: 'd2' })).toBe('coalesced');
+		// Another scene is its own job.
+		const other = await jobs.queueAssistantDraft({ ...input, sceneId: 'scene-2' });
+		expect(other).toEqual(expect.any(String));
+		expect(await unfinished(ASSISTANT_DRAFT_QUEUE)).toBe(2);
+
+		expect(await jobs.assistantDraftJobState(first as string)).toBe('running');
+		expect(await jobs.getAssistantJobState('draft', first as string)).toBe('running');
+		// The writer's Stop is told apart from a job that failed.
+		await boss.cancel(ASSISTANT_DRAFT_QUEUE, first as string);
+		expect(await jobs.assistantDraftJobState(first as string)).toBe('stopped');
+		expect(await jobs.getAssistantJobState('draft', first as string)).toBe('failed');
+		// Stopping frees the scene for a new draft.
+		expect(await jobs.queueAssistantDraft(input)).toEqual(expect.any(String));
+
+		const [running] = await boss.fetch(ASSISTANT_DRAFT_QUEUE);
+		await boss.complete(ASSISTANT_DRAFT_QUEUE, running.id, { failed: true });
+		expect(await jobs.assistantDraftJobState(running.id)).toBe('failed');
+		await boss.deleteAllJobs(ASSISTANT_DRAFT_QUEUE);
 	});
 
 	it('reads the state of a job queued on the old review queue before the upgrade', async () => {

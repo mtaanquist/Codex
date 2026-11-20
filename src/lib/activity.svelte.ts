@@ -75,6 +75,8 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export type JobScope = {
 	storyId?: string | null;
 	chapterId?: string | null;
+	// The scene a draft is for.
+	sceneId?: string | null;
 	universeId?: string | null;
 	mode?: 'full' | 'continuity';
 };
@@ -87,7 +89,7 @@ export type JobProgress = {
 
 export type TrackedJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details' | 'draft';
 	progress?: JobProgress;
 	// What the job is doing, as its card says it ("Reviewing "Tides"").
 	label: string;
@@ -152,7 +154,7 @@ const following: Record<string, Promise<void>> = {};
 // follows is not tracked twice: the second call settles with the first.
 type TrackOptions = {
 	jobId: string | null;
-	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details' | 'draft';
 	scope?: JobScope;
 	runningLabel: string;
 	doneLabel: string;

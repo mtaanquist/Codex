@@ -15,6 +15,7 @@ import {
 	labelJob
 } from '#lib/activity.svelte';
 import type { PatternScope, ReviewCategory } from '#lib/review-shape';
+import { withQuery } from '#lib/href';
 
 // Asks the Assistant to review one scene inline. Stages comments and suggested
 // edits, then opens the review page when anything was staged. An empty category
@@ -255,14 +256,78 @@ export async function startDetailsJob(opts: {
 	});
 }
 
+// Where a scene's draft shows: the scene in Write, with the draft open in the
+// Assistant panel.
+export function sceneDraftPath(storyId: string, sceneId: string): ResolvedPathname {
+	return withQuery(resolve('/stories/[id]', { id: storyId }), { scene: sceneId, draft: '1' });
+}
+
+// Asks for a scene draft. The server stages the draft and queues the job that
+// writes it; the returned promise settles when that job does, so the caller
+// can read the draft back. A refusal comes back as the server's own words.
+export async function startSceneDraft(opts: {
+	storyId: string;
+	sceneId: string;
+	brief: string;
+	targetWords: number;
+	pov: string;
+	label: string;
+}): Promise<{ ok: true; jobId: string; done: Promise<void> } | { ok: false; message: string }> {
+	let response: Response;
+	try {
+		response = await fetch('/api/assistant/draft', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				storyId: opts.storyId,
+				sceneId: opts.sceneId,
+				brief: opts.brief,
+				targetWords: opts.targetWords,
+				pov: opts.pov
+			})
+		});
+	} catch {
+		return { ok: false, message: 'Check your connection and try again.' };
+	}
+	if (!response.ok) {
+		return { ok: false, message: await apiErrorMessage(response, 'Could not start the draft.') };
+	}
+	const { jobId } = (await response.json()) as { jobId: string };
+	return { ok: true, jobId, done: followSceneDraft({ ...opts, jobId }) };
+}
+
+// Follows a scene draft's job in the activity center, for one just started or
+// one found still running after a reload.
+export function followSceneDraft(opts: {
+	jobId: string;
+	storyId: string;
+	sceneId: string;
+	label: string;
+}): Promise<void> {
+	return trackJob({
+		jobId: opts.jobId,
+		kind: 'draft',
+		...jobLabels('draft', 'full', opts.label),
+		scope: { storyId: opts.storyId, sceneId: opts.sceneId },
+		href: sceneDraftPath(opts.storyId, opts.sceneId)
+	});
+}
+
 // The activity card's three labels for a job. label names what the job is over
 // ("your story", or a quoted title for a job picked up after a reload); a
 // summary pass started from the panel needs none.
 function jobLabels(
-	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details',
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details' | 'draft',
 	mode: 'full' | 'continuity',
 	label?: string
 ): { runningLabel: string; doneLabel: string; failedLabel: string } {
+	if (kind === 'draft') {
+		return {
+			runningLabel: `Drafting ${label}...`,
+			doneLabel: `Draft of ${label} ready`,
+			failedLabel: `Could not draft ${label}`
+		};
+	}
 	if (kind === 'details') {
 		return {
 			runningLabel: `Reading your story for details about ${label}...`,
@@ -313,7 +378,7 @@ function jobLabels(
 // A job the server still has queued or running (GET /api/assistant/jobs).
 export type RunningJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details' | 'draft';
 	mode: 'full' | 'continuity';
 	title: string;
 	startedAt?: string;
@@ -332,17 +397,21 @@ export async function resumeRunningJobs(): Promise<void> {
 		return;
 	}
 	for (const job of jobs) {
-		const { id, kind, mode, title, storyId, chapterId, universeId } = job;
+		const { id, kind, mode, title, storyId, chapterId, sceneId, universeId } = job;
 		const queued = job.startedAt ? Date.parse(job.startedAt) : NaN;
 		const labels = jobLabels(kind, mode, `"${title}"`);
 		void trackJob({
 			jobId: id,
 			kind,
 			startedAt: Number.isFinite(queued) ? queued : undefined,
-			scope: { storyId, chapterId, universeId, mode },
+			scope: { storyId, chapterId, sceneId, universeId, mode },
 			...labels,
 			href:
-				kind === 'review' && storyId ? resolve('/stories/[id]/review', { id: storyId }) : undefined
+				kind === 'review' && storyId
+					? resolve('/stories/[id]/review', { id: storyId })
+					: kind === 'draft' && storyId && sceneId
+						? sceneDraftPath(storyId, sceneId)
+						: undefined
 		});
 		// One this tab started itself gets its title in the background jobs list.
 		labelJob(id, labels.runningLabel);
