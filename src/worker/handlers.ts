@@ -128,6 +128,18 @@ function entries(n: number, other = false): string {
 	return `${n} ${other ? 'other ' : ''}${n === 1 ? 'entry' : 'entries'}`;
 }
 
+// LEGACY (#1041): what a review queued before the upgrade checked, read from
+// its job, for continuing a run it capped (see adoptCappedRun). Null when
+// pg-boss no longer has the job, or it does not say.
+export async function legacyJobCategories(
+	boss: Pick<PgBoss, 'getJobById'>,
+	jobId: string
+): Promise<ReviewCategory[] | null> {
+	const found = await boss.getJobById(LEGACY_ASSISTANT_REVIEW_QUEUE, jobId);
+	const categories = (found?.data as { categories?: unknown } | undefined)?.categories;
+	return Array.isArray(categories) ? parseCategories(categories) : null;
+}
+
 export function createHandlers(deps: WorkerDeps) {
 	const { db, boss, origin } = deps;
 	const services: WorkerServices = { ...defaultServices, ...deps.services };
@@ -170,15 +182,6 @@ export function createHandlers(deps: WorkerDeps) {
 		) {
 			throw err;
 		}
-	}
-
-	// LEGACY (#1041): what a review queued before the upgrade checked, read from
-	// its job, for continuing a run it capped (see adoptCappedRun). Null when
-	// pg-boss no longer has the job, or it does not say.
-	async function legacyJobCategories(jobId: string): Promise<ReviewCategory[] | null> {
-		const found = await boss.getJobById(LEGACY_ASSISTANT_REVIEW_QUEUE, jobId);
-		const categories = (found?.data as { categories?: unknown } | undefined)?.categories;
-		return Array.isArray(categories) ? parseCategories(categories) : null;
 	}
 
 	// One character's arc, from an assistant-enrich job that names it.
@@ -525,7 +528,7 @@ export function createHandlers(deps: WorkerDeps) {
 							patterns,
 							jobId: job.id,
 							signal,
-							legacyJobCategories
+							legacyJobCategories: (jobId) => legacyJobCategories(boss, jobId)
 						})
 					);
 					const problem = firstFailure(result.failures);

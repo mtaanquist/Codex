@@ -7,6 +7,10 @@ import * as schema from '../../src/lib/server/db/schema';
 import {
 	chapters,
 	characters,
+	entityCategories,
+	loreEntries,
+	places,
+	revisions,
 	scenes,
 	stories,
 	universes,
@@ -16,6 +20,7 @@ import {
 	createChapter,
 	createScene,
 	deleteChapter,
+	destroyScene,
 	moveChapter,
 	renameChapter,
 	restoreScene,
@@ -31,6 +36,11 @@ import { trashStory } from '../../src/lib/server/story-lifecycle';
 import { purgeStory } from '../../src/lib/server/story-delete';
 import { saveEntity } from '../../src/lib/server/entity-save';
 import { saveStoryLlmOverride } from '../../src/lib/server/llm/config';
+import { replaceProse } from '../../src/lib/server/prose-replace';
+import { recordRevision, restoreRevision } from '../../src/lib/server/revisions';
+import { createSuggestion, decideSuggestion } from '../../src/lib/server/review';
+import { newStoryFromDraft, restoreDraftScene, saveDraft } from '../../src/lib/server/story-drafts';
+import { purgeUniverse } from '../../src/lib/server/universe-lifecycle';
 import type { Database } from '../../src/lib/server/auth';
 import { lockStoryScenes } from '../../src/lib/server/row-locks';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
@@ -43,6 +53,16 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 // right timing. The same stops then pause one operation while another runs,
 // to catch a check made before a lock (positions read, a chapter looked up)
 // going stale by the time the write lands.
+//
+// Advisory locks count as locks here too: a holder takes each one in turn, and
+// the ones an operation holds while it waits are read from pg_locks.
+//
+// What this does not see:
+// - A cycle through three or more operations. Every pair taking its locks in
+//   one order rules those out as well, so only pairs are compared.
+// - A row an operation inserts while it runs (a new scene, a copy). No holder
+//   can lock it ahead of time; the second describe block covers those by hand.
+// - Deleting a story from its page, which is the purge with an owner check.
 
 process.env.APP_SECRET = process.env.APP_SECRET || 'lock-order-test-secret';
 
@@ -61,7 +81,10 @@ const KEYS = {
 	C: 24,
 	D: 22,
 	T: 25,
-	aldric: 31
+	aldric: 31,
+	quay: 32,
+	toll: 33,
+	category: 34
 };
 type Key = keyof typeof KEYS;
 const S = {} as Record<Key, string>;
@@ -78,10 +101,16 @@ const NAMES: Record<Key, string> = {
 	C: 'scene C',
 	D: 'scene D',
 	T: 'trashed scene T',
-	aldric: 'character Aldric'
+	aldric: 'character Aldric',
+	quay: 'place Quay',
+	toll: 'lore entry Toll',
+	category: 'lore category'
 };
 
-// The rows a holder takes, in the tables the scene and story operations write.
+// What a holder takes: a row, or an advisory lock by the text its key hashes.
+type Target = { name: string } & ({ table: string; key: Key } | { advisory: () => string });
+
+// The rows, in the tables the scene and story operations write.
 const ROWS: { table: string; key: Key }[] = [
 	{ table: 'users', key: 'user' },
 	{ table: 'universes', key: 'universe' },
@@ -93,8 +122,21 @@ const ROWS: { table: string; key: Key }[] = [
 	{ table: 'scenes', key: 'C' },
 	{ table: 'scenes', key: 'D' },
 	{ table: 'scenes', key: 'T' },
-	{ table: 'characters', key: 'aldric' }
+	{ table: 'characters', key: 'aldric' },
+	{ table: 'places', key: 'quay' },
+	{ table: 'lore_entries', key: 'toll' }
 ];
+
+// The advisory locks the write paths take (row-locks.ts, revisions.ts,
+// review.ts, story-drafts.ts).
+const ADVISORY: { name: string; advisory: () => string }[] = [
+	{ name: 'the story-scenes lock', advisory: () => `story-scenes:${S.story}` },
+	{ name: 'the revision lock of scene A', advisory: () => `scene:${S.A}` },
+	{ name: 'the revision lock of scene B', advisory: () => `scene:${S.B}` },
+	{ name: 'the draft-restore lock of scene T', advisory: () => `draft-restore:${S.story}:${S.T}` }
+];
+
+const TARGETS: Target[] = [...ROWS.map((row) => ({ ...row, name: NAMES[row.key] })), ...ADVISORY];
 
 let pool: pg.Pool;
 let opPool: pg.Pool;
@@ -163,10 +205,48 @@ async function seed() {
 	await db
 		.insert(characters)
 		.values({ id: S.aldric, universeId: S.universe, ownerId: S.user, name: 'Aldric' });
+	await db
+		.insert(places)
+		.values({ id: S.quay, universeId: S.universe, ownerId: S.user, name: 'Quay' });
+	await db.insert(entityCategories).values({
+		id: S.category,
+		universeId: S.universe,
+		ownerId: S.user,
+		name: 'Customs',
+		sortOrder: 0
+	});
+	await db.insert(loreEntries).values({
+		id: S.toll,
+		universeId: S.universe,
+		ownerId: S.user,
+		title: 'Toll',
+		categoryId: S.category
+	});
 	for (const sceneId of [S.A, S.B, S.C, S.D]) await rebuildSceneMentions(db, sceneId);
 }
 
-type Op = { name: string; run: (db: Database) => Promise<unknown> };
+// prepare runs after the seed and before anything is held: what the operation
+// needs to exist first (a saved draft, a suggestion to accept).
+type Op = {
+	name: string;
+	prepare?: () => Promise<void>;
+	run: (db: Database) => Promise<unknown>;
+};
+
+async function seedFor(...ops: Op[]) {
+	await seed();
+	for (const op of ops) await op.prepare?.();
+}
+
+// What the prepare steps left for their operation.
+const made = { draftId: '', suggestionId: '', revisionId: '' };
+
+async function saveDraftOfStory() {
+	const draft = ok(await saveDraft(db, S.user, S.story, { label: 'First', note: '' })) as {
+		id: string;
+	};
+	made.draftId = draft.id;
+}
 
 const ok = (result: unknown) => {
 	if (result === false || result === null) throw new Error('refused');
@@ -269,6 +349,106 @@ const OPS: Op[] = [
 	{ name: 'trash story', run: async (db) => ok(await trashStory(db, S.user, S.story)) },
 	{ name: 'purge story', run: async (db) => await purgeStory(db, S.story) },
 	{
+		name: 'delete trashed scene for good',
+		run: async (db) => ok(await destroyScene(db, S.user, S.T))
+	},
+	{
+		name: 'find and replace prose',
+		run: async (db) => await replaceProse(db, S.universe, 'walks', 'strides')
+	},
+	{
+		name: 'restore scene revision',
+		prepare: async () => {
+			await recordRevision(db, 'scene', S.B, 'Aldric walked in, once.', 'checkpoint');
+			const [row] = await db
+				.select({ id: revisions.id })
+				.from(revisions)
+				.where(eq(revisions.entityId, S.B));
+			made.revisionId = row.id;
+		},
+		run: async (db) => ok(await restoreRevision(db, S.user, made.revisionId, 'scene', S.B))
+	},
+	{
+		// Pins a base revision under scene B's revision lock.
+		name: 'suggest a change to scene B',
+		run: async (db) =>
+			ok(
+				await createSuggestion(db, {
+					storyId: S.story,
+					sceneId: S.B,
+					author: { userId: S.user },
+					range: { start: 0, end: 'Aldric'.length },
+					replacement: 'He'
+				})
+			)
+	},
+	{
+		name: 'accept review suggestion',
+		prepare: async () => {
+			const created = ok(
+				await createSuggestion(db, {
+					storyId: S.story,
+					sceneId: S.C,
+					author: { userId: S.user },
+					range: { start: 0, end: 'Aldric'.length },
+					replacement: 'He'
+				})
+			) as { suggestionId: string };
+			made.suggestionId = created.suggestionId;
+		},
+		run: async (db) => ok(await decideSuggestion(db, S.user, S.story, made.suggestionId, true))
+	},
+	{
+		name: 'restore scene from draft',
+		prepare: saveDraftOfStory,
+		run: async (db) => ok(await restoreDraftScene(db, S.story, made.draftId, S.A))
+	},
+	{
+		name: 'add back trashed scene from draft',
+		prepare: async () => {
+			await db.update(scenes).set({ deletedAt: null }).where(eq(scenes.id, S.T));
+			await saveDraftOfStory();
+			await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, S.T));
+		},
+		run: async (db) => ok(await restoreDraftScene(db, S.story, made.draftId, S.T))
+	},
+	{
+		name: 'new story from draft',
+		prepare: saveDraftOfStory,
+		run: async (db) => {
+			const [story] = await db.select().from(stories).where(eq(stories.id, S.story));
+			return ok(await newStoryFromDraft(db, S.user, story, made.draftId, 'Copy'));
+		}
+	},
+	{ name: 'purge universe', run: async (db) => await purgeUniverse(db, S.universe) },
+	{
+		name: 'save place with a first story note',
+		run: async (db) =>
+			ok(
+				await saveEntity(db, 'place', S.quay, S.user, {
+					name: 'Quay',
+					tags: [],
+					summaryMd: null,
+					bodyMd: 'Aldric keeps a boat here.',
+					storyId: S.story,
+					storyNotesMd: 'Low tide.'
+				})
+			)
+	},
+	{
+		name: 'save lore entry',
+		run: async (db) =>
+			ok(
+				await saveEntity(db, 'lore', S.toll, S.user, {
+					name: 'Toll',
+					tags: [],
+					summaryMd: null,
+					bodyMd: 'Aldric pays it.',
+					categoryId: S.category
+				})
+			)
+	},
+	{
 		name: 'save character with a first story note',
 		run: async (db) =>
 			ok(
@@ -305,7 +485,7 @@ const TUPLE_LOCK_MODE: Record<string, Mode> = {
 };
 
 // One stop of an operation: the row it waits for and every row it holds.
-type Stop = { op: string; row: Key; want: string; wantMode: Mode; held: Map<string, Mode> };
+type Stop = { op: string; want: string; wantMode: Mode; held: Map<string, Mode> };
 
 // The strongest lock another transaction holds on a row, found by trying each
 // mode without waiting, strongest-conflicting first.
@@ -327,6 +507,25 @@ async function heldMode(probe: pg.PoolClient, table: string, rowId: string): Pro
 	return null;
 }
 
+// The advisory locks a backend holds, by name. One it holds that is not in
+// ADVISORY is named by its key, so it still counts as held.
+async function heldAdvisory(probe: pg.PoolClient, pid: number): Promise<string[]> {
+	const { rows } = await probe.query<{ key: string }>(
+		`select ((classid::bigint << 32) | objid::bigint)::text as key from pg_locks
+		 where pid = $1 and locktype = 'advisory' and granted`,
+		[pid]
+	);
+	if (rows.length === 0) return [];
+	const names = new Map<string, string>();
+	for (const lock of ADVISORY) {
+		const hashed = await probe.query<{ key: string }>('select hashtext($1)::bigint::text as key', [
+			lock.advisory()
+		]);
+		names.set(hashed.rows[0].key, lock.name);
+	}
+	return rows.map((row) => names.get(row.key) ?? `advisory lock ${row.key}`);
+}
+
 const pause = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 // Runs the operation while a holder has the row locked. When the operation
@@ -334,14 +533,17 @@ const pause = () => new Promise((resolve) => setTimeout(resolve, 10));
 // whether it stopped and what it threw.
 async function pausedAt(
 	op: Op,
-	row: { table: string; key: Key },
+	target: Target,
 	meanwhile: (probe: pg.PoolClient, waiter: number) => Promise<void>
 ): Promise<{ stopped: boolean; failure: unknown }> {
 	const holder = await pool.connect();
 	const probe = await pool.connect();
 	try {
 		await holder.query('begin');
-		await holder.query(`select 1 from ${row.table} where id = $1 for update`, [S[row.key]]);
+		if ('advisory' in target)
+			await holder.query('select pg_advisory_xact_lock(hashtext($1))', [target.advisory()]);
+		else
+			await holder.query(`select 1 from ${target.table} where id = $1 for update`, [S[target.key]]);
 		const holderPid = (await holder.query('select pg_backend_pid() as pid')).rows[0].pid;
 		let settled = false;
 		let failure: unknown = null;
@@ -376,25 +578,28 @@ async function pausedAt(
 async function stopsFor(op: Op): Promise<{ stops: Stop[]; failures: string[] }> {
 	const stops: Stop[] = [];
 	const failures: string[] = [];
-	for (const row of ROWS) {
-		await seed();
-		const { failure } = await pausedAt(op, row, async (probe, waiter) => {
+	for (const target of TARGETS) {
+		await seedFor(op);
+		const { failure } = await pausedAt(op, target, async (probe, waiter) => {
 			const { rows: tuple } = await probe.query(
 				`select mode from pg_locks where pid = $1 and locktype = 'tuple'`,
 				[waiter]
 			);
-			// No tuple lock means it waits behind the holder's transaction id
-			// outright, which only an update-mode request does.
-			const wantMode = tuple.length > 0 ? TUPLE_LOCK_MODE[tuple[0].mode] : 'update';
+			// An advisory lock is exclusive. For a row, no tuple lock means the
+			// operation waits behind the holder's transaction id outright, which
+			// only an update-mode request does.
+			const wantMode =
+				'advisory' in target || tuple.length === 0 ? 'update' : TUPLE_LOCK_MODE[tuple[0].mode];
 			const held = new Map<string, Mode>();
 			for (const other of ROWS) {
-				if (other.key === row.key) continue;
+				if ('key' in target && other.key === target.key) continue;
 				const mode = await heldMode(probe, other.table, S[other.key]);
 				if (mode) held.set(NAMES[other.key], mode);
 			}
-			stops.push({ op: op.name, row: row.key, want: NAMES[row.key], wantMode, held });
+			for (const name of await heldAdvisory(probe, waiter)) held.set(name, 'update');
+			stops.push({ op: op.name, want: target.name, wantMode, held });
 		});
-		if (failure) failures.push(`${op.name} (holding ${NAMES[row.key]}): ${failure}`);
+		if (failure) failures.push(`${op.name} (holding ${target.name}): ${failure}`);
 	}
 	return { stops, failures };
 }
@@ -459,8 +664,8 @@ async function sharedPositions(): Promise<string[]> {
 // too), then lets the first go on. Both must finish without a database error,
 // and no two scenes or chapters may end up sharing a position.
 async function race(first: Op, stop: Stop, second: Op): Promise<string[]> {
-	await seed();
-	const row = ROWS.find((r) => r.key === stop.row)!;
+	await seedFor(first, second);
+	const row = TARGETS.find((target) => target.name === stop.want)!;
 	let secondFailure: unknown = null;
 	let secondRun: Promise<unknown> = Promise.resolve();
 	const { stopped, failure } = await pausedAt(first, row, async (probe) => {
@@ -521,7 +726,7 @@ const RACERS = [
 describe('lock order', () => {
 	it('every operation succeeds on the seeded story', async () => {
 		for (const op of OPS) {
-			await seed();
+			await seedFor(op);
 			await op.run(opDb).catch((error) => {
 				throw new Error(`${op.name}: ${error}`);
 			});
@@ -540,11 +745,12 @@ describe('lock order', () => {
 		const t = Date.now();
 		// Stops of one operation that hold the same rows are the same point in
 		// its work for this purpose; one of each is enough. A purge only runs on
-		// a trashed story, which every racer refuses, so it is not raced.
+		// a trashed story or universe, which every racer refuses, so neither
+		// purge is raced.
 		const seen = new Set<string>();
 		const points = stops.filter((stop) => {
 			const at = `${stop.op}: ${[...stop.held.keys()].sort().join()}`;
-			if (stop.op === 'purge story' || seen.has(at)) return false;
+			if (stop.op === 'purge story' || stop.op === 'purge universe' || seen.has(at)) return false;
 			seen.add(at);
 			return true;
 		});

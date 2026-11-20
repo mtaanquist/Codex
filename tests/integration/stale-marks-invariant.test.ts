@@ -22,7 +22,7 @@
 // STALE_STEPS widen a local run.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHash } from 'node:crypto';
-import { and, asc, eq, isNull, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -32,8 +32,10 @@ import {
 	characters,
 	loreEntries,
 	places,
+	revisions,
 	scenes,
 	stories,
+	storyDrafts,
 	universes,
 	users
 } from '../../src/lib/server/db/schema';
@@ -69,6 +71,16 @@ import {
 	buildSceneSummaryMessage
 } from '../../src/lib/server/llm/prompts/summary';
 import { SCENE_STATUSES } from '../../src/lib/scene-status';
+import { replaceProse } from '../../src/lib/server/prose-replace';
+import { restoreRevision } from '../../src/lib/server/revisions';
+import { createSuggestion, decideSuggestion } from '../../src/lib/server/review';
+import { newStoryFromDraft, restoreDraftScene, saveDraft } from '../../src/lib/server/story-drafts';
+import { createStoryEntity } from '../../src/lib/server/create-entity';
+import { clearMentionPin, setMentionPin } from '../../src/lib/server/mention-pins';
+import {
+	decideEntitySuggestion,
+	stageEntitySuggestions
+} from '../../src/lib/server/entity-suggestions';
 
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'stale-marks-invariant-secret';
@@ -83,6 +95,7 @@ const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 
 let chapterCount = 0;
+let draftCount = 0;
 
 const SEEDS = Number(process.env.STALE_SEEDS ?? 8);
 const STEPS = Number(process.env.STALE_STEPS ?? 30);
@@ -167,7 +180,7 @@ afterAll(async () => {
 
 async function seedWorld(r: Rng) {
 	await pool.query(
-		'truncate table assistant_job_spend, entity_mentions, scenes, chapters, characters, places, lore_entries, stories, universes, users cascade'
+		'truncate table assistant_job_spend, entity_mentions, entity_suggestions, revisions, scenes, chapters, characters, places, lore_entries, stories, universes, users cascade'
 	);
 	const [user] = await db
 		.insert(users)
@@ -526,6 +539,225 @@ const actions: Record<string, Action> = {
 		return `change the ${change} of ${kind} ${current.name}`;
 	}
 };
+
+// What the routes do after a change that can add or remove mentions anywhere.
+async function reindexUniverse() {
+	await markUniverseMentionsChanged(db, universeId);
+	await rebuildUniverseMentions(db, universeId);
+}
+
+// Words the prose already holds, for changes that swap one for another.
+const SWAPS = [...NAMES.slice(0, 3), ...WEATHER];
+
+// Every entity of the universe, in a repeatable order.
+async function allEntities() {
+	const out: { kind: 'character' | 'place' | 'lore'; id: string; name: string }[] = [];
+	for (const entity of await entityStates())
+		out.push({ kind: entity.kind, id: entity.id, name: entity.name });
+	return out;
+}
+const REVISION_TYPE = { character: 'character', place: 'place', lore: 'lore_entry' } as const;
+
+async function someDraft(r: Rng) {
+	const live = await liveStories();
+	if (!live.length) return null;
+	const rows = await db
+		.select({ id: storyDrafts.id, storyId: storyDrafts.storyId, label: storyDrafts.label })
+		.from(storyDrafts)
+		.where(
+			inArray(
+				storyDrafts.storyId,
+				live.map((story) => story.id)
+			)
+		)
+		.orderBy(asc(storyDrafts.label));
+	return r.pick(rows) ?? null;
+}
+
+const RARE = [
+	'restoreScene',
+	'restoreStory',
+	'muteStory',
+	'pinMention',
+	'restoreEntityRevision',
+	'restoreDraftScene',
+	'storyFromDraft',
+	'saveDraft',
+	'createEntityFromStory',
+	'pinMention',
+	'editEntity'
+];
+
+// The write paths outside the editor's own save (#1214).
+const moreActions: Record<string, Action> = {
+	async findAndReplace(r) {
+		const find = r.pick(SWAPS)!;
+		const replace = r.pick(SWAPS.filter((word) => word !== find))!;
+		const result = await replaceProse(db, universeId, find, replace);
+		if (result.occurrences === 0) return null;
+		return `replace "${find}" with "${replace}" everywhere`;
+	},
+	async restoreSceneRevision(r) {
+		const rows = await db
+			.select({ id: revisions.id, sceneId: scenes.id, title: scenes.title })
+			.from(revisions)
+			.innerJoin(scenes, eq(scenes.id, revisions.entityId))
+			.innerJoin(stories, eq(stories.id, scenes.storyId))
+			.where(
+				and(
+					eq(revisions.entityType, 'scene'),
+					eq(stories.universeId, universeId),
+					isNull(stories.deletedAt),
+					isNull(scenes.deletedAt)
+				)
+			)
+			.orderBy(asc(revisions.createdAt), asc(scenes.globalPosition));
+		const revision = r.pick(rows);
+		if (!revision) return null;
+		const result = await restoreRevision(db, userId, revision.id, 'scene', revision.sceneId);
+		expect(result.ok, 'scene restore').toBe(true);
+		return `restore an earlier version of ${revision.title}`;
+	},
+	async restoreEntityRevision(r) {
+		const entities = await allEntities();
+		// Only an entity that has been saved has a version to go back to.
+		const rows = entities.length
+			? await db
+					.select({ id: revisions.id, entityId: revisions.entityId })
+					.from(revisions)
+					.where(
+						and(
+							inArray(revisions.entityType, Object.values(REVISION_TYPE)),
+							inArray(
+								revisions.entityId,
+								entities.map((entity) => entity.id)
+							)
+						)
+					)
+					.orderBy(asc(revisions.createdAt))
+			: [];
+		const revision = r.pick(rows);
+		const entity = entities.find((candidate) => candidate.id === revision?.entityId);
+		if (!revision || !entity) return null;
+		const type = REVISION_TYPE[entity.kind];
+		const result = await restoreRevision(db, userId, revision.id, type, entity.id);
+		expect(result.ok, 'entity restore').toBe(true);
+		if (result.ok && result.mentionsAffected) await reindexUniverse();
+		return `restore an earlier version of ${entity.kind} ${entity.name}`;
+	},
+	async acceptSuggestion(r) {
+		const scene = await someScene(r);
+		// A word this scene holds, so the step is not lost to a miss.
+		const word = scene && r.pick(SWAPS.filter((swap) => scene.bodyMd.includes(swap)));
+		if (!scene || !word) return null;
+		const start = scene.bodyMd.indexOf(word);
+		const replacement = r.pick(SWAPS.filter((other) => other !== word))!;
+		const created = await createSuggestion(db, {
+			storyId: scene.storyId,
+			sceneId: scene.id,
+			author: { userId },
+			range: { start, end: start + word.length },
+			replacement
+		});
+		if (!created.ok) return null;
+		const result = await decideSuggestion(db, userId, scene.storyId, created.suggestionId, true);
+		expect(result.ok, 'accept suggestion').toBe(true);
+		return `accept a suggestion on ${scene.title}: "${word}" to "${replacement}"`;
+	},
+	async saveDraft(r) {
+		const story = r.pick(await liveStories());
+		if (!story) return null;
+		const result = await saveDraft(db, userId, story.id, {
+			label: `Draft ${String(++draftCount).padStart(3, '0')}`,
+			note: ''
+		});
+		expect(result.ok, 'save draft').toBe(true);
+		return `save a draft of ${story.title}`;
+	},
+	async restoreDraftScene(r) {
+		const draft = await someDraft(r);
+		if (!draft) return null;
+		const [row] = await db
+			.select({ content: storyDrafts.content })
+			.from(storyDrafts)
+			.where(eq(storyDrafts.id, draft.id));
+		const saved = r.pick(row.content.scenes);
+		if (!saved) return null;
+		const result = await restoreDraftScene(db, draft.storyId, draft.id, saved.id);
+		if (!result.ok) return null;
+		return `restore a scene from ${draft.label}${result.created ? ' (added back)' : ''}`;
+	},
+	async storyFromDraft(r) {
+		const draft = await someDraft(r);
+		// A few stories are enough; each one makes every later step slower.
+		if (!draft || (await liveStories()).length >= 4) return null;
+		const [story] = await db.select().from(stories).where(eq(stories.id, draft.storyId));
+		const result = await newStoryFromDraft(db, userId, story, draft.id, '');
+		if (!result.ok) return null;
+		await reindexUniverse();
+		return `start a new story from ${draft.label}`;
+	},
+	async createEntityFromStory(r) {
+		const story = r.pick(await liveStories());
+		// Words the prose holds, so the new entry is mentioned at once. A name
+		// taken twice makes it ambiguous, which is what a pin settles.
+		const name = r.pick(['Corin', 'Isolde', 'Bram', 'the rain'])!;
+		const existing = (await allEntities()).filter((entity) => entity.name === name);
+		if (!story || existing.length >= 2) return null;
+		const type = r.pick(['character', 'place'] as const)!;
+		const result = await createStoryEntity(
+			db,
+			{ universeId, ownerId: userId, storyId: story.id },
+			type,
+			name
+		);
+		if (!result.ok) return null;
+		await reindexUniverse();
+		return `create ${type} "${name}" from ${story.title}`;
+	},
+	async pinMention(r) {
+		const story = r.pick(await liveStories());
+		const entities = await allEntities();
+		const shared = entities.filter(
+			(entity) => entities.filter((other) => other.name === entity.name).length > 1
+		);
+		const target = r.pick(shared);
+		if (!story || !target) return null;
+		if (r.chance(0.3)) {
+			if (!(await clearMentionPin(db, userId, story.id, target.name))) return null;
+			await reindexUniverse();
+			return `clear the pin on "${target.name}" in ${story.title}`;
+		}
+		const result = await setMentionPin(
+			db,
+			userId,
+			story.id,
+			target.name,
+			target.kind === 'lore' ? 'lore_entry' : target.kind,
+			target.id
+		);
+		expect(result.ok, 'pin').toBe(true);
+		await reindexUniverse();
+		return `pin "${target.name}" in ${story.title} to a ${target.kind}`;
+	},
+	async acceptAliasSuggestion(r) {
+		const entity = r.pick(await allEntities());
+		if (!entity) return null;
+		const alias = r.pick(['the rain', 'at dawn', 'supper', 'a word'])!;
+		const [staged] = await stageEntitySuggestions(db, {
+			ownerId: userId,
+			kind: entity.kind,
+			entityId: entity.id,
+			proposals: [{ field: 'alias', value: alias }]
+		});
+		if (!staged) return null;
+		const result = await decideEntitySuggestion(db, userId, staged.id, 'accept');
+		expect(result.ok, 'accept alias').toBe(true);
+		if (result.ok && result.reindexUniverseId) await reindexUniverse();
+		return `accept the alias "${alias}" for ${entity.kind} ${entity.name}`;
+	}
+};
+Object.assign(actions, moreActions);
 
 async function loadEntity(kind: 'character' | 'place' | 'lore', id: string) {
 	if (kind === 'lore') {
@@ -891,6 +1123,8 @@ async function checkMarks(before?: Map<string, Set<string>>): Promise<Finding[]>
 const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 2));
 
 describe('Assistant stale marks follow what the Assistant reads', () => {
+	// The actions that applied in at least one seed.
+	const ran = new Set<string>();
 	const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
 
 	it.each(seeds)('seed %i', { timeout: 300_000 }, async (seed) => {
@@ -900,13 +1134,16 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 		chapterScenes.clear();
 		enrichPassages.clear();
 		chapterCount = 0;
+		draftCount = 0;
 		await seedWorld(r);
 		await bringCurrent();
 		// The passes themselves must leave nothing out of date.
 		expect(await checkMarks(), 'after the first pass').toEqual([]);
 
 		const log: string[] = [];
-		const names = Object.keys(actions);
+		// Actions that only apply in a state few steps leave behind get a second
+		// draw, so the default seeds reach them.
+		const names = [...Object.keys(actions), ...RARE];
 		const soft: string[] = [];
 		const fail = (when: string, findings: Finding[]) =>
 			expect.fail(
@@ -926,6 +1163,7 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 			await nextMillisecond();
 			const did = await actions[name](r);
 			if (!did) continue;
+			ran.add(name);
 			log.push(did);
 			await settleMentions();
 			let findings = await checkMarks(snippets);
@@ -945,5 +1183,11 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 				);
 		}
 		if (soft.length) console.info(`seed ${seed}: not failed\n  ${soft.join('\n  ')}`);
+	});
+
+	// A write path that never applies is not being checked at all. The default
+	// seeds reach every one; a narrower run is not held to that.
+	it.skipIf(SEEDS < 8)('every action ran in some seed', () => {
+		expect(Object.keys(actions).filter((name) => !ran.has(name))).toEqual([]);
 	});
 });

@@ -982,6 +982,82 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Tooling issues (2026-11-20)
+
+Staging branch `staging/tooling-issues`, the open "tooling" issues after the
+triage.
+
+- Staging review round 1: nothing high. The medium was that accepting a
+  suggestion and a new story from a draft never ran in the default eight
+  seeds of the stale-mark test, so those paths were unchecked in CI. The
+  rare list is longer, the actions pick inputs that apply, and a last test
+  fails when any action never ran. Lows: the lock-order file had two lock
+  targets nothing took (one dropped, the other now taken by a suggestion
+  operation), the upgrade seed had a mention offset three characters short,
+  two comments still said a restore always writes rows, and the one-clock
+  rule matched client files under `src/routes` and missed `hooks.server.ts`.
+- #1237: the transcript replay now says what it used to skip. When the endpoint
+  reported no counts, no spend may be recorded (before, the check returned
+  early), which pins the known gap that an OpenAI-style stream cut off before
+  its closing usage frame goes uncounted; the adapter does not guess. The
+  retry or fail label is only checked on the buffered path, because nothing
+  retries a live stream, so the unused flag on the stream side was removed
+  and the file header says so. The unused `# stream: buffered` header is gone.
+- #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
+  `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
+  `index.ts` runs at import and could not be tested. The test registers them
+  on a real pg-boss and compares against a second written-out list on purpose,
+  so a dropped sweep or a changed cron fails. The backup schedule stays in
+  `index.ts` since it depends on saved settings.
+- #1214: the stale-mark invariant test drives eleven more write paths: find
+  and replace, restoring a scene or entity revision, accepting a review
+  suggestion, saving a draft, restoring a scene from one, a new story from
+  one, creating an entity from the story page, setting and clearing a mention
+  pin, and accepting an alias suggestion. Actions that only apply in a rare
+  state (restore, unmute, pin) get a second draw so the default eight seeds
+  reach them; 24 seeds passed locally. It found one needless
+  mark: restoring a revision whose text the scene already has rewrote the
+  row, which marked the summary out of date and paid for the same summary
+  again. `restoreRevision` now leaves such a scene alone.
+- #1239: no selector can follow a variable into a later `.set()`, so the
+  one-clock rule now refuses `const x = new Date()` outright in server code,
+  and covers `src/routes/**/*server.ts`, `src/hooks.server.ts` and `src/worker/**` too. Nothing on main
+  tripped it. A `new Date()` written where it is compared is still fine.
+- #1235: the lock-order harness now counts advisory locks. A holder takes
+  each one in turn (story-scenes, a scene's revision lock, draft-restore), and
+  the ones an operation holds while it waits are read from `pg_locks`, so two
+  operations under the same advisory lock are no longer treated as able to run
+  together. Ten operations were added: delete a trashed scene for good, find
+  and replace, restore a scene revision, accept a review suggestion, restore
+  and add back a scene from a draft, new story from a draft, purge universe,
+  save a place and a lore entry. That found one crossing: saving a character
+  or place with a first story note held the entity row and then took the
+  story (the note's foreign key), the opposite of a universe purge.
+  `saveEntity` now takes the story key share first, the order `row-locks.ts`
+  sets. It could not bite in practice (a purge only runs on a universe in the
+  trash past its window), but the rule is now kept everywhere. The limits
+  that stay (pairs only, rows inserted mid-run, story delete being the purge)
+  are in the test header. The file takes about 3 minutes, up from 2.5.
+- #1155: payload tests for the split route sit in `route-authz.test.ts`, which
+  already calls the real handler. The editor half was not added: the position
+  maths is covered by the `withoutRanges` tests, and what is left of
+  `cursorOffset` is one line joining it to the selection.
+- #861: CI retries once, not twice, and uses Playwright's github reporter, which
+  lists tests that needed the retry as "flaky" on the run summary. Failing the
+  run on any retry was the other option; it was left out because a load hiccup
+  on an unrelated PR would then block a merge.
+- #1238: the upgrade fixture seeds a second character (Tam) whose arc and read
+  were out of date under the previous release's rule, so migration 0083's
+  backfill is exercised: after the upgrade his arc is marked stale and enrich
+  re-reads him and leaves Mara alone. The capped-review step no longer stubs
+  the job lookup: `legacyJobCategories` moved out of the handler closure to an
+  exported function, and the test reads a finished job from a real pg-boss on
+  the legacy queue (and checks that other categories do not take the run
+  over). Not done: normalising CRLF in `gatherStory`. The review pages read
+  scenes through it and anchor suggestions by offset into the stored text, so
+  changing the text there is not safe; the export keeps the stored bytes and
+  the next save of the scene normalises them.
+
 ## Issue triage fixes (2026-11-20)
 
 The 2026-11-19 triage closed 13 of 78 open issues as not planned or duplicate and ranked the bugs that were left. Fixes, in that order:

@@ -21,7 +21,9 @@ import { isTransientFailure } from '../gateway';
 //
 // A file opens with "# key: value" lines, then a blank line, then the body:
 //   outcome  reply (a usable reply), retry (a failure worth sending again) or
-//            fail (a failure a resend would repeat)
+//            fail (a failure a resend would repeat). Only the buffered path
+//            retries, so on the live stream both just mean an error, and a
+//            status-200 OpenAI file (never replayed buffered) may use either.
 //   text     the reply's text; finish its finish reason; tools the tool calls
 //   status   the HTTP status (200); content-type (text/event-stream)
 
@@ -68,6 +70,16 @@ function load(): Transcript[] {
 // count, where the endpoint reported them.
 function reported(t: Transcript, body: string): { input?: number; output?: number } {
 	const result: { input?: number; output?: number } = {};
+	if (t.provider === 'anthropic' && t.contentType === 'application/json') {
+		// One JSON body in place of a stream carries its usage at the top.
+		try {
+			const usage = JSON.parse(body).usage;
+			if (usage) return { input: usage.input_tokens, output: usage.output_tokens };
+		} catch {
+			// Not JSON after all: nothing reported.
+		}
+		return result;
+	}
 	for (const line of body.split(/\r?\n/)) {
 		if (!line.startsWith('data:')) continue;
 		let frame: Record<string, unknown>;
@@ -101,7 +113,13 @@ function checkUsage(
 	counts: { input?: number; output?: number },
 	where: string
 ) {
-	if (counts.input === undefined) return;
+	// Nothing reported, nothing recorded. That covers an OpenAI-style stream cut
+	// off before its usage frame, which only arrives at the end: the adapter does
+	// not guess, so that spend goes uncounted.
+	if (counts.input === undefined) {
+		expect(billed, `${where}: billed`).toBeUndefined();
+		return;
+	}
 	expect(billed, `${where}: billed`).toBeDefined();
 	// A server tool (web search) raises the input count in a later frame than
 	// the one read here, so the input side is a floor.
@@ -143,7 +161,8 @@ const request = { model: 'test-model', messages: [], maxTokens: 64 };
 
 type Outcome =
 	| { kind: 'reply'; text: string; finish?: string; tools: string[]; usage?: TokenUsage }
-	| { kind: 'error'; transient: boolean; message: string; usage?: TokenUsage };
+	// transient is set on the buffered path only: nothing retries a live stream.
+	| { kind: 'error'; transient?: boolean; message: string; usage?: TokenUsage };
 
 async function buffered(t: Transcript, parts: Uint8Array[]): Promise<Outcome> {
 	let response: ProviderResponse;
@@ -174,13 +193,7 @@ async function streamed(t: Transcript, parts: Uint8Array[]): Promise<Outcome> {
 	const last = events.at(-1);
 	// One terminal event, at the end.
 	expect(events.filter((e) => e.type === 'done' || e.type === 'error')).toHaveLength(1);
-	if (last?.type === 'error')
-		return {
-			kind: 'error',
-			transient: /^Endpoint returned (429|5\d\d)/.test(last.message),
-			message: last.message,
-			usage
-		};
+	if (last?.type === 'error') return { kind: 'error', message: last.message, usage };
 	expect(last?.type).toBe('done');
 	return {
 		kind: 'reply',
