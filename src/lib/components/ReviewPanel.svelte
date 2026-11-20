@@ -41,6 +41,7 @@
 		assistant = null,
 		onAssistantReply = null,
 		onClearReviews = null,
+		onDecideTogether = null,
 		patternCounts = new Map(),
 		onWorkThrough = null
 	}: {
@@ -69,6 +70,9 @@
 		onAssistantReply?: ((threadId: string) => Promise<void>) | null;
 		// Opens the story-wide clear dialog (author only, when there are notes).
 		onClearReviews?: (() => void) | null;
+		// Opens the list of this scene's pending edits to accept or reject
+		// several at once (author only).
+		onDecideTogether?: (() => void) | null;
 		// Pending edits per Assistant pattern note, and the guided pass over them.
 		patternCounts?: Map<string, number>;
 		onWorkThrough?: ((threadId: string) => void) | null;
@@ -247,6 +251,16 @@
 					</button>
 				{/each}
 			</div>
+			<!-- The review toolbar: decisions on more than one note at a time. It
+			     only opens a list of what would change; nothing is decided here. -->
+			{#if onDecideTogether && filter !== 'resolved' && nSugg > 1}
+				<div class="rv-toolbar" role="toolbar" aria-label="Suggested edits">
+					<span class="rv-toolbar-count">{nSugg} suggested edits</span>
+					<button class="btn btn-sm btn-secondary" type="button" onclick={onDecideTogether}>
+						<Icon name="check" size={13} /> Decide together...
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		<div class="rv-panel-scroll" bind:this={scrollEl}>
