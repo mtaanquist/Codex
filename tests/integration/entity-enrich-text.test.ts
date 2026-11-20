@@ -22,8 +22,9 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-text-test-secret';
 
 const { listPendingForEntity } = await import('../../src/lib/server/entity-suggestions');
-const { enrichEntityFromText, estimateEntityEnrich } =
+const { enrichEntityFromText, EnrichTooLongError, estimateEntityEnrich } =
 	await import('../../src/lib/server/llm/enrich');
+const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 
@@ -31,6 +32,8 @@ const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOv
 // turn; the last entry repeats.
 let prompts: string[] = [];
 let replies: (string | Error)[] = [];
+// The 1-based calls whose reply is reported as cut off at the reply limit.
+let cutOffCalls: number[] = [];
 const stubProvider: Provider = {
 	async *chatStream() {
 		yield { type: 'done' };
@@ -39,7 +42,11 @@ const stubProvider: Provider = {
 		prompts.push(req.messages.map((m) => m.content).join('\n'));
 		const reply = replies[Math.min(prompts.length, replies.length) - 1];
 		if (reply instanceof Error) throw reply;
-		return { content: reply, toolCalls: [] };
+		return {
+			content: reply,
+			toolCalls: [],
+			finishReason: cutOffCalls.includes(prompts.length) ? ('length' as const) : undefined
+		};
 	},
 	async listModels() {
 		return [];
@@ -68,6 +75,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	prompts = [];
+	cutOffCalls = [];
 	replies = ['{"aliases":["The Grey"],"details":[{"label":"Eyes","value":"grey"}],"summary":null}'];
 	await pool.query(
 		'truncate table entity_suggestions, entity_mentions, revisions, characters, stories, universes, users cascade'
@@ -251,6 +259,39 @@ describe('reading the scenes around an entity', () => {
 	});
 });
 
+describe('an entity and a story from different universes', () => {
+	it('reads and counts nothing, in either mode', async () => {
+		const [elsewhere] = await db
+			.insert(universes)
+			.values({ ownerId, name: 'Elsewhere' })
+			.returning({ id: universes.id });
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId: elsewhere.id, ownerId, title: 'Another World' })
+			.returning({ id: stories.id });
+		await writeScenes(other.id, ['Bram is named here too.', 'A second scene.']);
+		for (const mode of ['scenes', 'book'] as const) {
+			const result = await read(mode, { storyId: other.id });
+			expect(result).toEqual({ suggestions: [], scenes: 0, requests: 0 });
+		}
+		expect(prompts).toHaveLength(0);
+		expect(
+			await estimateEntityEnrich(db, {
+				userId: ownerId,
+				scope: { storyId: other.id },
+				entityId: bram
+			})
+		).toBeNull();
+		expect(
+			await estimateEntityEnrich(db, {
+				userId: ownerId,
+				scope: { universeId: elsewhere.id },
+				entityId: bram
+			})
+		).toBeNull();
+	});
+});
+
 describe('reading the whole book', () => {
 	it('sends every scene of the story, mentioned or not', async () => {
 		await writeScenes(storyId, ['FIRST the old man watched.', 'SECOND the storm came.']);
@@ -259,6 +300,20 @@ describe('reading the whole book', () => {
 		expect(prompts[0]).toContain('FIRST');
 		expect(prompts[0]).toContain('SECOND');
 		expect(result.scenes).toBe(2);
+	});
+
+	it('reads nothing of a story the Assistant is muted on, or one in the trash', async () => {
+		await writeScenes(storyId, ['FIRST the old man watched.', 'Bram counted the boats.']);
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		expect((await read('book')).scenes).toBe(0);
+		expect((await read('scenes')).scenes).toBe(0);
+		await saveStoryLlmOverride(db, storyId, { enabled: null });
+		expect((await read('book')).scenes).toBe(2);
+
+		prompts = [];
+		await db.update(stories).set({ deletedAt: new Date() }).where(eq(stories.id, storyId));
+		expect((await read('book')).scenes).toBe(0);
+		expect(prompts).toHaveLength(0);
 	});
 
 	it('is not read from a universe', async () => {
@@ -315,6 +370,64 @@ describe('a text too long for one request', () => {
 		expect(await listPendingForEntity(db, ownerId, 'character', bram)).toHaveLength(1);
 	});
 
+	it('has staged the first part by the time the second is asked for', async () => {
+		await writeScenes(storyId, [long('ONE'), long('TWO'), long('THREE')]);
+		let pendingAtSecondCall = -1;
+		const watching: GatewayDeps = {
+			...deps,
+			provider: {
+				...stubProvider,
+				async respond(...args) {
+					if (prompts.length === 1) {
+						pendingAtSecondCall = (await listPendingForEntity(db, ownerId, 'character', bram))
+							.length;
+					}
+					return stubProvider.respond(...args);
+				}
+			}
+		};
+		await enrichEntityFromText(
+			db,
+			{ userId: ownerId, scope: { storyId }, entityId: bram, mode: 'scenes' },
+			watching
+		);
+		expect(pendingAtSecondCall).toBe(2);
+	});
+
+	it('says how to fix it when a later part is cut off at the reply limit', async () => {
+		await writeScenes(storyId, [long('ONE'), long('TWO'), long('THREE')]);
+		cutOffCalls = [2];
+		const result = await read('scenes');
+		expect(result.partial).toBe(true);
+		expect(result.partialNote).toContain('Longest reply');
+		expect(result.suggestions.length).toBeGreaterThan(0);
+	});
+
+	it('fails with the reply limit advice when the first part is cut off', async () => {
+		await writeScenes(storyId, [long('ONE')]);
+		cutOffCalls = [1];
+		await expect(read('scenes')).rejects.toBeInstanceOf(ReplyCutOffError);
+		expect(await listPendingForEntity(db, ownerId, 'character', bram)).toHaveLength(0);
+	});
+
+	it('refuses a text that needs more requests than one read makes, asking nothing', async () => {
+		// About 5,000 tokens each, so one scene per request.
+		const huge = (i: number) => `Bram ${i}. ${'word '.repeat(4000)}`;
+		await writeScenes(
+			storyId,
+			Array.from({ length: 9 }, (_, i) => huge(i))
+		);
+		await expect(read('scenes')).rejects.toBeInstanceOf(EnrichTooLongError);
+		expect(prompts).toHaveLength(0);
+		const counted = await estimateEntityEnrich(db, {
+			userId: ownerId,
+			scope: { storyId },
+			entityId: bram
+		});
+		expect(counted!.tooLong).toBe(true);
+		expect(counted!.scenes.requests).toBe(9);
+	});
+
 	it('fails outright when the first part fails, staging nothing', async () => {
 		await writeScenes(storyId, [long('ONE'), long('TWO'), long('THREE')]);
 		replies = [new Error('endpoint down')];
@@ -369,6 +482,7 @@ describe('the estimate', () => {
 		await writeScenes(storyId, ['Before.', 'Bram counted the boats.', 'After.']);
 		const counted = await estimate();
 		expect(counted!.confirm).toBe(false);
+		expect(counted!.tooLong).toBeUndefined();
 		expect(counted!.scenes.scenes).toBe(3);
 		expect(counted!.scenes.estCostUsd).toBeUndefined();
 	});

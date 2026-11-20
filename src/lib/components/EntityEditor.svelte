@@ -136,7 +136,12 @@
 	// What a read would send, from the server's count. The scenes read is the
 	// button's own; the whole book is offered only when it fits the model.
 	type ReadEstimate = { scenes: number; requests: number; estTokens: number; estCostUsd?: number };
-	type EnrichEstimate = { scenes: ReadEstimate; book?: ReadEstimate; confirm: boolean };
+	type EnrichEstimate = {
+		scenes: ReadEstimate;
+		book?: ReadEstimate;
+		confirm: boolean;
+		tooLong?: boolean;
+	};
 	type EnrichMode = 'scenes' | 'book';
 	// The read waiting for a yes, with its estimate.
 	let enrichAsk = $state<{ mode: EnrichMode; read: ReadEstimate } | null>(null);
@@ -155,7 +160,10 @@
 
 	function readPhrase(read: ReadEstimate) {
 		const size = `${read.scenes} scene${read.scenes === 1 ? '' : 's'}, about ${formatNumber(read.estTokens)} tokens`;
-		return read.estCostUsd === undefined ? size : `${size} (about $${read.estCostUsd.toFixed(2)})`;
+		if (read.estCostUsd === undefined) return size;
+		return read.estCostUsd < 0.01
+			? `${size} (less than $0.01)`
+			: `${size} (about $${read.estCostUsd.toFixed(2)})`;
 	}
 
 	// The button: count first, then read at once when it is small, or ask.
@@ -168,16 +176,27 @@
 		try {
 			const response = await postEnrich({ estimate: true });
 			if (response.ok) estimate = (await response.json()) as EnrichEstimate;
+			else enrichNote = await apiErrorMessage(response, 'The Assistant could not count the read.');
 		} catch {
-			// The count is advisory; the read below reports its own failure.
+			enrichNote = 'Something went wrong reaching the Assistant.';
 		}
-		bookRead = estimate?.book ?? null;
-		if (estimate && estimate.scenes.scenes === 0) {
+		// Without a count nothing is read: the size could not be shown first.
+		if (!estimate) {
+			enriching = false;
+			return;
+		}
+		bookRead = estimate.book ?? null;
+		if (estimate.scenes.scenes === 0) {
 			enrichNote = `No scene in this ${storyId ? 'story' : 'universe'} mentions this entry yet.`;
 			enriching = false;
 			return;
 		}
-		if (estimate?.confirm) {
+		if (estimate.tooLong) {
+			enrichNote = `That is ${readPhrase(estimate.scenes)}, too long to read here with this model. Choose a model with a larger context window for Background work on your account page.`;
+			enriching = false;
+			return;
+		}
+		if (estimate.confirm) {
 			enrichAsk = { mode: 'scenes', read: estimate.scenes };
 			enriching = false;
 			return;
@@ -198,18 +217,19 @@
 			const body = (await response.json()) as {
 				suggestions: AssistantSuggestion[];
 				partial?: boolean;
+				partialNote?: string;
 			};
 			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
 			suggestions = [...suggestions, ...fresh];
 			if (body.partial) {
-				enrichNote = 'The Assistant stopped partway. These are from the part it read.';
+				enrichNote = `The Assistant stopped partway. ${body.partialNote ?? 'These are from the part it read.'}`;
 			} else if (fresh.length === 0) {
 				enrichNote =
 					mode === 'book'
 						? 'Nothing new to suggest from the whole book.'
 						: `Nothing new to suggest from this ${storyId ? 'story' : 'universe'}.`;
 			}
-			if (mode === 'book') bookRead = null;
+			if (mode === 'book' && !body.partial) bookRead = null;
 		} catch {
 			enrichNote = 'Something went wrong reaching the Assistant.';
 		} finally {

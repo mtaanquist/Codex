@@ -1006,15 +1006,26 @@ name. It now reads full scenes.
   proposals put the summary last, and a summary is only asked for (and only
   kept) from the last part. The first test run caught this: aliases found
   after a summary were dropped.
-- A later part that fails does not lose the paid work before it: what was
-  found is staged and the response says `partial`. A failure on the first
-  part is an error as before.
+- A later part that fails does not lose the paid work before it: each
+  part's finds are staged as it is read and the response says `partial`. A
+  failure before anything is found is an error as before.
 - The estimate measures the real request around the text (it builds the
   message with the entity's fields) and stands in each scene's length for its
   text, so nothing is loaded to count. A test holds it within a tenth of
-  what is sent, and to the same number of scenes and requests.
+  what is sent. The request count can be one short when a single scene is
+  longer than a part, because the read cuts at paragraph breaks.
 - The button never used the stored request hash (only the pass does), so
   nothing about marks or hashes changed here.
+- Review of the PR (one medium, nine low). The medium: a read was one web
+  request with no ceiling on parts, staged only at the end. It now makes at
+  most 8 requests and refuses a longer text up front (the count says
+  `tooLong` and the editor explains), and stages per part. The background
+  spend cap still does not apply to the button, as for every inline surface;
+  the count and the ceiling bound it instead. Lows fixed: a failed count no
+  longer starts an unconfirmed read; at story scope the entity must belong
+  to the story's universe; a cut-off later part passes its advice on; costs
+  under a cent say so; tests now pin the mute and trash filters and the
+  cut-off path.
 - The whole-book choice shows after the first press on a page, because the
   count that says whether it fits comes back with that press. Counting on
   every entry open was the alternative and was not worth a query per click.

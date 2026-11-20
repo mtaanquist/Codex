@@ -1147,8 +1147,11 @@ calls the gateway, which proxies through the egress guard.
   The text goes first and the entity and instructions last. Text over the
   utility model's budget (four fifths of the window less the reply; 6000
   tokens when the window is unknown) is read in parts in reading order, each
-  told what the earlier parts found, and everything is staged once at the
-  end; a later part failing keeps what the earlier ones found. The same
+  told what the earlier parts found. Each part's finds are staged as it is
+  read, so a later part failing or the connection dropping keeps them. One
+  press makes at most 8 requests (`MAX_ENRICH_PARTS`); a longer text is
+  refused before anything is sent. The inline read is not under the
+  background spend cap, like the other inline surfaces. The same
   endpoint with `estimate: true` counts the read without sending it, and
   the editor asks before a read over 8000 tokens. The `assistant-enrich` job
   still sends snippets (`enrichEntity`, at most 16), over

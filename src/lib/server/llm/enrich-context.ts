@@ -41,6 +41,11 @@ const TASK_TOKENS = 600;
 export const ENRICH_TEXT_REPLY_TOKENS = 1500;
 // A read estimated above this is confirmed by the writer before it runs.
 export const ENRICH_CONFIRM_TOKENS = 8000;
+// The most requests one press of the button makes. The read is one web
+// request the writer waits on, so a text that needs more is refused.
+export const MAX_ENRICH_PARTS = 8;
+// The story and chapter headings a scene may bring with it. An allowance.
+const HEADING_TOKENS = 16;
 
 // The mentioned scenes plus the scene before and after each within its own
 // story. `order` is every readable scene in reading order. Pure.
@@ -123,7 +128,7 @@ export function splitExcerptParts(list: ExcerptScene[], budgetTokens: number): E
 				? splitBody(scene.bodyMd, budgetChars).map((bodyMd) => ({ ...scene, bodyMd }))
 				: [scene];
 		for (const piece of pieces) {
-			const tokens = estimateTokens(sceneBlock(piece));
+			const tokens = estimateTokens(sceneBlock(piece)) + HEADING_TOKENS;
 			if (current.length > 0 && used + tokens > budgetTokens) {
 				parts.push(current);
 				current = [];
@@ -252,6 +257,8 @@ export async function enrichTextBudget(db: Database, userId: string, scope: Scop
 
 export type EnrichReadEstimate = {
 	scenes: number;
+	// A scene longer than one request is counted as if it could be cut
+	// anywhere; the read cuts at paragraph breaks, so it can take one more.
 	requests: number;
 	// Prompt tokens across every request.
 	estTokens: number;
@@ -267,6 +274,8 @@ export type EnrichEstimate = {
 	book?: EnrichReadEstimate;
 	// Whether the scenes read is large enough to confirm first.
 	confirm: boolean;
+	// Set when the scenes read needs more requests than one press makes.
+	tooLong?: boolean;
 };
 
 function readEstimate(
@@ -314,6 +323,7 @@ export async function estimateEnrich(
 		model: budget.model,
 		scenes: scenesRead,
 		...(book ? { book } : {}),
-		confirm: scenesRead.estTokens > ENRICH_CONFIRM_TOKENS
+		confirm: scenesRead.estTokens > ENRICH_CONFIRM_TOKENS,
+		...(scenesRead.requests > MAX_ENRICH_PARTS ? { tooLong: true } : {})
 	};
 }

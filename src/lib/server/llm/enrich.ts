@@ -19,6 +19,7 @@ import {
 	enrichTextBudget,
 	entityExcerpts,
 	estimateEnrich,
+	MAX_ENRICH_PARTS,
 	formatExcerpts,
 	splitExcerptParts,
 	type EnrichEstimate,
@@ -185,15 +186,44 @@ export type EnrichTextResult = {
 	scenes: number;
 	requests: number;
 	// Set when a later part failed or the request was stopped: the suggestions
-	// are from the parts read before it.
+	// are from the parts read before it. partialNote says what to do about it
+	// when there is something the writer can do.
 	partial?: boolean;
+	partialNote?: string;
 };
+
+// The text needs more requests than one press of the button makes.
+export class EnrichTooLongError extends Error {
+	constructor(requests: number) {
+		super(
+			`This would take ${requests} requests, more than one read can make. Choose a model with a larger context window for Background work under Account, Assistant.`
+		);
+		this.name = 'EnrichTooLongError';
+	}
+}
+
+// Whether the entity belongs to the universe the scope reads from: the named
+// universe, or the story's own.
+async function entityInScope(
+	db: Database,
+	userId: string,
+	scope: EnrichScope,
+	universeId: string
+): Promise<boolean> {
+	if ('universeId' in scope) return scope.universeId === universeId;
+	const [story] = await db
+		.select({ universeId: stories.universeId })
+		.from(stories)
+		.where(and(eq(stories.id, scope.storyId), eq(stories.ownerId, userId)));
+	return story?.universeId === universeId;
+}
 
 // The button's read: the full text of the scenes that mention the entity with
 // the scene before and after each, or the whole book. Text that does not fit
 // one request is read in parts in reading order, each told what the earlier
-// ones found. Everything found is staged once at the end; when a later part
-// fails, what the earlier parts found is still staged.
+// ones found. Each part's finds are staged as it is read, so a later part that
+// fails, or a connection that drops, keeps what the earlier parts found. A
+// text that needs more than MAX_ENRICH_PARTS requests is refused.
 export async function enrichEntityFromText(
 	db: Database,
 	opts: EnrichOptions & { mode: EnrichTextMode },
@@ -208,13 +238,14 @@ export async function enrichEntityFromText(
 		summaryMd: table.summaryMd
 	}));
 	if (!entity) return none;
-	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return none;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return none;
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 
 	const excerpts = await entityExcerpts(db, { ...opts, kind });
 	if (excerpts.length === 0) return none;
 	const budget = await enrichTextBudget(db, opts.userId, opts.scope);
 	const parts = splitExcerptParts(excerpts, budget.partTokens);
+	if (parts.length > MAX_ENRICH_PARTS) throw new EnrichTooLongError(parts.length);
 	const withStory = new Set(excerpts.map((scene) => scene.storyId)).size > 1;
 	const summaryClosed = await summarySuggestionClosed(db, {
 		ownerId: opts.userId,
@@ -231,6 +262,7 @@ export async function enrichEntityFromText(
 	};
 
 	let found: ProposedSuggestion[] = [];
+	const suggestions: EntitySuggestion[] = [];
 	let requests = 0;
 	let failure: unknown;
 	for (const [index, part] of parts.entries()) {
@@ -280,13 +312,28 @@ export async function enrichEntityFromText(
 			const proposals = parseEnrichResponse(result.content).filter(
 				(p) => p.field !== 'summary' || (last && !summaryClosed)
 			);
+			const before = found.length;
 			found = mergeProposals(found, proposals);
+			// Only what this part added; the summary comes from the last part
+			// alone, so it is last here too, where staging stops.
+			const fresh = found.slice(before);
+			if (fresh.length) {
+				suggestions.push(
+					...(await stageEntitySuggestions(db, {
+						ownerId: opts.userId,
+						kind,
+						entityId: opts.entityId,
+						proposals: fresh
+					}))
+				);
+			}
 		} catch (err) {
 			failure = err;
 			break;
 		}
 	}
-	// Nothing was read, so there is nothing to keep: the caller gets the error.
+	// With nothing found there is nothing to show for the read, so the caller
+	// gets the error itself.
 	if (failure && found.length === 0) throw failure;
 	if (failure) {
 		logEvent('error', 'assistant.enrich_text_partial', {
@@ -296,19 +343,13 @@ export async function enrichEntityFromText(
 			...errorFields(failure)
 		});
 	}
-	const suggestions = found.length
-		? await stageEntitySuggestions(db, {
-				ownerId: opts.userId,
-				kind,
-				entityId: opts.entityId,
-				proposals: found
-			})
-		: [];
 	return {
 		suggestions,
 		scenes: new Set(excerpts.map((scene) => scene.id)).size,
 		requests,
-		...(failure ? { partial: true } : {})
+		...(failure ? { partial: true } : {}),
+		// A cut-off reply is something the writer can fix in the settings.
+		...(failure instanceof ReplyCutOffError ? { partialNote: failure.message } : {})
 	};
 }
 
@@ -328,7 +369,7 @@ export async function estimateEntityEnrich(
 		summaryMd: table.summaryMd
 	}));
 	if (!entity) return null;
-	if ('universeId' in opts.scope && entity.universeId !== opts.scope.universeId) return null;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return null;
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 	const task = buildEnrichTextMessage(
 		{

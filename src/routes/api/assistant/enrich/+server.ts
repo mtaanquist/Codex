@@ -9,6 +9,7 @@ import {
 } from '#lib/server/llm/assistant-route';
 import {
 	enrichEntityFromText,
+	EnrichTooLongError,
 	estimateEntityEnrich,
 	type EnrichScope
 } from '#lib/server/llm/enrich';
@@ -32,8 +33,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}>(request, locals);
 	const entityId = typeof payload.entityId === 'string' ? payload.entityId : '';
 	if (!entityId) error(400, 'entityId is required.');
-	// The enrichment is owner-scoped (the entity is checked against the same
-	// user inside enrichEntity).
+	// The entity is checked against the same user, and against the universe the
+	// scope reads from, inside the read and the estimate.
 	let scope: EnrichScope;
 	if (typeof payload.universeId === 'string') {
 		const universe = await requireAssistantUniverse(userId, payload.universeId);
@@ -67,6 +68,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			signal: requestSignal(request)
 		});
 	} catch (err) {
+		if (err instanceof EnrichTooLongError) error(400, err.message);
 		throwAssistantError(err, 'The Assistant could not suggest anything for this entry.');
 	}
 
