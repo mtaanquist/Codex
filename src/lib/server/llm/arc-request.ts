@@ -22,7 +22,8 @@ export function sampleEvenly<T>(items: T[], max: number): T[] {
 	return Array.from({ length: max }, (_, i) => items[Math.round(i * step)]);
 }
 
-export type ArcRequest = { messages: ChatMessage[]; input: string };
+// storyIds are the stories whose scenes the request draws on.
+export type ArcRequest = { messages: ChatMessage[]; input: string; storyIds: string[] };
 
 // The request an arc refresh would send for each of these characters as
 // things stand, with its fingerprint, in one read. The scenes are the live
@@ -67,6 +68,7 @@ export async function arcRequests(
 			characterId: first.characterId,
 			sceneTitle: scenes.title,
 			summaryMd: scenes.summaryMd,
+			storyId: stories.id,
 			storyTitle: stories.title,
 			snippet: first.snippet
 		})
@@ -82,24 +84,36 @@ export async function arcRequests(
 			)
 		)
 		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt), asc(scenes.globalPosition));
-	const found = new Map<string, ArcScene[]>();
+	const found = new Map<string, (ArcScene & { storyId: string })[]>();
 	for (const row of rows) {
 		const text = row.summaryMd?.trim() || row.snippet.trim();
 		if (!text) continue;
 		let arcScenes = found.get(row.characterId);
 		if (!arcScenes) found.set(row.characterId, (arcScenes = []));
-		arcScenes.push({ storyTitle: row.storyTitle, sceneTitle: row.sceneTitle, text });
+		arcScenes.push({
+			storyId: row.storyId,
+			storyTitle: row.storyTitle,
+			sceneTitle: row.sceneTitle,
+			text
+		});
 	}
 	for (const character of characters) {
-		const arcScenes = found.get(character.id) ?? [];
-		if (arcScenes.length === 0) continue;
+		const sampled = sampleEvenly(found.get(character.id) ?? [], MAX_ARC_SCENES);
+		if (sampled.length === 0) continue;
 		const messages: ChatMessage[] = [
 			{
 				role: 'user',
-				content: buildArcMessage(character.name, sampleEvenly(arcScenes, MAX_ARC_SCENES))
+				content: buildArcMessage(
+					character.name,
+					sampled.map(({ storyTitle, sceneTitle, text }) => ({ storyTitle, sceneTitle, text }))
+				)
 			}
 		];
-		out.set(character.id, { messages, input: requestHash(messages) });
+		out.set(character.id, {
+			messages,
+			input: requestHash(messages),
+			storyIds: [...new Set(sampled.map((scene) => scene.storyId))]
+		});
 	}
 	return out;
 }

@@ -58,6 +58,7 @@ export async function summariseCharacterArc(
 				arcSummaryMd: null,
 				arcSummaryAt: null,
 				arcSummaryInput: null,
+				arcSummaryStories: null,
 				updatedAt: sql`${characters.updatedAt}`
 			})
 			.where(eq(characters.id, character.id));
@@ -106,6 +107,7 @@ export async function summariseCharacterArc(
 		.set({
 			arcSummaryMd: text,
 			arcSummaryInput: request.input,
+			arcSummaryStories: request.storyIds,
 			arcSummaryAt: sql`now()`,
 			updatedAt: sql`${characters.updatedAt}`
 		})

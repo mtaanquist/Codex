@@ -11,7 +11,9 @@
 //   as current;
 // - the passes then make a model call for exactly the arcs, chapter summaries
 //   and enrich reads whose request changed, and a second pass makes none;
-// - no save writes the columns the Assistant's jobs own.
+// - no save writes the columns the Assistant's jobs own;
+// - no context carries an arc that retells a story the Assistant is now
+//   turned off for.
 //
 // Scene summaries read only their own row and keep their timestamp rule; the
 // same run checks that a changed one reads as stale and an untouched one does
@@ -85,6 +87,7 @@ const { planArc, summariseCharacterArc } = await import('../../src/lib/server/ll
 const { arcRequest } = await import('../../src/lib/server/llm/arc-request');
 const { enrichRequest, enrichUniverse } = await import('../../src/lib/server/llm/enrich');
 const { storySkeleton } = await import('../../src/lib/server/llm/context/sources');
+const { assembleContext } = await import('../../src/lib/server/llm/context/assemble');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { saveAccountLlmConfig, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
@@ -1042,7 +1045,13 @@ async function runPasses(): Promise<string[]> {
 	sent = [];
 	for (const arc of arcs) {
 		if (arc.summaryMd && !arc.shownStale) continue;
+		const read = await storiesAnArcReads(arc.id);
 		await summariseCharacterArc(db, { userId, characterId: arc.id }, deps);
+		const [written] = await db
+			.select({ text: characters.arcSummaryMd })
+			.from(characters)
+			.where(eq(characters.id, arc.id));
+		if (written?.text) arcStories.set(written.text.trim(), read);
 	}
 	compare(
 		'arcs',
@@ -1069,6 +1078,41 @@ async function runPasses(): Promise<string[]> {
 	for (const storyId of passed) await summariseStory(db, { userId, storyId }, deps);
 	await enrichUniverse(db, { userId, universeId }, deps);
 	if (sent.length) findings.push(`a second pass made ${sent.length} model calls`);
+	return findings;
+}
+
+// The stories each arc text retells: those with a live scene mentioning the
+// character, in a live story the Assistant read, when the arc was written.
+const arcStories = new Map<string, string[]>();
+
+async function storiesAnArcReads(characterId: string): Promise<string[]> {
+	const { rows } = await pool.query(
+		`select distinct st.id from entity_mentions m
+		 join scenes s on s.id = m.source_id and s.deleted_at is null
+		 join stories st on st.id = s.story_id and st.deleted_at is null
+		 where m.source_type = 'scene' and m.target_id = $1
+		   and coalesce(st.llm_config ->> 'enabled', 'true') <> 'false'`,
+		[characterId]
+	);
+	return rows.map((row: { id: string }) => row.id);
+}
+
+// Text of a story the Assistant is turned off for must not reach the model
+// through an arc that retold it. Checked on the universe's context, which
+// carries every character, whenever some story is muted.
+async function checkMutedArcs(): Promise<string[]> {
+	const { rows } = await pool.query(
+		`select id from stories where universe_id = $1 and llm_config ->> 'enabled' = 'false'`,
+		[universeId]
+	);
+	const muted = new Set(rows.map((row: { id: string }) => row.id));
+	if (!muted.size) return [];
+	const context = await assembleContext(db, { userId, universeId });
+	const findings: string[] = [];
+	for (const [text, read] of arcStories) {
+		if (context!.text.includes(text) && read.some((id) => muted.has(id)))
+			findings.push(`sent an arc that retells a muted story: ${text}`);
+	}
 	return findings;
 }
 
@@ -1100,6 +1144,7 @@ describe('Assistant results are out of date exactly when their request changed',
 	async function runSeed(seed: number) {
 		const r = rng(seed);
 		writtenFrom.clear();
+		arcStories.clear();
 		dirty.clear();
 		enrichSent.clear();
 		chapterCount = 0;
@@ -1141,6 +1186,7 @@ describe('Assistant results are out of date exactly when their request changed',
 				touched.map(([key]) => `the save wrote Assistant columns of ${key}`)
 			);
 			check(`step ${step + 1}: ${did}`, await checkReads());
+			check(`step ${step + 1}: ${did}`, await checkMutedArcs());
 			check(`the passes after step ${step + 1}`, await runPasses());
 			check(`after the passes after step ${step + 1}`, await checkReads());
 		}

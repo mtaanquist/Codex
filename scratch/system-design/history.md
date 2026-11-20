@@ -1056,10 +1056,27 @@ reason for most of the lock-order rules.
   after an upgrade none has a fingerprint, so the Assistant would lose each
   lead's history until the writer refreshed arcs one by one. `arcLine` in
   `context/assemble.ts` is the one place that decides; returning null there
-  for an out-of-date arc goes back to leaving it out. Since mute no longer
-  clears arcs, an out-of-date arc of a character who appears in a muted
-  story is still left out, so a muted story's text is never sent this way.
-  That is wider than needed (which stories an arc read is not stored).
+  for an out-of-date arc goes back to leaving it out.
+- Since mute no longer clears arcs, an out-of-date arc must not carry a
+  muted story's text to the model. The first rule left out the arc of a
+  character with a mention in a muted story; the staging review showed the
+  mention goes while the arc stays (the scene is deleted or merged, the
+  character is written out, the muted story is deleted for good), and the
+  arc was then sent. Fixed on `fix/staging-review-1`: the arc job stores the
+  stories it read in `characters.arc_summary_stories` (migration 0093), and
+  an out-of-date arc is left out unless every one still exists and is still
+  read. A story deleted for good counts whether or not it was muted, since
+  the two cannot be told apart afterwards. Nothing is written on mute or on
+  any other save.
+- Arcs from before the column: the migration gives each every story of its
+  universe, trashed ones too (more than it read, never less). Treating a
+  missing list as unknown at read time was considered: the previous release
+  cleared every arc of the universe on mute, so no arc held a muted story's
+  text at upgrade, but nothing on the row would say which stories to watch
+  afterwards (upgrade, mute B, delete B), so the only safe reading of
+  "unknown" is to leave every such arc out, and the owner wants them sent
+  labelled. The backfill writes only this derived column. A missing list is
+  still read as "leave out".
   `ArcStoryMutedError` and the compare-and-set after the model call went
   with it: a job stores the hash of what it sent, so anything that changed
   meanwhile leaves the result out of date.
