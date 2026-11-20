@@ -3,6 +3,7 @@ import type { Database } from '../../auth.ts';
 import {
 	chapters,
 	characterStoryNotes,
+	entityMentions,
 	loreEntries,
 	loreStoryNotes,
 	notes,
@@ -17,10 +18,7 @@ import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
 import { storyAssistantOn } from '../../universe-scope.ts';
 import { arcIsCurrent, arcRequests } from '../arc-request.ts';
-import {
-	chapterSummaryRequest,
-	generatedChapterSummaryIsCurrent
-} from '../chapter-summary-request.ts';
+import { chapterSummaryToSend } from '../chapter-summary-request.ts';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.
@@ -269,21 +267,13 @@ export async function storySkeleton(
 	return {
 		chapters: chapterRows.map((chapter) => {
 			const chapterScenes = byChapter.get(chapter.id) ?? [];
-			// A summary the Assistant wrote is left out once it is out of date; the
-			// writer's own (no summary_generated_at) always stands.
-			const current =
-				!chapter.summaryGeneratedAt ||
-				generatedChapterSummaryIsCurrent(
-					chapter,
-					chapterSummaryRequest(
-						chapter.title,
-						chapterScenes.map((scene) => scene.summaryMd)
-					)
-				);
 			return {
 				id: chapter.id,
 				title: chapter.title,
-				summaryMd: current ? chapter.summaryMd : null,
+				summaryMd: chapterSummaryToSend(
+					chapter,
+					chapterScenes.map((scene) => scene.summaryMd)
+				),
 				scenes: chapterScenes
 			};
 		}),
@@ -392,6 +382,8 @@ export type ScopeEntity = {
 	// A character's arc across the universe's stories, when the Assistant has
 	// written one.
 	arcSummaryMd?: string | null;
+	// The arc was written from scenes that have changed since.
+	arcOutOfDate?: boolean;
 };
 
 // Characters and places that are declared members of, or mentioned in, this
@@ -462,15 +454,35 @@ async function buildScopeEntities(
 	};
 	const characterRows = await detailRows('character', characterIds);
 	const placeRows = await detailRows('place', placeIds);
-	// An arc that is out of date is left out: it may retell scenes that have
-	// changed, gone, or belong to a story the Assistant is now muted on.
-	const arcs = await arcRequests(
-		db,
-		universeId,
-		characterRows.filter((c) => c.arcSummaryMd)
+	// Only the characters that make the cap below have their arc checked.
+	const shown = characterRows.slice(0, MAX_SCOPE_ENTITIES).filter((c) => c.arcSummaryMd);
+	const arcs = await arcRequests(db, universeId, shown);
+	const outOfDate = new Set(
+		shown.filter((c) => !arcIsCurrent(c, arcs.get(c.id) ?? null)).map((c) => c.id)
 	);
-	for (const row of characterRows) {
-		if (!arcIsCurrent(row, arcs.get(row.id) ?? null)) row.arcSummaryMd = null;
+	// An out-of-date arc may retell a story the Assistant has since been turned
+	// off for, and that story's text must not be sent. Which stories an arc
+	// read is not stored, so one whose character appears in such a story is
+	// left out.
+	const withheld = outOfDate.size
+		? await db
+				.selectDistinct({ id: entityMentions.targetId })
+				.from(entityMentions)
+				.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
+				.innerJoin(stories, eq(stories.id, scenes.storyId))
+				.where(
+					and(
+						eq(entityMentions.sourceType, 'scene'),
+						eq(entityMentions.targetType, 'character'),
+						inArray(entityMentions.targetId, [...outOfDate]),
+						eq(stories.universeId, universeId),
+						sql`not ${storyAssistantOn()}`
+					)
+				)
+		: [];
+	for (const row of withheld) {
+		outOfDate.delete(row.id);
+		characterRows.find((c) => c.id === row.id)!.arcSummaryMd = null;
 	}
 
 	// The per-story overlay note only exists with a story in focus; the
@@ -505,7 +517,10 @@ async function buildScopeEntities(
 	]);
 
 	const entities: ScopeEntity[] = [
-		...characterRows.map((c) => buildEntity('character', c, noteFor)),
+		...characterRows.map((c) => ({
+			...buildEntity('character', c, noteFor),
+			arcOutOfDate: outOfDate.has(c.id)
+		})),
 		...placeRows.map((p) => buildEntity('place', p, noteFor))
 	].slice(0, MAX_SCOPE_ENTITIES);
 

@@ -1047,16 +1047,29 @@ reason for most of the lock-order rules.
   `chapter-summary-request.ts`, `request-hash.ts`) so the context builders
   can use them.
 - Muting a story no longer clears every arc in the universe. An arc that
-  read the muted story is out of date by its hash and left out of context;
-  its text stays and reads as current again on unmute.
+  read the muted story is out of date by its hash; its text stays and reads
+  as current again on unmute.
+- An out-of-date arc stays in the Assistant's context with a short label
+  (written before later changes, may be out of date, the scenes are right
+  where they differ). The first cut left it out, but any scene edit plus a
+  summaries pass puts every arc of that scene's characters out of date, and
+  after an upgrade none has a fingerprint, so the Assistant would lose each
+  lead's history until the writer refreshed arcs one by one. `arcLine` in
+  `context/assemble.ts` is the one place that decides; returning null there
+  for an out-of-date arc goes back to leaving it out. Since mute no longer
+  clears arcs, an out-of-date arc of a character who appears in a muted
+  story is still left out, so a muted story's text is never sent this way.
+  That is wider than needed (which stories an arc read is not stored).
   `ArcStoryMutedError` and the compare-and-set after the model call went
   with it: a job stores the hash of what it sent, so anything that changed
   meanwhile leaves the result out of date.
-- Enrich follows the plain rule, which changes what is paid for: a read is
-  sent again when passages are taken away (trash, mute) or the entry's own
-  name, aliases or details change, since those are in the request. The old
-  rule skipped these on purpose. Whether a summary is asked for stays out of
-  the fingerprint.
+- Enrich: a read is sent again when its passages change, which now includes
+  passages taken away (trash, mute; the old rule skipped these on purpose),
+  or when the entry is renamed. What is recorded on the entry (aliases,
+  details, whether a summary is asked for) is left out of the fingerprint:
+  the review found that accepting a staged alias or detail bought another
+  read of the same passages, once per accept. An accepted alias that finds
+  new passages after the reindex is read once more, for the passages.
 - Upgrades: nothing is sent automatically for arcs (one without a
   fingerprint shows as out of date until refreshed). Chapter summaries
   without one are rewritten once by the next summaries pass; adopting them
@@ -1074,8 +1087,19 @@ reason for most of the lock-order rules.
   that the action wrote no Assistant column. `character-arc.test.ts` also
   runs saves with a trigger that fails any write to `characters`, and a
   reindex with the mentioned characters locked.
-- A release that rewords a prompt puts every result of that kind out of
-  date. Accepted: the stored result was written from other instructions.
+- Known and accepted:
+  - A release that rewords a prompt puts every result of that kind out of
+    date: the stored result was written from other instructions.
+  - The upgrade costs one call per Assistant-written chapter summary on the
+    first summaries pass.
+  - The enrich pass runs a handful of queries per mentioned entry even when
+    nothing changed, to build the request it compares.
+  - A summary is not offered again after the writer clears theirs until the
+    entry's passages change.
+- `arcRequests` picks the first mention per character and scene in the
+  database (`distinct on`), so a context build reads one row per scene, not
+  per mention, and only for the characters that make the entity cap. A test
+  pins the messages and fingerprint; it passes on the old query too.
 
 ## Assistant price and cache lows (2026-11-20)
 

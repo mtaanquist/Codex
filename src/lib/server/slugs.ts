@@ -42,13 +42,8 @@ export async function uniqueSlug(
  * slug meanwhile; it then comes back under a fresh one picked from its name,
  * the same as a rename. Retries once if a concurrent write takes that pick.
  *
- * A restored story's scenes are older than the arcs and enrich marks written
- * while it was in the trash, so what they mention is marked for a fresh look
- * in the same transaction: restored content never looks current to the
- * Assistant. A universe needs no mark: nothing in it was read while it was in
- * the trash, and mention rebuilds kept marking what changed meanwhile. Each
- * attempt is its own transaction, since a unique violation aborts the one it
- * hits. The row is locked before the entities, as everywhere else.
+ * Nothing is done here for the Assistant: what it wrote from the scenes as
+ * they were without this story reads as out of date by its fingerprint.
  */
 export async function untrash(db: Database, table: 'universes' | 'stories', id: string) {
 	const [row] =

@@ -828,19 +828,28 @@ const dirty = new Set<string>();
 // it. An enrich read leaves no text behind to tell it by.
 const enrichSent = new Map<string, string>();
 
-// An enrich request less its one part the fingerprint leaves out on purpose:
-// whether a summary is asked for (a read that stages one would otherwise put
-// itself out of date).
-const enrichCanon = (messagesJson: string) =>
-	messagesJson
-		.replace(
-			'- do not propose a summary; it already has one.',
-			'- a one or two sentence summary of who or what it is.'
-		)
-		.replace(
-			'Use \\"summary\\": null. Use empty arrays',
-			'Use \\"summary\\": null if you cannot summarise it. Use empty arrays'
-		);
+// An enrich request less the parts the fingerprint leaves out on purpose:
+// what is recorded on the entry (its aliases and details, and whether a
+// summary is asked for). Accepting what a read suggested would otherwise put
+// the read out of date.
+const enrichCanon = (messagesJson: string) => {
+	const messages = JSON.parse(messagesJson) as { role: string; content: string }[];
+	return JSON.stringify(
+		messages.map((message) => ({
+			...message,
+			content: message.content
+				.replace(/\n[\s\S]*?\n\nPassages where it appears:/, '\n\nPassages where it appears:')
+				.replace(
+					'- do not propose a summary; it already has one.',
+					'- a one or two sentence summary of who or what it is.'
+				)
+				.replace(
+					'Use "summary": null. Use empty arrays',
+					'Use "summary": null if you cannot summarise it. Use empty arrays'
+				)
+		}))
+	);
+};
 
 const isChapterRequest = (messagesJson: string) =>
 	messagesJson.includes('drawing on its scene summaries below');

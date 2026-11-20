@@ -563,28 +563,59 @@ describe('enrichUniverse', () => {
 		expect(calls).toBe(3);
 	});
 
-	it('reads an entity again when its name, an alias or a detail changes', async () => {
+	it('reads an entity again when its name changes, not when what is recorded on it does', async () => {
 		const bram = await makeCharacter({ name: 'Bram', summaryMd: 'A sailor.' });
 		await sceneMentioning(bram, 'Bram at the harbour');
 		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
 		expect((await pass()).entities).toBe(1);
+		await db.update(characters).set({ name: 'Bram Tull' }).where(eq(characters.id, bram));
+		expect((await pass()).entities).toBe(1);
+		expect(calls).toBe(2);
+		// The entry's own aliases, details, summary and notes do not make it
+		// worth reading the same passages again.
 		for (const change of [
-			{ name: 'Bram Tull' },
 			{ aliases: ['The Grey'] },
-			{ details: [{ label: 'Eyes', value: 'grey' }] }
+			{ details: [{ label: 'Eyes', value: 'grey' }] },
+			{ summaryMd: 'A captain.', bodyMd: 'Notes.' }
 		]) {
 			await db.update(characters).set(change).where(eq(characters.id, bram));
-			expect((await pass()).entities).toBe(1);
 			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
 		}
-		expect(calls).toBe(4);
-		// The entry's own summary and notes are not part of what is sent.
-		await db
-			.update(characters)
-			.set({ summaryMd: 'A captain.', bodyMd: 'Notes.' })
-			.where(eq(characters.id, bram));
+		expect(calls).toBe(2);
+	});
+
+	it('does not read an entity again because its suggestions were accepted', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		const staged = await listPendingForEntity(db, ownerId, 'character', bram);
+		expect(staged.map((s) => s.field).sort()).toEqual(['alias', 'detail', 'summary']);
+		for (const suggestion of staged) {
+			expect((await decideEntitySuggestion(db, ownerId, suggestion.id, 'accept')).ok).toBe(true);
+			expect(await pass()).toMatchObject({ entities: 0, unchanged: 1 });
+		}
+		expect((await readChar(bram)).aliases).toContain('The Grey');
+		expect(calls).toBe(1);
+	});
+
+	it('reads an entity once more when an accepted alias finds new passages', async () => {
+		const bram = await makeCharacter({ name: 'Bram' });
+		await sceneWithProse('Bram at the harbour.');
+		await sceneWithProse('The Grey walked the quay alone.', 2);
+		const pass = () => enrichUniverse(db, { userId: ownerId, universeId }, deps);
+		expect((await pass()).entities).toBe(1);
+		const alias = (await listPendingForEntity(db, ownerId, 'character', bram)).find(
+			(s) => s.field === 'alias'
+		)!;
+		expect((await decideEntitySuggestion(db, ownerId, alias.id, 'accept')).ok).toBe(true);
+		// Before the reindex the passages are the same, so nothing is sent.
 		expect((await pass()).entities).toBe(0);
-		expect(calls).toBe(4);
+		await rebuildUniverseMentions(db, universeId);
+		expect((await pass()).entities).toBe(1);
+		expect(lastPrompt).toContain('walked the quay');
+		expect((await pass()).entities).toBe(0);
+		expect(calls).toBe(2);
 	});
 
 	it('reads an entity again when a scene it was read from is deleted', async () => {

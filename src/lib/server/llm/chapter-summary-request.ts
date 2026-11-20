@@ -34,3 +34,20 @@ export function generatedChapterSummaryIsCurrent(
 ): boolean {
 	return !!request && request.input === chapter.summaryInput;
 }
+
+// The chapter summary to give the model: the stored one, unless the Assistant
+// wrote it and it is out of date. The writer's own (no summary_generated_at)
+// always stands.
+export function chapterSummaryToSend(
+	chapter: {
+		title: string | null;
+		summaryMd: string | null;
+		summaryGeneratedAt: Date | null;
+		summaryInput: string | null;
+	},
+	sceneSummaries: (string | null)[]
+): string | null {
+	if (!chapter.summaryGeneratedAt) return chapter.summaryMd;
+	const request = chapterSummaryRequest(chapter.title, sceneSummaries);
+	return generatedChapterSummaryIsCurrent(chapter, request) ? chapter.summaryMd : null;
+}

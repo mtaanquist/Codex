@@ -449,11 +449,18 @@ export async function enrichRequest(
 	const messages: ChatMessage[] = [
 		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary }, snippets) }
 	];
-	// Hashed as if no summary were known: a read that stages a summary would
-	// otherwise change the next request, and an unchanged passage set would be
-	// sent again just to be told not to propose one.
+	// Hashed as if nothing were recorded on the entry: accepting what a read
+	// suggested (an alias, a detail, a summary) would otherwise change the next
+	// request, and the same passages would be sent again. An entry is read
+	// again when its name or its passages change.
 	const input = requestHash([
-		{ role: 'user', content: buildEnrichMessage({ ...fields, hasSummary: false }, snippets) }
+		{
+			role: 'user',
+			content: buildEnrichMessage(
+				{ ...fields, aliases: [], details: [], hasSummary: false },
+				snippets
+			)
+		}
 	]);
 	return { kind, messages, input };
 }

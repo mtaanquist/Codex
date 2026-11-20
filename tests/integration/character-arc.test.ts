@@ -14,7 +14,7 @@ import {
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
-import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
+import type { ChatMessage, HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { restoreScene, trashScene } from '../../src/lib/server/scene-lifecycle';
 import { standaloneUniverse } from '../../src/lib/server/story-create';
@@ -27,6 +27,9 @@ import { saveSceneBody } from '../../src/lib/server/scene-save';
 import { restoreUniverse, trashUniverse } from '../../src/lib/server/universe-lifecycle';
 import { saveStoryDetails } from '../../src/lib/server/story-details';
 import { saveEntity } from '../../src/lib/server/entity-save';
+import { arcRequests } from '../../src/lib/server/llm/arc-request';
+import { buildArcMessage } from '../../src/lib/server/llm/prompts/arc';
+import { requestHash } from '../../src/lib/server/llm/request-hash';
 
 // Storing the account API key encrypts it with APP_SECRET.
 process.env.APP_SECRET = process.env.APP_SECRET || 'character-arc-test-secret';
@@ -204,6 +207,76 @@ describe('summariseCharacterArc', () => {
 		// Generated metadata: not an edit, and the writer's summary is untouched.
 		expect(row.updatedAt.getTime()).toBe(bram.updatedAt.getTime());
 		expect(row.summaryMd).toBe('A sailor.');
+	});
+
+	it('builds each request from the first mention per scene, in reading order', async () => {
+		const bram = await makeCharacter();
+		const [isolde] = await db
+			.insert(characters)
+			.values({ universeId, ownerId, name: 'Isolde' })
+			.returning({ id: characters.id });
+		const later = await sceneMentioning(secondStoryId, bram.id, {
+			position: 1,
+			snippet: 'Bram takes the helm'
+		});
+		const second = await sceneMentioning(firstStoryId, bram.id, {
+			position: 2,
+			snippet: 'Bram on the road'
+		});
+		const first = await sceneMentioning(firstStoryId, bram.id, {
+			position: 1,
+			summaryMd: 'Bram leaves home.',
+			snippet: 'Bram at the quay'
+		});
+		// Later mentions in the same scenes, and another character in two of them.
+		const more = (sourceId: string, targetId: string, position: number, text: string) => ({
+			sourceType: 'scene',
+			sourceId,
+			targetType: 'character' as const,
+			targetId,
+			position,
+			surroundingText: text
+		});
+		await db
+			.insert(entityMentions)
+			.values([
+				more(second, bram.id, 40, 'Bram rests'),
+				more(second, bram.id, 90, 'Bram sleeps'),
+				more(later, bram.id, 12, 'Bram shouts'),
+				more(second, isolde.id, 50, 'Isolde waves'),
+				more(second, isolde.id, 5, 'Isolde waits'),
+				more(first, isolde.id, 70, 'Isolde nods')
+			]);
+
+		const requests = await arcRequests(db, universeId, [
+			{ id: bram.id, name: 'Bram' },
+			{ id: isolde.id, name: 'Isolde' }
+		]);
+		const expected = (name: string, arcScenes: [string, string][]) => [
+			{
+				role: 'user',
+				content: buildArcMessage(
+					name,
+					arcScenes.map(([storyTitle, text]) => ({ storyTitle, sceneTitle: null, text }))
+				)
+			}
+		];
+		const bramMessages = expected('Bram', [
+			['The Tide Below', 'Bram leaves home.'],
+			['The Tide Below', 'Bram on the road'],
+			['The Salt Road', 'Bram takes the helm']
+		]);
+		expect(requests.get(bram.id)).toEqual({
+			messages: bramMessages,
+			input: requestHash(bramMessages as ChatMessage[])
+		});
+		// A scene with a summary is told by it, whichever mention came first.
+		expect(requests.get(isolde.id)!.messages).toEqual(
+			expected('Isolde', [
+				['The Tide Below', 'Bram leaves home.'],
+				['The Tide Below', 'Isolde waits']
+			])
+		);
 	});
 
 	it('leaves out a story the Assistant is muted on', async () => {

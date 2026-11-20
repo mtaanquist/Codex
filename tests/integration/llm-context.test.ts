@@ -249,11 +249,54 @@ describe('assembleContext', () => {
 		expect(await assemble()).not.toContain('They go under.');
 	});
 
-	it('leaves out an arc that is out of date', async () => {
+	it('sends an arc that is out of date with a note saying so', async () => {
 		// The arc retold the scene from its summary.
 		await db.update(scenes).set({ summaryMd: 'Alice leaves Bram.' }).where(eq(scenes.id, scene1Id));
 		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
 		expect(context!.text).toContain('A brave knight.');
+		expect(context!.text).not.toContain('Across the stories: Alice rises');
+		expect(context!.text).toMatch(
+			/Across the stories \(written before later changes to the story, [^)]*\): Alice rises from squire to queen\./
+		);
+	});
+
+	it('sends an arc stored without a fingerprint with the same note', async () => {
+		await db.update(characters).set({ arcSummaryInput: null }).where(eq(characters.name, 'Alice'));
+		const context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.text).toMatch(/Across the stories \(written before[^)]*\): Alice rises/);
+	});
+
+	it('leaves out an out-of-date arc of a character who appears in a muted story', async () => {
+		const [muted] = await db
+			.insert(stories)
+			.values({
+				universeId,
+				ownerId,
+				title: 'Kept Apart',
+				llmConfig: { enabled: false }
+			} as typeof stories.$inferInsert)
+			.returning({ id: stories.id });
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: muted.id, globalPosition: 1 })
+			.returning({ id: scenes.id });
+		const [alice] = await db
+			.select({ id: characters.id })
+			.from(characters)
+			.where(eq(characters.name, 'Alice'));
+		await db.insert(entityMentions).values({
+			sourceType: 'scene',
+			sourceId: scene.id,
+			targetType: 'character',
+			targetId: alice.id,
+			position: 0,
+			surroundingText: 'Alice in the muted story'
+		});
+		// Still current: the muted story is not part of what the arc reads.
+		let context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.text).toContain('Across the stories: Alice rises');
+		await db.update(scenes).set({ summaryMd: 'Alice leaves Bram.' }).where(eq(scenes.id, scene1Id));
+		context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
 		expect(context!.text).not.toContain('Across the stories');
 	});
 

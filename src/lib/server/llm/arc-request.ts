@@ -36,18 +36,16 @@ export async function arcRequests(
 ): Promise<Map<string, ArcRequest>> {
 	const out = new Map<string, ArcRequest>();
 	if (characters.length === 0) return out;
-	const rows = await db
-		.select({
+	// The first mention of each character in each scene, picked in the
+	// database: a lead character is mentioned many times a scene, and only one
+	// passage per scene is read.
+	const first = db
+		.selectDistinctOn([entityMentions.targetId, entityMentions.sourceId], {
 			characterId: entityMentions.targetId,
-			sceneId: scenes.id,
-			sceneTitle: scenes.title,
-			summaryMd: scenes.summaryMd,
-			storyTitle: stories.title,
+			sceneId: entityMentions.sourceId,
 			snippet: entityMentions.surroundingText
 		})
 		.from(entityMentions)
-		.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
-		.innerJoin(stories, eq(stories.id, scenes.storyId))
 		.where(
 			and(
 				eq(entityMentions.sourceType, 'scene'),
@@ -55,31 +53,45 @@ export async function arcRequests(
 				inArray(
 					entityMentions.targetId,
 					characters.map((c) => c.id)
-				),
+				)
+			)
+		)
+		.orderBy(
+			asc(entityMentions.targetId),
+			asc(entityMentions.sourceId),
+			asc(entityMentions.position)
+		)
+		.as('first_mention');
+	const rows = await db
+		.select({
+			characterId: first.characterId,
+			sceneTitle: scenes.title,
+			summaryMd: scenes.summaryMd,
+			storyTitle: stories.title,
+			snippet: first.snippet
+		})
+		.from(first)
+		.innerJoin(scenes, eq(scenes.id, first.sceneId))
+		.innerJoin(stories, eq(stories.id, scenes.storyId))
+		.where(
+			and(
 				eq(stories.universeId, universeId),
 				isNull(stories.deletedAt),
 				isNull(scenes.deletedAt),
 				storyAssistantOn()
 			)
 		)
-		.orderBy(
-			asc(stories.positionInSeries),
-			asc(stories.createdAt),
-			asc(scenes.globalPosition),
-			asc(entityMentions.position)
-		);
-	const found = new Map<string, { seen: Set<string>; scenes: ArcScene[] }>();
+		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt), asc(scenes.globalPosition));
+	const found = new Map<string, ArcScene[]>();
 	for (const row of rows) {
-		let entry = found.get(row.characterId);
-		if (!entry) found.set(row.characterId, (entry = { seen: new Set(), scenes: [] }));
-		if (entry.seen.has(row.sceneId)) continue;
-		entry.seen.add(row.sceneId);
 		const text = row.summaryMd?.trim() || row.snippet.trim();
 		if (!text) continue;
-		entry.scenes.push({ storyTitle: row.storyTitle, sceneTitle: row.sceneTitle, text });
+		let arcScenes = found.get(row.characterId);
+		if (!arcScenes) found.set(row.characterId, (arcScenes = []));
+		arcScenes.push({ storyTitle: row.storyTitle, sceneTitle: row.sceneTitle, text });
 	}
 	for (const character of characters) {
-		const arcScenes = found.get(character.id)?.scenes ?? [];
+		const arcScenes = found.get(character.id) ?? [];
 		if (arcScenes.length === 0) continue;
 		const messages: ChatMessage[] = [
 			{

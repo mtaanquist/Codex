@@ -835,23 +835,34 @@ runs, by building the request as things stand with the same builder the job
 uses (`arcRequest(s)`, `enrichRequest`, `chapterSummaryRequest`) and comparing
 hashes:
 
-- Arcs: the Plan page shows an arc as out of date (`planArc`), and the context
-  builder leaves an out-of-date arc out (`buildScopeEntities`). Only the
-  writer's Refresh arc writes one, and it always calls the model.
-- Chapter summaries: the context leaves an out-of-date Assistant-written one
-  out (`storySkeleton`), and the summaries pass rewrites exactly those. One
-  the writer wrote (no `summary_generated_at`) is never out of date.
+- Arcs: the Plan page shows an arc as out of date (`planArc`). The context
+  still carries an out-of-date arc, labelled as written before later changes
+  and possibly out of date, so the scenes in context win where they differ
+  (`arcLine` in `context/assemble.ts`, the one place that decides; a current
+  arc is sent unlabelled). Nothing rewrites an arc without the writer asking,
+  so leaving it out would drop a lead character's history after any edit.
+  The exception: an out-of-date arc of a character who appears in a story
+  the Assistant is turned off for is left out, since it may retell that
+  story (`buildScopeEntities`). Only the writer's Refresh arc writes one,
+  and it always calls the model. Only the characters that make the entity
+  cap are checked, and the check reads one row per scene.
+- Chapter summaries: the context and an attached chapter leave an
+  out-of-date Assistant-written one out (`chapterSummaryToSend`, used by
+  `storySkeleton` and `attachments.ts`), and the summaries pass rewrites
+  exactly those. One the writer wrote (no `summary_generated_at`) is never
+  out of date.
 - Enrich reads: the pass (`enrichUniverse`) builds every mentioned entity's
-  request and sends only those whose hash differs from the stored one.
+  request and sends only those whose hash differs from the stored one. The
+  hash covers the entry's name and its passages, not what is recorded on it
+  (aliases, details, whether a summary is asked for), so accepting what a
+  read suggested does not buy another read of the same passages.
 
 So a save runs no Assistant bookkeeping and takes no Assistant lock, the same
 request is never paid for twice, and a change that is undone reads as current
 again. `arc_summary_at`, `assistant_enriched_at` and a chapter's
 `summary_generated_at` are plain written-at times. A job stores the hash of
 the request it sent, so a change that lands during the call leaves the result
-out of date with no compare-and-set. The enrich fingerprint leaves out whether
-a summary is asked for, so a read that stages one does not put itself out of
-date. A release that changes a prompt's wording changes every fingerprint of
+out of date with no compare-and-set. A release that changes a prompt's wording changes every fingerprint of
 that kind. Scene summaries keep their timestamp rule
 (`summary_generated_at` against the scene's `updated_at`): they read only
 their own row.

@@ -707,6 +707,16 @@ function renderSkeleton(skeleton: {
 	return ['## Story outline', ...blocks].join('\n\n');
 }
 
+// How a character's arc is given to the model. One that is out of date is
+// still sent, with a note so the scenes in context win where they differ.
+// Return null for `entity.arcOutOfDate` to leave such an arc out instead.
+function arcLine(entity: ScopeEntity): string | null {
+	if (!entity.arcSummaryMd) return null;
+	if (entity.arcOutOfDate)
+		return `Across the stories (written before later changes to the story, so it may be out of date; where it differs from the scenes, the scenes are right): ${entity.arcSummaryMd}`;
+	return `Across the stories: ${entity.arcSummaryMd}`;
+}
+
 function renderSceneSummaryLine(scene: SceneSummary): string {
 	// The id rides along so a tool-capable turn can read any scene in full
 	// with get_scene, not just the one in focus.
@@ -723,7 +733,8 @@ function renderEntities(entities: ScopeEntity[]): string {
 		for (const detail of entity.details) lines.push(`- ${detail.label}: ${detail.value}`);
 		for (const rel of entity.relationships) lines.push(`- ${rel.label} ${rel.otherName}`);
 		if (entity.storyNote) lines.push(`In this story: ${entity.storyNote}`);
-		if (entity.arcSummaryMd) lines.push(`Across the stories: ${entity.arcSummaryMd}`);
+		const arc = arcLine(entity);
+		if (arc) lines.push(arc);
 	}
 	return lines.join('\n');
 }
