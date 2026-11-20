@@ -679,6 +679,58 @@ describe('the whole-book pattern pass', () => {
 		expect(notes[0].body).toContain('Shows up in: One, Two.');
 	});
 
+	it('resumes by chapter, not by count, when a chapter was added in front', async () => {
+		await addSecondChapter();
+		await pool.query(`update scenes set body_md = body_md || repeat(' And so on.', 900)`);
+		const configure = async (spendCapUsd: number) => {
+			await saveAccountLlmConfig(db, userId, {
+				enabled: true,
+				assistantName: '',
+				persona: 'balanced',
+				endpoint: 'https://api.example.com/v1',
+				apiKey: 'sk',
+				models: { reviewer: MODEL },
+				toolCallBudget: 8,
+				modelContextManual: { [MODEL]: 20000 },
+				spendCapUsd
+			});
+			await saveModelPricing(db, userId, { [MODEL]: { prompt: 0.001, completion: 0 } });
+		};
+		await configure(0.5);
+		const capped = await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'book', jobId: 'front-1' },
+			{ provider: bookProvider().provider }
+		);
+		expect(capped.capped).toBe(true);
+
+		// A prologue goes in ahead of the chapter already surveyed.
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId, title: 'Zero', position: 0 })
+			.returning({ id: chapters.id });
+		await db.insert(scenes).values({
+			storyId,
+			chapterId: chapter.id,
+			globalPosition: 0,
+			title: 'Zero 1',
+			bodyMd: 'Cal sighed.' + ' And so on.'.repeat(900),
+			summaryMd: 'Summary.'
+		});
+
+		await configure(1000);
+		const second = bookProvider();
+		await reviewStoryScenes(
+			db,
+			{ userId, storyId, patterns: 'book', jobId: 'front-2' },
+			{ provider: second.provider }
+		);
+		const surveys = second.seen.filter(isBookSurvey).map(asked);
+		expect(surveys.some((text) => text.includes('### Zero 1 '))).toBe(true);
+		expect(surveys.some((text) => text.includes('### Two 1 '))).toBe(true);
+		expect(surveys.some((text) => text.includes('### Scene 1 '))).toBe(false);
+	});
+
 	it('does not send the whole book again after an unreadable reply', async () => {
 		await addSecondChapter();
 		await windowOf(1_000_000);
