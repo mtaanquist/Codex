@@ -987,7 +987,6 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
-<<<<<<< HEAD
 - #1238: the upgrade fixture seeds a second character (Tam) whose arc and read
   were out of date under the previous release's rule, so migration 0083's
   backfill is exercised: after the upgrade his arc is marked stale and enrich
@@ -999,7 +998,6 @@ triage.
   scenes through it and anchor suggestions by offset into the stored text, so
   changing the text there is not safe; the export keeps the stored bytes and
   the next save of the scene normalises them.
-=======
 - #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
   `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
   `index.ts` runs at import and could not be tested. The test registers them
@@ -1018,7 +1016,6 @@ triage.
   lists tests that needed the retry as "flaky" on the run summary. Failing the
   run on any retry was the other option; it was left out because a load hiccup
   on an unrelated PR would then block a merge.
->>>>>>> origin/staging/tooling-issues
 
 ## Issue triage fixes (2026-11-20)
 
