@@ -401,6 +401,11 @@ test('a message starting with a slash is not lost, and the typed menu follows th
 	await composer.press('Enter');
 	await expect.poll(() => posted.length).toBe(1);
 	expect(posted[0].at(-1)?.content).toBe('/r/fantasy says this trope is overdone');
+	// Turned away, it comes back with the space that keeps it a message.
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message was not sent.'
+	);
+	await expect(composer).toHaveValue(' /r/fantasy says this trope is overdone');
 
 	// Arrow down the full list, then narrow it: the highlight is the first match.
 	await composer.fill('/');

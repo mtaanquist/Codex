@@ -21,6 +21,8 @@ function storyAllowed(userId: string): SQL {
 
 // A chapter's display name: its title, else its place in the story.
 const chapterOrdinal = sql<number>`(select count(*) from ${chapters} c2 where c2.story_id = ${chapters.storyId} and c2.position <= ${chapters.position})`;
+// chapterName in SQL, for searching and sorting by the name a chapter shows.
+const chapterShown = sql<string>`(case when btrim(coalesce(${chapters.title}, ''), E' \\t\\n\\r') = '' then 'Chapter ' || ${chapterOrdinal} else ${chapters.title} end)`;
 function chapterName(title: string | null, ordinal: number): string {
 	return title?.trim() || `Chapter ${ordinal}`;
 }
@@ -252,7 +254,7 @@ export function foldAttachments(content: string, resolved: ResolvedAttachment[])
 export function noteAttachments(content: string, attachments: ChatAttachment[]): string {
 	if (attachments.length === 0) return content;
 	const names = attachments.map((a) => `${a.kind} "${a.label}"`).join(', ');
-	return `${content}\n\n(The writer attached ${names} to this message. Its text was sent then and is not repeated here.)`;
+	return `${content}\n\n(The writer attached ${names} to this message. The text was sent with that message and is not repeated here.)`;
 }
 
 export type ContextItem = {
@@ -306,13 +308,8 @@ export async function searchContext(
 			.from(chapters)
 			.innerJoin(stories, eq(chapters.storyId, stories.id))
 			// A chapter with no title is found by the name it is shown under.
-			.where(
-				and(
-					storyAllowed(userId),
-					sql`(case when coalesce(trim(${chapters.title}), '') = '' then 'Chapter ' || ${chapterOrdinal} else ${chapters.title} end) ilike ${like}`
-				)
-			)
-			.orderBy(asc(chapters.title))
+			.where(and(storyAllowed(userId), sql`${chapterShown} ilike ${like}`))
+			.orderBy(asc(chapterShown), asc(stories.title))
 			.limit(PER_KIND),
 		db
 			.select({ id: scenes.id, title: scenes.title, story: stories.title })

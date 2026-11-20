@@ -690,7 +690,7 @@ describe('chats over the endpoints', () => {
 		).text();
 		const last = sent.at(-1)!;
 		expect(last[0]).toContain(
-			'(The writer attached scene "Scene 1" to this message. Its text was sent then and is not repeated here.)'
+			'(The writer attached scene "Scene 1" to this message. The text was sent with that message and is not repeated here.)'
 		);
 		// A message without attachments says nothing about them.
 		expect(

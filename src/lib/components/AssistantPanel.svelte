@@ -602,7 +602,9 @@
 				}
 			];
 		}
-		if (outcome) restoreDraft(typed ?? question, turn);
+		// A message that starts with "/" keeps the space that made it a message.
+		if (outcome)
+			restoreDraft(typed ?? (question.startsWith('/') ? ` ${question}` : question), turn);
 	}
 
 	// Puts a message that did not go out back in the chat box, alongside
@@ -963,8 +965,9 @@
 	});
 	// A new typed filter starts at its first match, so Enter never runs a row
 	// highlighted under the earlier filter.
+	const typedQuery = $derived(slashQuery(input));
 	$effect(() => {
-		void slashQuery(input);
+		void typedQuery;
 		commandSelected = 0;
 	});
 	function toggleCommands() {
@@ -1028,6 +1031,7 @@
 	// The choice the server last stored for the open chat, which a failed save
 	// goes back to; null until a save is in flight.
 	let storedSettings: ChatModelSettings | null = null;
+	let storedFor: string | null = null;
 	const settingsLocked = $derived(switching || (busy && !chatId));
 	$effect(() => {
 		if (settingsLocked && untrack(() => modelOpen)) {
@@ -1045,10 +1049,14 @@
 		const savingFor = chatId;
 		// A save queued behind one in flight starts from an unsaved pick, so the
 		// stored choice is the one from before the first of them.
-		if (!settingsSaving) storedSettings = previous;
+		if (!settingsSaving || storedFor !== savingFor) {
+			storedSettings = previous;
+			storedFor = savingFor;
+		}
 		const failed = () => {
 			if (settingsSaving !== saving) return;
-			if (chatId === savingFor) chatSettings = storedSettings ?? previous;
+			if (chatId === savingFor)
+				chatSettings = (storedFor === savingFor && storedSettings) || previous;
 			flashActivity(
 				'failed',
 				'Could not save the model',
@@ -1065,7 +1073,7 @@
 			)
 			.then((response) => {
 				if (!response.ok) failed();
-				else storedSettings = next;
+				else if (storedFor === savingFor) storedSettings = next;
 			})
 			.catch(failed)
 			.finally(() => {
