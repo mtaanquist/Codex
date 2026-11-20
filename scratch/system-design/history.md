@@ -987,7 +987,6 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
-<<<<<<< HEAD
 - #1237: the transcript replay now says what it used to skip. When the endpoint
   reported no counts, no spend may be recorded (before, the check returned
   early), which pins the known gap that an OpenAI-style stream cut off before
@@ -995,7 +994,6 @@ triage.
   retry or fail label is only checked on the buffered path, because nothing
   retries a live stream, so the unused flag on the stream side was removed
   and the file header says so. The unused `# stream: buffered` header is gone.
-=======
 - #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
   `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
   `index.ts` runs at import and could not be tested. The test registers them
@@ -1014,7 +1012,6 @@ triage.
   lists tests that needed the retry as "flaky" on the run summary. Failing the
   run on any retry was the other option; it was left out because a load hiccup
   on an unrelated PR would then block a merge.
->>>>>>> origin/staging/tooling-issues
 
 ## Issue triage fixes (2026-11-20)
 
