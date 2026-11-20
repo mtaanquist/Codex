@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	findAssetReferences,
 	renderMarkdown,
+	renderReplyBlocks,
 	renderReplyMarkdown,
 	rewriteAssetReferences
 } from './markdown';
@@ -125,5 +126,42 @@ describe('renderReplyMarkdown', () => {
 			const html = renderReplyMarkdown(`[click](${url})`);
 			expect(html).not.toContain('<a');
 		}
+	});
+});
+
+describe('renderReplyBlocks', () => {
+	const reply = [
+		'## Notes',
+		'A paragraph with **bold** and a [link][ref].',
+		'- one\n- two\n\n  still two',
+		'> quoted\n> twice',
+		'```\ncode <b>\n\nmore code\n```',
+		'![the gate](https://example.com/leak)',
+		'---',
+		'<script>alert(1)</script>',
+		'[ref]: https://example.com/page'
+	].join('\n\n');
+
+	it('renders the same HTML as the whole reply, one top-level block at a time', () => {
+		const blocks = renderReplyBlocks(reply);
+		expect(blocks.join('')).toBe(renderReplyMarkdown(reply));
+		expect(blocks).toHaveLength(8);
+		expect(blocks[2]).toMatch(/^<ul>[\s\S]*<\/ul>\n$/);
+		// A link defined at the end of the reply still resolves in its block.
+		expect(blocks[1]).toContain('href="https://example.com/page"');
+	});
+
+	it('leaves the finished blocks as they were while the reply grows', () => {
+		const full = 'First paragraph.\n\n- one\n- two\n\nA last line that is still being wri';
+		const blocks = renderReplyBlocks(full);
+		for (let cut = 1; cut <= full.length; cut++) {
+			const partial = renderReplyBlocks(full.slice(0, cut));
+			// Everything but the block being written matches the finished reply.
+			expect(partial.slice(0, -1)).toEqual(blocks.slice(0, partial.length - 1));
+		}
+	});
+
+	it('has no blocks for an empty reply', () => {
+		expect(renderReplyBlocks('')).toEqual([]);
 	});
 });
