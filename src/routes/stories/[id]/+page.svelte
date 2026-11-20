@@ -14,6 +14,9 @@
 	import { assistantIntent } from '#lib/assistant.svelte';
 	import { openReviewModal } from '#lib/review-modal.svelte';
 	import ReviewModal from '#lib/components/ReviewModal.svelte';
+	import FindReplaceModal from '#lib/components/FindReplaceModal.svelte';
+	import { openFindReplace } from '#lib/find-replace.svelte';
+	import type { WiderSearch } from '#lib/editor-search-scope';
 	import QuickNote from '#lib/components/QuickNote.svelte';
 	import EntityBadge from '#lib/components/EntityBadge.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -452,6 +455,42 @@
 		});
 	}
 
+	// Find and replace across the chapter or the story reads and writes the
+	// stored text, so pending saves land before it searches and replaces.
+	async function prepareFindReplace(): Promise<string | null> {
+		if (typingPaused) return BUSY;
+		if (uploading()) return WAIT_UPLOADING;
+		return (await flushEditors()) ? null : SAVE_FAILED;
+	}
+	// The open editors still hold the text from before the replace: reload
+	// and remount them, so none saves the old text back over it.
+	async function afterFindReplace() {
+		await pauseTypingWhile(async () => {
+			try {
+				await refreshAll();
+			} finally {
+				editorNonce++;
+			}
+		});
+	}
+	// The window's opener may be gone by the time it closes (a remounted
+	// editor, a closed menu or palette): put focus back in the writing then.
+	async function findReplaceClosed() {
+		await tick();
+		const active = document.activeElement;
+		if (active && active !== document.body && active.isConnected) return;
+		(sceneEditor?.getView() ?? toolbarView())?.focus();
+	}
+	// The find panel's "Search in" row, for one scene's editor.
+	function widerSearchFor(sceneId: string): WiderSearch {
+		const chapterOf = () => data.scenes.find((s) => s.id === sceneId)?.chapterId ?? null;
+		return {
+			hasChapter: () => chapterOf() !== null,
+			open: (scope, query) =>
+				openFindReplace({ chapterId: scope === 'chapter' ? chapterOf() : null, ...query })
+		};
+	}
+
 	// Copies a scene in full directly after itself; useful for keeping a
 	// scene as a reusable template.
 	async function duplicateScene(sceneId: string) {
@@ -884,6 +923,7 @@
 									: undefined}
 								onCrossBoundary={(direction) => focusNeighbor(scene.id, direction)}
 								onFocus={() => (activeDocId = scene.id)}
+								widerSearch={widerSearchFor(scene.id)}
 								onStatus={(status) => {
 									saveStatus = status;
 									if (status === 'saved') void refreshStoryLive();
@@ -977,6 +1017,7 @@
 						leaving={leavingScene}
 						{editorStyle}
 						onSplitScene={splitCurrentScene}
+						widerSearch={widerSearchFor(data.selectedScene.id)}
 						storyView={{ active: inWholeStory, toggleHref }}
 						viewMenu={viewItems(
 							sceneEditHref,
@@ -1247,8 +1288,21 @@
 		onSuggestSplit={suggestSplit}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}
+		onFindReplace={(chapterId) => {
+			rowMenu = null;
+			openFindReplace({ chapterId });
+		}}
 	/>
 {/if}
+
+<FindReplaceModal
+	storyId={data.story.id}
+	chapters={data.chapters}
+	scenes={data.scenes}
+	prepare={prepareFindReplace}
+	afterReplace={afterFindReplace}
+	onClosed={() => void findReplaceClosed()}
+/>
 
 {#if data.assistant.surfacesEnabled}
 	<ReviewModal
