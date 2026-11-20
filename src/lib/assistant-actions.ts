@@ -344,7 +344,7 @@ export async function resumeRunningJobs(): Promise<void> {
 			href:
 				kind === 'review' && storyId ? resolve('/stories/[id]/review', { id: storyId }) : undefined
 		});
-		// One this tab started itself gets its title in the background work list.
+		// One this tab started itself gets its title in the background jobs list.
 		labelJob(id, labels.runningLabel);
 	}
 }

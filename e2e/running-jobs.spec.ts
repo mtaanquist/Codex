@@ -54,9 +54,9 @@ test('a queued Assistant review shows again after a reload', async ({ page }) =>
 		await expect(page.locator('.run-note')).toHaveText('Assistant review starting');
 
 		// With its card dismissed, the job is still in the top bar's list.
-		const work = page.getByRole('button', { name: 'Background work, 1 running' });
+		const work = page.getByRole('button', { name: 'Background jobs, 1 running' });
 		await work.click();
-		const panel = page.getByRole('dialog', { name: 'Background work' });
+		const panel = page.getByRole('dialog', { name: 'Background jobs' });
 		await expect(panel).toContainText(`Reviewing "Runs ${stamp}"`);
 		await expect(panel).toContainText('Started just now');
 		// Escape closes it and hands focus back to its button.
@@ -68,7 +68,7 @@ test('a queued Assistant review shows again after a reload', async ({ page }) =>
 		await work.click();
 		await panel.getByRole('button', { name: 'Stop' }).click();
 		await expect(panel).toContainText('Nothing is running.', { timeout: 15_000 });
-		await expect(page.getByRole('button', { name: 'Background work', exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Background jobs', exact: true })).toBeVisible();
 		await expect(page.locator('.run-note')).toHaveCount(0);
 	} finally {
 		if (jobId) await boss.deleteJob('assistant-review', jobId);
