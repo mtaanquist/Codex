@@ -36,3 +36,34 @@ export type EntityCardData = {
 	details: { label: string; value: string }[];
 	related: { id: string; name: string; kind: EntityKind; label: string }[];
 };
+
+// Find and replace across a chapter or a story (story-replace.ts).
+export type StoryFindMatch = {
+	start: number;
+	end: number;
+	before: string;
+	text: string;
+	after: string;
+};
+export type StoryFindScene = {
+	sceneId: string;
+	title: string | null;
+	chapterId: string | null;
+	// Fingerprint of the stored text the matches were found in; the replace
+	// leaves the scene alone when the text has changed since.
+	baseHash: string;
+	matches: StoryFindMatch[];
+};
+export type StoryFindResult = {
+	scenes: StoryFindScene[];
+	matchCount: number;
+	// More matches than the preview lists; only the listed ones can be replaced.
+	truncated: boolean;
+};
+export type StoryReplaceResult = {
+	scenesChanged: number;
+	replaced: number;
+	// Scenes left alone: changed (or gone) since the search, or the replace
+	// would make them longer than a scene can be saved.
+	skipped: { sceneId: string; title: string | null; reason: 'changed' | 'too_long' }[];
+};
