@@ -1,3 +1,4 @@
+import { usageCostUsd } from '../../assistant-cost.ts';
 import type { ModelPricing } from './config.ts';
 import type { TokenUsage } from './providers/types.ts';
 
@@ -22,38 +23,14 @@ export const CAP_NOT_APPLIED_MESSAGE =
 export const CAP_NOT_APPLIED_NO_USAGE_MESSAGE =
 	'A spend cap is set but the endpoint did not report token counts for every request, so the cap could not be fully applied.';
 
-// Cache reads bill at a fraction of fresh prompt tokens. Providers and models
-// differ, from a fortieth to a tenth; the tenth is applied to every endpoint,
-// so a figure errs high rather than low.
-const CACHED_PROMPT_RATE = 0.1;
-// Cache writes bill above the plain prompt rate. Only Claude reports them, at
-// these multiples for its five-minute and one-hour caches.
-const CACHE_WRITE_RATE = 1.25;
-const CACHE_WRITE_1H_RATE = 2;
-
-function share(value: number | undefined, max: number): number {
-	return Math.min(Math.max(value ?? 0, 0), max);
-}
-
 export function requestCostUsd(
 	pricing: ModelPricing | undefined,
 	model: string,
-	usage: TokenUsage
+	usage: TokenUsage,
+	claude = false
 ): number | undefined {
 	const price = pricing?.[model];
-	if (!price) return undefined;
-	// The cache counts are subsets of promptTokens (see TokenUsage), so the
-	// fresh share is what is left after them.
-	const cached = share(usage.cachedPromptTokens, usage.promptTokens);
-	const written = share(usage.cacheWriteTokens, usage.promptTokens - cached);
-	const writtenHour = share(usage.cacheWrite1hTokens, written);
-	const fresh = usage.promptTokens - cached - written;
-	const promptUnits =
-		fresh +
-		cached * CACHED_PROMPT_RATE +
-		(written - writtenHour) * CACHE_WRITE_RATE +
-		writtenHour * CACHE_WRITE_1H_RATE;
-	return promptUnits * price.prompt + usage.completionTokens * price.completion;
+	return price ? usageCostUsd(price, usage, claude) : undefined;
 }
 
 // What a stopped run reports it spent: the figure, and whether it includes
@@ -68,6 +45,7 @@ export function spentFields(meter: SpendMeter): { spentUsd: number; spentEstimat
 export class SpendMeter {
 	readonly capUsd: number | undefined;
 	private readonly pricing: ModelPricing | undefined;
+	private readonly claude: boolean;
 	private usd: number;
 	private unpriced = false;
 	private unreported = false;
@@ -79,13 +57,17 @@ export class SpendMeter {
 	// already spent, so a retry does not get the whole ceiling again. persist is
 	// handed the running total after every priced request; writes run one after
 	// another, and flush waits for the last.
+	// claude says the requests go to the Claude provider, whose cache read
+	// rate is known; without it cached tokens are metered at the full price.
 	constructor(opts: {
 		pricing?: ModelPricing;
+		claude?: boolean;
 		capUsd?: number;
 		spentUsd?: number;
 		persist?: (spentUsd: number) => Promise<void>;
 	}) {
 		this.pricing = opts.pricing;
+		this.claude = opts.claude ?? false;
 		this.capUsd = opts.capUsd;
 		this.usd = opts.spentUsd ?? 0;
 		this.persist = opts.persist;
@@ -104,7 +86,7 @@ export class SpendMeter {
 			this.unreported = true;
 			return;
 		}
-		const cost = requestCostUsd(this.pricing, model, usage);
+		const cost = requestCostUsd(this.pricing, model, usage, this.claude);
 		if (cost === undefined) {
 			this.unpriced = true;
 			return;

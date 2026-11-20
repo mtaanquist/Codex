@@ -14,11 +14,8 @@ import {
 	ENTITY_TYPES,
 	entityAliasColumn,
 	entityNameColumn,
-	entityTable,
-	type EntityType
+	entityTable
 } from './entity-lookups.ts';
-import { markEntitiesStale } from './scene-lifecycle.ts';
-import { storyAssistantOn } from './universe-scope.ts';
 
 // Entities declared in the scene's story outrank the rest when a name is
 // shared; see the attribution rules in mention-detect.
@@ -77,40 +74,6 @@ async function storyContext(db: Database, context: MentionRebuildContext, storyI
 	return ctx;
 }
 
-type MentionPassages = {
-	targetType: EntityType;
-	targetId: string;
-	position: number;
-	surroundingText: string;
-};
-
-// The entities whose passages in a scene differ between two indexings of it:
-// mentioned only in one, or quoted with different surrounding text or in a
-// different order (an arc reads a scene's first passage). These are the ones
-// whose arc and enrichment read something new. A status change, a rename
-// elsewhere, or text added that only shifts positions reindexes the scene
-// without changing any of them.
-export function changedTargets(
-	before: MentionPassages[],
-	after: MentionPassages[]
-): { targetType: EntityType; targetId: string }[] {
-	const targets = new Map<string, { targetType: EntityType; targetId: string }>();
-	const passages = (rows: MentionPassages[]) => {
-		const byTarget = new Map<string, string[]>();
-		for (const { targetType, targetId, surroundingText } of [...rows].sort(
-			(a, b) => a.position - b.position
-		)) {
-			const key = `${targetType}:${targetId}`;
-			targets.set(key, { targetType, targetId });
-			byTarget.set(key, [...(byTarget.get(key) ?? []), surroundingText]);
-		}
-		return new Map([...byTarget].map(([key, texts]) => [key, JSON.stringify(texts)]));
-	};
-	const was = passages(before);
-	const now = passages(after);
-	return [...targets].filter(([key]) => was.get(key) !== now.get(key)).map(([, target]) => target);
-}
-
 export async function rebuildSceneMentions(
 	db: Database,
 	sceneId: string,
@@ -133,9 +96,7 @@ export async function rebuildSceneMentions(
 	const { members, pins } = await storyContext(db, shared, head.storyId);
 
 	return await db.transaction(async (tx) => {
-		// The scene row first, then the story, then entities: the order saves,
-		// reorders, trash, merge and the summary job take, so none of them can
-		// deadlock with a rebuild. The body is read under the row lock, so no
+		// The body is read under the scene's row lock, so no
 		// save can land between the read and the stamp: the index always
 		// matches the text it is stamped against.
 		const [scene] = await tx
@@ -174,25 +135,8 @@ export async function rebuildSceneMentions(
 		await tx.execute(
 			sql`update scenes set mentions_indexed_at = ${shared.loadedAt} where id = ${scene.id}`
 		);
-		// Whether the Assistant reads this scene's story. Restoring a story or
-		// unmuting it marks what it mentions, so a change made while it was out
-		// of reach needs no mark. The share lock waits for a restore or mute in
-		// flight, so the mark and that change cannot miss each other. A trashed
-		// universe still marks: nothing in it is read until it is restored, and
-		// the restore then has nothing left to mark.
-		const [reach] = await tx
-			.select({ reads: sql<boolean>`${stories.deletedAt} is null and ${storyAssistantOn()}` })
-			.from(stories)
-			.where(eq(stories.id, head.storyId))
-			.for('share');
-		const previous = await clear().returning({
-			targetType: entityMentions.targetType,
-			targetId: entityMentions.targetId,
-			position: entityMentions.position,
-			surroundingText: entityMentions.surroundingText
-		});
+		await clear();
 		if (rows.length > 0) await tx.insert(entityMentions).values(rows);
-		if (reach?.reads) await markEntitiesStale(tx, changedTargets(previous, rows));
 		return { ok: true as const, count: found.length };
 	});
 }

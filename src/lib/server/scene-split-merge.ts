@@ -8,7 +8,6 @@ import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { lockStoryScenes } from './row-locks.ts';
 import { textHash } from '#lib/text-hash';
 import { lfOffset, toLf } from '#lib/line-endings';
-import { markChapterSummariesStale, markMentionsStale } from './scene-lifecycle.ts';
 import { wordCount } from '#lib/word-count';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { inLiveStory, storyIsLive } from './universe-scope.ts';
@@ -128,8 +127,6 @@ export async function splitScene(
 		await recordRevision(tx, 'scene', created, tail, 'checkpoint', {
 			label: 'Split from the scene before'
 		});
-		// The chapter now holds one more scene.
-		if (scene.chapterId) await markChapterSummariesStale(tx, [scene.chapterId]);
 		return { ok: true as const, newSceneId: created };
 	});
 }
@@ -328,9 +325,6 @@ export async function duplicateScene(
 		}
 
 		await recordRevision(tx, 'scene', created, scene.bodyMd);
-		// The copy's own summary is current, but its chapter now holds one
-		// more scene.
-		if (scene.chapterId) await markChapterSummariesStale(tx, [scene.chapterId]);
 		return { ok: true as const, newSceneId: created };
 	});
 }
@@ -439,11 +433,6 @@ export async function mergeScenes(
 			.update(scenes)
 			.set({ deletedAt: sql`now()`, ...keepUpdatedAt() })
 			.where(inArray(scenes.id, restIds));
-		await markMentionsStale(tx, { sceneIds: restIds });
-		// The merged scenes leave their chapters, even when the target keeps a
-		// summary the writer wrote and so is not summarised again.
-		const chapterIds = rows.map((scene) => scene.chapterId).filter((id) => id !== null);
-		await markChapterSummariesStale(tx, [...new Set(chapterIds)]);
 		await tx
 			.delete(entityMentions)
 			.where(

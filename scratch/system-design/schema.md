@@ -180,6 +180,8 @@ chapters (
   position      int not null,
   title         text,
   summary_md    text,
+  summary_generated_at timestamptz,                -- set when the Assistant wrote summary_md; null for the writer's own
+  summary_input text,                               -- fingerprint of the request the Assistant wrote it from
   metadata      jsonb not null default '{}',
   updated_at    timestamptz not null
 )
@@ -232,6 +234,10 @@ characters (
   body_md                 text not null default '',
   auto_detect_mentions    boolean not null default true, -- set false for common-word names ("Will", "Art")
   metadata                jsonb not null default '{}',
+  arc_summary_md          text,                          -- the Assistant's arc across the stories; never the writer's
+  arc_summary_at          timestamptz,                   -- when it was written
+  arc_summary_input       text,                          -- fingerprint of the request it was written from
+  arc_summary_stories     uuid[],                        -- the stories it read; plain ids, so a deleted one is found missing
   imported_from           jsonb,                         -- reserved jsonb; unused (SillyTavern/lorebook import dropped from the roadmap)
   created_at              timestamptz not null,
   updated_at              timestamptz not null

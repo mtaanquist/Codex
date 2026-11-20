@@ -112,58 +112,36 @@ describe('applySceneOrder', () => {
 		});
 	});
 
-	it("marks both chapters' summaries out of date when a scene changes chapter", async () => {
+	// A chapter summary is out of date by its fingerprint (see
+	// llm-summaries.test.ts), so a move writes nothing to the chapters.
+	it("leaves the chapters' Assistant summaries untouched when scenes move", async () => {
 		await pool.query(
-			`update chapters set summary_md = 'S', summary_generated_at = updated_at where story_id = $1`,
+			`update chapters set summary_md = 'S', summary_generated_at = updated_at, summary_input = 'f' where story_id = $1`,
 			[storyId]
 		);
-		// s2 moves from A to the head of B; its reading order stays the same.
+		const stored = () =>
+			db
+				.select({
+					id: chapters.id,
+					summaryMd: chapters.summaryMd,
+					generatedAt: chapters.summaryGeneratedAt,
+					input: chapters.summaryInput,
+					updatedAt: chapters.updatedAt
+				})
+				.from(chapters)
+				.where(eq(chapters.storyId, storyId))
+				.orderBy(chapters.id);
+		const before = await stored();
+		// A swap inside A, and s3 from B to the end of A.
 		const result = await applySceneOrder(db, storyId, {
 			chapters: [
-				{ id: chapterA, sceneIds: [s1] },
-				{ id: chapterB, sceneIds: [s2, s3] }
+				{ id: chapterA, sceneIds: [s2, s1, s3] },
+				{ id: chapterB, sceneIds: [] }
 			],
 			orphanSceneIds: []
 		});
 		expect(result.ok).toBe(true);
-		const rows = await db
-			.select({ generatedAt: chapters.summaryGeneratedAt, updatedAt: chapters.updatedAt })
-			.from(chapters)
-			.where(eq(chapters.storyId, storyId));
-		expect(rows).toHaveLength(2);
-		for (const row of rows) {
-			expect(row.generatedAt!.getTime()).toBeLessThan(row.updatedAt.getTime());
-		}
-	});
-
-	// A chapter summary reads its scenes in order (#1146).
-	it("marks only the reordered chapter's summary when scenes swap inside it", async () => {
-		await pool.query(
-			`update chapters set summary_md = 'S', summary_generated_at = updated_at where story_id = $1`,
-			[storyId]
-		);
-		const result = await applySceneOrder(db, storyId, {
-			chapters: [
-				{ id: chapterA, sceneIds: [s2, s1] },
-				{ id: chapterB, sceneIds: [s3] }
-			],
-			orphanSceneIds: []
-		});
-		expect(result.ok).toBe(true);
-		const rows = await db
-			.select({
-				id: chapters.id,
-				generatedAt: chapters.summaryGeneratedAt,
-				updatedAt: chapters.updatedAt
-			})
-			.from(chapters)
-			.where(eq(chapters.storyId, storyId));
-		const current = (id: string) => {
-			const row = rows.find((r) => r.id === id)!;
-			return row.generatedAt!.getTime() >= row.updatedAt.getTime();
-		};
-		expect(current(chapterA)).toBe(false);
-		expect(current(chapterB)).toBe(true);
+		expect(await stored()).toEqual(before);
 	});
 
 	it('rejects an order that drops a scene', async () => {

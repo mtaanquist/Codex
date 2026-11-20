@@ -259,8 +259,12 @@ export const chapters = pgTable(
 		summaryMd: text('summary_md'),
 		// When the Assistant last generated this summary. Null means it was never
 		// auto-generated (so a non-null summary here is the writer's own and is never
-		// overwritten). See scenes.summary_generated_at.
+		// overwritten). Unlike a scene's, it is not compared with updated_at.
 		summaryGeneratedAt: timestamp('summary_generated_at', { withTimezone: true }),
+		// The fingerprint of the request the Assistant's summary was written from
+		// (see llm/chapter-summary-request.ts). The summary is out of date when
+		// the request that would be sent now has a different one, or none is stored.
+		summaryInput: text('summary_input'),
 		metadata: jsonb('metadata').notNull().default({}),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
@@ -378,21 +382,25 @@ export const characters = pgTable(
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 		metadata: jsonb('metadata').notNull().default({}),
-		// When the background enrichment pass last read this entity; a later pass
-		// skips it unless a scene that mentions it changed since.
+		// When the background enrichment pass last read this entity.
 		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
-		// A hash of the request that read, so a marked entity whose request would
-		// be the same is not sent again.
+		// A hash of the request that read sent (less what is recorded on the
+		// entity). A later pass reads the entity again only when the request it
+		// would send hashes differently.
 		assistantEnrichedInput: text('assistant_enriched_input'),
 		// The Assistant's summary of what happens to this character across the
-		// universe's stories, and when its read of the scenes started. Generated,
-		// never written by the writer; stale once a mentioning scene changes after
-		// arc_summary_at.
+		// universe's stories, and when it was written. Generated,
+		// never written by the writer.
 		arcSummaryMd: text('arc_summary_md'),
 		arcSummaryAt: timestamp('arc_summary_at', { withTimezone: true }),
-		// A hash of the request the arc was written from, so refreshing a marked
-		// arc whose request would be the same does not call the model.
+		// A hash of the request the arc was written from. The arc is out of date
+		// when the request that would be sent now hashes differently.
 		arcSummaryInput: text('arc_summary_input'),
+		// The stories whose scenes the arc was written from. An out-of-date arc
+		// is not given to the Assistant when one of them is muted or gone, since
+		// it may retell that story. Plain ids, not references: a story deleted
+		// for good must still be found missing.
+		arcSummaryStories: uuid('arc_summary_stories').array(),
 		// Original card data if imported (SillyTavern etc).
 		importedFrom: jsonb('imported_from'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -479,11 +487,11 @@ export const loreEntries = pgTable(
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 		metadata: jsonb('metadata').notNull().default({}),
-		// When the background enrichment pass last read this entity; a later pass
-		// skips it unless a scene that mentions it changed since.
+		// When the background enrichment pass last read this entity.
 		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
-		// A hash of the request that read, so a marked entity whose request would
-		// be the same is not sent again.
+		// A hash of the request that read sent (less what is recorded on the
+		// entity). A later pass reads the entity again only when the request it
+		// would send hashes differently.
 		assistantEnrichedInput: text('assistant_enriched_input'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -548,11 +556,11 @@ export const places = pgTable(
 		// and in the hover popover. Order is the author's.
 		details: jsonb('details').$type<EntityDetail[]>().notNull().default([]),
 		metadata: jsonb('metadata').notNull().default({}),
-		// When the background enrichment pass last read this entity; a later pass
-		// skips it unless a scene that mentions it changed since.
+		// When the background enrichment pass last read this entity.
 		assistantEnrichedAt: timestamp('assistant_enriched_at', { withTimezone: true }),
-		// A hash of the request that read, so a marked entity whose request would
-		// be the same is not sent again.
+		// A hash of the request that read sent (less what is recorded on the
+		// entity). A later pass reads the entity again only when the request it
+		// would send hashes differently.
 		assistantEnrichedInput: text('assistant_enriched_input'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -1446,6 +1454,12 @@ export const assistantUsage = pgTable(
 		model: text('model').notNull(),
 		promptTokens: integer('prompt_tokens'),
 		completionTokens: integer('completion_tokens'),
+		// The cache shares of promptTokens, where the endpoint reported them (see
+		// TokenUsage). Null on a request with none, and on every row from before
+		// they were stored; such a row is priced at the plain prompt price.
+		cachedPromptTokens: integer('cached_prompt_tokens'),
+		cacheWriteTokens: integer('cache_write_tokens'),
+		cacheWrite1hTokens: integer('cache_write_1h_tokens'),
 		// True when the counts are Codex's own estimate (a stream that failed or
 		// was cancelled before the endpoint reported them), not the endpoint's.
 		estimated: boolean('estimated').notNull().default(false),

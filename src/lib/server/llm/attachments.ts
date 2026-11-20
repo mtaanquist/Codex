@@ -5,6 +5,7 @@ import { ENTITY_TYPES, entityNameColumn, entityTable } from '../entity-lookups.t
 import { getEntityCard } from '../plan-data.ts';
 import { noteIsLive, storyAssistantOn, storyIsLive } from '../universe-scope.ts';
 import { storySkeleton } from './context/sources.ts';
+import { chapterSummaryToSend } from './chapter-summary-request.ts';
 import { tokensForChars } from './context/budgets.ts';
 import {
 	MAX_ATTACHMENT_LABEL,
@@ -57,7 +58,9 @@ async function chapterText(db: Database, userId: string, id: string) {
 		.select({
 			title: chapters.title,
 			ordinal: chapterOrdinal,
-			summary: chapters.summaryMd,
+			summaryMd: chapters.summaryMd,
+			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			summaryInput: chapters.summaryInput,
 			story: stories.title
 		})
 		.from(chapters)
@@ -65,11 +68,18 @@ async function chapterText(db: Database, userId: string, id: string) {
 		.where(and(eq(chapters.id, id), storyAllowed(userId)));
 	if (!chapter) return null;
 	const rows = await db
-		.select({ title: scenes.title, body: scenes.bodyMd })
+		.select({
+			title: scenes.title,
+			body: scenes.bodyMd,
+			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt
+		})
 		.from(scenes)
 		.where(and(eq(scenes.chapterId, id), isNull(scenes.deletedAt)))
 		.orderBy(asc(scenes.globalPosition));
-	const parts = chapter.summary ? [`Summary: ${chapter.summary}`] : [];
+	const summary = chapterSummaryToSend(chapter, rows);
+	const parts = summary ? [`Summary: ${summary}`] : [];
 	for (const scene of rows) parts.push(`## ${sceneName(scene.title)}\n\n${scene.body}`);
 	return {
 		label: chapterName(chapter.title, Number(chapter.ordinal)),

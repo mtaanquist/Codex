@@ -57,7 +57,8 @@ import {
 	PROVIDER_PRESETS,
 	type ProviderId
 } from '#lib/server/llm/providers/presets';
-import { MODEL_GUIDE, ROLE_TIER } from '#lib/server/llm/providers/model-guide';
+import { MODEL_GUIDE, ROLE_TIER, suggestedModel } from '#lib/server/llm/providers/model-guide';
+import { resolveRoleModel } from '#lib/assistant-tuning';
 import { recentAssistantUsage } from '#lib/server/llm/usage';
 import { normalisePersona, PERSONAS } from '#lib/server/llm/prompts/persona';
 import { saveUserPageSetup, userPageSetup } from '#lib/server/page-setup';
@@ -344,7 +345,15 @@ async function saveEndpointForm(userId: string, data: FormData) {
 			: undefined
 	});
 	if (!result.ok) return fail(400, { scope: 'assistant-endpoint', message: result.reason });
-	return null;
+	// A new host drops the typed prices (see saveAccountLlmConfig), and without
+	// them the spend cap cannot be applied, so the reply says which went.
+	const cleared = result.clearedPrices ?? [];
+	return {
+		notice:
+			cleared.length > 0
+				? `The prices you typed for ${cleared.join(', ')} were cleared because the endpoint changed. Enter them again under Models, or your spend cap cannot be applied.`
+				: undefined
+	};
 }
 
 export const actions: Actions = {
@@ -512,9 +521,13 @@ export const actions: Actions = {
 		return { scope: 'assistant-identity', saved: true };
 	},
 	saveAssistantEndpoint: async ({ request, locals }) => {
-		const failed = await saveEndpointForm(locals.user!.id, await request.formData());
-		if (failed) return failed;
-		return { scope: 'assistant-endpoint', saved: true };
+		const saved = await saveEndpointForm(locals.user!.id, await request.formData());
+		if (!('notice' in saved)) return saved;
+		return {
+			scope: 'assistant-endpoint',
+			saved: true,
+			...(saved.notice ? { message: `Saved. ${saved.notice}` } : {})
+		};
 	},
 	saveAssistantModels: async ({ request, locals }) => {
 		const data = await request.formData();
@@ -593,10 +606,12 @@ export const actions: Actions = {
 		}
 		// A pair of price fields per model shown (price-in-<model id> and
 		// price-out-<model id>), in dollars per million tokens. Both blank drops
-		// the writer's entry; one blank is refused, since half a price cannot
-		// cost a request. Like the context fields, only the models on the form
-		// are touched.
+		// the writer's entry. Half a price, or one that is not an amount, cannot
+		// cost a request: that model's stored entry is left as it was, the rest
+		// of the form still saves, and the reply says which model to finish.
+		// Like the context fields, only the models on the form are touched.
 		const modelPricingManual: ModelPricing = { ...storedView.modelPricingManual };
+		const unpriced: string[] = [];
 		for (const field of data.keys()) {
 			if (!field.startsWith('price-in-')) continue;
 			const model = field.slice('price-in-'.length);
@@ -616,10 +631,8 @@ export const actions: Actions = {
 				prompt < 0 ||
 				completion < 0
 			) {
-				return fail(400, {
-					scope: 'assistant-models',
-					message: `Enter both prices for ${model} as dollar amounts, or leave both empty.`
-				});
+				unpriced.push(model);
+				continue;
 			}
 			modelPricingManual[model] = {
 				prompt: prompt / TOKENS_PER_MILLION,
@@ -633,14 +646,39 @@ export const actions: Actions = {
 			modelPricingManual
 		});
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
+		// A model this save took off its last role has no price boxes after the
+		// reload, so its unfinished pair is dropped without a word.
+		const shown = new Set([
+			...ASSISTANT_ROLES.map((role) =>
+				resolveRoleModel(models, role, suggestedModel(storedView.provider, role))
+			),
+			...(await scopeChosenModels(db, locals.user!.id))
+		]);
+		const unfinished = unpriced.filter((model) => shown.has(model));
+		if (unfinished.length > 0) {
+			return {
+				scope: 'assistant-models',
+				saved: true,
+				message: `Saved, except the price for ${unfinished.join(', ')}. Enter both prices as dollar amounts, or leave both empty.`
+			};
+		}
 		return { scope: 'assistant-models', saved: true };
 	},
 	testAssistant: async ({ request, locals }) => {
-		const failed = await saveEndpointForm(locals.user!.id, await request.formData());
-		if (failed) return failed;
+		const saved = await saveEndpointForm(locals.user!.id, await request.formData());
+		if (!('notice' in saved)) return saved;
 		const result = await testAccountConnection(db, locals.user!.id);
-		if (!result.ok) return fail(400, { scope: 'assistant-test', message: result.reason });
-		return { scope: 'assistant-test', reply: result.reply };
+		if (!result.ok) {
+			return fail(400, {
+				scope: 'assistant-test',
+				message: saved.notice ? `${result.reason} ${saved.notice}` : result.reason
+			});
+		}
+		return {
+			scope: 'assistant-test',
+			reply: result.reply,
+			...(saved.notice ? { message: saved.notice } : {})
+		};
 	},
 	discoverAssistantModels: async ({ locals }) => {
 		const result = await discoverModels(db, locals.user!.id);

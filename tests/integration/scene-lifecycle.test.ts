@@ -22,9 +22,6 @@ import {
 	deleteChapter,
 	destroyScene,
 	listTrashedScenes,
-	markChapterSummariesStale,
-	markEntitiesStale,
-	markMentionsStale,
 	moveChapter,
 	renameChapter,
 	restoreScene,
@@ -356,100 +353,5 @@ describe('chapters', () => {
 		expect(await deleteChapter(db, ownerId, chapterA)).toBe(true);
 		delete before[chapterA];
 		expect(await stamps()).toEqual(before);
-	});
-});
-
-// Both marks lock the entities they touch lowest id first, so two marks over
-// the same entities cannot each hold one the other waits on (a deadlock).
-describe('marking entities stale', () => {
-	const LOW = '00000000-0000-4000-8000-000000000001';
-	const HIGH = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
-
-	async function seedPair() {
-		// The higher id first, so a scan in table order meets it first.
-		for (const id of [HIGH, LOW]) {
-			await db.insert(characters).values({ id, universeId, ownerId, name: `C ${id}` });
-			await db.insert(entityMentions).values({
-				sourceType: 'scene',
-				sourceId: s1,
-				targetType: 'character',
-				targetId: id,
-				position: 0,
-				surroundingText: 'x'
-			});
-		}
-	}
-
-	// Holds LOW, starts the mark, waits until it is blocked, and reports
-	// whether HIGH is still free (the mark has not taken it out of order).
-	async function highFreeWhileBlocked(
-		mark: (tx: Database) => Promise<void>,
-		table: 'characters' | 'chapters' = 'characters'
-	): Promise<boolean> {
-		const holder = await pool.connect();
-		const probe = await pool.connect();
-		try {
-			await holder.query('begin');
-			await holder.query(`select id from ${table} where id = $1 for update`, [LOW]);
-			const running = db.transaction(mark);
-			for (let i = 0; i < 100; i++) {
-				const { rows } = await probe.query(
-					`select count(*)::int as n from pg_stat_activity
-					 where datname = current_database() and wait_event_type = 'Lock'`
-				);
-				if (rows[0].n > 0) break;
-				await new Promise((resolve) => setTimeout(resolve, 20));
-			}
-			let free = true;
-			await probe.query('begin');
-			try {
-				await probe.query(`select id from ${table} where id = $1 for update nowait`, [HIGH]);
-			} catch {
-				free = false;
-			}
-			await probe.query('rollback');
-			await holder.query('rollback');
-			await running;
-			return free;
-		} finally {
-			holder.release();
-			probe.release();
-		}
-	}
-
-	it('locks lowest id first when marking by scene', async () => {
-		await seedPair();
-		const free = await highFreeWhileBlocked((tx) =>
-			markMentionsStale(tx, { sceneIds: [s1] }, { enrich: true })
-		);
-		expect(free).toBe(true);
-	});
-
-	it('locks chapters lowest id first when marking their summaries', async () => {
-		// The higher id first, so a scan in table order meets it first.
-		for (const [id, position] of [
-			[HIGH, 3],
-			[LOW, 4]
-		] as const) {
-			await db
-				.insert(chapters)
-				.values({ id, storyId, position, summaryMd: 'S', summaryGeneratedAt: new Date() });
-		}
-		const free = await highFreeWhileBlocked(
-			(tx) => markChapterSummariesStale(tx, [HIGH, LOW]),
-			'chapters'
-		);
-		expect(free).toBe(true);
-	});
-
-	it('locks lowest id first when marking by entity', async () => {
-		await seedPair();
-		const free = await highFreeWhileBlocked((tx) =>
-			markEntitiesStale(tx, [
-				{ targetType: 'character', targetId: HIGH },
-				{ targetType: 'character', targetId: LOW }
-			])
-		);
-		expect(free).toBe(true);
 	});
 });

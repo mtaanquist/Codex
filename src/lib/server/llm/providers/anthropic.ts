@@ -405,6 +405,18 @@ const INPUT_USAGE_KEYS = new Set([
 	'cache_read_input_tokens'
 ]);
 
+// Lays message_delta's running totals over what message_start reported. A
+// field the frame leaves null keeps its earlier value.
+function mergeDeltaUsage(usage: Block, delta: Block | undefined): void {
+	for (const [key, value] of Object.entries(delta ?? {})) {
+		if (value === null || value === undefined) continue;
+		// Some compatible endpoints repeat the input side as 0 here; the
+		// real count from message_start stands.
+		if (INPUT_USAGE_KEYS.has(key) && Number(value) === 0 && Number(usage[key]) > 0) continue;
+		usage[key] = value;
+	}
+}
+
 function parseJson(text: string): unknown {
 	try {
 		return JSON.parse(text);
@@ -459,27 +471,31 @@ async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unkno
 // carries a type. Text arrives as content_block_delta/text_delta; the stream
 // ends with message_stop. Thinking and tool-input deltas are not passed on.
 // Usage arrives split across frames: input tokens on message_start, the output
-// total on message_delta; the combined count is emitted before done. A stream
+// total on message_delta along with running input totals (which grow with web
+// search results); the combined count is emitted before done. A stream
 // that ends in an error event, without an output total, or cut off (the writer
 // stopped it, the connection dropped) still emits what it was billed,
 // estimated from the text and thinking streamed.
 const CLOSED_EARLY = 'The connection closed before the reply finished.';
 
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
-	let promptTokens: number | undefined;
-	let cache: CacheUsage = {};
+	// The input side as reported so far: message_start, then message_delta's
+	// running totals laid over it.
+	const input: Block = {};
 	let completionTokens: number | undefined;
 	let searches = 0;
 	let streamedChars = 0;
 	let finishReason: FinishReason | undefined;
 	const usage = (): StreamEvent | undefined => {
+		const prompt = promptTotal(input);
+		const promptTokens = Number.isFinite(prompt) ? prompt : undefined;
 		if (promptTokens === undefined && completionTokens === undefined) return undefined;
 		return {
 			type: 'usage',
 			usage: {
 				promptTokens: promptTokens ?? 0,
 				completionTokens: completionTokens ?? tokensForChars(streamedChars),
-				...cache,
+				...cacheShares(input),
 				...(searches > 0 ? { webSearchRequests: searches } : {}),
 				...(completionTokens === undefined ? { estimated: true } : {})
 			}
@@ -490,27 +506,19 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			const frame = json as {
 				type?: unknown;
 				delta?: { type?: unknown; text?: unknown; thinking?: unknown; stop_reason?: unknown };
-				message?: {
-					usage?: {
-						input_tokens?: unknown;
-						cache_creation_input_tokens?: unknown;
-						cache_read_input_tokens?: unknown;
-						cache_creation?: unknown;
-					};
-				};
-				usage?: { output_tokens?: unknown; server_tool_use?: unknown };
+				message?: { usage?: Block };
+				usage?: Block;
 				error?: { message?: unknown };
 			};
 			if (frame.type === 'message_start') {
-				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
-				if (Number.isFinite(input)) promptTokens = input;
-				if (frame.message?.usage) cache = cacheShares(frame.message.usage);
+				Object.assign(input, frame.message?.usage);
 				continue;
 			}
 			if (frame.type === 'message_delta') {
 				const output = Number(frame.usage?.output_tokens);
 				if (Number.isFinite(output)) completionTokens = output;
 				if (frame.usage) searches = webSearches(frame.usage) || searches;
+				mergeDeltaUsage(input, frame.usage);
 				finishReason = parseStopReason(frame.delta?.stop_reason) ?? finishReason;
 				continue;
 			}
@@ -706,13 +714,7 @@ async function assembleFrames(
 					progress.sawDelta = true;
 				}
 				if (delta?.stop_reason) stopReason = delta.stop_reason;
-				for (const [key, value] of Object.entries(frame.usage ?? {})) {
-					if (value === null || value === undefined) continue;
-					// Some compatible endpoints repeat the input side as 0 here; the
-					// real count from message_start stands.
-					if (INPUT_USAGE_KEYS.has(key) && Number(value) === 0 && Number(usage[key]) > 0) continue;
-					usage[key] = value;
-				}
+				mergeDeltaUsage(usage, frame.usage);
 				break;
 			case 'message_stop':
 				return finished();

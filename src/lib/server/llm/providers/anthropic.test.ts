@@ -833,6 +833,31 @@ describe('anthropicProvider.respond over a stream', () => {
 		}
 	});
 
+	it('carries the cache shares on what a failed stream was billed (#1274)', async () => {
+		const http: HttpRequest = async () =>
+			sseResponse([
+				start({
+					input_tokens: 9,
+					output_tokens: 1,
+					cache_read_input_tokens: 100,
+					cache_creation_input_tokens: 60,
+					cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 40 }
+				}),
+				frame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+				frame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Ha' } }),
+				frame({ type: 'error', error: { type: 'overloaded_error', message: 'x' } })
+			]);
+		const err = await anthropicProvider.respond(req, conn, http).catch((e: unknown) => e);
+		expect(billedUsage(err)).toEqual({
+			promptTokens: 169,
+			completionTokens: 1,
+			cachedPromptTokens: 100,
+			cacheWriteTokens: 60,
+			cacheWrite1hTokens: 40,
+			estimated: true
+		});
+	});
+
 	it('estimates the output of a failed stream that never reached message_delta', async () => {
 		// The real API sends message_delta once, at the end, so a stream that
 		// fails partway has only message_start's output count (about 1). The
@@ -1205,6 +1230,57 @@ describe('anthropicProvider.chatStream', () => {
 			{ type: 'token', text: 'lo' },
 			{ type: 'usage', usage: { promptTokens: 9, completionTokens: 2 } },
 			{ type: 'done' }
+		]);
+	});
+
+	it('takes the running input totals from message_delta, like the buffered path (#1274)', async () => {
+		// Web search results are billed as input and only show in message_delta's
+		// running totals. A null or a 0 there must not wipe message_start's count.
+		const data = (obj: unknown) => `data: ${JSON.stringify(obj)}\n`;
+		const frames = [
+			data({
+				type: 'message_start',
+				message: {
+					usage: {
+						input_tokens: 9,
+						cache_creation_input_tokens: 40,
+						cache_read_input_tokens: 100,
+						cache_creation: { ephemeral_1h_input_tokens: 40 }
+					}
+				}
+			}),
+			data({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'ok' } }),
+			data({
+				type: 'message_delta',
+				delta: { stop_reason: 'end_turn' },
+				usage: {
+					input_tokens: 2500,
+					cache_creation_input_tokens: null,
+					cache_read_input_tokens: 0,
+					output_tokens: 12,
+					server_tool_use: { web_search_requests: 1 }
+				}
+			}),
+			data({ type: 'message_stop' })
+		];
+		const http: HttpRequest = async () => sseResponse(frames);
+		const events = await drain(
+			anthropicProvider.chatStream({ model: 'claude-x', messages: [], maxTokens: 16 }, conn, http)
+		);
+		expect(events).toEqual([
+			{ type: 'token', text: 'ok' },
+			{
+				type: 'usage',
+				usage: {
+					promptTokens: 2640,
+					completionTokens: 12,
+					cachedPromptTokens: 100,
+					cacheWriteTokens: 40,
+					cacheWrite1hTokens: 40,
+					webSearchRequests: 1
+				}
+			},
+			{ type: 'done', finishReason: 'stop' }
 		]);
 	});
 
