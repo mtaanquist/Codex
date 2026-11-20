@@ -182,7 +182,12 @@ test.describe('with the Assistant on', () => {
 	// A note with the same edit in two scenes, and the re-read after an accept
 	// answered by the test: it stages a follow-up on "ford" in the first scene
 	// once `release` resolves.
-	async function openPass(page: Page, release: Promise<void> = Promise.resolve()) {
+	async function openPass(
+		page: Page,
+		release: Promise<void> = Promise.resolve(),
+		// The status the re-read answers with; the follow-up is staged either way.
+		status = 200
+	) {
 		await gotoReady(page, '/');
 
 		const name = `Follow-up ${Date.now()}`;
@@ -226,7 +231,8 @@ test.describe('with the Assistant on', () => {
 			const [after] = await scenesOf();
 			const at = after.body_md.indexOf('ford');
 			const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river', suggestionId);
-			await route.fulfill({ json: { staged: 1, ids: [id] } });
+			if (status === 200) await route.fulfill({ json: { staged: 1, ids: [id] } });
+			else await route.fulfill({ status, body: 'Gateway timeout' });
 		});
 
 		await gotoReady(page, `${storyPath}/review?scene=${one.id}`);
@@ -341,6 +347,42 @@ test.describe('with the Assistant on', () => {
 			await expect(
 				current.getByRole('button', { name: 'Follows an earlier change' })
 			).toBeVisible();
+		} finally {
+			await done();
+		}
+	});
+
+	// Accepting every edit before the re-reads answer reaches the end; a
+	// follow-up that arrives then becomes the step, in place of the end.
+	test('a follow-up after the last accept replaces the end of the pass', async ({ page }) => {
+		let release!: () => void;
+		const { pass, current, done } = await openPass(page, new Promise<void>((r) => (release = r)));
+		try {
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			// Not the end yet: the re-reads are still running.
+			await expect(pass.getByText('The Assistant is still re-reading')).toBeVisible();
+			await expect(pass.getByRole('button', { name: 'Resolve the note' })).toHaveCount(0);
+			release();
+			await expect(current.getByText('Follow-up')).toBeVisible();
+			await expect(pass.getByText('You have been through every change in this note.')).toHaveCount(
+				0
+			);
+		} finally {
+			await done();
+		}
+	});
+
+	// A re-read that fails after staging its follow-up (a timeout, say) still
+	// brings the follow-up in.
+	test('a follow-up from a re-read that failed still shows', async ({ page }) => {
+		const { pass, current, done } = await openPass(page, Promise.resolve(), 504);
+		try {
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(current.getByText('Follow-up')).toBeVisible();
 		} finally {
 			await done();
 		}
