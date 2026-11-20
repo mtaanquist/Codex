@@ -182,6 +182,9 @@
 							{#if step.replacement}<span class="rv-diff-ins">{step.replacement}</span>{/if}
 						</div>
 					{/if}
+					{#if step.reason}
+						<p class="rv-reason"><span class="rv-reason-k">Why:</span>{step.reason}</p>
+					{/if}
 					{@render followsLink(step)}
 
 					<form

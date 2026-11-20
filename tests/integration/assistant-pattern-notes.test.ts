@@ -14,6 +14,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
+import { MAX_REASON_LENGTH } from '../../src/lib/server/review';
 import type {
 	ChatMessage,
 	Provider,
@@ -434,7 +435,8 @@ describe('rereadPatternEdit', () => {
 						arguments: JSON.stringify({
 							sceneId,
 							original: 'Mira followed her',
-							replacement: 'Mira followed Kara'
+							replacement: 'Mira followed Kara',
+							reason: `  "Her" could be either woman here.\n  ${'Naming her keeps it clear. '.repeat(20)}`
 						})
 					}
 				]
@@ -455,6 +457,11 @@ describe('rereadPatternEdit', () => {
 		// Linked to the accept it follows, so the pass can show the link after a
 		// reload.
 		expect(followUp?.followsSuggestionId).toBe(suggestionId);
+		// The reason is kept on one line and cut at a word near the cap.
+		expect(followUp?.reason).toMatch(/^"Her" could be either woman here\. Naming her/);
+		expect(followUp!.reason!.length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
+		expect(followUp!.reason!.endsWith(' ...')).toBe(false);
+		expect(followUp!.reason!.endsWith('...')).toBe(true);
 		expect(result).toEqual({ staged: 1, ids: [followUp!.id] });
 	});
 

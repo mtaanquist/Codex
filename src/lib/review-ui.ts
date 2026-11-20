@@ -95,6 +95,8 @@ export type ReviewSuggestion = {
 	patternThreadId: string | null;
 	// The edit whose re-read after an accept staged this one, if any.
 	followsId: string | null;
+	// The Assistant's short reason for the change, if it gave one.
+	reason: string | null;
 	createdAt: Date | string;
 };
 

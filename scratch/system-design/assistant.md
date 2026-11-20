@@ -1133,6 +1133,11 @@ calls the gateway, which proxies through the egress guard.
   the note as one list (#1297): the current one full with its buttons, the rest
   faded with their outcome, and a follow-up links back to its original. The
   re-read's status shows as a corner activity card (#1295).
+- [built] Reasons on suggested edits (#1304): `suggest_edit` and each
+  `leave_pattern_note` edit take an optional one-sentence `reason`, stored on
+  `review_suggestions.reason` (nullable, whitespace collapsed, cut at 300
+  characters) and shown as "Why:" under the change on the suggestion card and
+  the guided pass. The review, chapter pattern and re-read prompts ask for it.
 - [built] Chapter pattern pass (#1136), opt-in from the review modal
   (`patterns: 'chapter'` on the review job; part of the run's scope key). Runs
   before the scene loop (`pattern-pass.ts`): stage A surveys each chapter with

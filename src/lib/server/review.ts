@@ -651,6 +651,17 @@ export async function listThreads(
 }
 
 const MAX_REPLACEMENT_LENGTH = 20000;
+// The Assistant's reason for an edit is a sentence or two; a longer one is cut.
+export const MAX_REASON_LENGTH = 300;
+
+export function normaliseReason(reason: string | undefined): string | null {
+	const text = (reason ?? '').replace(/\s+/g, ' ').trim();
+	if (!text) return null;
+	if (text.length <= MAX_REASON_LENGTH) return text;
+	const cut = text.slice(0, MAX_REASON_LENGTH - 3);
+	const space = cut.lastIndexOf(' ');
+	return `${(space > MAX_REASON_LENGTH / 2 ? cut.slice(0, space) : cut).trimEnd()}...`;
+}
 
 // A reviewer proposes replacing [start, end) of the scene's current text with
 // the replacement (equal offsets insert, an empty replacement deletes). The
@@ -679,6 +690,8 @@ export async function createSuggestion(
 		patternThreadId?: string;
 		// The accepted edit whose re-read staged this one as a follow-up.
 		followsSuggestionId?: string;
+		// Why the Assistant suggests it, shown to the author.
+		reason?: string;
 		// The text the range was found on, where the caller located it on its
 		// own copy of the scene: refused when the scene no longer has it there.
 		original?: string;
@@ -776,7 +789,8 @@ export async function createSuggestion(
 				rangeEnd: end,
 				replacement: input.replacement,
 				patternThreadId: input.patternThreadId ?? null,
-				followsSuggestionId: input.followsSuggestionId ?? null
+				followsSuggestionId: input.followsSuggestionId ?? null,
+				reason: normaliseReason(input.reason)
 			})
 			.returning({ id: reviewSuggestions.id });
 	});
@@ -813,6 +827,8 @@ export type SuggestionView = {
 	patternThreadId: string | null;
 	// The edit whose re-read after an accept staged this one, if any.
 	followsId: string | null;
+	// The Assistant's short reason for the change, if it gave one.
+	reason: string | null;
 	createdAt: Date;
 	decidedAt: Date | null;
 };
@@ -939,6 +955,7 @@ export async function listSuggestions(
 			anchorLost: row.suggestion.status === 'pending' && anchor === null,
 			patternThreadId: row.suggestion.patternThreadId,
 			followsId: row.suggestion.followsSuggestionId,
+			reason: row.suggestion.reason,
 			createdAt: row.suggestion.createdAt,
 			decidedAt: row.suggestion.decidedAt
 		};
