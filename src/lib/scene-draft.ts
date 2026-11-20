@@ -107,10 +107,63 @@ export type SceneDraftView = {
 	// then, and checked again when the writer accepts.
 	sceneEmpty: boolean;
 	sceneTitle: string | null;
+	// The draft is one of a chapter's, written scene by scene by one job.
+	inChapterRun: boolean;
+};
+
+// How much of the scene drafted just before rides with the next scene's
+// request, so the chapter reads on from it.
+export const PREVIOUS_DRAFT_CHARS = 6000;
+
+// One scene of a chapter, as the chapter brief form lists it.
+export type ChapterDraftScene = {
+	sceneId: string;
+	title: string | null;
+	// The scene's summary, when it has one that still tells the scene.
+	brief: string;
+	hasText: boolean;
+	// It has a draft the writer has not decided, so a chapter draft leaves it out.
+	hasDraft: boolean;
+};
+
+// What the chapter brief form opens with.
+export type ChapterDraftDefaults = {
+	chapterTitle: string | null;
+	targetWords: number;
+	scenes: ChapterDraftScene[];
+};
+
+// What a chapter draft would send and cost, summed over its scenes.
+export type ChapterDraftEstimate = SceneDraftEstimate & {
+	// How many scenes would be drafted.
+	scenes: number;
+	// Scenes asked for that already have an undecided draft, so are left out.
+	skipped: { sceneId: string; title: string | null }[];
+};
+
+// The drafts of a chapter's scenes that are being written or waiting for the
+// writer, in chapter order.
+export type ChapterDraftView = {
+	chapterId: string;
+	chapterTitle: string | null;
+	// The job still writing some of them, when there is one.
+	jobId: string | null;
+	scenes: {
+		draftId: string;
+		sceneId: string;
+		sceneTitle: string | null;
+		status: SceneDraftStatus;
+		note: string | null;
+	}[];
 };
 
 // Where a story page opens a scene's draft: the notice, the activity card and
 // the background jobs list all link here.
 export function sceneDraftHref(storyId: string, sceneId: string): string {
 	return `/stories/${storyId}?scene=${sceneId}&draft=1`;
+}
+
+// Where a story page opens a chapter's drafts.
+export function chapterDraftHref(storyId: string, chapterId: string): string {
+	return `/stories/${storyId}?draftChapter=${chapterId}`;
 }

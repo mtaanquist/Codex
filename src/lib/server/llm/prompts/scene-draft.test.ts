@@ -77,4 +77,42 @@ describe('buildSceneDraftMessage', () => {
 			})
 		).toBe(bare);
 	});
+
+	it('sets a scene of a chapter draft in its chapter, after the scene drafted before it', () => {
+		const message = buildSceneDraftMessage({
+			brief: 'Ilse crosses',
+			targetWords: 900,
+			chapterBrief: '  Ilse flees with the ledger  ',
+			previousDraft: 'She reached the quay.',
+			following: { title: 'The Far Bank', text: 'She wakes in the reeds.', kind: 'plan' }
+		});
+		expect(message).toContain('The writer describes the chapter as:');
+		expect(message).toContain('"Ilse flees with the ledger"');
+		expect(message).toContain('The scene before this one was just drafted, and reads:');
+		expect(message).toContain('She reached the quay.');
+		expect(message).toContain('Carry on from where it ends. Do not repeat it.');
+		expect(message).toContain('The scene that follows this one ("The Far Bank") is planned as:');
+		// The chapter comes first, then what was drafted, then this scene's brief.
+		expect(message.indexOf('Ilse flees')).toBeLessThan(message.indexOf('She reached the quay.'));
+		expect(message.indexOf('She reached the quay.')).toBeLessThan(
+			message.indexOf('"Ilse crosses"')
+		);
+	});
+
+	it('writes a scene with no brief of its own as its part of the chapter', () => {
+		const message = buildSceneDraftMessage({
+			brief: '  ',
+			targetWords: 900,
+			chapterBrief: 'Ilse flees with the ledger'
+		});
+		expect(message).toContain('as its part of the chapter described above');
+		expect(message).not.toContain('to this brief');
+		expect(message).not.toContain('""');
+	});
+
+	it('says nothing of a chapter or an earlier draft for a scene drafted on its own', () => {
+		const message = buildSceneDraftMessage({ brief: 'b', targetWords: 800 });
+		expect(message).not.toContain('chapter');
+		expect(message).not.toContain('just drafted');
+	});
 });

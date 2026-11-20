@@ -159,6 +159,30 @@ describe('findRunningAssistantJobs', () => {
 		expect((await boss.getJobById(ASSISTANT_DRAFT_QUEUE, second!))?.state).toBe('cancelled');
 	});
 
+	it('lists a chapter draft as a draft named for its chapter, with no scene', async () => {
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId, position: 7, title: 'The River' })
+			.returning({ id: chapters.id });
+		const id = await send(ASSISTANT_DRAFT_QUEUE, {
+			userId,
+			storyId,
+			chapterId: chapter.id,
+			draftIds: [randomUUID(), randomUUID()],
+			brief: 'Ilse flees.'
+		});
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs.find((j) => j.id === id)).toMatchObject({
+			kind: 'draft',
+			storyId,
+			chapterId: chapter.id,
+			sceneId: null,
+			title: 'Saltglass: The River'
+		});
+		expect(await findRunningAssistantJobs(db, otherId)).toEqual([]);
+		expect(await stopAssistantJob(db, boss, userId, id!)).toBe(true);
+	});
+
 	it('lists a character arc as its own kind, named for the character', async () => {
 		const [character] = await db
 			.insert(characters)

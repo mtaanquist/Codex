@@ -169,6 +169,37 @@ describe('assistant queue policy', () => {
 		await boss.deleteAllJobs(ASSISTANT_DRAFT_QUEUE);
 	});
 
+	it('holds one unfinished chapter draft per chapter, beside the scene drafts', async () => {
+		const input = {
+			userId: 'u1',
+			storyId: 's1',
+			chapterId: 'chapter-1',
+			draftIds: ['d1', 'd2'],
+			brief: 'The chapter.'
+		};
+		const first = await jobs.queueAssistantChapterDraft(input);
+		expect(first).toEqual(expect.any(String));
+		expect(first).not.toBe('coalesced');
+		expect(await jobs.queueAssistantChapterDraft({ ...input, draftIds: ['d3'] })).toBe('coalesced');
+		expect(await jobs.queueAssistantChapterDraft({ ...input, chapterId: 'chapter-2' })).toEqual(
+			expect.any(String)
+		);
+		// A scene draft is keyed by its scene, so it queues alongside.
+		expect(
+			await jobs.queueAssistantDraft({
+				userId: 'u1',
+				storyId: 's1',
+				sceneId: 'scene-9',
+				draftId: 'd9'
+			})
+		).toEqual(expect.any(String));
+		expect(await unfinished(ASSISTANT_DRAFT_QUEUE)).toBe(3);
+		expect(await jobs.assistantDraftJobState(first as string)).toBe('running');
+		const queued = await boss.getJobById(ASSISTANT_DRAFT_QUEUE, first as string);
+		expect(queued?.data).toEqual(input);
+		await boss.deleteAllJobs(ASSISTANT_DRAFT_QUEUE);
+	});
+
 	it('reads the state of a job queued on the old review queue before the upgrade', async () => {
 		await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
 		const id = await boss.send(

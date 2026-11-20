@@ -1023,6 +1023,61 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Chapter drafts (2026-11-20)
+
+#1168 step 2, branch `feat/chapter-draft` on `staging/scene-drafting`, on top
+of the scene drafts below. One job drafts the ticked scenes of a chapter in
+order, each into its own `assistant_drafts` row, and each row is then an
+ordinary scene draft: Fill, Add as a new scene, Discard, in that scene's card.
+No migration: `chapter_id` and `position` were put on the table for this, and
+the rows of a run share its `job_id`, so there is no run table.
+
+Choices made while building:
+
+- The command is `/draft-chapter`, not `/draft` with a mode. Write has no
+  chapter focus (only a scene is ever open), so `/draft` could only have
+  guessed. `/draft-chapter` drafts the chapter the open scene is in, and the
+  chapter's menu names the chapter directly. With no scene open the command
+  says to open one or use the chapter's menu.
+- A chapter with no scenes is refused, with a message to add a scene for each
+  part first. The run never creates scenes; a drafted scene only reaches the
+  story through the two accept actions.
+- The form has one brief for the chapter and a ticked list of scenes with a
+  line each. A scene may leave its line empty when the chapter brief is
+  given. One length and one point of view apply to every scene. Scenes with
+  text start unticked (their draft could only be added as a new scene).
+- A scene with an undecided draft is left out of the run and the estimate,
+  and the card says how many were. When every ticked scene has one, the
+  request is refused.
+- Continuity: each request carries the closing 6000 characters of the scene
+  drafted just before it, and the writer's line for the next scene in place
+  of that scene's summary. After a scene that was skipped or gone, nothing is
+  carried, so the next scene is not told to follow a draft two back.
+- The run ends at a scene boundary on Stop, the spend cap, or the Assistant
+  going off for the story or the account. Drafts already written stay ready
+  and the rows not reached are discarded, so the scenes are free to be asked
+  for again. A Stop in the middle of a request drops that scene whole.
+- A scene deleted or trashed before its turn is left out and the run goes on.
+- A failed request is retried with the job, and the retry reads the rows
+  again, so it carries on from the scene that failed. When no retry follows,
+  that row is marked failed with the reason (its scene's card offers Try
+  again, as a single draft) and the rest are discarded.
+- Discarding one scene's draft while the run is under way does not stop the
+  job; the job passes over it. Stopping the whole run is the card's Stop.
+- Progress is counted from the rows (settled out of asked for), so the
+  job-status poll needs no store of its own.
+- The notice links to the story with `draftChapter=<id>`, which opens the
+  panel on the chapter's list of drafts.
+
+Deferred: a length or point of view per scene, creating the chapter's scenes
+from an outline, and accepting every drafted scene in one action.
+
+Tests: `tests/integration/chapter-drafts.test.ts` (the gates, the summed
+estimate and cap, cap stop and Stop at a boundary, mute and off mid-run, a
+scene trashed or deleted mid-run, retry, per-scene accept and discard,
+ownership), draft cases in the worker handler, running jobs and queue policy
+tests, prompt unit tests, and `e2e/chapter-draft.spec.ts`.
+
 ## Scene drafts (2026-11-20)
 
 #1168 step 1, branch `feat/scene-draft` on `staging/scene-drafting`. The

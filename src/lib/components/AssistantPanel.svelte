@@ -89,6 +89,7 @@
 	import Icon from './Icon.svelte';
 	import AssistantProposal from './AssistantProposal.svelte';
 	import AssistantDraft from './AssistantDraft.svelte';
+	import AssistantChapterDraft from './AssistantChapterDraft.svelte';
 	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
 	import AssistantModelMenu, { EFFORT_LABELS } from './AssistantModelMenu.svelte';
 	import AssistantContextPicker from './AssistantContextPicker.svelte';
@@ -98,6 +99,7 @@
 	let {
 		scope,
 		sceneId = null,
+		chapterId = null,
 		name,
 		muted = false,
 		suggestions = [],
@@ -119,6 +121,8 @@
 		// The open scene, sent as the focus of context assembly; null off a scene
 		// and on the universe surface.
 		sceneId?: string | null;
+		// The chapter the open scene is in, for a chapter draft.
+		chapterId?: string | null;
 		// The Assistant's display name, shown over its replies.
 		name: string;
 		// This story has muted the Assistant; the tab stays to un-mute. Story scope
@@ -771,6 +775,9 @@
 			case 'draft':
 				if (!openSceneDraft(slashArgs(raw)) && typed) restoreDraft(raw, {});
 				break;
+			case 'draft-chapter':
+				if (!openChapterDraft(slashArgs(raw)) && typed) restoreDraft(raw, {});
+				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
 				break;
@@ -933,6 +940,39 @@
 		draftRequest = { brief, sceneId };
 		return true;
 	}
+
+	// /draft-chapter and "Draft this chapter": the brief form for a draft of
+	// every scene in a chapter, in its own card (AssistantChapterDraft). The
+	// command drafts the chapter the open scene is in; the chapter's menu names
+	// the chapter itself. Each drafted scene is then decided in its scene's card.
+	let chapterRequest = $state<{ brief: string; chapterId: string } | null>(null);
+	function openChapterDraft(brief: string, forChapter: string | null = chapterId): boolean {
+		if (!('storyId' in scope) || !onLandDraft) {
+			assistantSay(
+				'Drafting a chapter works in Write. Open the story there to use /draft-chapter.'
+			);
+			return false;
+		}
+		if (!forChapter) {
+			assistantSay(
+				'Open a scene in the chapter you want drafted, then type /draft-chapter. You can also right-click the chapter in the left sidebar and choose Assistant, then "Draft this chapter...".'
+			);
+			return false;
+		}
+		chapterRequest = { brief, chapterId: forChapter };
+		return true;
+	}
+	// Counts scene drafts kept or discarded, so the chapter's list keeps up.
+	let draftsDecided = $state(0);
+	// The chapter whose drafts show: the one asked for, else the open scene's.
+	const draftChapterId = $derived(chapterRequest?.chapterId ?? chapterId);
+	// Opening a scene in another chapter moves the card on to that chapter.
+	let seenChapterId = untrack(() => chapterId);
+	$effect(() => {
+		if (chapterId === seenChapterId) return;
+		seenChapterId = chapterId;
+		chapterRequest = null;
+	});
 
 	// /rewrite: co-author a rewrite of the editor's current selection to an
 	// instruction. Needs an open scene editor and a live selection; the reply's
@@ -1249,6 +1289,8 @@
 			prefill(intent.text);
 		} else if (intent.kind === 'draft') {
 			openSceneDraft('');
+		} else if (intent.kind === 'draft-chapter') {
+			openChapterDraft('', intent.chapterId);
 		} else if (intent.kind === 'catchup') {
 			void catchUp();
 		} else if (intent.kind === 'focus') {
@@ -1633,6 +1675,18 @@
 						{sceneId}
 						request={draftRequest?.sceneId === sceneId ? draftRequest : null}
 						onLand={onLandDraft}
+						onDecided={() => (draftsDecided += 1)}
+					/>
+				{/key}
+			{/if}
+			{#if 'storyId' in scope && draftChapterId && onLandDraft}
+				<!-- One per chapter: it shows the chapter's drafts, if it has any. -->
+				{#key draftChapterId}
+					<AssistantChapterDraft
+						storyId={scope.storyId}
+						chapterId={draftChapterId}
+						request={chapterRequest?.chapterId === draftChapterId ? chapterRequest : null}
+						decided={draftsDecided}
 					/>
 				{/key}
 			{/if}

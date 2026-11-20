@@ -612,6 +612,21 @@
 		}
 		void goto(withQuery(storyPath, { scene: sceneId, draft: '1' }));
 	}
+	// "Draft this chapter" on a chapter's menu: the Assistant panel shows the
+	// chapter draft form (or the chapter's drafts while they are being written).
+	function draftChapter(chapterId: string) {
+		rowMenu = null;
+		assistantIntent.pending = { kind: 'draft-chapter', chapterId };
+	}
+	// A link to a chapter's drafts (the notice, the background jobs list)
+	// carries draftChapter: open the Assistant panel on them.
+	const chapterDraftAsked = $derived(page.url.searchParams.get('draftChapter'));
+	$effect(() => {
+		const chapterId = chapterDraftAsked;
+		if (chapterId && draftable && data.chapters.some((chapter) => chapter.id === chapterId)) {
+			untrack(() => (assistantIntent.pending = { kind: 'draft-chapter', chapterId }));
+		}
+	});
 	// A link to a scene's draft (its notice, the background jobs list, the
 	// scene's menu) carries draft=1: open the Assistant panel on that draft.
 	const draftAsked = $derived(
@@ -1142,6 +1157,8 @@
 								<AssistantPanel
 									scope={{ storyId: data.story.id, storyTitle: data.story.title }}
 									sceneId={data.selectedScene?.id ?? null}
+									chapterId={data.scenes.find((s) => s.id === data.selectedScene?.id)?.chapterId ??
+										null}
 									name={data.assistant.name}
 									muted={data.assistant.muted}
 									suggestions={assistantSuggestions}
@@ -1332,6 +1349,7 @@
 		onOpenReview={openReviewFor}
 		onSuggestSplit={suggestSplit}
 		onDraftScene={draftScene}
+		onDraftChapter={data.revisionPreview ? undefined : draftChapter}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}
 		onFindReplace={(chapterId) => {

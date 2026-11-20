@@ -2,6 +2,7 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import { getAssistantJobState, reviewJobState } from '#lib/server/jobs';
 import { loadReviewRun } from '#lib/server/review-runs';
+import { chapterDraftProgress } from '#lib/server/scene-drafts';
 
 // Where the activity center and the review modal poll a queued Assistant job
 // (review, summaries, enrichment, a character arc, a details read, or a scene draft) to completion. Job ids are unguessable, and the reply
@@ -18,6 +19,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		error(400, 'A job kind and id are required.');
 	}
 	const state = await getAssistantJobState(kind, id);
+	if (kind === 'draft') {
+		// A chapter draft says how many of its scenes are settled.
+		const progress = await chapterDraftProgress(db, locals.user.id, id);
+		return Response.json(progress ? { state, phase: 'scenes', ...progress } : { state });
+	}
 	if (kind !== 'review') return Response.json({ state });
 
 	const run = await loadReviewRun(db, id, locals.user.id);

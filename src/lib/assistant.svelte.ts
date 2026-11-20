@@ -13,6 +13,9 @@ export type AssistantIntent =
 	// Open the scene draft form for the open scene (or its draft, when it has
 	// one).
 	| { kind: 'draft' }
+	// Open the chapter draft form for a chapter (or its drafts, while they
+	// are being written).
+	| { kind: 'draft-chapter'; chapterId: string }
 	// Run the recap ("catch me up").
 	| { kind: 'catchup' }
 	// Just open the tab and focus the composer.
