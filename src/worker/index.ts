@@ -29,6 +29,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../lib/server/db/schema.ts';
 import { backupConfig, effectiveBackupConfig } from '../lib/server/backups.ts';
 import { createHandlers } from './handlers.ts';
+import { registerSchedules } from './schedules.ts';
 import { stopWorker } from './shutdown.ts';
 import { resolveOrigin } from '../lib/server/origin-rule.ts';
 import { errorFields, logEvent } from '../lib/server/log.ts';
@@ -121,23 +122,7 @@ await boss.work(SWEEP_DELETED_OBJECTS_QUEUE, handlers.sweepDeletedObjects);
 await boss.work(PURGE_REVIEW_RUNS_QUEUE, handlers.purgeReviewRuns);
 await boss.work(PURGE_SESSIONS_QUEUE, handlers.purgeSessions);
 
-// Run the account purge sweep hourly; accounts past their grace window go.
-await boss.schedule(PURGE_ACCOUNTS_QUEUE, '30 * * * *', {}, { tz: 'UTC' });
-
-// And the universe trash sweep, offset from the account one.
-await boss.schedule(PURGE_UNIVERSES_QUEUE, '45 * * * *', {}, { tz: 'UTC' });
-
-await boss.schedule(SWEEP_DELETED_OBJECTS_QUEUE, '0 4 * * *', {}, { tz: 'UTC' });
-
-// Old review progress goes once a day; nothing is time critical about it.
-await boss.schedule(PURGE_REVIEW_RUNS_QUEUE, '15 4 * * *', {}, { tz: 'UTC' });
-
-// Expired and long-revoked sessions go once a day.
-await boss.schedule(PURGE_SESSIONS_QUEUE, '50 4 * * *', {}, { tz: 'UTC' });
-
-// Sweep for stale mention indexes every five minutes, so a dropped rebuild
-// self-heals within minutes instead of waiting for the next save.
-await boss.schedule(RECONCILE_MENTIONS_QUEUE, '*/5 * * * *', {}, { tz: 'UTC' });
+await registerSchedules(boss);
 
 // Off-site backups, only when the bucket is configured (saved settings or
 // environment). The schedule lives in pg-boss, so it is cleared when the
