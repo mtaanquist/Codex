@@ -50,7 +50,6 @@ import {
 	moveChapter,
 	renameChapter,
 	restoreScene,
-	STALE_MARK_BEFORE,
 	trashScene
 } from '../../src/lib/server/scene-lifecycle';
 import { duplicateScene, mergeScenes, splitScene } from '../../src/lib/server/scene-split-merge';
@@ -942,7 +941,6 @@ async function entityStates(): Promise<EntityState[]> {
 	return out;
 }
 
-const enrichMarked = (at: Date | null) => at === null || at < STALE_MARK_BEFORE;
 
 // The passages of each entity's last enrich read, taken when its stored
 // fingerprint matched. A trash or mute only takes passages away, and by design
@@ -1088,7 +1086,8 @@ async function checkMarks(before?: Map<string, Set<string>>): Promise<Finding[]>
 		if (!eligible.has(entity.id) || entity.enrichedInput === null) continue;
 		const request = await enrichRequest(db, { userId, scope: { universeId }, entityId: entity.id });
 		const changed = request?.input !== entity.enrichedInput;
-		const marked = enrichMarked(entity.enrichedAt);
+		// The enrich pass reads an entity exactly when its request changed.
+		const marked = changed;
 		const what = `enrich of ${entity.kind} ${entity.name}`;
 		if (!changed && marked) extra(what, false);
 		if (!changed || marked) continue;
