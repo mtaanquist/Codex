@@ -230,7 +230,7 @@ none adds a second bar.
 
 | Shell | Brand | Path | Tools |
 |---|---|---|---|
-| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Help, Background work (only while a job runs), Notifications, You (the theme picker is in the account menu) |
+| `.appbar` (author) | links to your library | Library / Universe / Story / Page, each place a menu | Search, Help, Background work, Notifications, You (the theme picker is in the account menu) |
 | `.appbar.guest` | lockup, not a link | the one story they were sent, plus a "Review only" pill | Theme, Help, "Reviewing as ..." |
 | `.appbar.reader` | links to Codex | the story and its author, as text | Theme, Help |
 | `.appbar.public` | links home | none at all: a signed-out visitor is not anywhere in the library | Theme, Help |

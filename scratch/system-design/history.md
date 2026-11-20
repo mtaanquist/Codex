@@ -989,8 +989,10 @@ minutes, and the corner card was the only place a running job showed; once
 dismissed, the job could not be found or stopped outside its own page.
 
 - `BackgroundWork.svelte` sits in the author bar before the notification
-  bell. It renders only while `trackedJobs.list` is not empty: a spinner with
-  a count, opening a dialog popover (same pattern as the bell) that lists
+  bell. It is always there (Mads: other kinds of background work may join
+  it later), showing a spinner with a count while `trackedJobs.list` is not
+  empty and a plain icon with "Nothing is running." otherwise. It opens a
+  dialog popover (same pattern as the bell) that lists
   each job's label, how long ago it started, its progress, and Open and Stop.
 - No new store or endpoint. The list is the activity center's own
   `trackedJobs`, which now carries the label, start time, result link and

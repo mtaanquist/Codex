@@ -64,12 +64,11 @@ test('a queued Assistant review shows again after a reload', async ({ page }) =>
 		await expect(panel).toHaveCount(0);
 		await expect(work).toBeFocused();
 
-		// Stop ends the job; with nothing running the button goes too.
+		// Stop ends the job; the button stays, with nothing left in its list.
 		await work.click();
 		await panel.getByRole('button', { name: 'Stop' }).click();
-		await expect(page.getByRole('button', { name: /Background work/ })).toHaveCount(0, {
-			timeout: 15_000
-		});
+		await expect(panel).toContainText('Nothing is running.', { timeout: 15_000 });
+		await expect(page.getByRole('button', { name: 'Background work', exact: true })).toBeVisible();
 		await expect(page.locator('.run-note')).toHaveCount(0);
 	} finally {
 		if (jobId) await boss.deleteJob('assistant-review', jobId);

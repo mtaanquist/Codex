@@ -848,7 +848,7 @@ timeout in the egress layer, so one writer's hung endpoint stalls only that
 writer's queue. A running job's activity card has a Stop button, which
 cancels the writer's own job (freeing its key at once); the worker aborts the
 run at its next heartbeat. The top bar's Background work list
-(`BackgroundWork.svelte`, shown only while a job is queued or running) lists
+(`BackgroundWork.svelte`, always in the author bar) lists
 the same jobs with their start time, Open and Stop, so a job whose card was
 dismissed can still be found and stopped. Each job's spend is kept per pg-boss job id in
 `assistant_job_spend` while a cap is set, so a retry of the same job carries

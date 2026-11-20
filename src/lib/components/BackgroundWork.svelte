@@ -6,11 +6,13 @@
 	import { now } from '#lib/now.svelte';
 	import { trackedJobs, type TrackedJob } from '#lib/activity.svelte';
 	import { resumeRunningJobs } from '#lib/assistant-actions';
+	import Icon from './Icon.svelte';
 
 	// The topbar's list of the Assistant's background work: every job this
 	// writer has queued or running, with how long it has been going, a way to
-	// stop it and a link to where its result will show. The button is there
-	// only while something is running. The list is the activity center's own
+	// stop it and a link to where its result will show. The button is always
+	// there, and spins with a count while something is running, so other kinds
+	// of background work can join the list later. The list is the activity center's own
 	// (see #lib/activity.svelte), so a card dismissed from the corner still
 	// has its job here; finished work is the notification bell's.
 
@@ -23,11 +25,6 @@
 		// A job started in another tab shows up without waiting for a reload.
 		if (open) void resumeRunningJobs();
 	}
-
-	// Nothing left to list closes the panel with its button.
-	$effect(() => {
-		if (jobs.length === 0) open = false;
-	});
 
 	function elapsed(job: TrackedJob): string {
 		const minutes = Math.floor((now() - job.startedAt) / 60_000);
@@ -66,28 +63,39 @@
 	}
 </script>
 
-{#if jobs.length > 0}
-	<div
-		class="work"
-		use:dismiss={{ enabled: open, close: () => (open = false), refocus: () => trigger?.focus() }}
+<div
+	class="work"
+	use:dismiss={{ enabled: open, close: () => (open = false), refocus: () => trigger?.focus() }}
+>
+	<button
+		bind:this={trigger}
+		class="icon-btn work-btn"
+		type="button"
+		title="Background work"
+		aria-label={jobs.length > 0 ? `Background work, ${jobs.length} running` : 'Background work'}
+		aria-haspopup="dialog"
+		aria-expanded={open}
+		onclick={toggle}
 	>
-		<button
-			bind:this={trigger}
-			class="icon-btn work-btn"
-			type="button"
-			title="Background work"
-			aria-label={`Background work, ${jobs.length} running`}
-			aria-haspopup="dialog"
-			aria-expanded={open}
-			onclick={toggle}
-		>
+		{#if jobs.length > 0}
 			<span class="work-spinner" aria-hidden="true"></span>
 			<span class="work-count" aria-hidden="true">{jobs.length > 9 ? '9+' : jobs.length}</span>
-		</button>
+		{:else}
+			<Icon name="clock" size={16} />
+		{/if}
+	</button>
 
-		{#if open}
-			<div class="work-panel" role="dialog" aria-label="Background work">
-				<div class="work-head">Background work</div>
+	{#if open}
+		<div class="work-panel" role="dialog" aria-label="Background work">
+			<div class="work-head">Background work</div>
+			{#if jobs.length === 0}
+				<div class="empty-state tight">
+					<p class="empty-state-text">Nothing is running.</p>
+				</div>
+				<p class="work-foot">
+					Work that takes a while, such as an Assistant review of a story, shows here while it runs.
+				</p>
+			{:else}
 				<ul class="work-list">
 					{#each jobs as job (job.id)}
 						{@const href = place(job)}
@@ -117,10 +125,10 @@
 					{/each}
 				</ul>
 				<p class="work-foot">You get a notification when each one is done.</p>
-			</div>
-		{/if}
-	</div>
-{/if}
+			{/if}
+		</div>
+	{/if}
+</div>
 
 <style>
 	.work {
