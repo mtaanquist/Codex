@@ -4,11 +4,17 @@
 	// message. A story opens its own list: its outline, the whole book (with its
 	// size, and its price where the endpoint reports one), or one of its chapters
 	// or scenes. Focus stays in the search field, which drives the list.
-	import type { AttachmentKind, ChatAttachment } from '#lib/assistant-chat';
+	import type { AttachmentEntityType, AttachmentKind, ChatAttachment } from '#lib/assistant-chat';
 	import { formatNumber, spentPhrase } from '#lib/format';
 	import Icon from './Icon.svelte';
 
-	type Item = { kind: AttachmentKind; id: string; label: string; sublabel: string | null };
+	type Item = {
+		kind: AttachmentKind;
+		id: string;
+		label: string;
+		sublabel: string | null;
+		entityType?: AttachmentEntityType;
+	};
 	type StoryContents = {
 		label: string;
 		words: number;
@@ -117,7 +123,13 @@
 	});
 
 	function add(item: Item, depth?: 'outline' | 'book') {
-		onAdd({ kind: item.kind, id: item.id, label: item.label, ...(depth ? { depth } : {}) });
+		onAdd({
+			kind: item.kind,
+			id: item.id,
+			label: item.label,
+			...(depth ? { depth } : {}),
+			...(item.entityType ? { entityType: item.entityType } : {})
+		});
 	}
 
 	function openStory(item: Item) {

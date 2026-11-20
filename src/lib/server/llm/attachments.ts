@@ -8,6 +8,7 @@ import { storySkeleton } from './context/sources.ts';
 import { tokensForChars } from './context/budgets.ts';
 import {
 	MAX_ATTACHMENT_LABEL,
+	type AttachmentEntityType,
 	type AttachmentKind,
 	type ChatAttachment
 } from '../../assistant-chat.ts';
@@ -89,6 +90,7 @@ async function entityText(db: Database, userId: string, id: string) {
 		parts.push(`Related: ${card.related.map((r) => `${r.name} (${r.label})`).join(', ')}`);
 	}
 	return {
+		entityType: card.kind,
 		label: card.name,
 		title: `${card.kind === 'lore' ? 'Lore entry' : card.kind} "${card.name}"`,
 		text: parts.join('\n\n')
@@ -177,7 +179,12 @@ const READERS: Record<
 		db: Database,
 		userId: string,
 		attachment: ChatAttachment
-	) => Promise<{ label: string; title: string; text: string } | null>
+	) => Promise<{
+		label: string;
+		title: string;
+		text: string;
+		entityType?: AttachmentEntityType;
+	} | null>
 > = {
 	scene: (db, userId, a) => sceneText(db, userId, a.id),
 	chapter: (db, userId, a) => chapterText(db, userId, a.id),
@@ -218,7 +225,11 @@ export async function resolveAttachments(
 			// The name as it is now, not the one the browser sent, so the stored
 			// chip follows a rename.
 			const label = found.label.replace(/\s+/g, ' ').trim().slice(0, MAX_ATTACHMENT_LABEL);
-			return { attachment: { ...attachment, label }, title: found.title, text: found.text };
+			// Likewise what kind of entry it is: read here, never taken on trust.
+			const stored: ChatAttachment = { ...attachment, label };
+			if (found.entityType) stored.entityType = found.entityType;
+			else delete stored.entityType;
+			return { attachment: stored, title: found.title, text: found.text };
 		})
 	);
 	const kept = read.filter((item) => item !== null);
@@ -279,6 +290,7 @@ export type ContextItem = {
 	id: string;
 	label: string;
 	sublabel: string | null;
+	entityType?: AttachmentEntityType;
 };
 
 const PER_KIND = 6;
@@ -385,7 +397,8 @@ export async function searchContext(
 				kind: 'entity' as const,
 				id: row.id,
 				label: row.name,
-				sublabel: `${entityKind[type]}, ${row.universe}`
+				sublabel: `${entityKind[type]}, ${row.universe}`,
+				entityType: type === 'lore_entry' ? ('lore' as const) : type
 			}))
 		),
 		...noteRows.map((row) => ({

@@ -59,6 +59,7 @@
 		attachmentLabel,
 		chatEffort,
 		MAX_ATTACHMENTS,
+		type AttachmentEntityType,
 		type AttachmentKind,
 		CHAT_MISSING,
 		CHAT_STORED_HEADER,
@@ -162,6 +163,16 @@
 		note: 'note',
 		story: 'book'
 	};
+	const ENTITY_ICONS: Record<AttachmentEntityType, IconName> = {
+		character: 'user',
+		place: 'pin',
+		lore: 'feather'
+	};
+	function attachmentIcon(attachment: ChatAttachment): IconName {
+		return attachment.kind === 'entity' && attachment.entityType
+			? ENTITY_ICONS[attachment.entityType]
+			: ATTACHMENT_ICONS[attachment.kind];
+	}
 	type Message = {
 		role: 'user' | 'assistant';
 		content: string;
@@ -1509,7 +1520,7 @@
 											? `${attachmentLabel(attachment)}: cut to fit what the model can read at once`
 											: attachmentLabel(attachment)}
 									>
-										<Icon name={ATTACHMENT_ICONS[attachment.kind]} size={11} />
+										<Icon name={attachmentIcon(attachment)} size={11} />
 										{attachmentLabel(attachment)}{attachment.shortened ? ' (shortened)' : ''}
 									</span>
 								{/each}
@@ -1759,7 +1770,7 @@
 						{/if}
 						{#each attachments as attachment, index (`${attachment.kind}-${attachment.id}-${attachment.depth}`)}
 							<span class="chip context-chip" title={attachmentLabel(attachment)}>
-								<Icon name={ATTACHMENT_ICONS[attachment.kind]} size={12} />
+								<Icon name={attachmentIcon(attachment)} size={12} />
 								<span class="context-chip-label">{attachmentLabel(attachment)}</span>
 								<button
 									class="chip-x"

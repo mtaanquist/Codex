@@ -7,6 +7,7 @@ import * as schema from '../../src/lib/server/db/schema';
 import {
 	chapters,
 	characters,
+	places,
 	notes,
 	scenes,
 	stories,
@@ -166,6 +167,35 @@ describe('resolveAttachments', () => {
 		// Another universe in the library is fine.
 		expect(out[5]).toContain('Dust everywhere.');
 		expect(resolved.every((item) => !item.attachment.shortened)).toBe(true);
+	});
+
+	it('records what kind of library entry it is, whatever the browser said', async () => {
+		const [{ universeId }] = await db
+			.select({ universeId: characters.universeId })
+			.from(characters)
+			.where(eq(characters.id, characterId));
+		const [place] = await db
+			.insert(places)
+			.values({ universeId, ownerId: userId, name: 'The Quay' })
+			.returning({ id: places.id });
+		const resolved = await resolveAttachments(
+			db,
+			userId,
+			[
+				{ kind: 'entity', id: characterId, label: 'Mira', entityType: 'lore' },
+				{ kind: 'entity', id: place.id, label: 'The Quay' },
+				{ kind: 'scene', id: sceneId, label: 'The gate', entityType: 'place' }
+			],
+			BIG
+		);
+		expect(resolved.map((item) => item.attachment.entityType)).toEqual([
+			'character',
+			'place',
+			undefined
+		]);
+		expect(await searchContext(db, userId, 'Quay')).toContainEqual(
+			expect.objectContaining({ kind: 'entity', id: place.id, entityType: 'place' })
+		);
 	});
 
 	it("leaves out what is not the writer's, is in the trash, or is muted", async () => {

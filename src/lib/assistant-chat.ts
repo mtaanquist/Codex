@@ -69,11 +69,16 @@ export function chatEffort(settings: ChatModelSettings, info: ChatModelInfo): Ef
 export const ATTACHMENT_KINDS = ['scene', 'chapter', 'entity', 'note', 'story'] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 export type StoryDepth = 'outline' | 'book';
+// What a library entry is, for the chip's icon.
+export const ATTACHMENT_ENTITY_TYPES = ['character', 'place', 'lore'] as const;
+export type AttachmentEntityType = (typeof ATTACHMENT_ENTITY_TYPES)[number];
 export type ChatAttachment = {
 	kind: AttachmentKind;
 	id: string;
 	label: string;
 	depth?: StoryDepth;
+	// Only on a library entry. Absent on one stored before this was recorded.
+	entityType?: AttachmentEntityType;
 	// Set by the server when the content did not fit and was cut.
 	shortened?: boolean;
 };
@@ -89,7 +94,7 @@ export function readAttachments(raw: unknown): ChatAttachment[] {
 	for (const item of raw) {
 		if (out.length >= MAX_ATTACHMENTS) break;
 		if (!item || typeof item !== 'object') continue;
-		const { kind, id, label, depth, shortened } = item as Record<string, unknown>;
+		const { kind, id, label, depth, shortened, entityType } = item as Record<string, unknown>;
 		if (!(ATTACHMENT_KINDS as readonly unknown[]).includes(kind)) continue;
 		if (typeof id !== 'string' || !isUuid(id)) continue;
 		const attachment: ChatAttachment = {
@@ -98,6 +103,9 @@ export function readAttachments(raw: unknown): ChatAttachment[] {
 			label: typeof label === 'string' ? label.trim().slice(0, MAX_ATTACHMENT_LABEL) : ''
 		};
 		if (kind === 'story') attachment.depth = depth === 'book' ? 'book' : 'outline';
+		if (kind === 'entity' && (ATTACHMENT_ENTITY_TYPES as readonly unknown[]).includes(entityType)) {
+			attachment.entityType = entityType as AttachmentEntityType;
+		}
 		if (shortened === true) attachment.shortened = true;
 		if (out.some((a) => attachmentKey(a) === attachmentKey(attachment))) continue;
 		out.push(attachment);
