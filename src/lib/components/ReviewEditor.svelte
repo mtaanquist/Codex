@@ -196,27 +196,56 @@
 		replacements: Record<string, string> = {}
 	) {
 		if (!view || !handle) return;
+		// Nothing typed here is waiting to be saved, so the editor showed the
+		// text the server changed.
+		const wasClean = !autosave.hasUnsaved() && !conflict;
 		let applied = true;
 		for (const id of ids) {
 			const suggestion = suggestions.find((s) => s.id === id);
-			const a = suggestion?.status === 'pending' ? handle.anchorOf(view, id) : null;
-			if (!suggestion || !a) {
+			const mark = suggestion?.status === 'pending' ? handle.anchorOf(view, id) : null;
+			if (!suggestion || !mark) {
+				applied = false;
+				continue;
+			}
+			// The mark leaves out the white space at the edges of the range; the
+			// server replaced the whole range, so widen back to it. When the text
+			// there is not what the suggestion replaced, the same change cannot
+			// be made here.
+			const { original } = suggestion;
+			const from = mark.start - (original.length - original.trimStart().length);
+			const to = mark.end + (original.length - original.trimEnd().length);
+			if (from < 0 || to > view.state.doc.length || view.state.sliceDoc(from, to) !== original) {
 				applied = false;
 				continue;
 			}
 			// The server already holds this change, so it lands even while a
 			// merge or duplicate has typing paused; dropped, the next save
 			// would build on text the editor does not show.
-			const insert = replacements[id] ?? suggestion.replacement;
-			const tr = view.state.update({
-				changes: { from: a.start, to: a.end, insert },
+			view.dispatch({
+				changes: { from, to, insert: replacements[id] ?? suggestion.replacement },
 				effects: removeReviewMarks.of([id]),
 				annotations: landsWhilePaused.of(true)
 			});
-			view.dispatch(tr);
-			if (!tr.docChanged && (a.start !== a.end || insert !== '')) applied = false;
 		}
-		if (applied && accepted) saver.rebase(accepted.bodyMd, accepted.baseHash);
+		if (!accepted) return;
+		// With nothing unsaved the editor must now show exactly what the server
+		// stored. Where a change could not be made here (an edit with no mark,
+		// such as one that only removes a space), take the server's text.
+		if (wasClean && view.state.doc.toString() !== accepted.bodyMd) {
+			syncingFromServer = true;
+			try {
+				view.dispatch({
+					changes: { from: 0, to: view.state.doc.length, insert: accepted.bodyMd },
+					annotations: landsWhilePaused.of(true)
+				});
+			} finally {
+				syncingFromServer = false;
+			}
+			applied = true;
+		}
+		// With unsaved typing and a change that could not be made here, the save
+		// check is left alone: the next save reports the difference.
+		if (applied) saver.rebase(accepted.bodyMd, accepted.baseHash);
 	}
 
 	function rebuildMarks() {

@@ -334,7 +334,7 @@ test('the author accepts several suggestions together and leaves one out', async
 	await suggestOn('TWOTAIL', 'EDITTWO');
 	await suggestOn('THREETAIL', 'EDITTHREE');
 
-	const toolbar = page.getByRole('toolbar', { name: 'Suggested edits' });
+	const toolbar = page.getByRole('group', { name: 'Suggested edits' });
 	await expect(toolbar).toContainText('3 suggested edits');
 	await toolbar.getByRole('button', { name: 'Decide together...' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Decide on suggested edits' });
@@ -368,4 +368,52 @@ test('the author accepts several suggestions together and leaves one out', async
 	expect(text).toContain('ONETAIL closing.');
 	// The pending edit's replacement shows as a ghost; its original is intact.
 	expect(text).toContain('THREETAIL closing.');
+});
+
+// A suggestion's range can end in a space, which the mark in the manuscript
+// leaves out. The accept has to replace the whole range in the open editor as
+// it does on the server, or the editor's next save puts a doubled space back.
+test('accepting an edit whose range ends in a space leaves one space', async ({ page }) => {
+	await gotoReady(page, '/');
+	const stamp = Date.now();
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(`Edge ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, `Edge ${stamp}`);
+	await page.getByLabel('New story').fill('Edge');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.type('Lineword ONETAIL closing.');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+
+	await page.getByRole('link', { name: 'Review', exact: true }).click();
+	const prose = page.locator('.review-edit .cm-content');
+	await prose.waitFor();
+
+	// Select "Lineword " with its trailing space, by keyboard so the range is exact.
+	await prose.click();
+	await page.keyboard.press('Control+Home');
+	for (let i = 0; i < 'Lineword '.length; i++) await page.keyboard.press('Shift+ArrowRight');
+	await page.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
+	await page.getByLabel('Suggested text').fill('Changed ');
+	await page.getByRole('button', { name: 'Save suggestion' }).click();
+	const card = page.locator('.rv-card.sugg');
+	await card.getByRole('button', { name: 'Accept suggestion' }).click();
+	await expect(card.getByRole('button', { name: 'Accept suggestion' })).toHaveCount(0);
+	// toHaveText would fold a doubled space into one.
+	const exact = () =>
+		prose
+			.locator('.cm-line')
+			.first()
+			.evaluate((el) => el.textContent);
+	await expect.poll(exact).toBe('Changed ONETAIL closing.');
+
+	await prose.press('Control+End');
+	await page.keyboard.type(' AFTERWORD');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.reload();
+	await expect.poll(exact).toBe('Changed ONETAIL closing. AFTERWORD');
 });
