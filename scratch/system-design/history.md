@@ -48,7 +48,11 @@ the stored range, and with nothing unsaved it takes the server's text when a
 change cannot be made locally. The second review caught that fallback
 putting one scene's text into another scene's editor (an accept from a guided
 pass while a different scene is open), so the editor now ignores an accept
-whose edits are not its own scene's.
+whose edits are not its own scene's. The third review narrowed it again: the
+server's text is taken only when the accept was made on text this editor
+saved, a card's accept saves the open editor first (as the pass and the dialog
+do), and an insertion is not applied over unsaved typing, where its place
+cannot be checked.
 
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and

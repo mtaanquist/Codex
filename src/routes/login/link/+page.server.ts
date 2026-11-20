@@ -22,7 +22,7 @@ import { formText } from '#lib/server/validation';
 const SEND_LIMIT = 5;
 const SEND_IP_LIMIT = 20;
 const SEND_WINDOW_MS = 15 * 60 * 1000;
-// Using a link draws on the same per-address budget as the password step in
+// Using a link draws on the same per-IP budget as the password step in
 // ../+page.server.ts: both are sign-in attempts.
 const LOGIN_IP_LIMIT = 50;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;

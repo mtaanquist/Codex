@@ -23,6 +23,7 @@
 		focused,
 		onFocus,
 		onAccepted = null,
+		beforeAccept = null,
 		assistant = null,
 		onAssistantReply = null
 	}: {
@@ -38,6 +39,8 @@
 		// apply the change at once.
 		onAccepted?:
 			((ids: string[], accepted: { bodyMd: string; baseHash: string } | null) => void) | null;
+		// Saves the author's open editor before an accept; false stops it.
+		beforeAccept?: (() => Promise<boolean>) | null;
 		// Set when the Assistant answers replies on its suggestions (author
 		// page, Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;
@@ -104,8 +107,12 @@
 					<form
 						method="POST"
 						action="?/acceptSuggestion"
-						use:enhance={() =>
-							async ({ result, update }) => {
+						use:enhance={async ({ cancel }) => {
+							if (beforeAccept && !(await beforeAccept())) {
+								cancel();
+								return;
+							}
+							return async ({ result, update }) => {
 								if (result.type === 'success') {
 									const { bodyMd, baseHash } = result.data ?? {};
 									onAccepted?.(
@@ -116,7 +123,8 @@
 									);
 								}
 								await update();
-							}}
+							};
+						}}
 					>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
 						<button

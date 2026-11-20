@@ -284,14 +284,17 @@ export async function confirmEmailChange(db: Database, token: string): Promise<A
 		.where(eq(users.id, userId));
 	if (!user?.pendingEmail) return { ok: true };
 	try {
-		await db
-			.update(users)
-			.set({ email: user.pendingEmail, pendingEmail: null, emailVerifiedAt: sql`now()` })
-			.where(eq(users.id, userId));
-		// Links mailed to the old address must not open the account once it has
-		// moved away from that inbox.
-		await revokeTokens(db, userId, 'sign_in');
-		await revokeTokens(db, userId, 'password_reset');
+		const pendingEmail = user.pendingEmail;
+		await db.transaction(async (tx) => {
+			await tx
+				.update(users)
+				.set({ email: pendingEmail, pendingEmail: null, emailVerifiedAt: sql`now()` })
+				.where(eq(users.id, userId));
+			// Links mailed to the old address must not open the account once it
+			// has moved away from that inbox.
+			await revokeTokens(tx, userId, 'sign_in');
+			await revokeTokens(tx, userId, 'password_reset');
+		});
 		return { ok: true };
 	} catch (err) {
 		if (isUniqueViolation(err)) {

@@ -38,6 +38,7 @@
 		onCloseComposer,
 		onStartSceneComment,
 		onAccepted = null,
+		beforeAccept = null,
 		assistant = null,
 		onAssistantReply = null,
 		onClearReviews = null,
@@ -64,6 +65,7 @@
 		// can apply the changes at once.
 		onAccepted?:
 			((ids: string[], accepted: { bodyMd: string; baseHash: string } | null) => void) | null;
+		beforeAccept?: (() => Promise<boolean>) | null;
 		// Set when the Assistant answers replies in its threads (author page,
 		// Assistant live); carries its display name for the waiting note.
 		assistant?: { name: string } | null;
@@ -300,6 +302,7 @@
 						focused={focusedId === card.id}
 						onFocus={setFocused}
 						{onAccepted}
+						{beforeAccept}
 						{assistant}
 						{onAssistantReply}
 					/>

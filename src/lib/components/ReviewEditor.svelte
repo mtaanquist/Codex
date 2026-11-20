@@ -221,6 +221,13 @@
 				applied = false;
 				continue;
 			}
+			// An insertion has no text to check its place against. Over unsaved
+			// typing it is left out, and the save check reports the difference,
+			// rather than risk it landing in the wrong place.
+			if (original === '' && !wasClean) {
+				applied = false;
+				continue;
+			}
 			// The server already holds this change, so it lands even while a
 			// merge or duplicate has typing paused; dropped, the next save
 			// would build on text the editor does not show.
@@ -231,10 +238,16 @@
 			});
 		}
 		if (!accepted) return;
-		// With nothing unsaved the editor must now show exactly what the server
-		// stored. Where a change could not be made here (an edit with no mark,
-		// such as one that only removes a space), take the server's text.
-		if (wasClean && view.state.doc.toString() !== accepted.bodyMd) {
+		// With nothing unsaved, and the change made on the text this editor
+		// saved, the editor must now show exactly what the server stored. Where
+		// a change could not be made here (an edit with no mark, such as one
+		// that only removes a space), take the server's text. A change made on
+		// other text (another window, a merge since) is left to the reload.
+		if (
+			wasClean &&
+			saver.knows(accepted.baseHash) &&
+			view.state.doc.toString() !== accepted.bodyMd
+		) {
 			syncingFromServer = true;
 			try {
 				view.dispatch({
