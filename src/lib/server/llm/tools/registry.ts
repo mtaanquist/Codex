@@ -68,7 +68,7 @@ export const TOOLS: ToolDef[] = [
 					'The proposed replacement text, as manuscript prose with *asterisks* only for italics and no other Markdown (empty string to delete the passage).'
 				),
 				reason: str(
-					'Optional: one short sentence on why this change helps, so the author can learn the habit.'
+					'Optional: one short sentence on why this change helps, so the author can learn the habit. Leave it out for an obvious fix such as a typo, a spelling slip or missing punctuation.'
 				)
 			},
 			['sceneId', 'original', 'replacement']
@@ -127,7 +127,7 @@ export const TOOLS: ToolDef[] = [
 								'The proposed replacement text, as manuscript prose with *asterisks* only for italics.'
 							),
 							reason: str(
-								'Optional: one short sentence on why this change helps, so the author can learn the habit.'
+								'Optional: one short sentence on why this change helps, so the author can learn the habit. Leave it out for an obvious fix such as a typo, a spelling slip or missing punctuation.'
 							)
 						},
 						['original', 'replacement']

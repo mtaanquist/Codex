@@ -328,6 +328,11 @@ test.describe('with the Assistant on', () => {
 			// Nothing is said about a re-read of a pass already stopped.
 			await page.waitForTimeout(300);
 			await expect(page.locator('.activity-card')).toHaveCount(0);
+			// But its follow-up is loaded, so a pass started again reaches it.
+			await page.locator('.scene-row').first().click();
+			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+			await note.getByRole('button', { name: 'Work through this (2)' }).click();
+			await expect(pass.locator('.pp-card')).toHaveCount(3);
 		} finally {
 			await done();
 		}
@@ -347,6 +352,8 @@ test.describe('with the Assistant on', () => {
 			await pass.getByRole('button', { name: 'Skip' }).click();
 			await expect(pass.locator('.pp-faded').filter({ hasText: 'Skipped' })).toHaveCount(1);
 			await expect(current.getByText('Follow-up')).toBeVisible();
+			// Focus moves on with the step instead of falling back to the page.
+			await expect(current).toBeFocused();
 			const accepted = pass.locator('.pp-faded').filter({ hasText: 'Accepted' });
 			await expect(accepted).toHaveCount(1);
 			await current.getByRole('button', { name: 'Follows an earlier change' }).click();
