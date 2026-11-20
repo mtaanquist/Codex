@@ -8,11 +8,20 @@ import { openRowMenu } from './context-menu';
 // Runs as the account with the Assistant switched on.
 test.use({ storageState: 'e2e/.auth/assistant.json' });
 
-// #1168, step 2: the Assistant drafts a chapter scene by scene. The run is a
-// background job, so the cost count, the request and the job status are
-// stubbed (no model or worker is needed) and the finished drafts are written
-// to the database as the job would leave them. The form's scene list, reading
-// the drafts back, and keeping one go through the real endpoints.
+async function sql(text: string, values: unknown[]): Promise<void> {
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	try {
+		await pool.query(text, values);
+	} finally {
+		await pool.end();
+	}
+}
+
+// #1168, step 2: the Assistant drafts a chapter scene by scene. Counting the
+// cost and asking for the run go through the real endpoints; the background
+// job has no model to call, so the drafts' rows are then marked written as the
+// job would leave them, and the job's status is stubbed. The form's scene
+// list, reading the drafts back, and keeping each one are real too.
 test('a chapter draft is costed first, and each drafted scene is kept on its own', async ({
 	page
 }) => {
@@ -32,60 +41,35 @@ test('a chapter draft is costed first, and each drafted scene is kept on its own
 	await expect(page.locator('.scene-row')).toHaveCount(1);
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page.locator('.scene-row')).toHaveCount(2);
+	// A model for Write, so the drafts can be counted.
+	await sql(
+		`update stories set llm_config = '{"models":{"coauthor":"e2e-model"}}' where slug = $1`,
+		[`flight-${stamp}`]
+	);
 
-	const requests: { brief?: string; scenes?: { brief: string }[] }[] = [];
+	const asked: { brief?: string; scenes?: { brief: string }[] }[] = [];
+	let chapterId = '';
 	await page.route('**/api/assistant/draft/chapter', async (route) => {
+		if (route.request().method() !== 'POST') return route.continue();
 		const body = route.request().postDataJSON() as {
 			defaults?: boolean;
 			estimate?: boolean;
 			chapterId: string;
 			brief: string;
-			targetWords: number;
 			scenes: { sceneId: string; brief: string }[];
 		};
-		// The scene list the form opens with comes from the real endpoint.
-		if (body.defaults) return route.continue();
-		if (body.estimate) {
-			await route.fulfill({
-				json: {
-					model: 'stub',
-					scenes: body.scenes.length,
-					estTokens: 9000,
-					estCompletionTokens: 2520,
-					estCostUsd: 0.07,
-					overCap: false,
-					skipped: []
-				}
-			});
-			return;
-		}
-		requests.push({ brief: body.brief, scenes: body.scenes.map((s) => ({ brief: s.brief })) });
-		const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
-		try {
-			const draftIds: string[] = [];
-			for (const [index, scene] of body.scenes.entries()) {
-				const { rows } = await pool.query<{ id: string }>(
-					`insert into assistant_drafts
-					   (user_id, story_id, chapter_id, scene_id, position, brief, target_words,
-					    text_md, status, job_id)
-					 select st.owner_id, sc.story_id, $2, sc.id, $3, $4, $5, $6, 'ready', 'job-c'
-					 from scenes sc join stories st on st.id = sc.story_id where sc.id = $1
-					 returning id`,
-					[
-						scene.sceneId,
-						body.chapterId,
-						index,
-						scene.brief,
-						body.targetWords,
-						`Drafted scene ${index + 1}. The river ran on.`
-					]
-				);
-				draftIds.push(rows[0].id);
-			}
-			await route.fulfill({ json: { ok: true, jobId: 'job-c', draftIds, skipped: [] } });
-		} finally {
-			await pool.end();
-		}
+		if (body.defaults || body.estimate) return route.continue();
+		chapterId = body.chapterId;
+		asked.push({ brief: body.brief, scenes: body.scenes.map((s) => ({ brief: s.brief })) });
+		const response = await route.fetch();
+		const { draftIds } = (await response.json()) as { draftIds: string[] };
+		await sql(
+			`update assistant_drafts
+			 set status = 'ready', text_md = 'Drafted scene ' || (position + 1) || '. The river ran on.'
+			 where id = any($1::uuid[])`,
+			[draftIds]
+		);
+		await route.fulfill({ response });
 	});
 	await page.route('**/api/assistant/job-status*', async (route) => {
 		await route.fulfill({ json: { state: 'done' } });
@@ -108,35 +92,49 @@ test('a chapter draft is costed first, and each drafted scene is kept on its own
 	await card.getByRole('button', { name: 'Check the cost' }).click();
 	// The count is shown and nothing has been asked for yet.
 	await expect(card).toContainText(
-		'This drafts 2 scenes. It sends about 9,000 tokens and writes about 2,520 (about $0.07).'
+		/This drafts 2 scenes\. It sends about [\d,]+ tokens and writes about [\d,]+\./
 	);
-	expect(requests).toEqual([]);
+	await expect(card.getByRole('button', { name: 'Draft the chapter' })).toBeFocused();
+	expect(asked).toEqual([]);
 	await card.getByRole('button', { name: 'Draft the chapter' }).click();
 
 	// Both scenes are listed as ready, and neither scene has changed.
 	await expect(card.getByRole('link')).toHaveCount(2);
 	await expect(card).toContainText('Open each scene to read its draft');
-	expect(requests).toEqual([
+	expect(asked).toEqual([
 		{
 			brief: 'Ilse flees across the river.',
 			scenes: [{ brief: 'She reaches the quay.' }, { brief: '' }]
 		}
 	]);
 
+	// The link the run's notice carries opens the list of drafts again, not a
+	// new form, and opens it once: its marker is then gone from the address.
+	await gotoReady(page, `/stories/flight-${stamp}?draftChapter=${chapterId}`);
+	await expect(card.getByRole('link')).toHaveCount(2);
+	await expect(card.getByLabel('What happens in this chapter')).toHaveCount(0);
+	await expect(page).not.toHaveURL(/draftChapter/);
+
 	// The first scene's draft is kept from that scene's own card.
 	await card.getByRole('link').first().click();
-	await expect(page).toHaveURL(/draft=1/);
 	const sceneCard = page.getByRole('group', { name: 'Scene draft' });
-	await expect(
-		sceneCard.getByLabel('Read it, and change anything you like before keeping it')
-	).toHaveValue('Drafted scene 1. The river ran on.');
+	const draftText = sceneCard.getByLabel('Read it, and change anything you like before keeping it');
+	await expect(draftText).toHaveValue('Drafted scene 1. The river ran on.');
 	await sceneCard.getByRole('button', { name: 'Fill this scene' }).click();
 	await expect(page.locator('.cm-content')).toContainText('Drafted scene 1.');
 	await expect(sceneCard).toHaveCount(0);
 
-	// The other scene's draft still waits, and is still there after a reload.
+	// The other scene's draft still waits. Added as a new scene, it leaves the
+	// chapter's list too, though the new scene is the one now open.
 	await expect(card.getByRole('link')).toHaveCount(1);
+	await card.getByRole('link').click();
+	await expect(draftText).toHaveValue('Drafted scene 2. The river ran on.');
+	await sceneCard.getByRole('button', { name: 'Add as a new scene after this one' }).click();
+	await expect(page.locator('.scene-row')).toHaveCount(3);
+	await expect(page.locator('.cm-content')).toContainText('Drafted scene 2.');
+	await expect(card).toHaveCount(0);
+
 	await page.reload();
-	await expect(page.locator('.cm-content')).toContainText('Drafted scene 1.');
-	await expect(page.locator('.scene-row')).toHaveCount(2);
+	await expect(page.locator('.scene-row')).toHaveCount(3);
+	await expect(card).toHaveCount(0);
 });

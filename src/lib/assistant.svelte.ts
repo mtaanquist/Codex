@@ -14,8 +14,9 @@ export type AssistantIntent =
 	// one).
 	| { kind: 'draft' }
 	// Open the chapter draft form for a chapter (or its drafts, while they
-	// are being written).
-	| { kind: 'draft-chapter'; chapterId: string }
+	// are being written). showOnly, from a link to the chapter's drafts, shows
+	// the drafts waiting there and opens no form.
+	| { kind: 'draft-chapter'; chapterId: string; showOnly?: boolean }
 	// Run the recap ("catch me up").
 	| { kind: 'catchup' }
 	// Just open the tab and focus the composer.

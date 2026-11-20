@@ -65,6 +65,7 @@ const {
 	fillSceneFromDraft,
 	requestSceneDraft,
 	sceneDraftFor,
+	hasWaitingDrafts,
 	DRAFT_DID_NOT_FINISH
 } = await import('../../src/lib/server/scene-drafts');
 const { saveSceneBody } = await import('../../src/lib/server/scene-save');
@@ -435,7 +436,7 @@ describe('the estimate', () => {
 		await account({ provider: 'anthropic' });
 		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0.001, completion: 0 } });
 		const estimate = await estimateSceneDraft(db, input());
-		const rate = cacheWriteRate(undefined);
+		const rate = cacheWriteRate('5m');
 		expect(rate).toBeGreaterThan(1);
 		expect(estimate!.estCostUsd).toBeCloseTo(estimate!.estTokens * rate * 0.001, 6);
 	});
@@ -956,6 +957,15 @@ describe('reading a draft back', () => {
 		});
 		expect(await sceneDraftFor(db, strangerId, target)).toBeNull();
 		expect(await sceneDraftFor(db, ownerId, before)).toBeNull();
+	});
+
+	it('says whether the story has drafts waiting, for the panel of an Assistant that is off', async () => {
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		const draftId = await readyDraft();
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		expect(await hasWaitingDrafts(db, strangerId, storyId)).toBe(false);
+		await discardSceneDraft(db, ownerId, draftId);
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
 	});
 
 	it('says when the scene is no longer empty', async () => {

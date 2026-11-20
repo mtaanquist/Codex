@@ -1028,11 +1028,16 @@ context assembly and the cross-scene pass read them.
   `arc_summary_input` (migration 0082) and the stories it read in
   `arc_summary_stories` (migration 0093). `chapters.summary_input` holds the
   fingerprint for chapter summaries (migration 0092).
-- Scene drafts: `assistant_drafts` (migration 0095), one row per draft asked
+- Scene drafts: `assistant_drafts` (migration 0096), one row per draft asked
   for, with at most one undecided draft (pending, running or ready) per
   writer and scene. It cascades with its user, story and scene. A chapter
   draft's rows carry `chapter_id` and `position` and share a `job_id`; there
-  is no table for the run itself.
+  is no table for the run itself. Deleting the chapter sets `chapter_id` to
+  null and keeps the rows (the scenes stay in the story, so their drafts
+  do); `position` is what marks a row as one of a run. The row is written
+  with its `job_id`, which the queue is then given as the job's id, so a row
+  whose job was never queued is told from one still waiting. Indexed by
+  story, job and chapter.
 - Persisted chats: `assistant_chats`, with `chat_id` on
   `assistant_chat_messages` and `assistant_chat_summaries` (migration 0080,
   which made each earlier conversation its scope's first chat).
@@ -1344,15 +1349,33 @@ calls the gateway, which proxies through the egress guard.
   request: `assembleContext` with `precedingProse` for the world, the
   preceding prose and the open scene, and `buildSceneDraftMessage`
   (`prompts/scene-draft.ts`) for the brief, the length, the point of view,
-  what the scene already holds and how the next scene opens. The reply limit
-  comes from the length asked for (`draftMaxTokens`: words times 1.4 plus
-  headroom, held to half the context window), though a "Longest reply" the
-  writer set for Write in its Tune window still wins in the gateway, and the
-  estimate says so when that would cut the scene short. The spend meter is
+  how the next scene opens (prose the scene already holds is in the context
+  once, and the message only says to carry on from it). The reply limit
+  asked for comes from the length (`draftMaxTokens`: words times 1.4 plus
+  headroom, held to half the context window), but the limit sent is the
+  gateway's (`requestReplyLimit`, the one function the gateway and the
+  estimate both call): a "Longest reply" the writer set for Write in its
+  Tune window wins, and otherwise a role that may think (always on the
+  Claude provider, elsewhere with Thinking on or an effort set) is raised to
+  the thinking default, because thinking is billed as reply tokens and
+  counts toward the limit. The estimate therefore counts the reply at the
+  limit sent whenever the model may think and labels it "up to"
+  (`estCompletionUpTo`); the cap refusal uses that figure. Without thinking
+  it counts the words asked for. When the limit sent is shorter than the
+  draft needs, the estimate says where the scene would stop and why
+  (`limitedBy`: the writer's setting, or the model's window). It also
+  reports `capEnforceable` (false with no price) and `warnUsd`, and prices
+  the prompt at the cache write rate on the Claude provider. The spend meter is
   keyed by the job. A reply cut off at the limit is kept as a ready draft
   with a note; a stop discards the draft; a failure marks it failed with the
   reason, to try again from the card. `/api/assistant/draft/[id]` takes the
-  writer's choice (fill, add, discard) for a draft they own.
+  writer's choice (fill, add, discard) for a draft they own, and a PATCH
+  saves their edits to a ready draft's text (the draft row only). Asking and
+  counting are gated on the Assistant being on for the account and story;
+  reading a staged draft back, editing it and deciding it need only its
+  owner, so a draft written before a mute or a switch-off is not stranded.
+  The story page keeps the Assistant tab while such drafts wait
+  (`hasWaitingDrafts`), showing only the draft cards.
 - [built] Chapter drafts (#1168, step 2): the same queue and table. The
   request (`/api/assistant/draft/chapter`: defaults, `estimate: true`, or
   the request itself) stages one `assistant_drafts` row per chosen scene with

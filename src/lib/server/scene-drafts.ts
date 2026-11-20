@@ -508,6 +508,30 @@ function onceEach(jobState: DraftJobState | undefined): DraftJobState | undefine
 	};
 }
 
+/**
+ * True when the writer has a draft in this story still to keep or discard.
+ * The story page asks while the Assistant is off, to keep the panel there
+ * for the drafts written before.
+ */
+export async function hasWaitingDrafts(
+	db: Database,
+	userId: string,
+	storyId: string
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: assistantDrafts.id })
+		.from(assistantDrafts)
+		.where(
+			and(
+				eq(assistantDrafts.userId, userId),
+				eq(assistantDrafts.storyId, storyId),
+				inArray(assistantDrafts.status, ['ready', 'failed'])
+			)
+		)
+		.limit(1);
+	return Boolean(row);
+}
+
 // The scenes among these with a draft the writer has not decided, after
 // settling any whose job is gone.
 async function undecidedScenes(

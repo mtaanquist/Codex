@@ -1023,6 +1023,51 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 1 (2026-11-20)
+
+Fixes from two reviews of #1168 steps 1 and 2, branch
+`fix/scene-draft-review-1` on `staging/scene-drafting`.
+
+- The estimate was lower than the charge when the Write role may think: the
+  gateway raises the reply limit to the thinking default, and the estimate
+  counted only the scene's words. `requestReplyLimit` in the gateway is now
+  the one place the limit sent is worked out; the estimate calls it and
+  counts the whole limit as an "up to" figure when the model may think.
+- Main gained its own migration 0095 (#1324). Main was merged in, the
+  branch's 0095 dropped and the table regenerated as 0096, with
+  `chapter_id` now `ON DELETE SET NULL` and indexes on `job_id` and
+  `chapter_id`. A run whose chapter is deleted carries on: the scenes are
+  still in the story, and `position` (not `chapter_id`) marks a run's rows.
+- A draft's row is written with a job id made up front, which the queue then
+  uses, so there is no window where a queued job has a row without its id. A
+  row whose job the queue has never seen is settled as failed after a
+  minute's grace (`QUEUE_GRACE_MS`).
+- Reading, editing and deciding a staged draft need only its owner. The
+  panel shows the draft cards on a muted story, and the story page keeps the
+  Assistant tab for an account with the Assistant off while drafts wait.
+- Edits to a ready draft are saved to its row (PATCH, a moment after typing
+  stops, on blur, and when the card goes away). A brief form left open is
+  kept in module state by scene or chapter for the page's life; it is not
+  stored, so a reload starts it fresh.
+- The cards tell "no draft" from "could not read" and retry the latter,
+  poll with the activity center's pacing (`pollPause`: slower after five
+  minutes, paused in a hidden tab), keep keyboard focus between steps (one
+  button for "Check the cost" and "Draft the scene", not disabled while it
+  works) and return it to the chat box on close.
+- A link (`draft=1`, `draftChapter=`) is acted on once and then taken off
+  the address. A chapter link shows the drafts waiting instead of a form.
+- `/draft` no longer runs `/write`: the matcher ranks the command named
+  exactly, then names the query starts, then label words; `/write` is
+  labelled "Write a passage". The drafting commands are not listed where a
+  draft cannot be kept (Review, story Plan, an earlier version in Write).
+- The cards share `.assist-card` rules in `primitives.css` with the split
+  proposal, use `.field-hint` and `FormStatus`, and share the cost sentences
+  with the review confirm step (`cost-notes.ts`, `DraftCostNote.svelte`).
+
+Left as they are, to be filed: the estimate and the run each assemble the
+context once per scene of a chapter, and the chapter brief lives only in the
+job's data. Staged drafts are not in the account or story export.
+
 ## Chapter drafts (2026-11-20)
 
 #1168 step 2, branch `feat/chapter-draft` on `staging/scene-drafting`, on top
@@ -1089,7 +1134,7 @@ writer's text, and counted before it runs.
 It is a background job on its own queue (`assistant-draft`) and not a
 stream, because a scene on a local model takes minutes; the job shape is the
 details read's (#1170). The text is staged in a new table, `assistant_drafts`
-(migration 0095), and the scene is only written when the writer chooses in
+(migration 0096, renumbered in review round 1), and the scene is only written when the writer chooses in
 the panel card (`AssistantDraft.svelte`). "Fill this scene" takes the scene's
 row lock, refuses when the stored body has any prose, and saves through
 `saveSceneBody`, so it is a revision. "Add as a new scene after this one"

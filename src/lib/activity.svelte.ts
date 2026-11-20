@@ -143,6 +143,13 @@ function whenVisible(): Promise<void> {
 	});
 }
 
+// The wait between two checks on background work that began at startedAt:
+// brisk at first, slower for a long run, and held while the tab is hidden.
+export async function pollPause(startedAt: number): Promise<void> {
+	await delay(Date.now() - startedAt < SLOW_AFTER_MS ? POLL_MS : SLOW_POLL_MS);
+	await whenVisible();
+}
+
 // The jobs this tab follows, so a second call for the same job waits on the
 // first rather than returning at once.
 const following: Record<string, Promise<void>> = {};
@@ -236,8 +243,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 	const startedAt = Date.now();
 	try {
 		for (;;) {
-			await delay(Date.now() - startedAt < SLOW_AFTER_MS ? POLL_MS : SLOW_POLL_MS);
-			await whenVisible();
+			await pollPause(startedAt);
 			let state: ActivityState | 'stale' = 'running';
 			try {
 				const response = await fetch(
@@ -302,10 +308,14 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 					stop: undefined,
 					label: opts.failedLabel,
 					// A stale run was dropped by the queue part-way and will not finish.
+					// A draft says why it stopped where it shows (a spend cap, a
+					// muted story, the endpoint), so its card points there.
 					detail:
 						state === 'stale'
 							? 'It stopped before it finished. Run it again to continue.'
-							: 'Check the Assistant endpoint in your settings.'
+							: opts.kind === 'draft'
+								? 'Open the draft in the Assistant panel to see why.'
+								: 'Check the Assistant endpoint in your settings.'
 				});
 				return;
 			}
