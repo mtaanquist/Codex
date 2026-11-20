@@ -125,7 +125,8 @@ export type ChatSummary = { id: string; title: string; updatedAt: string };
 // matches it to tell a deleted chat from a story or universe that is gone.
 export const CHAT_MISSING = 'That chat does not exist.';
 
-// What stands in for a reply that was cut short before any text arrived.
+// What the panel shows for a reply that was cut short before any text
+// arrived. The stored reply stays empty, so this is never sent as history.
 export const NO_REPLY_TEXT = 'The Assistant did not return a response.';
 
 // On a failed chat request: "0" says the message was not stored, so the panel

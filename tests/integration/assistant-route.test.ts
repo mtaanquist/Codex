@@ -370,33 +370,28 @@ describe('assistantSseResponse', () => {
 			{ type: 'done' }
 		]);
 		expect(await listChat(db, userId, chatId)).toEqual([
-			{
-				role: 'assistant',
-				content: 'The Assistant did not return a response.',
-				meta: { stopped: 'context' }
-			}
+			{ role: 'assistant', content: '', meta: { stopped: 'context' } }
 		]);
 	});
 
-	it('sends done only once the reply is stored', async () => {
+	it('sends an error and no done when the reply cannot be stored', async () => {
 		providerSlot.current = streamingProvider(async function* () {
-			yield { type: 'token', text: 'Kept.' };
+			yield { type: 'token', text: 'Lost.' };
 			yield { type: 'done' };
 		});
-		const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
-		const reader = response.body!.getReader();
-		const decoder = new TextDecoder();
-		let text = '';
-		while (!text.includes('"done"')) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			text += decoder.decode(value, { stream: true });
+		const insert = vi.spyOn(db, 'insert').mockImplementationOnce(() => {
+			throw new Error('the database went away');
+		});
+		try {
+			const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
+			expect(parseFrames(await response.text())).toEqual([
+				{ type: 'token', text: 'Lost.' },
+				{ type: 'error', message: 'The Assistant could not complete that request.' }
+			]);
+		} finally {
+			insert.mockRestore();
 		}
-		expect(text).toContain('"done"');
-		expect(await listChat(db, userId, chatId)).toEqual([
-			{ role: 'assistant', content: 'Kept.', meta: null }
-		]);
-		await reader.cancel();
+		expect(await listChat(db, userId, chatId)).toEqual([]);
 	});
 });
 

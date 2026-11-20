@@ -724,3 +724,43 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await expect(chat).toContainText('At the quay.');
 	await expect(chat).not.toContainText('Name who to look up');
 });
+
+// A reply cut short before any text shows a line in its place, which is not
+// offered as text to insert and is not sent back with the next question.
+test('a reply cut short with no text shows a line that is not sent back', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Cut short');
+	const sent: { role: string; content: string }[][] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as {
+			newChatId?: string;
+			chatId?: string;
+			messages: { role: string; content: string }[];
+		};
+		sent.push(body.messages);
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': body.chatId ?? body.newChatId ?? '',
+				'x-chat-created': '1',
+				'x-chat-title': encodeURIComponent('First')
+			},
+			body:
+				sent.length === 1
+					? `data: ${JSON.stringify({ type: 'stopped', reason: 'context' })}\n\n` +
+						`data: ${JSON.stringify({ type: 'done' })}\n\n`
+					: `data: ${JSON.stringify({ type: 'token', text: 'Here.' })}\n\n` +
+						`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('First');
+	await composer.press('Enter');
+	const cut = panel.locator('.msg.assistant-msg').last();
+	await expect(cut).toContainText('The Assistant did not return a response.');
+	await expect(cut.locator('.msg-insert')).toHaveCount(0);
+	await composer.fill('Second');
+	await composer.press('Enter');
+	await expect(panel.locator('.chat-scroll')).toContainText('Here.');
+	expect(sent[1].map((m) => m.content)).not.toContain('The Assistant did not return a response.');
+});

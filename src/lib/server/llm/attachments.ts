@@ -215,8 +215,8 @@ export async function resolveAttachments(
 		attachments.map(async (attachment) => {
 			const found = await READERS[attachment.kind](db, userId, attachment);
 			if (!found) return null;
-			// The name as it is now, not the one the browser sent: the chip and
-			// later prompts follow a rename.
+			// The name as it is now, not the one the browser sent, so the stored
+			// chip follows a rename.
 			const label = found.label.replace(/\s+/g, ' ').trim().slice(0, MAX_ATTACHMENT_LABEL);
 			return { attachment: { ...attachment, label }, title: found.title, text: found.text };
 		})

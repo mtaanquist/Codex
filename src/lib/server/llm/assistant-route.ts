@@ -13,7 +13,7 @@ import {
 	resolveChat,
 	type ChatScope
 } from './chat-history';
-import { CHAT_MISSING, NO_REPLY_TEXT, type ChatModelSettings } from '#lib/assistant-chat';
+import { CHAT_MISSING, type ChatModelSettings } from '#lib/assistant-chat';
 import { isUuid } from '#lib/slug';
 import {
 	writerStopSignal,
@@ -171,7 +171,8 @@ export function assistantSseResponse(options: {
 					else if (event.type === 'proposal') proposals.push(event.proposal);
 					else if (event.type === 'stopped') stopped = event.reason;
 					if (event.type === 'done') {
-						// A reply cut short with no text is kept for its note.
+						// A reply cut short with no text is kept, empty, for its note;
+						// the panel shows a line in its place.
 						if (reply.trim() || proposals.length > 0 || stopped) {
 							const meta = {
 								...(proposals.length > 0 ? { proposals } : {}),
@@ -180,7 +181,7 @@ export function assistantSseResponse(options: {
 							// False when the chat was deleted mid-reply; the reply goes with it.
 							await appendChat(db, userId, scope, chatId, {
 								role: 'assistant',
-								content: reply.trim() ? reply : NO_REPLY_TEXT,
+								content: reply,
 								meta: Object.keys(meta).length > 0 ? meta : null
 							});
 						}

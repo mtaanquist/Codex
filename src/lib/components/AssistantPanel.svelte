@@ -207,10 +207,22 @@
 	const opening = isStory
 		? `I've read your codex for ${scopeTitle}. Ask me about your characters, check continuity, or work a scene.`
 		: `I've read your codex for ${scopeTitle}. Ask me anything across its stories - characters, places, lore, or continuity between the books.`;
+	// A reply cut short before any text shows a line in its place, as a notice:
+	// it is not text to insert, and it is not sent back as history.
+	function standIn(
+		content: string,
+		stopped: StopReason | undefined,
+		proposals: number
+	): { content: string; notice?: boolean } {
+		if (content.trim() === '' && stopped && proposals === 0) {
+			return { content: NO_REPLY_TEXT, notice: true };
+		}
+		return { content };
+	}
 	function toMessages(stored: StoredChatTurn[]): Message[] {
 		const seeded = stored.map((m) => ({
 			role: m.role,
-			content: m.content,
+			...standIn(m.content, m.meta?.stopped, m.meta?.proposals?.length ?? 0),
 			reference: m.meta?.reference,
 			attachments: m.meta?.attachments,
 			proposals: m.meta?.proposals?.map((p) => ({ ...p })),
@@ -386,6 +398,7 @@
 		const creating = chatId === null;
 		// A chat message is stored before its reply, so a stopped send leaves its
 		// turn in the chat the next send reuses.
+		const hadEarlierSend = nextChatMayExist;
 		if (creating && storesTurnFirst) nextChatMayExist = true;
 		let reached = false;
 		// A chat this request started without the chip's choice (a recap) is
@@ -436,6 +449,8 @@
 			) {
 				appendToReply(failure || 'The Assistant could not take that request.');
 				markUnsaved(true);
+				// Nothing was stored by this send, so it left no chat behind.
+				if (creating && !hadEarlierSend) nextChatMayExist = false;
 				return 'refused';
 			}
 			if (!response.ok || !response.body) {
@@ -471,7 +486,9 @@
 				!streamError &&
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0 || !!reply.stopped);
-			if (stored && reply.content.trim() === '') reply.content = NO_REPLY_TEXT;
+			if (stored) {
+				Object.assign(reply, standIn(reply.content, reply.stopped, reply.proposals?.length ?? 0));
+			}
 			if (startedIn && stored) adopt(startedIn);
 			if (reply?.role === 'assistant' && !stored) {
 				// Not stored, so not sent back. Text that broke off can still be
@@ -564,7 +581,7 @@
 				...(isStory ? { sceneId } : {}),
 				// A reply the server did not store is not sent back either.
 				messages: turns
-					.filter((m) => !m.unsaved && m.content.trim() !== '')
+					.filter((m) => !m.unsaved && !m.notice && m.content.trim() !== '')
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({
 						role: m.role,
@@ -591,7 +608,7 @@
 					// With no answer at all, the message may still have arrived.
 					content:
 						outcome === 'unreached'
-							? 'Your message may not have been sent. It is back in the chat box; check the chat before you send it again.'
+							? 'Your message may not have been sent. It is back in the chat box.'
 							: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
 					unsaved: true,
 					notice: true
