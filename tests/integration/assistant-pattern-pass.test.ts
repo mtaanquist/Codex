@@ -610,6 +610,25 @@ describe('the whole-book pattern pass', () => {
 		);
 	});
 
+	it('is left out of the estimate and the offer when the endpoint cannot call tools', async () => {
+		await addSecondChapter();
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { reviewer: MODEL },
+			toolCallBudget: 8,
+			modelContextManual: { [MODEL]: 1_000_000 },
+			supportsTools: false
+		});
+		expect(await wholeBookCheck(db, { userId, storyId })).toBe('unavailable');
+		const estimate = await estimateStoryReview(db, { userId, storyId, patterns: 'book' });
+		expect(estimate.wholeBook).toBeUndefined();
+		expect(estimate.lines.map((l) => l.label).join(' ')).not.toContain('habits');
+	});
+
 	it('falls back to the chapters when the single request over the book fails', async () => {
 		await addSecondChapter();
 		await windowOf(1_000_000);

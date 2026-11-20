@@ -457,7 +457,7 @@
 	// done holds what this pass accepted or skipped (a skip leaves the edit
 	// pending); followUps are the edits a re-read staged. currentId keeps the
 	// step on screen steady while the queue changes around it.
-	const patternCounts = $derived(pendingPatternCounts(suggestions));
+	const patternCounts = $derived(pendingPatternCounts(liveSuggestions));
 	let pass = $state<{
 		threadId: string;
 		followUps: SvelteSet<string>;
@@ -471,7 +471,7 @@
 	const passOpen = $derived(
 		pass
 			? patternQueue(
-					suggestions,
+					liveSuggestions,
 					pass.threadId,
 					orderedScenes.map((scene) => scene.id)
 				).filter((s) => !pass!.done.has(s.id))
@@ -486,7 +486,7 @@
 
 	function startPass(threadId: string) {
 		const queue = patternQueue(
-			suggestions,
+			liveSuggestions,
 			threadId,
 			orderedScenes.map((scene) => scene.id)
 		);

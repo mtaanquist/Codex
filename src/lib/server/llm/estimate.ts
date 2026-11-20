@@ -34,6 +34,7 @@ import {
 } from '../../review-shape.ts';
 import { chapterPatternUnits, reviewTiers, surveyBudgetTokens } from './scene-review.ts';
 import { storyIsLive } from '../universe-scope.ts';
+import { MINIMAL_TOOL_NAMES, toolSpecs } from './tools/registry.ts';
 
 // The pre-flight estimate a review run is confirmed against: how many scenes it
 // would read, roughly how many tokens that sends, and - only when the model that
@@ -43,11 +44,18 @@ import { storyIsLive } from '../universe-scope.ts';
 // Read-only by construction: it assembles the same context the run would and
 // counts it. Nothing is queued and no provider request is made.
 
-// Provisional allowances, not measured. Each per-scene request carries the
+// A provisional allowance, not measured. Each per-scene request carries the
 // persona system message and, on a tool-enabled turn, the tool schemas; the task
 // message adds its instructions and any prior notes on the scene.
-const TOOL_SCHEMA_TOKENS = 700;
 const TASK_MESSAGE_TOKENS = 250;
+
+// The tool schemas that ride on each reviewer request, counted from the specs
+// the gateway would offer for this config.
+function toolSchemaTokens(config: ResolvedConfig): number {
+	if (config.supportsTools === false) return 0;
+	const specs = toolSpecs(config.toolProfile === 'minimal' ? MINIMAL_TOOL_NAMES : undefined);
+	return estimateTokens(JSON.stringify(specs));
+}
 
 // A reviewer turn is agentic: it reads, stages notes, and answers, resending the
 // growing conversation each round. The single-request figure above is therefore
@@ -172,7 +180,12 @@ export async function estimateStoryReview(
 	// one chapter. Summaries and bodies are only what the survey listing needs,
 	// so a review that cannot reach the survey stage leaves them on the server.
 	const surveyPossible = isFullReview(categories);
-	const patterns = runPatternScope(categories, opts.patterns, opts.chapterId);
+	// The run skips the pattern pass on an endpoint that cannot call tools, so
+	// the estimate leaves it out too.
+	const patterns =
+		resolved.config.supportsTools === false
+			? undefined
+			: runPatternScope(categories, opts.patterns, opts.chapterId);
 	const bodiesNeeded = surveyPossible || Boolean(patterns);
 	const allScenes = await db
 		.select({
@@ -209,6 +222,7 @@ export async function estimateStoryReview(
 		? estimateTokens(buildSystemMessage(frame, { tools: true }).content)
 		: 0;
 
+	const toolTokens = toolSchemaTokens(resolved.config);
 	let sceneTokens = 0;
 	for (const scene of targets) {
 		const delta = frame
@@ -223,7 +237,7 @@ export async function estimateStoryReview(
 		sceneTokens +=
 			frameTokens +
 			PERSONA_TOKENS +
-			TOOL_SCHEMA_TOKENS +
+			toolTokens +
 			TASK_MESSAGE_TOKENS +
 			estimateTokens(delta?.text ?? '');
 	}
@@ -313,7 +327,7 @@ export async function estimateStoryReview(
 			});
 			lines.push({
 				label: 'Fixing the habits it finds',
-				note: `Not known before the run: one request per habit for each scene it shows up in, at most ${fixRequests}.`
+				note: `Not known before the run: one round of fixes per habit for each scene it shows up in, at most ${fixRequests} rounds. A round can take several requests.`
 			});
 		}
 	}
@@ -392,6 +406,8 @@ export async function wholeBookCheck(
 	const resolved = await resolveLlmConfig(db, opts.userId, opts.storyId);
 	const contextWindow = modelContextWindow(resolved.config, 'reviewer');
 	if (!contextWindow) return 'unavailable';
+	// The pass stages its fixes through tools, so the run would skip it.
+	if (resolved.config.supportsTools === false) return 'unavailable';
 	const rows = await db
 		.select({
 			id: scenes.id,

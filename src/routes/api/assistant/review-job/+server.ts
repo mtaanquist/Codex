@@ -30,11 +30,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}>(request, locals);
 	const mode = payload.mode === 'continuity' ? 'continuity' : 'full';
 
-	// The pre-flight estimate: the same request with estimate true asks what the
-	// run would send and cost, queues nothing, and contacts no endpoint. It sizes
-	// the per-scene copyedit pass only, so the continuity mode and the
-	// whole-universe scope are refused here rather than answered with a figure
-	// for something else.
 	// Whether the whole-book pattern pass can be offered for this story: it reads
 	// the scenes and counts them, and contacts no endpoint.
 	if (payload.wholeBook === true) {
@@ -45,6 +40,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		});
 	}
 
+	// The pre-flight estimate: the same request with estimate true asks what the
+	// run would send and cost, queues nothing, and contacts no endpoint. It sizes
+	// the copyedit and its pattern pass, so the continuity mode and the
+	// whole-universe scope are refused here rather than answered with a figure
+	// for something else.
 	if (payload.estimate === true) {
 		if (mode === 'continuity' || typeof payload.universeId === 'string') {
 			error(400, 'An estimate is not available for this review type.');
