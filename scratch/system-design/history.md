@@ -13,6 +13,34 @@ version, date, branch or PR where it had one.
 The narrative that sat under `## Open` in `TODO.md`, newest first, as it was
 written at the time.
 
+Small non-Assistant polish (2026-11-20, staging branch
+`staging/non-assistant-polish`, lanes #1278 to #1284): six backlog issues.
+`resolvePlanEntity` is one select with a left join per entity table instead
+of up to three round trips (#860). Side columns: a double-tap resets a width on
+touch, the pre-paint script takes only the chosen width from storage and
+rebuilds the floor and cap, and the settings rail keeps following the left
+width with no handle of its own, now tested (#1005). The sign-up form asks
+"What are you working on?" under approval mode, stored in `users.signup_note`
+(migration 0089) only for a request that waits, and shown in the admin
+approval list (#853). Sign-in by emailed link at `/login/link` (#852): a
+`sign_in` token kind (no migration; the kind column is text), 15 minutes,
+single use, sent only to an account that could sign in with its password. It
+replaces the password step only, so two-factor still follows; the shared
+steps after the first factor moved to `continueSignIn`. Considered and left
+out: letting a link confirm an unverified address, and skipping two-factor
+the way a passkey does. A confirmed email change now revokes sign-in and
+reset links mailed to the old address. The review toolbar (#851) brings bulk
+accept and reject back as a list the author ticks, not a button: it loops the
+existing `decideSuggestion`, so there is no second write path, each accept
+gets its own history entry, and the open editor is saved first. One
+transaction for the whole batch was considered and dropped: it would have
+been a new lock path for the lock-order harness and a new place for stale
+marks, for no gain a writer would see. Tooling (#1262): the stale-marks
+coverage guard runs up to 8 further seeds while an action has yet to apply
+(a separate random stream for the rare actions was tried first and only moved
+the thin margin to other actions), and the lock-order harness holds the
+revision lock of every scene and entity.
+
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and
 every finding was filed as an issue (#572 to #630), plus the Assistant retry
