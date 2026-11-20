@@ -593,10 +593,12 @@ export const actions: Actions = {
 		}
 		// A pair of price fields per model shown (price-in-<model id> and
 		// price-out-<model id>), in dollars per million tokens. Both blank drops
-		// the writer's entry; one blank is refused, since half a price cannot
-		// cost a request. Like the context fields, only the models on the form
-		// are touched.
+		// the writer's entry. Half a price, or one that is not an amount, cannot
+		// cost a request: that model's stored entry is left as it was, the rest
+		// of the form still saves, and the reply says which model to finish.
+		// Like the context fields, only the models on the form are touched.
 		const modelPricingManual: ModelPricing = { ...storedView.modelPricingManual };
+		const unpriced: string[] = [];
 		for (const field of data.keys()) {
 			if (!field.startsWith('price-in-')) continue;
 			const model = field.slice('price-in-'.length);
@@ -616,10 +618,8 @@ export const actions: Actions = {
 				prompt < 0 ||
 				completion < 0
 			) {
-				return fail(400, {
-					scope: 'assistant-models',
-					message: `Enter both prices for ${model} as dollar amounts, or leave both empty.`
-				});
+				unpriced.push(model);
+				continue;
 			}
 			modelPricingManual[model] = {
 				prompt: prompt / TOKENS_PER_MILLION,
@@ -633,6 +633,13 @@ export const actions: Actions = {
 			modelPricingManual
 		});
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
+		if (unpriced.length > 0) {
+			return {
+				scope: 'assistant-models',
+				saved: true,
+				message: `Saved, except the price for ${unpriced.join(', ')}. Enter both prices as dollar amounts, or leave both empty.`
+			};
+		}
 		return { scope: 'assistant-models', saved: true };
 	},
 	testAssistant: async ({ request, locals }) => {

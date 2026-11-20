@@ -53,6 +53,9 @@ export async function recordAssistantUsage(db: Database, entry: UsageEntry): Pro
 			model: entry.model,
 			promptTokens: entry.usage?.promptTokens ?? null,
 			completionTokens: entry.usage?.completionTokens ?? null,
+			cachedPromptTokens: entry.usage?.cachedPromptTokens ?? null,
+			cacheWriteTokens: entry.usage?.cacheWriteTokens ?? null,
+			cacheWrite1hTokens: entry.usage?.cacheWrite1hTokens ?? null,
 			estimated: entry.usage?.estimated ?? false,
 			webSearchRequests: entry.usage?.webSearchRequests ?? null
 		});
@@ -70,6 +73,10 @@ export type UsageRow = {
 	model: string;
 	promptTokens: number | null;
 	completionTokens: number | null;
+	// The cache shares of promptTokens; null where none were reported.
+	cachedPromptTokens: number | null;
+	cacheWriteTokens: number | null;
+	cacheWrite1hTokens: number | null;
 	estimated: boolean;
 	webSearchRequests: number | null;
 	createdAt: Date;
@@ -92,7 +99,14 @@ export type UsageSummary = {
 	};
 	// Thirty-day token sums per model, so a caller holding per-model prices can
 	// estimate the period's cost.
-	byModel: { model: string; promptTokens: number; completionTokens: number }[];
+	byModel: {
+		model: string;
+		promptTokens: number;
+		completionTokens: number;
+		cachedPromptTokens: number;
+		cacheWriteTokens: number;
+		cacheWrite1hTokens: number;
+	}[];
 };
 
 export const USAGE_PAGE_SIZE = 50;
@@ -112,6 +126,9 @@ export async function recentAssistantUsage(
 			model: assistantUsage.model,
 			promptTokens: assistantUsage.promptTokens,
 			completionTokens: assistantUsage.completionTokens,
+			cachedPromptTokens: assistantUsage.cachedPromptTokens,
+			cacheWriteTokens: assistantUsage.cacheWriteTokens,
+			cacheWrite1hTokens: assistantUsage.cacheWrite1hTokens,
 			estimated: assistantUsage.estimated,
 			webSearchRequests: assistantUsage.webSearchRequests,
 			createdAt: assistantUsage.createdAt
@@ -139,7 +156,10 @@ export async function recentAssistantUsage(
 		.select({
 			model: assistantUsage.model,
 			promptTokens: sql<number>`coalesce(sum(${assistantUsage.promptTokens}), 0)::int`,
-			completionTokens: sql<number>`coalesce(sum(${assistantUsage.completionTokens}), 0)::int`
+			completionTokens: sql<number>`coalesce(sum(${assistantUsage.completionTokens}), 0)::int`,
+			cachedPromptTokens: sql<number>`coalesce(sum(${assistantUsage.cachedPromptTokens}), 0)::int`,
+			cacheWriteTokens: sql<number>`coalesce(sum(${assistantUsage.cacheWriteTokens}), 0)::int`,
+			cacheWrite1hTokens: sql<number>`coalesce(sum(${assistantUsage.cacheWrite1hTokens}), 0)::int`
 		})
 		.from(assistantUsage)
 		.where(and(eq(assistantUsage.userId, userId), gte(assistantUsage.createdAt, since)))
