@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { MIN_PASSWORD } from '#lib/password';
+	import { SIGNUP_NOTE_MAX } from '#lib/signup-note';
 	import { resolve } from '$app/paths';
 	import AuthShell from '#lib/components/AuthShell.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -109,6 +110,22 @@
 						{data.mode === 'invite'
 							? 'An invite code is needed to create an account here.'
 							: 'If you have an invite code, enter it to skip the approval wait.'}
+					</span>
+				</div>
+			{/if}
+			{#if data.mode === 'approval'}
+				<div class="field">
+					<label for="signup-note">What are you working on? (optional)</label>
+					<textarea
+						id="signup-note"
+						class="textarea"
+						name="note"
+						rows="2"
+						maxlength={SIGNUP_NOTE_MAX}
+						aria-describedby="signup-note-hint">{form?.note ?? ''}</textarea
+					>
+					<span class="field-hint" id="signup-note-hint">
+						A person reads this when deciding on your account. A sentence is enough.
 					</span>
 				</div>
 			{/if}

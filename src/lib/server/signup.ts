@@ -7,6 +7,7 @@ import { redeemInviteCode } from './invites.ts';
 import type { SignupMode } from './settings.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { MIN_PASSWORD } from '#lib/password';
+import { SIGNUP_NOTE_MAX } from '#lib/signup-note';
 
 export type RegisterResult =
 	// invited: a valid invite code was spent. approved: the account skipped
@@ -25,7 +26,14 @@ export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function registerUser(
 	db: Database,
-	input: { email: string; password: string; displayName: string; inviteCode?: string },
+	input: {
+		email: string;
+		password: string;
+		displayName: string;
+		inviteCode?: string;
+		// Kept only for an account that waits for approval.
+		note?: string;
+	},
 	mode: SignupMode = 'approval'
 ): Promise<RegisterResult> {
 	if (mode === 'none') return { ok: false, reason: SIGNUPS_CLOSED };
@@ -36,6 +44,10 @@ export async function registerUser(
 		return { ok: false, reason: `Use a password of at least ${MIN_PASSWORD} characters.` };
 	}
 	if (!displayName) return { ok: false, reason: 'Enter a display name.' };
+	const note = input.note?.trim() ?? '';
+	if (note.length > SIGNUP_NOTE_MAX) {
+		return { ok: false, reason: `Keep the note to ${SIGNUP_NOTE_MAX} characters or fewer.` };
+	}
 
 	const passwordHash = await hashPassword(input.password);
 	// On an open instance a code buys nothing, so one that rides in on an old
@@ -59,7 +71,8 @@ export async function registerUser(
 					displayName,
 					passwordHash,
 					role: 'user',
-					approvedAt: approved ? sql`now()` : null
+					approvedAt: approved ? sql`now()` : null,
+					signupNote: approved || note === '' ? null : note
 				})
 				.returning({ id: users.id });
 			return { ok: true, userId: row.id, invited, approved };

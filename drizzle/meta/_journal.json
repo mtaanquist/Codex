@@ -1,629 +1,636 @@
 {
-	"version": "7",
-	"dialect": "postgresql",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "7",
-			"when": 1780505851444,
-			"tag": "0000_users",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "7",
-			"when": 1780507885523,
-			"tag": "0001_auth",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "7",
-			"when": 1780508772694,
-			"tag": "0002_universes_stories",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "7",
-			"when": 1780510573535,
-			"tag": "0003_chapters_scenes",
-			"breakpoints": true
-		},
-		{
-			"idx": 4,
-			"version": "7",
-			"when": 1780513988999,
-			"tag": "0004_characters",
-			"breakpoints": true
-		},
-		{
-			"idx": 5,
-			"version": "7",
-			"when": 1780514852581,
-			"tag": "0005_mentions",
-			"breakpoints": true
-		},
-		{
-			"idx": 6,
-			"version": "7",
-			"when": 1780516915860,
-			"tag": "0006_places",
-			"breakpoints": true
-		},
-		{
-			"idx": 7,
-			"version": "7",
-			"when": 1780517695447,
-			"tag": "0007_lore_categories",
-			"breakpoints": true
-		},
-		{
-			"idx": 8,
-			"version": "7",
-			"when": 1780520160474,
-			"tag": "0008_relationships",
-			"breakpoints": true
-		},
-		{
-			"idx": 9,
-			"version": "7",
-			"when": 1780544471878,
-			"tag": "0009_outline",
-			"breakpoints": true
-		},
-		{
-			"idx": 10,
-			"version": "7",
-			"when": 1780545328278,
-			"tag": "0010_memberships",
-			"breakpoints": true
-		},
-		{
-			"idx": 11,
-			"version": "7",
-			"when": 1780550144709,
-			"tag": "0011_revisions",
-			"breakpoints": true
-		},
-		{
-			"idx": 12,
-			"version": "7",
-			"when": 1780551846373,
-			"tag": "0012_backups",
-			"breakpoints": true
-		},
-		{
-			"idx": 13,
-			"version": "7",
-			"when": 1780554401794,
-			"tag": "0013_backup-hash",
-			"breakpoints": true
-		},
-		{
-			"idx": 14,
-			"version": "7",
-			"when": 1780555036597,
-			"tag": "0014_scene-markers",
-			"breakpoints": true
-		},
-		{
-			"idx": 15,
-			"version": "7",
-			"when": 1780557379623,
-			"tag": "0015_assets",
-			"breakpoints": true
-		},
-		{
-			"idx": 16,
-			"version": "7",
-			"when": 1780559185535,
-			"tag": "0016_publications",
-			"breakpoints": true
-		},
-		{
-			"idx": 17,
-			"version": "7",
-			"when": 1780562930140,
-			"tag": "0017_publication-constraints",
-			"breakpoints": true
-		},
-		{
-			"idx": 18,
-			"version": "7",
-			"when": 1780572894965,
-			"tag": "0018_user_suspension",
-			"breakpoints": true
-		},
-		{
-			"idx": 19,
-			"version": "7",
-			"when": 1780573827612,
-			"tag": "0019_app_settings",
-			"breakpoints": true
-		},
-		{
-			"idx": 20,
-			"version": "7",
-			"when": 1780576986525,
-			"tag": "0020_account_deletion",
-			"breakpoints": true
-		},
-		{
-			"idx": 21,
-			"version": "7",
-			"when": 1780579241131,
-			"tag": "0021_pending_email",
-			"breakpoints": true
-		},
-		{
-			"idx": 22,
-			"version": "7",
-			"when": 1780584267803,
-			"tag": "0022_profile_fields",
-			"breakpoints": true
-		},
-		{
-			"idx": 23,
-			"version": "7",
-			"when": 1780586019280,
-			"tag": "0023_totp",
-			"breakpoints": true
-		},
-		{
-			"idx": 24,
-			"version": "7",
-			"when": 1780605832766,
-			"tag": "0024_add_totp_last_used_step",
-			"breakpoints": true
-		},
-		{
-			"idx": 25,
-			"version": "7",
-			"when": 1780610132333,
-			"tag": "0025_add_scene_mentions_indexed_at",
-			"breakpoints": true
-		},
-		{
-			"idx": 26,
-			"version": "7",
-			"when": 1780634720483,
-			"tag": "0026_add_invite_codes",
-			"breakpoints": true
-		},
-		{
-			"idx": 27,
-			"version": "7",
-			"when": 1780637606701,
-			"tag": "0027_export_artifacts",
-			"breakpoints": true
-		},
-		{
-			"idx": 28,
-			"version": "7",
-			"when": 1780644595721,
-			"tag": "0028_webauthn_credentials",
-			"breakpoints": true
-		},
-		{
-			"idx": 29,
-			"version": "7",
-			"when": 1780646065670,
-			"tag": "0029_guest_review",
-			"breakpoints": true
-		},
-		{
-			"idx": 30,
-			"version": "7",
-			"when": 1780647935034,
-			"tag": "0030_review_suggestions",
-			"breakpoints": true
-		},
-		{
-			"idx": 31,
-			"version": "7",
-			"when": 1780652421502,
-			"tag": "0031_entity-details-and-revision-snapshots",
-			"breakpoints": true
-		},
-		{
-			"idx": 32,
-			"version": "7",
-			"when": 1780655319205,
-			"tag": "0032_story-preferences",
-			"breakpoints": true
-		},
-		{
-			"idx": 33,
-			"version": "7",
-			"when": 1780660236222,
-			"tag": "0033_page-setup",
-			"breakpoints": true
-		},
-		{
-			"idx": 34,
-			"version": "7",
-			"when": 1780672235990,
-			"tag": "0034_mention-pins",
-			"breakpoints": true
-		},
-		{
-			"idx": 35,
-			"version": "7",
-			"when": 1780693518265,
-			"tag": "0035_slugs",
-			"breakpoints": true
-		},
-		{
-			"idx": 36,
-			"version": "7",
-			"when": 1780716411582,
-			"tag": "0036_scene-trash",
-			"breakpoints": true
-		},
-		{
-			"idx": 37,
-			"version": "7",
-			"when": 1780721290558,
-			"tag": "0037_body-search",
-			"breakpoints": true
-		},
-		{
-			"idx": 38,
-			"version": "7",
-			"when": 1780747032397,
-			"tag": "0038_universe-trash",
-			"breakpoints": true
-		},
-		{
-			"idx": 39,
-			"version": "7",
-			"when": 1780765768880,
-			"tag": "0039_retire-outline",
-			"breakpoints": true
-		},
-		{
-			"idx": 40,
-			"version": "7",
-			"when": 1780776630737,
-			"tag": "0040_notifications",
-			"breakpoints": true
-		},
-		{
-			"idx": 41,
-			"version": "7",
-			"when": 1780779853915,
-			"tag": "0041_split-suspension-from-deletion",
-			"breakpoints": true
-		},
-		{
-			"idx": 42,
-			"version": "7",
-			"when": 1780784621097,
-			"tag": "0042_entity-search-indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 43,
-			"version": "7",
-			"when": 1780811073029,
-			"tag": "0043_category-palette-normalize",
-			"breakpoints": true
-		},
-		{
-			"idx": 44,
-			"version": "7",
-			"when": 1780812394880,
-			"tag": "0044_relationship-unique-index",
-			"breakpoints": true
-		},
-		{
-			"idx": 45,
-			"version": "7",
-			"when": 1780813835936,
-			"tag": "0045_totp-challenge-nonce",
-			"breakpoints": true
-		},
-		{
-			"idx": 46,
-			"version": "7",
-			"when": 1780837012241,
-			"tag": "0046_add_place_aliases",
-			"breakpoints": true
-		},
-		{
-			"idx": 47,
-			"version": "7",
-			"when": 1780838580209,
-			"tag": "0047_standalone_universe",
-			"breakpoints": true
-		},
-		{
-			"idx": 48,
-			"version": "7",
-			"when": 1780861929736,
-			"tag": "0048_notes",
-			"breakpoints": true
-		},
-		{
-			"idx": 49,
-			"version": "7",
-			"when": 1780866331180,
-			"tag": "0049_writing_goals",
-			"breakpoints": true
-		},
-		{
-			"idx": 50,
-			"version": "7",
-			"when": 1780944641570,
-			"tag": "0050_entity_badges",
-			"breakpoints": true
-		},
-		{
-			"idx": 51,
-			"version": "7",
-			"when": 1780952416538,
-			"tag": "0051_author_suggestions",
-			"breakpoints": true
-		},
-		{
-			"idx": 52,
-			"version": "7",
-			"when": 1781001997956,
-			"tag": "0052_assistant_author",
-			"breakpoints": true
-		},
-		{
-			"idx": 53,
-			"version": "7",
-			"when": 1781029698737,
-			"tag": "0053_assistant_summary_watermark",
-			"breakpoints": true
-		},
-		{
-			"idx": 54,
-			"version": "7",
-			"when": 1781031677899,
-			"tag": "0054_entity_suggestions",
-			"breakpoints": true
-		},
-		{
-			"idx": 55,
-			"version": "7",
-			"when": 1781039099086,
-			"tag": "0055_hot_fk_indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 56,
-			"version": "7",
-			"when": 1781046438853,
-			"tag": "0056_user_exports",
-			"breakpoints": true
-		},
-		{
-			"idx": 57,
-			"version": "7",
-			"when": 1781065421989,
-			"tag": "0057_publication_artifact_errors",
-			"breakpoints": true
-		},
-		{
-			"idx": 58,
-			"version": "7",
-			"when": 1781068478368,
-			"tag": "0058_session_token_hash",
-			"breakpoints": true
-		},
-		{
-			"idx": 59,
-			"version": "7",
-			"when": 1781112496427,
-			"tag": "0059_review_suggestion_threads",
-			"breakpoints": true
-		},
-		{
-			"idx": 60,
-			"version": "7",
-			"when": 1781115263666,
-			"tag": "0060_assistant_chat",
-			"breakpoints": true
-		},
-		{
-			"idx": 61,
-			"version": "7",
-			"when": 1781177802845,
-			"tag": "0061_reviewers_unique_user",
-			"breakpoints": true
-		},
-		{
-			"idx": 62,
-			"version": "7",
-			"when": 1781258612937,
-			"tag": "0062_assistant_usage",
-			"breakpoints": true
-		},
-		{
-			"idx": 63,
-			"version": "7",
-			"when": 1781264543124,
-			"tag": "0063_story-style-notes",
-			"breakpoints": true
-		},
-		{
-			"idx": 64,
-			"version": "7",
-			"when": 1781265548132,
-			"tag": "0064_established-setting",
-			"breakpoints": true
-		},
-		{
-			"idx": 65,
-			"version": "7",
-			"when": 1782216943382,
-			"tag": "0065_pink_landau",
-			"breakpoints": true
-		},
-		{
-			"idx": 66,
-			"version": "7",
-			"when": 1785434997269,
-			"tag": "0066_user-invite-allowance",
-			"breakpoints": true
-		},
-		{
-			"idx": 67,
-			"version": "7",
-			"when": 1786970664059,
-			"tag": "0067_assistant_review_runs",
-			"breakpoints": true
-		},
-		{
-			"idx": 68,
-			"version": "7",
-			"when": 1792417156975,
-			"tag": "0068_restore-backup-runs",
-			"breakpoints": true
-		},
-		{
-			"idx": 69,
-			"version": "7",
-			"when": 1792433761374,
-			"tag": "0069_deferred-object-deletion",
-			"breakpoints": true
-		},
-		{
-			"idx": 70,
-			"version": "7",
-			"when": 1792436266477,
-			"tag": "0070_mention-change-flag",
-			"breakpoints": true
-		},
-		{
-			"idx": 71,
-			"version": "7",
-			"when": 1792437150362,
-			"tag": "0071_revision-word-count",
-			"breakpoints": true
-		},
-		{
-			"idx": 72,
-			"version": "7",
-			"when": 1792437781392,
-			"tag": "0072_foreign-key-indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 73,
-			"version": "7",
-			"when": 1792438442230,
-			"tag": "0073_story-trash",
-			"breakpoints": true
-		},
-		{
-			"idx": 74,
-			"version": "7",
-			"when": 1792482309464,
-			"tag": "0074_assistant_chat_summaries",
-			"breakpoints": true
-		},
-		{
-			"idx": 75,
-			"version": "7",
-			"when": 1793007451321,
-			"tag": "0075_story-cover-color",
-			"breakpoints": true
-		},
-		{
-			"idx": 76,
-			"version": "7",
-			"when": 1794827994093,
-			"tag": "0076_story-drafts",
-			"breakpoints": true
-		},
-		{
-			"idx": 77,
-			"version": "7",
-			"when": 1794915198314,
-			"tag": "0077_trash-frees-slugs",
-			"breakpoints": true
-		},
-		{
-			"idx": 78,
-			"version": "7",
-			"when": 1795001190868,
-			"tag": "0078_assistant-enriched-at",
-			"breakpoints": true
-		},
-		{
-			"idx": 79,
-			"version": "7",
-			"when": 1795001674632,
-			"tag": "0079_character-arc-summary",
-			"breakpoints": true
-		},
-		{
-			"idx": 80,
-			"version": "7",
-			"when": 1795007132971,
-			"tag": "0080_assistant-chats",
-			"breakpoints": true
-		},
-		{
-			"idx": 81,
-			"version": "7",
-			"when": 1795014528600,
-			"tag": "0081_review-created-clock",
-			"breakpoints": true
-		},
-		{
-			"idx": 82,
-			"version": "7",
-			"when": 1795033226348,
-			"tag": "0082_enrich-arc-input-hash",
-			"breakpoints": true
-		},
-		{
-			"idx": 83,
-			"version": "7",
-			"when": 1795037286394,
-			"tag": "0083_backfill-stale-marks",
-			"breakpoints": true
-		},
-		{
-			"idx": 84,
-			"version": "7",
-			"when": 1795075690052,
-			"tag": "0084_scene-touched-at",
-			"breakpoints": true
-		},
-		{
-			"idx": 85,
-			"version": "7",
-			"when": 1795077061651,
-			"tag": "0085_usage-estimated-searches",
-			"breakpoints": true
-		},
-		{
-			"idx": 86,
-			"version": "7",
-			"when": 1795078508442,
-			"tag": "0086_assistant-job-spend",
-			"breakpoints": true
-		},
-		{
-			"idx": 87,
-			"version": "7",
-			"when": 1795092593504,
-			"tag": "0087_chat-settings",
-			"breakpoints": true
-		},
-		{
-			"idx": 88,
-			"version": "7",
-			"when": 1795109964451,
-			"tag": "0088_pattern-thread",
-			"breakpoints": true
-		}
-	]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1780505851444,
+      "tag": "0000_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780507885523,
+      "tag": "0001_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780508772694,
+      "tag": "0002_universes_stories",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780510573535,
+      "tag": "0003_chapters_scenes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780513988999,
+      "tag": "0004_characters",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780514852581,
+      "tag": "0005_mentions",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780516915860,
+      "tag": "0006_places",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780517695447,
+      "tag": "0007_lore_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780520160474,
+      "tag": "0008_relationships",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780544471878,
+      "tag": "0009_outline",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780545328278,
+      "tag": "0010_memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780550144709,
+      "tag": "0011_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780551846373,
+      "tag": "0012_backups",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780554401794,
+      "tag": "0013_backup-hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780555036597,
+      "tag": "0014_scene-markers",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1780557379623,
+      "tag": "0015_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1780559185535,
+      "tag": "0016_publications",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1780562930140,
+      "tag": "0017_publication-constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780572894965,
+      "tag": "0018_user_suspension",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780573827612,
+      "tag": "0019_app_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1780576986525,
+      "tag": "0020_account_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780579241131,
+      "tag": "0021_pending_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780584267803,
+      "tag": "0022_profile_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780586019280,
+      "tag": "0023_totp",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780605832766,
+      "tag": "0024_add_totp_last_used_step",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780610132333,
+      "tag": "0025_add_scene_mentions_indexed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1780634720483,
+      "tag": "0026_add_invite_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1780637606701,
+      "tag": "0027_export_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1780644595721,
+      "tag": "0028_webauthn_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1780646065670,
+      "tag": "0029_guest_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1780647935034,
+      "tag": "0030_review_suggestions",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1780652421502,
+      "tag": "0031_entity-details-and-revision-snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1780655319205,
+      "tag": "0032_story-preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1780660236222,
+      "tag": "0033_page-setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1780672235990,
+      "tag": "0034_mention-pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1780693518265,
+      "tag": "0035_slugs",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1780716411582,
+      "tag": "0036_scene-trash",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780721290558,
+      "tag": "0037_body-search",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1780747032397,
+      "tag": "0038_universe-trash",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1780765768880,
+      "tag": "0039_retire-outline",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1780776630737,
+      "tag": "0040_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780779853915,
+      "tag": "0041_split-suspension-from-deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1780784621097,
+      "tag": "0042_entity-search-indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1780811073029,
+      "tag": "0043_category-palette-normalize",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1780812394880,
+      "tag": "0044_relationship-unique-index",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1780813835936,
+      "tag": "0045_totp-challenge-nonce",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1780837012241,
+      "tag": "0046_add_place_aliases",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1780838580209,
+      "tag": "0047_standalone_universe",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1780861929736,
+      "tag": "0048_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1780866331180,
+      "tag": "0049_writing_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1780944641570,
+      "tag": "0050_entity_badges",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1780952416538,
+      "tag": "0051_author_suggestions",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1781001997956,
+      "tag": "0052_assistant_author",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1781029698737,
+      "tag": "0053_assistant_summary_watermark",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1781031677899,
+      "tag": "0054_entity_suggestions",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1781039099086,
+      "tag": "0055_hot_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1781046438853,
+      "tag": "0056_user_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1781065421989,
+      "tag": "0057_publication_artifact_errors",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1781068478368,
+      "tag": "0058_session_token_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1781112496427,
+      "tag": "0059_review_suggestion_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1781115263666,
+      "tag": "0060_assistant_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1781177802845,
+      "tag": "0061_reviewers_unique_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1781258612937,
+      "tag": "0062_assistant_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1781264543124,
+      "tag": "0063_story-style-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1781265548132,
+      "tag": "0064_established-setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1782216943382,
+      "tag": "0065_pink_landau",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1785434997269,
+      "tag": "0066_user-invite-allowance",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1786970664059,
+      "tag": "0067_assistant_review_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792417156975,
+      "tag": "0068_restore-backup-runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792433761374,
+      "tag": "0069_deferred-object-deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792436266477,
+      "tag": "0070_mention-change-flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792437150362,
+      "tag": "0071_revision-word-count",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792437781392,
+      "tag": "0072_foreign-key-indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792438442230,
+      "tag": "0073_story-trash",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792482309464,
+      "tag": "0074_assistant_chat_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793007451321,
+      "tag": "0075_story-cover-color",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1794827994093,
+      "tag": "0076_story-drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794915198314,
+      "tag": "0077_trash-frees-slugs",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795001190868,
+      "tag": "0078_assistant-enriched-at",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1795001674632,
+      "tag": "0079_character-arc-summary",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1795007132971,
+      "tag": "0080_assistant-chats",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795014528600,
+      "tag": "0081_review-created-clock",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795033226348,
+      "tag": "0082_enrich-arc-input-hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795037286394,
+      "tag": "0083_backfill-stale-marks",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795075690052,
+      "tag": "0084_scene-touched-at",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795077061651,
+      "tag": "0085_usage-estimated-searches",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795078508442,
+      "tag": "0086_assistant-job-spend",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795092593504,
+      "tag": "0087_chat-settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1795109964451,
+      "tag": "0088_pattern-thread",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1795171621670,
+      "tag": "0089_signup-note",
+      "breakpoints": true
+    }
+  ]
 }

@@ -154,6 +154,9 @@
 									page.data.timeZone
 								)}{account.emailVerifiedAt ? '' : ' - email unconfirmed'}
 							</p>
+							{#if account.signupNote}
+								<p class="user-row-note">{account.signupNote}</p>
+							{/if}
 						</div>
 						<div class="user-row-actions">
 							<form method="POST" action="?/reject">
