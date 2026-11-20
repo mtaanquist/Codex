@@ -646,6 +646,44 @@ describe('chats over the endpoints', () => {
 		expect(models.at(-1)).toBe('chat-model');
 	});
 
+	it('sends two user turns in a row as one, so the turns alternate', async () => {
+		const roles: string[][] = [];
+		const contents: string[][] = [];
+		const answer = async function* (): AsyncIterable<StreamEvent> {
+			yield { type: 'token', text: 'Answer.' };
+			yield { type: 'done' };
+		};
+		const record = (messages: { role: string; content: string }[]) => {
+			const turns = messages.filter((m) => m.role !== 'system');
+			roles.push(turns.map((m) => m.role));
+			contents.push(turns.map((m) => m.content));
+		};
+		providerSlot.current = {
+			...streamingProvider(answer),
+			chatStream: (req) => {
+				record(req.messages);
+				return answer();
+			},
+			async respond(req) {
+				record(req.messages);
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+		// The reply to the first question was stopped, so it is not in the history.
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [
+					{ role: 'user', content: 'First question.' },
+					{ role: 'user', content: 'Second question.' }
+				]
+			})
+		).text();
+		expect(roles.at(-1)).toEqual(['user']);
+		expect(contents.at(-1)![0]).toBe('First question.\n\nSecond question.');
+	});
+
 	it('sends attachments with the newest message only, and stores them with it', async () => {
 		const sent: string[][] = [];
 		const answer = async function* (): AsyncIterable<StreamEvent> {
@@ -689,7 +727,9 @@ describe('chats over the endpoints', () => {
 			})
 		).text();
 		const last = sent.at(-1)!;
-		expect(last[0]).toContain('(The writer attached scene "Scene 1" to this message.)');
+		expect(last[0]).toContain(
+			'(The writer attached scene "Scene 1" to this message. The text was sent with that message and is not repeated here.)'
+		);
 		// A message without attachments says nothing about them.
 		expect(
 			(

@@ -277,6 +277,14 @@ describe('searchContext', () => {
 		expect(await storyContents(db, userId, storyId)).toBeNull();
 	});
 
+	it('finds a chapter with no title by the name it is shown under', async () => {
+		await db.insert(chapters).values({ storyId, position: 2, title: '' });
+		const found = await searchContext(db, userId, 'chapter 2');
+		expect(found.filter((item) => item.kind === 'chapter').map((item) => item.label)).toEqual([
+			'Chapter 2'
+		]);
+	});
+
 	it('matches % and _ literally', async () => {
 		expect(await searchContext(db, userId, '%')).toEqual([]);
 		expect(await searchContext(db, userId, '_')).toEqual([]);
