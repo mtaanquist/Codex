@@ -37,6 +37,11 @@ import { purgeStory } from '../../src/lib/server/story-delete';
 import { saveEntity } from '../../src/lib/server/entity-save';
 import { saveStoryLlmOverride } from '../../src/lib/server/llm/config';
 import { replaceProse } from '../../src/lib/server/prose-replace';
+import {
+	findInStory,
+	replaceInStory,
+	type SceneReplacement
+} from '../../src/lib/server/story-replace';
 import { recordRevision, restoreRevision } from '../../src/lib/server/revisions';
 import { createSuggestion, decideSuggestion } from '../../src/lib/server/review';
 import { newStoryFromDraft, restoreDraftScene, saveDraft } from '../../src/lib/server/story-drafts';
@@ -244,7 +249,12 @@ async function seedFor(...ops: Op[]) {
 }
 
 // What the prepare steps left for their operation.
-const made = { draftId: '', suggestionId: '', revisionId: '' };
+const made = {
+	draftId: '',
+	suggestionId: '',
+	revisionId: '',
+	replacements: [] as SceneReplacement[]
+};
 
 async function saveDraftOfStory() {
 	const draft = ok(await saveDraft(db, S.user, S.story, { label: 'First', note: '' })) as {
@@ -252,6 +262,8 @@ async function saveDraftOfStory() {
 	};
 	made.draftId = draft.id;
 }
+
+const WORD = { matchCase: true, wholeWord: true };
 
 const ok = (result: unknown) => {
 	if (result === false || result === null) throw new Error('refused');
@@ -360,6 +372,23 @@ const OPS: Op[] = [
 	{
 		name: 'find and replace prose',
 		run: async (db) => await replaceProse(db, S.universe, 'walks', 'strides')
+	},
+	{
+		name: 'find and replace in a story',
+		prepare: async () => {
+			const found = await findInStory(db, { storyId: S.story, chapterId: null }, 'walks', WORD);
+			made.replacements = found.scenes.map((scene) => ({
+				sceneId: scene.sceneId,
+				baseHash: scene.baseHash,
+				starts: scene.matches.map((match) => match.start)
+			}));
+		},
+		run: async (db) =>
+			await replaceInStory(
+				db,
+				{ storyId: S.story, chapterId: null },
+				{ find: 'walks', replace: 'strides', options: WORD, scenes: made.replacements }
+			)
 	},
 	{
 		name: 'restore scene revision',

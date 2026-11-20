@@ -73,6 +73,7 @@ import { chapterSummaryRequest } from '../../src/lib/server/llm/chapter-summary-
 import { buildSceneSummaryMessage } from '../../src/lib/server/llm/prompts/summary';
 import { SCENE_STATUSES } from '../../src/lib/scene-status';
 import { replaceProse } from '../../src/lib/server/prose-replace';
+import { findInStory, replaceInStory } from '../../src/lib/server/story-replace';
 import { restoreRevision } from '../../src/lib/server/revisions';
 import { createSuggestion, decideSuggestion } from '../../src/lib/server/review';
 import { newStoryFromDraft, restoreDraftScene, saveDraft } from '../../src/lib/server/story-drafts';
@@ -627,6 +628,26 @@ const moreActions: Record<string, Action> = {
 		const result = await replaceProse(db, universeId, find, replace);
 		if (result.occurrences === 0) return null;
 		return `replace "${find}" with "${replace}" everywhere`;
+	},
+	async storyFindAndReplace(r) {
+		const story = r.pick(await liveStories());
+		if (!story) return null;
+		const find = r.pick(SWAPS)!;
+		const replace = r.pick(SWAPS.filter((word) => word !== find))!;
+		const options = { matchCase: true, wholeWord: true };
+		const scope = { storyId: story.id, chapterId: null };
+		const found = await findInStory(db, scope, find, options);
+		// Keep a random subset of the matches, as a writer unticking some would.
+		const picked = found.scenes
+			.map((scene) => ({
+				sceneId: scene.sceneId,
+				baseHash: scene.baseHash,
+				starts: scene.matches.filter(() => r.chance(0.7)).map((m) => m.start)
+			}))
+			.filter((scene) => scene.starts.length > 0);
+		const result = await replaceInStory(db, scope, { find, replace, options, scenes: picked });
+		if (result.replaced === 0) return null;
+		return `replace ${result.replaced} of "${find}" with "${replace}" in a story`;
 	},
 	async restoreSceneRevision(r) {
 		const rows = await db

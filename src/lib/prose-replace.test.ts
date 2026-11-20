@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { replaceWholeWord, wholeWordMatches } from './prose-replace';
+import {
+	findMatches,
+	matchContext,
+	replaceMatches,
+	replaceWholeWord,
+	wholeWordMatches
+} from './prose-replace';
 
 describe('wholeWordMatches', () => {
 	it('matches whole words only, case-sensitively', () => {
@@ -76,5 +82,90 @@ describe('replaceWholeWord', () => {
 			{ id: 'm1', anchorStart: 0, anchorEnd: 5 }
 		]);
 		expect(result.anchors[0]).toEqual({ id: 'm1', anchorStart: 0, anchorEnd: 4 });
+	});
+});
+
+describe('findMatches', () => {
+	const body = 'The city slept. City lights. Velocity. The CITY woke.';
+
+	it('honours match case and whole word together', () => {
+		expect(findMatches(body, 'city', { matchCase: true, wholeWord: true })).toEqual([
+			{ start: 4, end: 8 }
+		]);
+	});
+
+	it('ignores case when asked', () => {
+		const starts = findMatches(body, 'city', { matchCase: false, wholeWord: true }).map(
+			(m) => m.start
+		);
+		expect(starts).toEqual([4, 16, 43]);
+	});
+
+	it('matches inside words when whole word is off', () => {
+		const starts = findMatches(body, 'city', { matchCase: true, wholeWord: false }).map(
+			(m) => m.start
+		);
+		expect(starts).toEqual([4, body.indexOf('Velocity') + 4]);
+	});
+
+	it('treats the needle literally', () => {
+		expect(findMatches('a.b axb', 'a.b', { matchCase: true, wholeWord: false })).toEqual([
+			{ start: 0, end: 3 }
+		]);
+	});
+
+	it('returns nothing for an empty needle', () => {
+		expect(findMatches('anything', '', { matchCase: false, wholeWord: false })).toEqual([]);
+	});
+});
+
+describe('replaceMatches', () => {
+	it('replaces only the matches it is given', () => {
+		const body = 'city, city, city';
+		const matches = findMatches(body, 'city', { matchCase: true, wholeWord: true });
+		const result = replaceMatches(body, [matches[0], matches[2]], 'village');
+		expect(result.body).toBe('village, city, village');
+	});
+
+	it('replaces with nothing', () => {
+		const body = 'a very very long day';
+		const matches = findMatches(body, 'very ', { matchCase: true, wholeWord: false });
+		expect(replaceMatches(body, matches, '').body).toBe('a long day');
+	});
+
+	it('carries anchors past skipped and replaced matches', () => {
+		const body = 'city one city two city';
+		const matches = findMatches(body, 'city', { matchCase: true, wholeWord: true });
+		const two = body.indexOf('two');
+		const result = replaceMatches(body, [matches[0], matches[2]], 'town!', [
+			{ anchorStart: two, anchorEnd: two + 3 },
+			// Inside the last match: clamps into the replacement.
+			{ anchorStart: matches[2].start + 1, anchorEnd: matches[2].end }
+		]);
+		expect(result.body).toBe('town! one city two town!');
+		expect(result.body.slice(result.anchors[0].anchorStart, result.anchors[0].anchorEnd)).toBe(
+			'two'
+		);
+		expect(result.anchors[1]).toEqual({
+			anchorStart: result.body.length - 4,
+			anchorEnd: result.body.length
+		});
+	});
+});
+
+describe('matchContext', () => {
+	it('shows the passage around a match, cut at word edges', () => {
+		const body = 'Far away there was a quiet city by the sea, and nobody ever left it at all.';
+		const [match] = findMatches(body, 'city', { matchCase: true, wholeWord: true });
+		const context = matchContext(body, match, 12);
+		expect(context.text).toBe('city');
+		expect(context.before).toBe('...a quiet ');
+		expect(context.after).toBe(' by the sea,...');
+	});
+
+	it('stops at line breaks', () => {
+		const body = 'First line.\nThe city.\nLast line.';
+		const [match] = findMatches(body, 'city', { matchCase: true, wholeWord: true });
+		expect(matchContext(body, match)).toEqual({ before: 'The ', text: 'city', after: '.' });
 	});
 });

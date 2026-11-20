@@ -11,6 +11,7 @@
 	import { assistantIntent } from '#lib/assistant.svelte';
 	import { openReviewModal } from '#lib/review-modal.svelte';
 	import { openQuickNote } from '#lib/quick-note.svelte';
+	import { openFindReplace } from '#lib/find-replace.svelte';
 	import { startSummariesJob } from '#lib/assistant-actions';
 	import type { SearchResult } from '#lib/wire-types';
 
@@ -95,6 +96,15 @@
 				run: () => {
 					closePalette();
 					openQuickNote();
+				}
+			});
+			list.push({
+				label: 'Find and replace in the story',
+				sublabel: 'Change a word or phrase in every scene',
+				kind: 'Command',
+				run: () => {
+					closePalette();
+					openFindReplace({ chapterId: null });
 				}
 			});
 			// The Assistant's quick actions, gated like its other surfaces; the
