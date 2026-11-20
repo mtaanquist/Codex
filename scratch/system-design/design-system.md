@@ -517,7 +517,7 @@ focus mode does not also fire), and focus returns to the opener on close
 unless something run from the dialog moved it on purpose. A backdrop click
 closes only when nothing is unsaved. Every modal uses the action
 (`CommandPalette`, `ImportStoryModal`, `ReviewModal`, `RoleTuningModal`,
-`ClearReviewsModal`,
+`ClearReviewsModal`, `ReviewDecideModal`,
 `PenNamePrompt`); `QuickNote` is a floating card, not a modal, and keeps its
 own focus return. A search modal keeps focus in its box and drives the
 results with `role="combobox"` and `aria-activedescendant` (the options are

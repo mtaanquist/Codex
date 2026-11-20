@@ -291,3 +291,81 @@ test('the author can clear finished review notes, then all of them', async ({ pa
 	// Nothing left to clear, so the action goes away.
 	await expect(page.getByRole('button', { name: 'Clear review notes...' })).toHaveCount(0);
 });
+
+// The review toolbar lists a scene's pending edits and decides on the ticked
+// ones together: the accepted ones land in the open editor and persist, and
+// one left unticked stays pending.
+test('the author accepts several suggestions together and leaves one out', async ({ page }) => {
+	await gotoReady(page, '/');
+	const stamp = Date.now();
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(`Bulk ${stamp}`);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, `Bulk ${stamp}`);
+	await page.getByLabel('New story').fill('Bulk');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await page.locator('.cm-content').click();
+	for (const tail of ['ONETAIL', 'TWOTAIL', 'THREETAIL']) {
+		await page.keyboard.type(`Lineword ${tail} closing.`);
+		await page.keyboard.press('Enter');
+	}
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+
+	await page.getByRole('link', { name: 'Review', exact: true }).click();
+	const prose = page.locator('.review-edit .cm-content');
+	await prose.waitFor();
+
+	async function suggestOn(tail: string, replacement: string) {
+		const line = prose.locator('.cm-line').filter({ hasText: tail });
+		const box = (await line.boundingBox())!;
+		await page.mouse.move(box.x + 3, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 8 });
+		await page.mouse.up();
+		await page.locator('.rv-seltool').getByRole('button', { name: 'Suggest edit' }).click();
+		await page.getByLabel('Suggested text').fill(replacement);
+		await page.getByRole('button', { name: 'Save suggestion' }).click();
+		await expect(page.locator('.rv-diff-ins').filter({ hasText: replacement })).toBeVisible();
+	}
+	await suggestOn('ONETAIL', 'EDITONE');
+	await suggestOn('TWOTAIL', 'EDITTWO');
+	await suggestOn('THREETAIL', 'EDITTHREE');
+
+	const toolbar = page.getByRole('toolbar', { name: 'Suggested edits' });
+	await expect(toolbar).toContainText('3 suggested edits');
+	await toolbar.getByRole('button', { name: 'Decide together...' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Decide on suggested edits' });
+	await expect(dialog.getByRole('listitem')).toHaveCount(3);
+	await dialog
+		.getByRole('listitem')
+		.filter({ hasText: 'EDITTHREE' })
+		.getByRole('checkbox')
+		.uncheck();
+	await expect(dialog).toContainText('2 of 3 ticked');
+	await dialog.getByRole('button', { name: 'Accept 2 edits' }).click();
+	await expect(dialog).toHaveCount(0);
+
+	// Two are in the text; the third is still a pending card, and one pending
+	// edit needs no toolbar.
+	await expect(prose.locator('.cm-line').filter({ hasText: 'ONETAIL' })).toContainText('EDITONE');
+	await expect(prose.locator('.cm-line').filter({ hasText: 'TWOTAIL' })).toContainText('EDITTWO');
+	await expect(page.locator('.rv-card.sugg')).toHaveCount(1);
+	await expect(page.locator('.rv-card.sugg')).toContainText('EDITTHREE');
+	await expect(toolbar).toHaveCount(0);
+
+	// Typing straight after builds on the accepted text, and both survive a reload.
+	await prose.press('Control+End');
+	await page.keyboard.type('AFTERWORD');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.reload();
+	await expect(prose).toContainText('AFTERWORD');
+	const text = await prose.innerText();
+	expect(text).toContain('EDITONE');
+	expect(text).toContain('EDITTWO');
+	expect(text).toContain('ONETAIL closing.');
+	// The pending edit's replacement shows as a ghost; its original is intact.
+	expect(text).toContain('THREETAIL closing.');
+});
