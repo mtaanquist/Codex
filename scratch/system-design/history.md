@@ -21,7 +21,7 @@ touch, the pre-paint script takes only the chosen width from storage and
 rebuilds the floor and cap, and the settings rail keeps following the left
 width with no handle of its own, now tested (#1005). The sign-up form asks
 "What are you working on?" under approval mode, stored in `users.signup_note`
-(migration 0089) only for a request that waits, and shown in the admin
+(migration 0090) only for a request that waits, and shown in the admin
 approval list (#853). Sign-in by emailed link at `/login/link` (#852): a
 `sign_in` token kind (no migration; the kind column is text), 15 minutes,
 single use, sent only to an account that could sign in with its password. It
@@ -39,7 +39,13 @@ marks, for no gain a writer would see. Tooling (#1262): the stale-marks
 coverage guard runs up to 8 further seeds while an action has yet to apply
 (a separate random stream for the rare actions was tried first and only moved
 the thin margin to other actions), and the lock-order harness holds the
-revision lock of every scene and entity.
+revision lock of every scene and entity. The first staging review found
+an older bug the toolbar would have made worse: the open editor applied an
+accepted edit at its mark, which leaves out white space at the edges of the
+range, while the server replaced the whole range, so an edit ending in a space
+left a doubled space that the next save stored. `applyAccepted` now widens to
+the stored range, and with nothing unsaved it takes the server's text when a
+change cannot be made locally.
 
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and
