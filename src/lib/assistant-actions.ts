@@ -315,6 +315,7 @@ export type RunningJob = JobScope & {
 	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
 	mode: 'full' | 'continuity';
 	title: string;
+	startedAt?: string;
 };
 
 // Picks up the writer's unfinished Assistant jobs after a page load, so their
@@ -331,9 +332,11 @@ export async function resumeRunningJobs(): Promise<void> {
 	}
 	for (const job of jobs) {
 		const { id, kind, mode, title, storyId, chapterId, universeId } = job;
+		const queued = job.startedAt ? Date.parse(job.startedAt) : NaN;
 		void trackJob({
 			jobId: id,
 			kind,
+			startedAt: Number.isFinite(queued) ? queued : undefined,
 			scope: { storyId, chapterId, universeId, mode },
 			...jobLabels(kind, mode, `"${title}"`),
 			href:

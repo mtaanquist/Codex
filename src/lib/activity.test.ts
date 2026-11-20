@@ -32,7 +32,17 @@ describe('trackJob', () => {
 		]);
 		const run = trackJob({ jobId: 'j1', kind: 'review', scope: { storyId: 's1' }, ...labels });
 
-		expect(trackedJobs.list).toEqual([{ id: 'j1', kind: 'review', storyId: 's1' }]);
+		// What the top bar's list shows: the label without its dots, when it
+		// started, and a way to stop it.
+		expect(trackedJobs.list).toHaveLength(1);
+		expect(trackedJobs.list[0]).toMatchObject({
+			id: 'j1',
+			kind: 'review',
+			storyId: 's1',
+			label: 'Running',
+			startedAt: Date.now()
+		});
+		expect(trackedJobs.list[0].stop).toBeTypeOf('function');
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(trackedJobs.list[0].progress).toEqual({ phase: 'scenes', completed: 2, total: 5 });
 
@@ -134,15 +144,21 @@ describe('trackJob', () => {
 				});
 			})
 		);
-		const run = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		const queued = Date.now() - 600_000;
+		const run = trackJob({ jobId: 'j1', kind: 'summaries', startedAt: queued, ...labels });
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(activity.items[0].stop).toBeTypeOf('function');
+		// A job picked up after a reload keeps the time it was queued.
+		expect(trackedJobs.list[0].startedAt).toBe(queued);
 
-		activity.items[0].stop?.();
+		// Stopped from the list, which carries the same stop as the card.
+		trackedJobs.list[0].stop?.();
 		await vi.advanceTimersByTimeAsync(0);
 		expect(calls).toContain('/api/assistant/job-stop');
 		expect(activity.items[0]).toMatchObject({ state: 'running', detail: 'Stopping...' });
 		expect(activity.items[0].stop).toBeUndefined();
+		expect(trackedJobs.list[0]).toMatchObject({ stopping: true });
+		expect(trackedJobs.list[0].stop).toBeUndefined();
 
 		await vi.advanceTimersByTimeAsync(3000);
 		await run;
