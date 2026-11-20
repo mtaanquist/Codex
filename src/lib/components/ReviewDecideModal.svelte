@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-<<<<<<< HEAD
 	import { invalidateAll } from '$app/navigation';
-=======
->>>>>>> origin/staging/non-assistant-polish
 	import { enhance } from '#lib/enhance';
 	import { modal } from '#lib/modal';
 	import Icon from './Icon.svelte';
@@ -41,15 +38,12 @@
 	let busy = $state(false);
 	let note = $state<string | null>(null);
 
-<<<<<<< HEAD
 	// A decision under way finishes before the dialog goes, so its outcome is
 	// always shown.
 	function close() {
 		if (!busy) onClose();
 	}
 
-=======
->>>>>>> origin/staging/non-assistant-polish
 	function edits(n: number) {
 		return n === 1 ? '1 edit' : `${n} edits`;
 	}
@@ -60,11 +54,7 @@
 	role="presentation"
 	data-over-menus
 	onclick={(event) => {
-<<<<<<< HEAD
 		if (event.target === event.currentTarget) close();
-=======
-		if (event.target === event.currentTarget && !busy) onClose();
->>>>>>> origin/staging/non-assistant-polish
 	}}
 >
 	<div
@@ -72,11 +62,7 @@
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="review-decide-title"
-<<<<<<< HEAD
 		use:modal={{ close }}
-=======
-		use:modal={{ close: onClose }}
->>>>>>> origin/staging/non-assistant-polish
 	>
 		<div class="modal-head">
 			<div class="modal-head-main">
@@ -85,7 +71,6 @@
 					The edits suggested on this scene. Untick any you want to leave for later.
 				</p>
 			</div>
-<<<<<<< HEAD
 			<button class="icon-btn sm" type="button" aria-label="Close" onclick={close}>
 				<Icon name="close" size={14} />
 			</button>
@@ -99,15 +84,6 @@
 				if (event.key === 'Enter' && event.target instanceof HTMLInputElement)
 					event.preventDefault();
 			}}
-=======
-			<button class="icon-btn sm" type="button" aria-label="Close" onclick={onClose}>
-				<Icon name="close" size={14} />
-			</button>
-		</div>
-		<form
-			method="POST"
-			action="?/decideSuggestions"
->>>>>>> origin/staging/non-assistant-polish
 			use:enhance={async ({ formData, submitter, cancel }) => {
 				const accept = submitter?.getAttribute('value') === 'accept';
 				busy = true;
@@ -124,22 +100,14 @@
 				}
 				return async ({ result, update }) => {
 					if (result.type !== 'success') {
-<<<<<<< HEAD
 						// A refusal changed nothing. Anything else may have stopped part
 						// of the way through, so the list is read again.
 						if (result.type !== 'failure') await invalidateAll();
-=======
-						await update();
->>>>>>> origin/staging/non-assistant-polish
 						busy = false;
 						note =
 							result.type === 'failure' && typeof result.data?.message === 'string'
 								? result.data.message
-<<<<<<< HEAD
 								: `That did not finish. Some edits may have been ${accept ? 'accepted' : 'rejected'}; the list shows the ones still waiting.`;
-=======
-								: 'That did not work. Nothing was changed; try again.';
->>>>>>> origin/staging/non-assistant-polish
 						return;
 					}
 					const data = result.data ?? {};
@@ -153,12 +121,8 @@
 								: null
 						);
 					}
-<<<<<<< HEAD
 					// The boxes follow the ticked state, not the form's defaults.
 					await update({ reset: false });
-=======
-					await update();
->>>>>>> origin/staging/non-assistant-polish
 					busy = false;
 					if (failed === 0) return onClose();
 					note = `${edits(decided.length)} ${accept ? 'accepted' : 'rejected'}. ${edits(failed)} could not be ${
@@ -202,15 +166,10 @@
 									/>
 									<span class="rd-edit">
 										<span class="rv-diff">
-<<<<<<< HEAD
 											{#if s.original}<span class="visually-hidden">Remove:</span>
 												<span class="rv-diff-del">{s.original}</span>{/if}
 											{#if s.replacement}<span class="visually-hidden">Add:</span>
 												<span class="rv-diff-ins">{s.replacement}</span>{/if}
-=======
-											{#if s.original}<span class="rv-diff-del">{s.original}</span>{/if}
-											{#if s.replacement}<span class="rv-diff-ins">{s.replacement}</span>{/if}
->>>>>>> origin/staging/non-assistant-polish
 										</span>
 										<span class="choice-hint">
 											{s.reviewerName}{s.anchorLost

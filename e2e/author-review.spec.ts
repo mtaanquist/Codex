@@ -334,11 +334,7 @@ test('the author accepts several suggestions together and leaves one out', async
 	await suggestOn('TWOTAIL', 'EDITTWO');
 	await suggestOn('THREETAIL', 'EDITTHREE');
 
-<<<<<<< HEAD
 	const toolbar = page.getByRole('group', { name: 'Suggested edits' });
-=======
-	const toolbar = page.getByRole('toolbar', { name: 'Suggested edits' });
->>>>>>> origin/staging/non-assistant-polish
 	await expect(toolbar).toContainText('3 suggested edits');
 	await toolbar.getByRole('button', { name: 'Decide together...' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Decide on suggested edits' });
@@ -373,7 +369,6 @@ test('the author accepts several suggestions together and leaves one out', async
 	// The pending edit's replacement shows as a ghost; its original is intact.
 	expect(text).toContain('THREETAIL closing.');
 });
-<<<<<<< HEAD
 
 // A suggestion's range can end in a space, which the mark in the manuscript
 // leaves out. The accept has to replace the whole range in the open editor as
@@ -422,5 +417,3 @@ test('accepting an edit whose range ends in a space leaves one space', async ({ 
 	await page.reload();
 	await expect.poll(exact).toBe('Changed ONETAIL closing. AFTERWORD');
 });
-=======
->>>>>>> origin/staging/non-assistant-polish
