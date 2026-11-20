@@ -53,7 +53,7 @@
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
 	import { flashActivity } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
-	import { renderReplyMarkdown } from '#lib/markdown';
+	import { renderReplyBlocks } from '#lib/markdown';
 	import {
 		attachmentKey,
 		attachmentLabel,
@@ -1536,8 +1536,13 @@
 							{#if message.content === '' && busy && index === messages.length - 1}
 								<div class="typing"><i></i><i></i><i></i></div>
 							{:else}
-								<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
-								{@html renderReplyMarkdown(message.content)}
+								<!-- One piece per top-level block, so a reply that is still arriving
+								     only redraws the block being written; what is above it stays put,
+								     selection and all. -->
+								{#each renderReplyBlocks(message.content) as block, at (at)}
+									<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
+									{@html block}
+								{/each}
 							{/if}
 						</div>
 						{#if message.content && !message.notice && !(busy && index === messages.length - 1) && index > 0}
