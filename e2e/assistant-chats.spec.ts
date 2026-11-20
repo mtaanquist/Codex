@@ -340,7 +340,10 @@ test('context added from the picker goes with the next message', async ({ page }
 				'content-type': 'text/event-stream',
 				// The whole book was sent, cut to fit.
 				...(first && attachments
-					? { 'x-chat-attachments': `story:${attachments[0].id}:book!` }
+					? {
+							// Renamed since it was picked; the chip follows.
+							'x-chat-attachments': `story:${attachments[0].id}:book!=${encodeURIComponent(`${title}, retitled`)}`
+						}
 					: {})
 			},
 			body:
@@ -364,7 +367,7 @@ test('context added from the picker goes with the next message', async ({ page }
 	await composer.fill('What is this book about?');
 	await composer.press('Enter');
 	await expect(panel.locator('.msg.user .msg-attachment')).toHaveText(
-		`${title} (whole book) (shortened)`
+		`${title}, retitled (whole book) (shortened)`
 	);
 	await expect(chip).toHaveCount(0);
 	expect(posted[0].at(-1)?.attachments).toEqual([
@@ -400,6 +403,13 @@ test('a message starting with a slash is not lost, and the typed menu follows th
 	);
 	await expect(composer).toHaveValue('/new idea for chapter three');
 	await expect(panel.locator('.chat-scroll')).toContainText('I do not know the command');
+
+	// A command that needs words and has none stays to be finished.
+	// (Enter on a bare "/who" picks it from the menu, which leaves "/who ".)
+	await composer.fill('/who ');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText('Name who to look up');
+	await expect(composer).toHaveValue('/who ');
 
 	const posted: { content: string }[][] = [];
 	await page.route('**/api/assistant/chat', (route) => {

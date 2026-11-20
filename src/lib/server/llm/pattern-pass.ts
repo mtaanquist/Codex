@@ -434,6 +434,22 @@ function noteWhere(pattern: PatternState, unit: PatternUnit) {
 	};
 }
 
+// The scenes a pattern shows in that still exist, in reading order. A scene
+// deleted since the survey is no place for the note or a fix, and takes up no
+// place in the cut.
+export function patternLiveScenes(sceneIds: string[], order: string[]): string[] {
+	return sceneIds
+		.filter((id) => order.includes(id))
+		.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
+// What the note adds when the pattern shows in more scenes than get fixes.
+export function fixLimitLine(liveScenes: number): string {
+	return liveScenes > APPLY_SCENES_PER_PATTERN
+		? `\n\nFixes are suggested in the first ${APPLY_SCENES_PER_PATTERN} of those scenes.`
+		: '';
+}
+
 // The pattern's note, on the first scene where it shows. A note already open
 // with the same text (an earlier attempt of this run) is reused.
 async function ensureNote(
@@ -443,17 +459,13 @@ async function ensureNote(
 	unit: PatternUnit
 ): Promise<boolean> {
 	if (pattern.threadId) return true;
-	const order = unit.scenes.map((s) => s.id);
-	// A scene deleted since the survey is not a place to leave the note.
-	const first = pattern.sceneIds
-		.filter((id) => order.includes(id))
-		.sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+	const live = patternLiveScenes(
+		pattern.sceneIds,
+		unit.scenes.map((s) => s.id)
+	);
+	const first = live[0];
 	if (!first) return false;
-	const more =
-		pattern.sceneIds.length > APPLY_SCENES_PER_PATTERN
-			? `\n\nFixes are suggested in the first ${APPLY_SCENES_PER_PATTERN} of those scenes.`
-			: '';
-	const body = patternNoteBody(pattern, noteWhere(pattern, unit)) + more;
+	const body = patternNoteBody(pattern, noteWhere(pattern, unit)) + fixLimitLine(live.length);
 	const created = await createThread(db, {
 		storyId,
 		sceneId: first,
@@ -590,12 +602,10 @@ export async function runPatternPass(
 				await save();
 				if (!pattern.threadId) continue;
 			}
-			const order = unit.scenes.map((s) => s.id);
-			// Scenes deleted since the survey do not take up places in the cut.
-			const fixIn = pattern.sceneIds
-				.filter((id) => byId.has(id))
-				.sort((a, b) => order.indexOf(a) - order.indexOf(b))
-				.slice(0, APPLY_SCENES_PER_PATTERN);
+			const fixIn = patternLiveScenes(
+				pattern.sceneIds,
+				unit.scenes.map((s) => s.id)
+			).slice(0, APPLY_SCENES_PER_PATTERN);
 			for (const sceneId of fixIn) {
 				if (pattern.applied.includes(sceneId)) continue;
 				opts.signal?.throwIfAborted();

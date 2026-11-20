@@ -57,6 +57,7 @@
 	import {
 		attachmentKey,
 		attachmentLabel,
+		parseAttachedHeader,
 		chatEffort,
 		MAX_ATTACHMENTS,
 		type AttachmentEntityType,
@@ -680,6 +681,11 @@
 		const name = slashName(raw);
 		return name === 'context' || (name === 'model' && !settingsLocked);
 	}
+	// The commands that do nothing without words after them, and what to say.
+	const NEEDS_WORDS: Record<string, string> = {
+		who: 'Name who to look up, like "/who Marra".',
+		find: 'Say what to search for, like "/find the obsidian coins".'
+	};
 	function runSlashCommand(raw: string, typed = true) {
 		commandSelected = 0;
 		const name = slashName(raw);
@@ -702,6 +708,12 @@
 		const story = SLASH_COMMANDS.find((c) => c.name === name)?.scope === 'story';
 		if (story && !isStory) {
 			assistantSay(`/${name} works in a story. Open a story to use it.`);
+			return;
+		}
+		// A command that needs words and has none: the line stays to finish.
+		const usage = NEEDS_WORDS[name];
+		if (usage && !slashArgs(raw)) {
+			assistantSay(usage);
 			return;
 		}
 		if (typed) {
@@ -974,20 +986,12 @@
 	// /who: show a character or place sheet inline, a templated chat send that
 	// leans on the tool-enabled chat (get_entity). Works in both scopes.
 	function askWho(who: string, typed: string) {
-		if (!who) {
-			assistantSay('Name who to look up, like "/who Marra".');
-			return;
-		}
 		void send(`Show me a short sheet for ${who}: the key facts you have on them.`, typed);
 	}
 
 	// /find: search the universe and list hits, a templated send backed by the
 	// universe-scoped search_text tool. Works in both scopes.
 	function askFind(query: string, typed: string) {
-		if (!query) {
-			assistantSay('Say what to search for, like "/find the obsidian coins".');
-			return;
-		}
 		void send(
 			`Search this universe for "${query}" and list what you find, with where each turns up.`,
 			typed
@@ -1175,17 +1179,15 @@
 	// which it had to cut; the chips follow, so they match what was stored.
 	function applyAttached(header: string | null) {
 		if (header === null) return;
-		const sent = new Map(
-			header
-				.split(',')
-				.filter(Boolean)
-				.map((key) => [key.replace(/!$/, ''), key.endsWith('!')])
-		);
+		const sent = parseAttachedHeader(header);
 		const turn = messages.findLast((m) => m.role === 'user');
 		if (!turn?.attachments) return;
 		const kept = turn.attachments.filter((a) => sent.has(attachmentKey(a)));
 		for (const a of kept) {
-			if (sent.get(attachmentKey(a))) a.shortened = true;
+			const stored = sent.get(attachmentKey(a))!;
+			if (stored.shortened) a.shortened = true;
+			// The name as stored, which follows a rename since it was picked.
+			if (stored.label !== undefined) a.label = stored.label;
 		}
 		const dropped = turn.attachments.length - kept.length;
 		turn.attachments = kept;
