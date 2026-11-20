@@ -134,12 +134,22 @@
 			])
 		];
 	});
-	// Per-token prices, from the last saved discovery snapshot overlaid with the
-	// one just run; absent for endpoints that report none.
-	const modelPricing = $derived({
+	// Per-token prices: what the endpoint reported at the last discovery (or the
+	// one just run), with anything typed here laid over it.
+	type Price = { prompt: number; completion: number };
+	const discoveredPricing = $derived({
 		...(data.assistant.modelPricing ?? {}),
 		...Object.fromEntries(discoveredModels.filter((m) => m.pricing).map((m) => [m.id, m.pricing!]))
-	});
+	} as Record<string, Price>);
+	const manualPricing = $derived(
+		(data.assistant.modelPricingManual ?? {}) as Record<string, Price>
+	);
+	const modelPricing = $derived({ ...discoveredPricing, ...manualPricing });
+	// A stored per-token price back as the dollars per million tokens that were
+	// typed, without the rounding noise of the division.
+	function perMillionValue(perToken: number | undefined): string {
+		return perToken === undefined ? '' : String(Number((perToken * 1_000_000).toPrecision(12)));
+	}
 	function perMillion(perToken: number): string {
 		const value = perToken * 1_000_000;
 		return `$${value >= 100 ? value.toFixed(0) : value.toFixed(2)}`;
@@ -566,6 +576,19 @@
 							Anthropic bills you for.
 						</p>
 					</div>
+					<div class="field">
+						<label for="cache_ttl">Keep repeated text ready for</label>
+						<select id="cache_ttl" name="cacheTtl" class="select">
+							<option value="5m" selected={data.assistant.cacheTtl !== '1h'}>5 minutes</option>
+							<option value="1h" selected={data.assistant.cacheTtl === '1h'}>1 hour</option>
+						</select>
+						<p class="field-hint">
+							Claude charges much less for text it was sent a short while ago, such as your story
+							notes going out again with each message. Choose 1 hour if you often pause for more
+							than 5 minutes between messages. With 1 hour, new text costs a little more the first
+							time it is sent.
+						</p>
+					</div>
 				{/if}
 				{#if extraParamsShown}
 					<div class="field">
@@ -792,6 +815,32 @@
 											? String(discoveredContext[model])
 											: 'Context window in tokens'}
 									/>
+									<div class="price-pair">
+										<input
+											class="input"
+											type="number"
+											min="0"
+											step="any"
+											name="price-in-{model}"
+											aria-label="{model} price per million tokens sent, in dollars"
+											value={perMillionValue(manualPricing[model]?.prompt)}
+											placeholder={discoveredPricing[model]
+												? perMillionValue(discoveredPricing[model].prompt)
+												: 'Price in'}
+										/>
+										<input
+											class="input"
+											type="number"
+											min="0"
+											step="any"
+											name="price-out-{model}"
+											aria-label="{model} price per million tokens received, in dollars"
+											value={perMillionValue(manualPricing[model]?.completion)}
+											placeholder={discoveredPricing[model]
+												? perMillionValue(discoveredPricing[model].completion)
+												: 'Price out'}
+										/>
+									</div>
 								</div>
 							</div>
 						{/each}
@@ -803,11 +852,12 @@
 						enter the size you started the server with, which is often smaller than the model can
 						handle.
 					</p>
-				{/if}
-				{#if Object.keys(modelPricing).length > 0}
 					<p class="field-hint">
-						Prices are what the endpoint reports, in dollars per million tokens: what you send (in)
-						and what the model writes back (out).
+						Prices are in dollars per million tokens: what you send (in) and what the model writes
+						back (out). If your endpoint does not report prices, look them up on your provider's
+						pricing page and type both in. Cost estimates and the spend cap need them. What you type
+						is kept when you discover models again; leave both boxes empty to use what your endpoint
+						reports.
 					</p>
 				{/if}
 				<div class="settings-actions">
@@ -840,7 +890,7 @@
 				</h2>
 				<p class="settings-group-subtitle">
 					Every request the assistant sends to your endpoint, with the token counts it reported.
-					Costs are estimates, shown when your endpoint publishes prices.
+					Costs are estimates, shown for models that have a price.
 				</p>
 			</header>
 			{#if data.assistantUsage.recent.length === 0 && data.assistantUsage.page === 0}

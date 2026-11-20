@@ -23,6 +23,7 @@ function account(partial: Partial<StoredAccountConfig> = {}): StoredAccountConfi
 		webSearch: false,
 		toolCallBudget: 8,
 		toolProfile: 'full',
+		cacheTtl: '5m',
 		...partial
 	};
 }
@@ -40,6 +41,7 @@ function resolved(partial: Partial<ResolvedConfig> = {}): ResolvedConfig {
 		toolCallBudget: 8,
 		toolProfile: 'full',
 		modelContext: {},
+		cacheTtl: '5m',
 		...partial
 	};
 }
