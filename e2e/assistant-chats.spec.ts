@@ -272,7 +272,7 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 	await composer.fill('Who lit the fire?');
 	await composer.press('Enter');
 	await expect.poll(() => ids.length).toBe(1);
-	await expect(panel.locator('.chat-scroll')).toContainText('something went wrong');
+	await expect(panel.locator('.chat-scroll')).toContainText('may not have been sent');
 	await composer.fill('And why?');
 	await composer.press('Enter');
 	await expect(panel.locator('.chat-scroll')).toContainText('Nobody knows.');
@@ -284,7 +284,7 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 // messages, and a new chat starts on the default again.
 test('the model chip sets the model for one chat', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Model');
-	await page.route('**/api/assistant/models', (route) =>
+	await page.route('**/api/assistant/models*', (route) =>
 		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
 	);
 	const settings: unknown[] = [];
@@ -453,13 +453,49 @@ test('the command menu and Tab keep a draft, and a refused send comes back', asy
 	await expect(composer).toHaveValue('Where does it end?');
 	await expect(panel.locator('.msg.user')).toHaveCount(0);
 
-	// So does one that never reaches the server.
+	// So does one the server could not store.
+	await page.unroute('**/api/assistant/chat');
+	await page.route('**/api/assistant/chat', (route) =>
+		route.fulfill({
+			status: 500,
+			contentType: 'application/json',
+			headers: { 'x-chat-stored': '0' },
+			body: JSON.stringify({ message: 'Something went wrong before your message was stored.' })
+		})
+	);
+	await composer.fill('What about the start?');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message was not sent. Something went wrong before'
+	);
+	await expect(composer).toHaveValue('What about the start?');
+	await expect(panel.locator('.msg.user')).toHaveCount(0);
+
+	// So does one that never reaches the server. Its first message may have
+	// started the chat, so deleting the chat asks first.
 	await page.unroute('**/api/assistant/chat');
 	await page.route('**/api/assistant/chat', (route) => route.abort('internetdisconnected'));
 	await composer.fill('And the middle?');
 	await composer.press('Enter');
 	await expect(composer).toHaveValue('And the middle?');
 	await expect(panel.locator('.msg.user')).toHaveCount(0);
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message may not have been sent.'
+	);
+	const deletes: string[] = [];
+	await page.route('**/api/assistant/chats/*', (route) => {
+		if (route.request().method() !== 'DELETE') return route.continue();
+		deletes.push(route.request().url());
+		return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+	});
+	await composer.fill('/delete');
+	await composer.press('Enter');
+	await expect(page.getByRole('alertdialog')).toContainText('Delete this chat?');
+	expect(deletes).toHaveLength(0);
+	await confirmPrompt(page, 'Delete chat');
+	await expect.poll(() => deletes.length).toBe(1);
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText("I've read your codex");
+	await page.unroute('**/api/assistant/chats/*');
 
 	// A /rewrite that cannot go ahead keeps the line.
 	await composer.fill('/rewrite cut the adverbs');
@@ -490,7 +526,7 @@ test('a failed model save reverts the chip, and a suggestion keeps the draft', a
 	await expect(panel.locator('.msg.user')).toHaveCount(1);
 	await expect(composer).toHaveValue('My own question');
 
-	await page.route('**/api/assistant/models', (route) =>
+	await page.route('**/api/assistant/models*', (route) =>
 		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
 	);
 	await page.route('**/api/assistant/chats/*', (route) =>
@@ -510,7 +546,7 @@ test('a failed model save reverts the chip, and a suggestion keeps the draft', a
 // command menu's headings and options do not share ids.
 test('a catch-up keeps the model picked for a new chat', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Recap model');
-	await page.route('**/api/assistant/models', (route) =>
+	await page.route('**/api/assistant/models*', (route) =>
 		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
 	);
 	const recapId = '00000000-0000-4000-8000-000000000002';
@@ -687,4 +723,44 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	release();
 	await expect(chat).toContainText('At the quay.');
 	await expect(chat).not.toContainText('Name who to look up');
+});
+
+// A reply cut short before any text shows a line in its place, which is not
+// offered as text to insert and is not sent back with the next question.
+test('a reply cut short with no text shows a line that is not sent back', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Cut short');
+	const sent: { role: string; content: string }[][] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as {
+			newChatId?: string;
+			chatId?: string;
+			messages: { role: string; content: string }[];
+		};
+		sent.push(body.messages);
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': body.chatId ?? body.newChatId ?? '',
+				'x-chat-created': '1',
+				'x-chat-title': encodeURIComponent('First')
+			},
+			body:
+				sent.length === 1
+					? `data: ${JSON.stringify({ type: 'stopped', reason: 'context' })}\n\n` +
+						`data: ${JSON.stringify({ type: 'done' })}\n\n`
+					: `data: ${JSON.stringify({ type: 'token', text: 'Here.' })}\n\n` +
+						`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('First');
+	await composer.press('Enter');
+	const cut = panel.locator('.msg.assistant-msg').last();
+	await expect(cut).toContainText('The Assistant did not return a response.');
+	await expect(cut.locator('.msg-insert')).toHaveCount(0);
+	await composer.fill('Second');
+	await composer.press('Enter');
+	await expect(panel.locator('.chat-scroll')).toContainText('Here.');
+	expect(sent[1].map((m) => m.content)).not.toContain('The Assistant did not return a response.');
 });

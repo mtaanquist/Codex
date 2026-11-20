@@ -61,6 +61,8 @@
 		MAX_ATTACHMENTS,
 		type AttachmentKind,
 		CHAT_MISSING,
+		CHAT_STORED_HEADER,
+		NO_REPLY_TEXT,
 		CHAT_WINDOW_TURNS,
 		chatTitle,
 		newChatId,
@@ -205,10 +207,22 @@
 	const opening = isStory
 		? `I've read your codex for ${scopeTitle}. Ask me about your characters, check continuity, or work a scene.`
 		: `I've read your codex for ${scopeTitle}. Ask me anything across its stories - characters, places, lore, or continuity between the books.`;
+	// A reply cut short before any text shows a line in its place, as a notice:
+	// it is not text to insert, and it is not sent back as history.
+	function standIn(
+		content: string,
+		stopped: StopReason | undefined,
+		proposals: number
+	): { content: string; notice?: boolean } {
+		if (content.trim() === '' && stopped && proposals === 0) {
+			return { content: NO_REPLY_TEXT, notice: true };
+		}
+		return { content };
+	}
 	function toMessages(stored: StoredChatTurn[]): Message[] {
 		const seeded = stored.map((m) => ({
 			role: m.role,
-			content: m.content,
+			...standIn(m.content, m.meta?.stopped, m.meta?.proposals?.length ?? 0),
 			reference: m.meta?.reference,
 			attachments: m.meta?.attachments,
 			proposals: m.meta?.proposals?.map((p) => ({ ...p })),
@@ -384,6 +398,7 @@
 		const creating = chatId === null;
 		// A chat message is stored before its reply, so a stopped send leaves its
 		// turn in the chat the next send reuses.
+		const hadEarlierSend = nextChatMayExist;
 		if (creating && storesTurnFirst) nextChatMayExist = true;
 		let reached = false;
 		// A chat this request started without the chip's choice (a recap) is
@@ -428,9 +443,14 @@
 				olderSummarised = false;
 				return 'gone';
 			}
-			if (response.status >= 400 && response.status < 500) {
+			if (
+				(response.status >= 400 && response.status < 500) ||
+				response.headers.get(CHAT_STORED_HEADER) === '0'
+			) {
 				appendToReply(failure || 'The Assistant could not take that request.');
 				markUnsaved(true);
+				// Nothing was stored by this send, so it left no chat behind.
+				if (creating && !hadEarlierSend) nextChatMayExist = false;
 				return 'refused';
 			}
 			if (!response.ok || !response.body) {
@@ -459,28 +479,30 @@
 				}
 			}
 			const reply = messages[messages.length - 1];
-			// The same test the server applies before it stores a reply. An error
-			// after done means storing it failed.
+			// The server sends done once it has stored the reply, and stores one
+			// that has text, a proposal or a cut-short note.
 			const stored =
 				finished &&
 				!streamError &&
 				reply?.role === 'assistant' &&
-				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
+				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0 || !!reply.stopped);
+			if (stored) {
+				Object.assign(reply, standIn(reply.content, reply.stopped, reply.proposals?.length ?? 0));
+			}
 			if (startedIn && stored) adopt(startedIn);
 			if (reply?.role === 'assistant' && !stored) {
 				// Not stored, so not sent back. Text that broke off can still be
 				// inserted; an error in its place cannot.
 				reply.unsaved = true;
 				if (reply.content.trim() === '') {
-					reply.content = streamError || 'The Assistant did not return a response.';
+					reply.content = streamError || NO_REPLY_TEXT;
 					reply.notice = true;
 				} else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
 			const reply = messages[messages.length - 1];
 			if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
-				// A Stop or a dropped connection after done lands while the server
-				// stores the reply, which it still does.
+				// A Stop or a dropped connection after done: the reply is stored.
 				if (startedIn) adopt(startedIn);
 			} else if (controller.signal.aborted) {
 				// A writer's own Stop keeps what arrived to insert, but the server
@@ -559,7 +581,7 @@
 				...(isStory ? { sceneId } : {}),
 				// A reply the server did not store is not sent back either.
 				messages: turns
-					.filter((m) => !m.unsaved && m.content.trim() !== '')
+					.filter((m) => !m.unsaved && !m.notice && m.content.trim() !== '')
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({
 						role: m.role,
@@ -583,7 +605,11 @@
 				...messages.slice(0, -2),
 				{
 					role: 'assistant',
-					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
+					// With no answer at all, the message may still have arrived.
+					content:
+						outcome === 'unreached'
+							? 'Your message may not have been sent. It is back in the chat box.'
+							: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
 					unsaved: true,
 					notice: true
 				}
@@ -1243,11 +1269,9 @@
 	let deleting = $state(false);
 	async function deleteChat() {
 		if (deleting || busy || switching) return;
-		if (!chatId) {
-			// A stopped first send may have stored its question; it goes too.
-			if (nextChatMayExist) {
-				void fetch(`/api/assistant/chats/${nextChatId}`, { method: 'DELETE' }).catch(() => {});
-			}
+		// A new chat with nothing stored has nothing to delete. A stopped first
+		// send may have stored its question, so that one is asked about too.
+		if (!chatId && !nextChatMayExist) {
 			newChat();
 			return;
 		}
@@ -1260,12 +1284,15 @@
 		// The menu item that asked is gone by now, so focus goes back to the
 		// composer rather than being lost.
 		composer?.focus();
-		if (!ok || deleting || busy || switching || !chatId) return;
+		if (!ok || deleting || busy || switching) return;
+		const unopened = chatId === null;
+		if (unopened && !nextChatMayExist) return;
 		deleting = true;
-		const id = chatId;
+		const id = chatId ?? nextChatId;
 		try {
 			const response = await fetch(`/api/assistant/chats/${id}`, { method: 'DELETE' });
-			if (!response.ok) {
+			// The stopped send may have stored nothing, and then there is no chat.
+			if (!response.ok && !(unopened && response.status === 404)) {
 				flashActivity('failed', 'Could not delete the chat', 'Try again in a moment.');
 				return;
 			}
@@ -1603,6 +1630,7 @@
 				<div class="composer-pop">
 					<AssistantModelMenu
 						info={modelInfo}
+						storyId={'storyId' in scope ? scope.storyId : null}
 						settings={chatSettings}
 						onChange={changeSettings}
 						close={() => (modelOpen = false)}

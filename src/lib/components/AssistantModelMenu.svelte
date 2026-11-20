@@ -22,11 +22,14 @@
 	let {
 		info,
 		settings,
+		storyId = null,
 		onChange,
 		close,
 		refocus
 	}: {
 		info: ChatModelInfo;
+		// The story the panel is on, so models set for that story are offered.
+		storyId?: string | null;
 		settings: ChatModelSettings;
 		onChange: (settings: ChatModelSettings) => void;
 		close: () => void;
@@ -39,7 +42,8 @@
 
 	$effect(() => {
 		const controller = new AbortController();
-		fetch('/api/assistant/models', { signal: controller.signal })
+		const query = storyId ? `?storyId=${encodeURIComponent(storyId)}` : '';
+		fetch(`/api/assistant/models${query}`, { signal: controller.signal })
 			.then(async (response) => {
 				if (!response.ok) throw new Error('failed');
 				const body = (await response.json()) as { models: string[]; complete: boolean };
