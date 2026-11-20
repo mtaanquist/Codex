@@ -1000,6 +1000,11 @@ dismissed, the job could not be found or stopped outside its own page.
   one started in another tab shows without a reload.
 - The corner cards stay: they mark the moment a job starts and finishes. The
   list is the lasting place while it runs.
+- A job started in the open tab carries its card's label, which is worded
+  for the page it was started on ("Reviewing your story"). Opening the list
+  re-reads the running jobs and `labelJob` swaps in the titled label, so two
+  stories' reviews can be told apart. A Stop that fails says so on the row
+  (`stopError`), since the card that would have said it may be gone.
 - Finished jobs are not listed. The notification bell is already the record
   of what finished, and a second history would have to be kept in step with
   it.

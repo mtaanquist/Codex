@@ -40,6 +40,7 @@
 	function progress(job: TrackedJob): string {
 		const p = job.progress;
 		if (job.stopping) return 'Stopping...';
+		if (job.stopError) return job.stopError;
 		if (p?.phase === 'scenes' && p.total > 0) return `${p.completed} of ${p.total} scenes`;
 		if (p?.phase === 'summaries') return 'Updating summaries first';
 		if (p?.phase === 'patterns') return 'Looking for repeated habits';
@@ -51,6 +52,9 @@
 	// story or the universe it is about.
 	function place(job: TrackedJob): ResolvedPathname | null {
 		if (job.href) return job.href as ResolvedPathname;
+		if (job.storyId && (job.kind === 'enrich' || job.kind === 'details')) {
+			return resolve('/stories/[id]/plan', { id: job.storyId });
+		}
 		if (job.storyId) return resolve('/stories/[id]', { id: job.storyId });
 		if (job.universeId) return resolve('/universes/[id]/plan', { id: job.universeId });
 		return null;
@@ -97,8 +101,16 @@
 								{#if href}
 									<button class="work-link" type="button" onclick={() => go(href)}>Open</button>
 								{/if}
-								{#if job.stop}
-									<button class="work-link" type="button" onclick={job.stop}>Stop</button>
+								{#if job.stop || job.stopping}
+									<!-- Kept while a stop is on its way, so the keyboard focus stays put. -->
+									<button
+										class="work-link"
+										type="button"
+										aria-disabled={job.stopping}
+										onclick={() => job.stop?.()}
+									>
+										Stop
+									</button>
 								{/if}
 							</span>
 						</li>
@@ -208,6 +220,11 @@
 	}
 	.work-link:hover {
 		text-decoration: underline;
+	}
+	.work-link[aria-disabled='true'] {
+		color: var(--text-faint);
+		cursor: default;
+		text-decoration: none;
 	}
 	.work-foot {
 		margin: 0;

@@ -7,12 +7,13 @@ vi.mock('#lib/activity.svelte', () => ({
 	flashActivity: vi.fn(),
 	resolveActivity: vi.fn(),
 	startActivity: vi.fn(() => 'activity-1'),
-	trackJob: vi.fn(async () => {})
+	trackJob: vi.fn(async () => {}),
+	labelJob: vi.fn()
 }));
 
 const { startBackgroundReview, startSummariesJob, resumeRunningJobs, watchRunningJobs } =
 	await import('./assistant-actions');
-const { flashActivity, trackJob } = await import('#lib/activity.svelte');
+const { flashActivity, trackJob, labelJob } = await import('#lib/activity.svelte');
 
 type Handled = { jobId: string | null; message?: string; reason?: string };
 
@@ -197,6 +198,8 @@ describe('resumeRunningJobs', () => {
 			kind: 'summaries',
 			runningLabel: 'Updating summaries for "Saltglass"...'
 		});
+		// A job this tab already follows is given its title in the list.
+		expect(labelJob).toHaveBeenCalledWith('j1', 'Reviewing "Saltglass"...');
 	});
 
 	it('does nothing when the list cannot be read', async () => {

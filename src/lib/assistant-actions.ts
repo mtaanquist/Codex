@@ -11,7 +11,8 @@ import {
 	resolveActivity,
 	startActivity,
 	trackJob,
-	type JobScope
+	type JobScope,
+	labelJob
 } from '#lib/activity.svelte';
 import type { PatternScope, ReviewCategory } from '#lib/review-shape';
 
@@ -333,15 +334,18 @@ export async function resumeRunningJobs(): Promise<void> {
 	for (const job of jobs) {
 		const { id, kind, mode, title, storyId, chapterId, universeId } = job;
 		const queued = job.startedAt ? Date.parse(job.startedAt) : NaN;
+		const labels = jobLabels(kind, mode, `"${title}"`);
 		void trackJob({
 			jobId: id,
 			kind,
 			startedAt: Number.isFinite(queued) ? queued : undefined,
 			scope: { storyId, chapterId, universeId, mode },
-			...jobLabels(kind, mode, `"${title}"`),
+			...labels,
 			href:
 				kind === 'review' && storyId ? resolve('/stories/[id]/review', { id: storyId }) : undefined
 		});
+		// One this tab started itself gets its title in the background work list.
+		labelJob(id, labels.runningLabel);
 	}
 }
 

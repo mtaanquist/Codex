@@ -98,12 +98,24 @@ export type TrackedJob = JobScope & {
 	// Asks the queue to stop it; absent once a stop is on its way.
 	stop?: () => void;
 	stopping?: boolean;
+	// Why the last Stop did not go through.
+	stopError?: string;
 };
 
 export const trackedJobs = $state<{ list: TrackedJob[] }>({ list: [] });
 
 function updateJob(id: string, patch: Partial<TrackedJob>): void {
 	trackedJobs.list = trackedJobs.list.map((job) => (job.id === id ? { ...job, ...patch } : job));
+}
+
+// Names a tracked job by what it is over. A job started in this tab is
+// labelled for the page it was started on ("Reviewing your story"), which
+// says too little in a list that is open on every page.
+export function labelJob(id: string, runningLabel: string): void {
+	const label = runningLabel.replace(/\.\.\.$/, '');
+	if (trackedJobs.list.some((job) => job.id === id && job.label !== label)) {
+		updateJob(id, { label });
+	}
 }
 
 // How often a running job is polled: briskly at first, then less often for a
@@ -171,7 +183,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 	let stopRequest: Promise<boolean> | undefined;
 	const requestStop = async (): Promise<boolean> => {
 		resolveActivity(id, { state: 'running', detail: 'Stopping...', stop: undefined });
-		if (jobId) updateJob(jobId, { stop: undefined, stopping: true });
+		if (jobId) updateJob(jobId, { stop: undefined, stopping: true, stopError: undefined });
 		let message: string;
 		try {
 			const response = await fetch('/api/assistant/job-stop', {
@@ -191,7 +203,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 			message = 'Could not stop it. Check your connection and try again.';
 		}
 		resolveActivity(id, { state: 'running', detail: message, stop });
-		if (jobId) updateJob(jobId, { stop, stopping: false });
+		if (jobId) updateJob(jobId, { stop, stopping: false, stopError: message });
 		return false;
 	};
 	const stop = () => {
