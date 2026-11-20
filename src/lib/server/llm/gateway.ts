@@ -56,11 +56,15 @@ import type { ChatModelSettings } from '../../assistant-chat.ts';
 function addUsage(total: TokenUsage | undefined, next?: TokenUsage): TokenUsage | undefined {
 	if (!next) return total;
 	const cached = (total?.cachedPromptTokens ?? 0) + (next.cachedPromptTokens ?? 0);
+	const written = (total?.cacheWriteTokens ?? 0) + (next.cacheWriteTokens ?? 0);
+	const writtenHour = (total?.cacheWrite1hTokens ?? 0) + (next.cacheWrite1hTokens ?? 0);
 	const searches = (total?.webSearchRequests ?? 0) + (next.webSearchRequests ?? 0);
 	return {
 		promptTokens: (total?.promptTokens ?? 0) + next.promptTokens,
 		completionTokens: (total?.completionTokens ?? 0) + next.completionTokens,
 		...(cached > 0 ? { cachedPromptTokens: cached } : {}),
+		...(written > 0 ? { cacheWriteTokens: written } : {}),
+		...(writtenHour > 0 ? { cacheWrite1hTokens: writtenHour } : {}),
 		...(searches > 0 ? { webSearchRequests: searches } : {}),
 		...(total?.estimated || next.estimated ? { estimated: true } : {})
 	};
@@ -298,6 +302,8 @@ type Prepared = {
 	extraParams?: Record<string, unknown>;
 	// Offer the provider's own web search this turn (see webSearchAllowed).
 	webSearch?: boolean;
+	// The account's prompt cache lifetime (see CompletionRequest.cacheTtl).
+	cacheTtl?: '5m' | '1h';
 	// The reply length for this turn: what the writer set for this role, else
 	// what the surface asked for, else the role's default.
 	maxTokens: number;
@@ -440,6 +446,7 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		),
 		extraParams: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
+		cacheTtl: resolved.config.cacheTtl,
 		// A figure the writer set for the role wins over the surface's own: a
 		// local model that answers in 300 tokens or one that needs 8000 is theirs
 		// to know, and the surfaces cannot.
@@ -564,7 +571,8 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 				...(concluding ? { toolChoice: 'none' as const } : {}),
 				tuning: p.tuning,
 				extraParams: p.extraParams,
-				webSearch: p.webSearch
+				webSearch: p.webSearch,
+				cacheTtl: p.cacheTtl
 			});
 			await recordUsage(db, p, req, messages, result.usage);
 			usage = addUsage(addUsage(usage, result.failedUsage), result.usage);
@@ -668,7 +676,8 @@ export async function* stream(
 				maxTokens: prepared.maxTokens,
 				tuning: prepared.tuning,
 				extraParams: prepared.extraParams,
-				webSearch: prepared.webSearch
+				webSearch: prepared.webSearch,
+				cacheTtl: prepared.cacheTtl
 			},
 			prepared.conn,
 			prepared.http,
@@ -748,7 +757,8 @@ export async function completeDetailed(
 			maxTokens: prepared.maxTokens,
 			tuning: prepared.tuning,
 			extraParams: prepared.extraParams,
-			webSearch: prepared.webSearch
+			webSearch: prepared.webSearch,
+			cacheTtl: prepared.cacheTtl
 		});
 		await recordUsage(db, prepared, req, messages, response.usage);
 		usage = addUsage(addUsage(usage, response.failedUsage), response.usage);

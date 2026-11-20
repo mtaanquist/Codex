@@ -92,7 +92,8 @@ contacts a model on its own.
   again. To carry on with a review, either raise the cap and run it again, or run the same review again as it is: a run over the same
   scope (the same chapter, or the same whole story) skips the scenes the stopped
   run already read and starts from a fresh budget. Leave the box empty for no cap.
-  This needs your endpoint to publish prices for the model; without a price the
+  This needs a price for the model, either one your endpoint publishes or one
+  you typed in (see Prices, below); without a price the
   run says the cap could not be applied rather than stopping or ignoring it.
   See Usage and cost, below, for how requests are counted.
 - **Warn above**: before a chapter or whole-story review starts, the review window
@@ -114,8 +115,22 @@ contacts a model on its own.
   tokens sent and received. Next to each role, Tune opens a window holding the
   rest of that role's settings, with the line beside the button saying what is
   set. The window saves when you close it.
+- **Prices**: each model a role runs on gets two price boxes under
+  the role list, next to its context window: dollars per million tokens sent
+  (in) and received (out). Most providers, Claude and ChatGPT among them, do
+  not report prices to Codex, so look them up on your provider's pricing page
+  and type both in. Cost estimates, the review estimate, and the spend cap all
+  need them. What you type is kept when you discover models again and is used
+  instead of a price the endpoint reports. Leave both boxes empty to go back
+  to what the endpoint reports. Check the boxes again when your provider
+  changes its prices.
+- **Keep repeated text ready for** (Claude only): Claude charges much less for
+  text it was sent a short while ago, such as your story notes going out again
+  with each message. Normally it remembers that text for 5 minutes. Choose 1
+  hour if you often pause longer than that between messages. With 1 hour, new
+  text costs about twice the normal price the first time it is sent.
 - **Context window**: how much text a model can take in one request, counted in
-  tokens. Each model you have picked for a role gets a box under the role list.
+  tokens. Each model a role runs on gets a box under the role list.
   Discover models fills the number in when your endpoint reports one, and the
   number shows next to the model in the lists. Type your own number to override
   it; what you type is kept the next time you discover models. Empty the box to
@@ -191,7 +206,7 @@ contacts a model on its own.
   the effort for that role.
 - **Usage**: every request the Assistant sends to your endpoint is listed here
   with the token counts the endpoint reported, plus a 30-day total. When prices
-  are known, an estimated cost shows too. The list shows 50 requests at a time;
+  are known (see Prices, above), an estimated cost shows too. The list shows 50 requests at a time;
   use Older and Newer to page through the rest. Only counts are kept; the text
   itself is never stored in this log. See Usage and cost, below.
 
@@ -212,8 +227,10 @@ Your words are sent only to the endpoint you set here.
   the cap could not be fully applied.
 - **Cached context**: with the Claude provider, repeated context (your world
   details, earlier turns) is cached by the API and billed far cheaper on reuse.
-  The cost in the list counts cached tokens at the full price, so it errs on
-  the high side.
+  Text sent for the first time is billed a little higher so it can be reused.
+  The cost in the list counts every token sent at the plain price, so it runs
+  high when most of the text was reused and low when most of it was new. The spend cap counts reused text at a tenth of the
+  price and first-time text at Claude's higher rate.
 - **Web searches**: with the Claude provider, the list shows how many web
   searches a request ran. Claude charges for each search on top of tokens; that
   fee is not in the cost shown here or counted by the spend cap.

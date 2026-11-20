@@ -136,8 +136,9 @@ export function assistantSseResponse(options: {
 	// Older turns of this conversation were summarised; the panel shows a note.
 	summarised?: boolean;
 	// The newest message's attachments as sent, when it had any: their keys,
-	// with a trailing "!" on each one cut to fit. Ones left out (gone, trashed,
-	// muted) are missing, so the panel's chips can match what was stored.
+	// with a trailing "!" on each one cut to fit, then "=" and the name it was
+	// stored under, URI-encoded. Ones left out (gone, trashed, muted) are
+	// missing, so the panel's chips can match what was stored.
 	attached?: string[];
 	errorMessage: string;
 }): Response {

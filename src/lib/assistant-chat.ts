@@ -69,11 +69,16 @@ export function chatEffort(settings: ChatModelSettings, info: ChatModelInfo): Ef
 export const ATTACHMENT_KINDS = ['scene', 'chapter', 'entity', 'note', 'story'] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 export type StoryDepth = 'outline' | 'book';
+// What a library entry is, for the chip's icon.
+export const ATTACHMENT_ENTITY_TYPES = ['character', 'place', 'lore'] as const;
+export type AttachmentEntityType = (typeof ATTACHMENT_ENTITY_TYPES)[number];
 export type ChatAttachment = {
 	kind: AttachmentKind;
 	id: string;
 	label: string;
 	depth?: StoryDepth;
+	// Only on a library entry. Absent on one stored before this was recorded.
+	entityType?: AttachmentEntityType;
 	// Set by the server when the content did not fit and was cut.
 	shortened?: boolean;
 };
@@ -89,7 +94,7 @@ export function readAttachments(raw: unknown): ChatAttachment[] {
 	for (const item of raw) {
 		if (out.length >= MAX_ATTACHMENTS) break;
 		if (!item || typeof item !== 'object') continue;
-		const { kind, id, label, depth, shortened } = item as Record<string, unknown>;
+		const { kind, id, label, depth, shortened, entityType } = item as Record<string, unknown>;
 		if (!(ATTACHMENT_KINDS as readonly unknown[]).includes(kind)) continue;
 		if (typeof id !== 'string' || !isUuid(id)) continue;
 		const attachment: ChatAttachment = {
@@ -98,6 +103,9 @@ export function readAttachments(raw: unknown): ChatAttachment[] {
 			label: typeof label === 'string' ? label.trim().slice(0, MAX_ATTACHMENT_LABEL) : ''
 		};
 		if (kind === 'story') attachment.depth = depth === 'book' ? 'book' : 'outline';
+		if (kind === 'entity' && (ATTACHMENT_ENTITY_TYPES as readonly unknown[]).includes(entityType)) {
+			attachment.entityType = entityType as AttachmentEntityType;
+		}
 		if (shortened === true) attachment.shortened = true;
 		if (out.some((a) => attachmentKey(a) === attachmentKey(attachment))) continue;
 		out.push(attachment);
@@ -109,6 +117,44 @@ export function readAttachments(raw: unknown): ChatAttachment[] {
 // are two attachments.
 export function attachmentKey(a: Pick<ChatAttachment, 'kind' | 'id' | 'depth'>): string {
 	return a.depth ? `${a.kind}:${a.id}:${a.depth}` : `${a.kind}:${a.id}`;
+}
+
+// What the chat endpoint says it sent of the newest message's attachments
+// (the x-chat-attachments header): each one's key, "!" when it was cut to fit,
+// and, only where the stored name differs from the one the browser sent (a
+// rename since it was picked), "=" and that name, URI-encoded. Leaving the
+// usual case bare keeps the header short enough for a proxy's header limit.
+export function attachedHeader(stored: ChatAttachment[], sent: ChatAttachment[]): string[] {
+	const sentLabels = new Map(sent.map((a) => [attachmentKey(a), a.label]));
+	return stored.map((a) => {
+		const key = attachmentKey(a);
+		const head = `${key}${a.shortened ? '!' : ''}`;
+		return sentLabels.get(key) === a.label ? head : `${head}=${encodeURIComponent(a.label)}`;
+	});
+}
+
+export function parseAttachedHeader(
+	header: string
+): Map<string, { shortened: boolean; label?: string }> {
+	const out = new Map<string, { shortened: boolean; label?: string }>();
+	for (const entry of header.split(',')) {
+		if (!entry) continue;
+		const at = entry.indexOf('=');
+		const head = at === -1 ? entry : entry.slice(0, at);
+		let label: string | undefined;
+		if (at !== -1) {
+			try {
+				label = decodeURIComponent(entry.slice(at + 1));
+			} catch {
+				// A name that does not decode leaves the chip as it was.
+			}
+		}
+		out.set(head.replace(/!$/, ''), {
+			shortened: head.endsWith('!'),
+			...(label !== undefined ? { label } : {})
+		});
+	}
+	return out;
 }
 
 // A chip's text: the label, with what a story brings along.

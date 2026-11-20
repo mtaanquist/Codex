@@ -747,13 +747,15 @@ describe('chats over the endpoints', () => {
 		const attachment = { kind: 'scene', id: sceneId, label: 'Scene 1' };
 		// Gone since it was picked: left out, and the header says which were sent.
 		const gone = { kind: 'note', id: '11111111-1111-4111-8111-111111111111', label: 'Old' };
+		// Renamed since it was picked: stored, and reported, under its name now.
+		const stale = { ...attachment, label: 'An older title' };
 		const first = await chatPost({
 			storyId,
 			chatId,
-			messages: [{ role: 'user', content: 'Where to cut?', attachments: [attachment, gone] }]
+			messages: [{ role: 'user', content: 'Where to cut?', attachments: [stale, gone] }]
 		});
 		await first.text();
-		expect(first.headers.get('x-chat-attachments')).toBe(`scene:${sceneId}`);
+		expect(first.headers.get('x-chat-attachments')).toBe(`scene:${sceneId}=Scene%201`);
 		expect(sent.at(-1)!.at(-1)).toContain('The first half ends here.');
 		expect((await listChat(db, userId, chatId))[0].meta).toEqual({ attachments: [attachment] });
 

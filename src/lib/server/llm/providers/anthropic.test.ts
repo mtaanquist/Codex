@@ -466,7 +466,8 @@ describe('anthropicProvider.respond', () => {
 		expect(result.usage).toEqual({
 			promptTokens: 1000,
 			completionTokens: 3,
-			cachedPromptTokens: 888
+			cachedPromptTokens: 888,
+			cacheWriteTokens: 100
 		});
 	});
 
@@ -530,9 +531,58 @@ describe('anthropicProvider.respond over a stream', () => {
 		expect(result).toEqual({
 			content: 'Hello',
 			toolCalls: [],
-			usage: { promptTokens: 129, completionTokens: 7, cachedPromptTokens: 100 },
+			usage: {
+				promptTokens: 129,
+				completionTokens: 7,
+				cachedPromptTokens: 100,
+				cacheWriteTokens: 20
+			},
 			finishReason: 'stop'
 		});
+	});
+
+	it('reports the one-hour share of the cache writes', async () => {
+		const frames = [
+			start({
+				input_tokens: 9,
+				cache_creation_input_tokens: 50,
+				cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 40 }
+			}),
+			...end('end_turn', { output_tokens: 7 })
+		];
+		const result = await anthropicProvider.respond(req, conn, async () => sseResponse(frames));
+		expect(result.usage).toEqual({
+			promptTokens: 59,
+			completionTokens: 7,
+			cacheWriteTokens: 50,
+			cacheWrite1hTokens: 40
+		});
+	});
+
+	it('asks for the one-hour cache on both markers when the account chose it', async () => {
+		let sent: {
+			system?: { cache_control?: unknown }[];
+			messages?: { content: { cache_control?: unknown }[] }[];
+		} = {};
+		const http: HttpRequest = async (_url, init) => {
+			sent = JSON.parse(init.body ?? '{}');
+			return sseResponse([start(), ...end('end_turn')]);
+		};
+		await anthropicProvider.respond(
+			{
+				...req,
+				cacheTtl: '1h',
+				messages: [
+					{ role: 'system', content: 'persona' },
+					{ role: 'user', content: 'hi' }
+				]
+			},
+			conn,
+			http
+		);
+		const marker = { type: 'ephemeral', ttl: '1h' };
+		expect(sent.system?.[0].cache_control).toEqual(marker);
+		expect(sent.messages?.at(-1)?.content.at(-1)?.cache_control).toEqual(marker);
 	});
 
 	it('keeps thinking with its signature ahead of a tool call with split input JSON', async () => {
@@ -737,7 +787,8 @@ describe('anthropicProvider.respond over a stream', () => {
 		expect(result.usage).toEqual({
 			promptTokens: 199,
 			completionTokens: 12,
-			cachedPromptTokens: 150
+			cachedPromptTokens: 150,
+			cacheWriteTokens: 40
 		});
 	});
 

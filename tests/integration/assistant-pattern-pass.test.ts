@@ -348,6 +348,28 @@ describe('the chapter pattern pass', () => {
 		for (const messages of reviews) expect(asked(messages)).toContain('Pattern note (Sighing)');
 	});
 
+	it('asks for fixes against the scene as it reads now, and skips one deleted since', async () => {
+		// The writer edits one scene and deletes another while the survey runs.
+		const { provider, seen } = patternProvider(async (messages) => {
+			if (!isSurvey(messages)) return;
+			await db
+				.update(scenes)
+				.set({ bodyMd: 'Mara sighed, then laughed. The rain had stopped.' })
+				.where(eq(scenes.id, sceneIds[0]));
+			await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, sceneIds[1]));
+		});
+		await reviewStoryScenes(db, { userId, storyId, patterns: 'chapter' }, { provider });
+		const applies = seen.filter(isApply);
+		expect(applies.length).toBeGreaterThan(0);
+		for (const messages of applies) {
+			expect(asked(messages)).toContain('Mara sighed, then laughed. The rain had stopped.');
+			expect(asked(messages)).not.toContain('The rain fell.');
+			expect(asked(messages)).not.toContain(sceneIds[1]);
+		}
+		const edits = await db.select({ sceneId: reviewSuggestions.sceneId }).from(reviewSuggestions);
+		expect(edits.map((e) => e.sceneId)).toEqual([sceneIds[0]]);
+	});
+
 	it('keeps each fix in the scene it was asked about', async () => {
 		const { provider } = patternProvider(undefined, { editScene: () => sceneIds[1] });
 		await reviewStoryScenes(db, { userId, storyId, patterns: 'chapter' }, { provider });

@@ -176,6 +176,75 @@ describe('saveAssistantModels context windows', () => {
 	});
 });
 
+describe('saveAssistantModels prices', () => {
+	it('stores prices typed per million tokens as per-token prices', async () => {
+		await saveModels({
+			reviewer: 'big-model',
+			'price-in-big-model': '3',
+			'price-out-big-model': '15'
+		});
+		expect((await stored()).modelPricingManual).toEqual({
+			'big-model': { prompt: 3 / 1_000_000, completion: 15 / 1_000_000 }
+		});
+	});
+
+	it('clears the entry when the writer empties both boxes', async () => {
+		await storeConfig({ modelPricingManual: { 'big-model': { prompt: 1, completion: 2 } } });
+		await saveModels({
+			reviewer: 'big-model',
+			'price-in-big-model': '',
+			'price-out-big-model': ''
+		});
+		expect((await stored()).modelPricingManual?.['big-model']).toBeUndefined();
+	});
+
+	it('refuses half a price, or a negative one, and stores nothing', async () => {
+		for (const [priceIn, priceOut] of [
+			['3', ''],
+			['', '15'],
+			['-1', '15'],
+			['abc', '15']
+		]) {
+			const result = await saveModels({
+				reviewer: 'big-model',
+				'price-in-big-model': priceIn,
+				'price-out-big-model': priceOut
+			});
+			expect(result).toMatchObject({ status: 400 });
+		}
+		expect((await stored()).modelPricingManual).toBeUndefined();
+	});
+
+	it('keeps entries for models the form did not render', async () => {
+		await storeConfig({
+			modelPricingManual: {
+				'big-model': { prompt: 1, completion: 2 },
+				'small-model': { prompt: 3, completion: 4 }
+			}
+		});
+		await saveModels({
+			reviewer: 'big-model',
+			'price-in-big-model': '5',
+			'price-out-big-model': '6'
+		});
+		expect((await stored()).modelPricingManual).toEqual({
+			'big-model': { prompt: 5 / 1_000_000, completion: 6 / 1_000_000 },
+			'small-model': { prompt: 3, completion: 4 }
+		});
+	});
+});
+
+describe('saveAssistantEndpoint cache lifetime', () => {
+	it('stores the choice, and a save without the field keeps it', async () => {
+		await saveEndpoint({ cacheTtl: '1h' });
+		expect((await stored()).cacheTtl).toBe('1h');
+		await saveEndpoint({ spendCapUsd: '5' });
+		expect((await stored()).cacheTtl).toBe('1h');
+		await saveEndpoint({ cacheTtl: '5m' });
+		expect((await stored()).cacheTtl).toBe('5m');
+	});
+});
+
 describe('saveAssistantEndpoint spend fields', () => {
 	it('stores the amounts typed into the boxes', async () => {
 		await saveEndpoint({ spendCapUsd: '5', spendWarnUsd: '1.50' });

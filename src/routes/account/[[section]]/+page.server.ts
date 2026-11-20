@@ -40,7 +40,10 @@ import {
 	type ExtraParams,
 	type TuningMap,
 	saveAccountLlmConfig,
+	CACHE_TTLS,
+	type CacheTtl,
 	type ModelContextMap,
+	type ModelPricing,
 	type ModelMap,
 	type SaveResult,
 	MAX_TOOL_BUDGET,
@@ -208,6 +211,8 @@ function paramsField(raw: string): ExtraParams | 'invalid' {
 	return parsed as ExtraParams;
 }
 
+// Prices are typed in dollars per million tokens and stored per token.
+const TOKENS_PER_MILLION = 1_000_000;
 const PARAMS_MESSAGE = 'Extra settings must be a JSON object, like {"top_p": 0.9}.';
 
 // The Assistant section saves in pieces (identity, endpoint, models, the kill
@@ -231,6 +236,8 @@ async function patchAssistant(
 		toolProfile: ToolProfile;
 		toolCallBudget: number;
 		modelContextManual: ModelContextMap;
+		modelPricingManual: ModelPricing;
+		cacheTtl: CacheTtl;
 		spendCapUsd: number | null;
 		spendWarnUsd: number | null;
 	}>
@@ -252,6 +259,8 @@ async function patchAssistant(
 		toolCallBudget: patch.toolCallBudget,
 		toolProfile: patch.toolProfile ?? current.toolProfile,
 		modelContextManual: patch.modelContextManual,
+		modelPricingManual: patch.modelPricingManual,
+		cacheTtl: patch.cacheTtl,
 		spendCapUsd: patch.spendCapUsd,
 		spendWarnUsd: patch.spendWarnUsd,
 		supportsStreaming: current.supportsStreaming,
@@ -311,12 +320,18 @@ async function saveEndpointForm(userId: string, data: FormData) {
 	// An unchecked box sends nothing at all, so the hidden marker is what
 	// separates "turned off" from "this form never showed the box".
 	const webSearch = data.has('webSearchShown') ? data.get('webSearch') === 'on' : undefined;
+	// Only on the form for Claude; a save without it keeps what is stored.
+	const cacheRaw = formText(data, 'cacheTtl');
+	const cacheTtl = (CACHE_TTLS as readonly string[]).includes(cacheRaw)
+		? (cacheRaw as CacheTtl)
+		: undefined;
 	const result = await patchAssistant(userId, {
 		provider: normaliseProviderId(data.get('provider')),
 		endpoint: formText(data, 'endpoint'),
 		apiKey: formText(data, 'apiKey'),
 		extraParams,
 		webSearch,
+		cacheTtl,
 		spendCapUsd,
 		spendWarnUsd,
 		toolCallBudget,
@@ -572,10 +587,46 @@ export const actions: Actions = {
 			if (Number.isFinite(tokens) && tokens > 0) modelContextManual[model] = Math.floor(tokens);
 			else delete modelContextManual[model];
 		}
+		// A pair of price fields per model shown (price-in-<model id> and
+		// price-out-<model id>), in dollars per million tokens. Both blank drops
+		// the writer's entry; one blank is refused, since half a price cannot
+		// cost a request. Like the context fields, only the models on the form
+		// are touched.
+		const modelPricingManual: ModelPricing = { ...storedView.modelPricingManual };
+		for (const field of data.keys()) {
+			if (!field.startsWith('price-in-')) continue;
+			const model = field.slice('price-in-'.length);
+			const promptRaw = String(data.get(field)).trim();
+			const completionRaw = String(data.get(`price-out-${model}`) ?? '').trim();
+			if (!promptRaw && !completionRaw) {
+				delete modelPricingManual[model];
+				continue;
+			}
+			const prompt = Number(promptRaw);
+			const completion = Number(completionRaw);
+			if (
+				!promptRaw ||
+				!completionRaw ||
+				!Number.isFinite(prompt) ||
+				!Number.isFinite(completion) ||
+				prompt < 0 ||
+				completion < 0
+			) {
+				return fail(400, {
+					scope: 'assistant-models',
+					message: `Enter both prices for ${model} as dollar amounts, or leave both empty.`
+				});
+			}
+			modelPricingManual[model] = {
+				prompt: prompt / TOKENS_PER_MILLION,
+				completion: completion / TOKENS_PER_MILLION
+			};
+		}
 		const result = await patchAssistant(locals.user!.id, {
 			models,
 			tuning,
-			modelContextManual
+			modelContextManual,
+			modelPricingManual
 		});
 		if (!result.ok) return fail(400, { scope: 'assistant-models', message: result.reason });
 		return { scope: 'assistant-models', saved: true };

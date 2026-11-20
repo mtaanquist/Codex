@@ -115,22 +115,28 @@ function serialiseMessages(messages: ChatMessage[]): {
 // one on the system block covers tools + system (persona and world context,
 // stable across the turns of a chat and the rounds of a tool loop), and one
 // on the last block of the last message lets the next round of a tool loop
-// reuse everything sent so far. Reads bill at ~0.1x, writes at ~1.25x, and a
-// prompt below the model's cacheable minimum is silently not cached, so the
-// markers are safe to send unconditionally.
-const CACHE = { type: 'ephemeral' } as const;
+// reuse everything sent so far. Reads bill at ~0.1x and writes at ~1.25x (2x
+// for the one-hour cache), and a prompt below the model's cacheable minimum is
+// silently not cached, so the markers are safe to send unconditionally. Both
+// markers carry the same lifetime: the API refuses a longer-lived entry after
+// a shorter-lived one.
+type CacheControl = { type: 'ephemeral'; ttl?: '1h' };
 
-function markLastBlock(messages: { role: string; content: unknown }[]): void {
+function cacheControl(req: CompletionRequest): CacheControl {
+	return req.cacheTtl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
+}
+
+function markLastBlock(messages: { role: string; content: unknown }[], cache: CacheControl): void {
 	const last = messages[messages.length - 1];
 	// Requests always end on a user turn; never touch an assistant turn, whose
 	// blocks may be a replayed thinking sequence the API requires unchanged.
 	if (!last || last.role !== 'user') return;
 	if (typeof last.content === 'string') {
-		last.content = [{ type: 'text', text: last.content, cache_control: CACHE }];
+		last.content = [{ type: 'text', text: last.content, cache_control: cache }];
 	} else if (Array.isArray(last.content) && last.content.length > 0) {
 		const block = last.content[last.content.length - 1];
 		if (block && typeof block === 'object') {
-			last.content[last.content.length - 1] = { ...block, cache_control: CACHE };
+			last.content[last.content.length - 1] = { ...block, cache_control: cache };
 		}
 	}
 }
@@ -158,7 +164,8 @@ function webSearchTool(model: string): Record<string, unknown> {
 
 function requestBody(req: CompletionRequest, stream: boolean): string {
 	const { system, messages } = serialiseMessages(req.messages);
-	markLastBlock(messages as { role: string; content: unknown }[]);
+	const cache = cacheControl(req);
+	markLastBlock(messages as { role: string; content: unknown }[], cache);
 	// The writer's own tools and, when the turn asked for it, the server-side
 	// search alongside them. A concluding round forbids calls with tool_choice
 	// none, which stops the search too: that round is for answering.
@@ -177,7 +184,7 @@ function requestBody(req: CompletionRequest, stream: boolean): string {
 		// explicit "disabled" is rejected by models where thinking is always on).
 		...(req.tuning?.thinking ? { thinking: { type: 'adaptive' } } : {}),
 		...(req.tuning?.effort ? { output_config: { effort: req.tuning.effort } } : {}),
-		...(system ? { system: [{ type: 'text', text: system, cache_control: CACHE }] } : {}),
+		...(system ? { system: [{ type: 'text', text: system, cache_control: cache }] } : {}),
 		messages,
 		...(tools.length
 			? {
@@ -256,11 +263,34 @@ function truncate(text: string, max = 300): string {
 
 // With caching on, input_tokens is only the uncached remainder; the prompt's
 // real size is the sum with the cache reads and writes. The usage log stores
-// that sum, and the cache-read share rides alongside it as cachedPromptTokens so
-// the cost can price those tokens at the cheaper cache rate.
-function cacheRead(usage: { cache_read_input_tokens?: unknown }): number {
-	const read = Number(usage.cache_read_input_tokens);
-	return Number.isFinite(read) && read > 0 ? read : 0;
+// that sum, and the cache shares ride alongside it so the cost can price reads
+// at the cheaper cache rate and writes at their premium.
+type CacheUsage = Pick<
+	TokenUsage,
+	'cachedPromptTokens' | 'cacheWriteTokens' | 'cacheWrite1hTokens'
+>;
+
+function count(raw: unknown): number {
+	const value = Number(raw);
+	return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// cache_creation breaks the writes down by lifetime. A request can hold both:
+// a server tool writes its own five-minute entries whatever the markers ask.
+function cacheShares(usage: {
+	cache_read_input_tokens?: unknown;
+	cache_creation_input_tokens?: unknown;
+	cache_creation?: unknown;
+}): CacheUsage {
+	const read = count(usage.cache_read_input_tokens);
+	const written = count(usage.cache_creation_input_tokens);
+	const breakdown = usage.cache_creation as { ephemeral_1h_input_tokens?: unknown } | undefined;
+	const hour = Math.min(count(breakdown?.ephemeral_1h_input_tokens), written);
+	return {
+		...(read > 0 ? { cachedPromptTokens: read } : {}),
+		...(written > 0 ? { cacheWriteTokens: written } : {}),
+		...(hour > 0 ? { cacheWrite1hTokens: hour } : {})
+	};
 }
 
 function promptTotal(usage: {
@@ -291,6 +321,7 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 				output_tokens?: unknown;
 				cache_creation_input_tokens?: unknown;
 				cache_read_input_tokens?: unknown;
+				cache_creation?: unknown;
 				server_tool_use?: unknown;
 		  }
 		| undefined;
@@ -298,12 +329,11 @@ function parseUsage(raw: unknown): TokenUsage | undefined {
 	const prompt = promptTotal(usage);
 	const completion = Number(usage.output_tokens);
 	if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return undefined;
-	const cached = cacheRead(usage);
 	const searches = webSearches(usage);
 	return {
 		promptTokens: prompt,
 		completionTokens: completion,
-		...(cached > 0 ? { cachedPromptTokens: cached } : {}),
+		...cacheShares(usage),
 		...(searches > 0 ? { webSearchRequests: searches } : {})
 	};
 }
@@ -359,12 +389,11 @@ function partialUsage(
 	const completion = progress.sawDelta
 		? counted
 		: Math.max(counted, estimatedOutput(progress, !cancelled));
-	const cached = cacheRead(raw);
 	const searches = webSearches(raw);
 	return {
 		promptTokens: prompt,
 		completionTokens: completion,
-		...(cached > 0 ? { cachedPromptTokens: cached } : {}),
+		...cacheShares(raw),
 		...(searches > 0 ? { webSearchRequests: searches } : {}),
 		...(progress.sawDelta ? {} : { estimated: true })
 	};
@@ -438,7 +467,7 @@ const CLOSED_EARLY = 'The connection closed before the reply finished.';
 
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
 	let promptTokens: number | undefined;
-	let cachedPromptTokens = 0;
+	let cache: CacheUsage = {};
 	let completionTokens: number | undefined;
 	let searches = 0;
 	let streamedChars = 0;
@@ -450,7 +479,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			usage: {
 				promptTokens: promptTokens ?? 0,
 				completionTokens: completionTokens ?? tokensForChars(streamedChars),
-				...(cachedPromptTokens > 0 ? { cachedPromptTokens } : {}),
+				...cache,
 				...(searches > 0 ? { webSearchRequests: searches } : {}),
 				...(completionTokens === undefined ? { estimated: true } : {})
 			}
@@ -466,6 +495,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 						input_tokens?: unknown;
 						cache_creation_input_tokens?: unknown;
 						cache_read_input_tokens?: unknown;
+						cache_creation?: unknown;
 					};
 				};
 				usage?: { output_tokens?: unknown; server_tool_use?: unknown };
@@ -474,7 +504,7 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 			if (frame.type === 'message_start') {
 				const input = frame.message?.usage ? promptTotal(frame.message.usage) : NaN;
 				if (Number.isFinite(input)) promptTokens = input;
-				if (frame.message?.usage) cachedPromptTokens = cacheRead(frame.message.usage);
+				if (frame.message?.usage) cache = cacheShares(frame.message.usage);
 				continue;
 			}
 			if (frame.type === 'message_delta') {
