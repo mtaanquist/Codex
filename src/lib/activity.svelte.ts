@@ -89,12 +89,33 @@ export type TrackedJob = JobScope & {
 	id: string;
 	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
 	progress?: JobProgress;
+	// What the job is doing, as its card says it ("Reviewing "Tides"").
+	label: string;
+	// When it was queued (or, for a job this tab started, when it was started).
+	startedAt: number;
+	// Where its result shows, when there is one place.
+	href?: string;
+	// Asks the queue to stop it; absent once a stop is on its way.
+	stop?: () => void;
+	stopping?: boolean;
+	// Why the last Stop did not go through.
+	stopError?: string;
 };
 
 export const trackedJobs = $state<{ list: TrackedJob[] }>({ list: [] });
 
 function updateJob(id: string, patch: Partial<TrackedJob>): void {
 	trackedJobs.list = trackedJobs.list.map((job) => (job.id === id ? { ...job, ...patch } : job));
+}
+
+// Names a tracked job by what it is over. A job started in this tab is
+// labelled for the page it was started on ("Reviewing your story"), which
+// says too little in a list that is open on every page.
+export function labelJob(id: string, runningLabel: string): void {
+	const label = runningLabel.replace(/\.\.\.$/, '');
+	if (trackedJobs.list.some((job) => job.id === id && job.label !== label)) {
+		updateJob(id, { label });
+	}
 }
 
 // How often a running job is polled: briskly at first, then less often for a
@@ -137,6 +158,8 @@ type TrackOptions = {
 	doneLabel: string;
 	failedLabel: string;
 	href?: string;
+	// When the server says the job was queued; now, for one just started.
+	startedAt?: number;
 };
 
 export function trackJob(opts: TrackOptions): Promise<void> {
@@ -160,6 +183,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 	let stopRequest: Promise<boolean> | undefined;
 	const requestStop = async (): Promise<boolean> => {
 		resolveActivity(id, { state: 'running', detail: 'Stopping...', stop: undefined });
+		if (jobId) updateJob(jobId, { stop: undefined, stopping: true, stopError: undefined });
 		let message: string;
 		try {
 			const response = await fetch('/api/assistant/job-stop', {
@@ -171,6 +195,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 			// Already settled: the next poll shows how it ended.
 			if (response.status === 404) {
 				resolveActivity(id, { state: 'running', detail: undefined });
+				if (jobId) updateJob(jobId, { stopping: false });
 				return false;
 			}
 			message = 'Could not stop it. Try again in a moment.';
@@ -178,6 +203,7 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 			message = 'Could not stop it. Check your connection and try again.';
 		}
 		resolveActivity(id, { state: 'running', detail: message, stop });
+		if (jobId) updateJob(jobId, { stop, stopping: false, stopError: message });
 		return false;
 	};
 	const stop = () => {
@@ -192,7 +218,18 @@ async function followJob(opts: TrackOptions, jobId: string | null): Promise<void
 		});
 		return;
 	}
-	trackedJobs.list = [...trackedJobs.list, { id: jobId, kind: opts.kind, ...opts.scope }];
+	trackedJobs.list = [
+		...trackedJobs.list,
+		{
+			id: jobId,
+			kind: opts.kind,
+			...opts.scope,
+			label: opts.runningLabel.replace(/\.\.\.$/, ''),
+			startedAt: opts.startedAt ?? Date.now(),
+			href: opts.href,
+			stop
+		}
+	];
 	resolveActivity(id, { state: 'running', stop });
 	const startedAt = Date.now();
 	try {

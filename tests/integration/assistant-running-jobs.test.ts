@@ -102,6 +102,9 @@ describe('findRunningAssistantJobs', () => {
 		expect(jobs).toMatchObject([
 			{ id, kind: 'details', universeId, storyId: null, title: 'The Lantern Guild' }
 		]);
+		// When it was queued, for the list of background work.
+		const queued = Date.parse(jobs[0].startedAt);
+		expect(Math.abs(Date.now() - queued)).toBeLessThan(60_000);
 	});
 
 	it('lists a character arc as its own kind, named for the character', async () => {
@@ -129,7 +132,8 @@ describe('findRunningAssistantJobs', () => {
 				storyId: null,
 				chapterId: null,
 				universeId,
-				title: 'Hollow Coast'
+				title: 'Hollow Coast',
+				startedAt: expect.any(String)
 			}
 		]);
 	});
@@ -158,7 +162,8 @@ describe('findRunningAssistantJobs', () => {
 			storyId,
 			chapterId: null,
 			universeId: null,
-			title: 'Saltglass'
+			title: 'Saltglass',
+			startedAt: expect.any(String)
 		});
 		expect(jobs.find((j) => j.id === summaries)).toMatchObject({
 			kind: 'summaries',
