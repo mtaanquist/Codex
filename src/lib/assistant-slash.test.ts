@@ -5,6 +5,7 @@ import {
 	slashName,
 	slashArgs,
 	isSlashCommand,
+	hasStrayArgs,
 	commandsForScope,
 	SLASH_COMMANDS,
 	matchCommands,
@@ -123,5 +124,20 @@ describe('isSlashCommand', () => {
 		expect(isSlashCommand('/r/fantasy says this is overdone')).toBe(false);
 		expect(isSlashCommand('/reveiw')).toBe(false);
 		expect(isSlashCommand('/')).toBe(false);
+	});
+});
+
+describe('hasStrayArgs', () => {
+	it('is true for words after a command that takes none', () => {
+		expect(hasStrayArgs('/help me tighten this paragraph')).toBe(true);
+		expect(hasStrayArgs('/new idea for chapter 3')).toBe(true);
+		expect(hasStrayArgs('/clear the air between them')).toBe(true);
+	});
+
+	it('is false for a bare command and for one that takes words', () => {
+		expect(hasStrayArgs('/help')).toBe(false);
+		expect(hasStrayArgs('/new  ')).toBe(false);
+		expect(hasStrayArgs('/write a storm scene')).toBe(false);
+		expect(hasStrayArgs('/who Mira')).toBe(false);
 	});
 });

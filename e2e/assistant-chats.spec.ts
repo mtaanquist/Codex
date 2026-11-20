@@ -392,6 +392,15 @@ test('a message starting with a slash is not lost, and the typed menu follows th
 	);
 	await expect(composer).toHaveValue('/r/fantasy says this trope is overdone');
 
+	// Words after a command that takes none are kept too, and it does not run.
+	await composer.fill('/new idea for chapter three');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'/new takes nothing after it'
+	);
+	await expect(composer).toHaveValue('/new idea for chapter three');
+	await expect(panel.locator('.chat-scroll')).toContainText('I do not know the command');
+
 	const posted: { content: string }[][] = [];
 	await page.route('**/api/assistant/chat', (route) => {
 		posted.push(route.request().postDataJSON().messages);
@@ -409,7 +418,6 @@ test('a message starting with a slash is not lost, and the typed menu follows th
 
 	// Arrow down the full list, then narrow it: the highlight is the first match.
 	await composer.fill('/');
-	await composer.press('ArrowDown');
 	await composer.press('ArrowDown');
 	await composer.pressSequentially('h');
 	await expect(composer).toHaveValue('/h');
@@ -738,42 +746,70 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await expect(chat).not.toContainText('Name who to look up');
 });
 
-// A reply cut short before any text shows a line in its place, which is not
-// offered as text to insert and is not sent back with the next question.
-test('a reply cut short with no text shows a line that is not sent back', async ({ page }) => {
-	const { panel } = await freshStoryPanel(page, 'Cut short');
+// A stored reply that was cut short before any text shows a line in its
+// place, which is not offered as text to insert and is not sent back with the
+// next question.
+test('a stored reply cut short with no text shows a line that is not sent back', async ({
+	page
+}) => {
+	await gotoReady(page, '/');
+	const name = `Cut short ${Date.now()}`;
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(name);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
+
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	let universeId: string;
+	try {
+		const { rows } = await pool.query<{ id: string; owner_id: string }>(
+			'select id, owner_id from universes where name = $1',
+			[name]
+		);
+		universeId = rows[0].id;
+		const chat = await pool.query<{ id: string }>(
+			`insert into assistant_chats (universe_id, user_id, title) values ($1, $2, 'First') returning id`,
+			[universeId, rows[0].owner_id]
+		);
+		const turns: [string, string, string | null, string][] = [
+			['user', 'First', null, '2026-11-01T10:00:00Z'],
+			['assistant', '', JSON.stringify({ stopped: 'context' }), '2026-11-01T10:00:01Z']
+		];
+		for (const [role, content, meta, at] of turns) {
+			await pool.query(
+				`insert into assistant_chat_messages (chat_id, universe_id, user_id, role, content, meta, created_at)
+				 values ($1, $2, $3, $4, $5, $6, $7)`,
+				[chat.rows[0].id, universeId, rows[0].owner_id, role, content, meta, at]
+			);
+		}
+	} finally {
+		await pool.end();
+	}
+
+	await gotoReady(page, `/universes/${universeId}/insights`);
+	const panel = page.locator('.assistant');
+	const cut = panel.locator('.msg.assistant-msg').last();
+	await expect(cut).toContainText('The Assistant did not return a response.');
+	await expect(cut.locator('.msg-insert')).toHaveCount(0);
+
 	const sent: { role: string; content: string }[][] = [];
 	await page.route('**/api/assistant/chat', async (route) => {
 		const body = route.request().postDataJSON() as {
-			newChatId?: string;
 			chatId?: string;
 			messages: { role: string; content: string }[];
 		};
 		sent.push(body.messages);
 		await route.fulfill({
 			status: 200,
-			headers: {
-				'content-type': 'text/event-stream',
-				'x-chat-id': body.chatId ?? body.newChatId ?? '',
-				'x-chat-created': '1',
-				'x-chat-title': encodeURIComponent('First')
-			},
+			headers: { 'content-type': 'text/event-stream', 'x-chat-id': body.chatId ?? '' },
 			body:
-				sent.length === 1
-					? `data: ${JSON.stringify({ type: 'stopped', reason: 'context' })}\n\n` +
-						`data: ${JSON.stringify({ type: 'done' })}\n\n`
-					: `data: ${JSON.stringify({ type: 'token', text: 'Here.' })}\n\n` +
-						`data: ${JSON.stringify({ type: 'done' })}\n\n`
+				`data: ${JSON.stringify({ type: 'token', text: 'Here.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
 		});
 	});
-	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
-	await composer.fill('First');
-	await composer.press('Enter');
-	const cut = panel.locator('.msg.assistant-msg').last();
-	await expect(cut).toContainText('The Assistant did not return a response.');
-	await expect(cut.locator('.msg-insert')).toHaveCount(0);
+	const composer = page.getByPlaceholder('Ask about this universe', { exact: false });
 	await composer.fill('Second');
 	await composer.press('Enter');
 	await expect(panel.locator('.chat-scroll')).toContainText('Here.');
-	expect(sent[1].map((m) => m.content)).not.toContain('The Assistant did not return a response.');
+	expect(sent[0].map((m) => m.content)).toEqual(['First', 'Second']);
 });
