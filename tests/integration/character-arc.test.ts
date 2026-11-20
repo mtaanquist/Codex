@@ -27,6 +27,7 @@ import { saveSceneBody } from '../../src/lib/server/scene-save';
 import { restoreUniverse, trashUniverse } from '../../src/lib/server/universe-lifecycle';
 import { saveStoryDetails } from '../../src/lib/server/story-details';
 import { saveEntity } from '../../src/lib/server/entity-save';
+import { purgeStory } from '../../src/lib/server/story-delete';
 import { arcRequests } from '../../src/lib/server/llm/arc-request';
 import { buildArcMessage } from '../../src/lib/server/llm/prompts/arc';
 import { requestHash } from '../../src/lib/server/llm/request-hash';
@@ -38,6 +39,7 @@ const { summariseCharacterArc, planArc } = await import('../../src/lib/server/ll
 const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniverseModels } =
 	await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
+const { assembleContext } = await import('../../src/lib/server/llm/context/assemble');
 
 let lastPrompt = '';
 let lastModel = '';
@@ -268,8 +270,10 @@ describe('summariseCharacterArc', () => {
 		]);
 		expect(requests.get(bram.id)).toEqual({
 			messages: bramMessages,
-			input: requestHash(bramMessages as ChatMessage[])
+			input: requestHash(bramMessages as ChatMessage[]),
+			storyIds: [firstStoryId, secondStoryId]
 		});
+		expect(requests.get(isolde.id)!.storyIds).toEqual([firstStoryId]);
 		// A scene with a summary is told by it, whichever mention came first.
 		expect(requests.get(isolde.id)!.messages).toEqual(
 			expected('Isolde', [
@@ -994,5 +998,121 @@ describe('muting and unmuting a story', () => {
 		const [after] = await db.select().from(characters).where(eq(characters.id, bram.id));
 		expect(after.arcSummaryMd).toBe(before.arcSummaryMd);
 		expect(await arcStale(bram.id)).toBe(true);
+	});
+});
+
+// Text of a story the Assistant is turned off for must not reach the model
+// through an arc that retold it, whatever happens to the story afterwards.
+describe('an out-of-date arc and a muted story', () => {
+	const ARC = 'Bram leaves the harbour and becomes a captain.';
+	let bramId: string;
+	let sceneA: string;
+	let sceneB: string;
+
+	// An arc written from both stories.
+	beforeEach(async () => {
+		bramId = (await makeCharacter()).id;
+		sceneA = await sceneMentioning(firstStoryId, bramId, { position: 1, snippet: 'Bram at sea' });
+		sceneB = await sceneMentioning(secondStoryId, bramId, {
+			position: 1,
+			snippet: 'Bram in private'
+		});
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bramId }, deps);
+	});
+
+	const contextText = async () =>
+		(await assembleContext(db, { userId: ownerId, storyId: firstStoryId, sceneId: sceneA }))!.text;
+
+	it('is sent while the story is read, and left out once it is muted', async () => {
+		expect(await contextText()).toContain(`Across the stories: ${ARC}`);
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('stays out when the muted scene that mentioned the character is deleted', async () => {
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect(await trashScene(db, ownerId, sceneB)).toBe(true);
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('stays out when the character is written out of the muted story', async () => {
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await db.delete(entityMentions).where(eq(entityMentions.sourceId, sceneB));
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('stays out when the muted story is deleted for good', async () => {
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await purgeStory(db, secondStoryId);
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('stays out when a story it read is deleted for good without a mute', async () => {
+		await purgeStory(db, secondStoryId);
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('comes back when the story is unmuted', async () => {
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+		expect(await contextText()).toContain(`Across the stories: ${ARC}`);
+
+		// Out of date for another reason, it comes back with its note.
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		await db.update(scenes).set({ summaryMd: 'Bram sails.' }).where(eq(scenes.id, sceneA));
+		expect(await contextText()).not.toContain(ARC);
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: null });
+		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram leaves/);
+	});
+
+	it('is sent with its note when out of date and every story it read is still read', async () => {
+		await db.update(scenes).set({ summaryMd: 'Bram sails.' }).where(eq(scenes.id, sceneA));
+		// Muting a story the arc never read does not hide it.
+		const [third] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Apart', positionInSeries: 3 })
+			.returning({ id: stories.id });
+		await sceneMentioning(third.id, bramId, { position: 1, snippet: 'Bram apart' });
+		await saveStoryLlmOverride(db, third.id, { enabled: false });
+		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram leaves/);
+	});
+
+	it('is left out when the stories it read were never recorded', async () => {
+		await db.update(scenes).set({ summaryMd: 'Bram sails.' }).where(eq(scenes.id, sceneA));
+		await pool.query('update characters set arc_summary_stories = null where id = $1', [bramId]);
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('holds for an arc from before the stories it read were recorded', async () => {
+		// As migration 0093 leaves such an arc: no fingerprint it can match, and
+		// every story of its universe on its list.
+		const [third] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Apart', positionInSeries: 3 })
+			.returning({ id: stories.id });
+		await db
+			.update(characters)
+			.set({ arcSummaryInput: null, arcSummaryStories: [firstStoryId, secondStoryId, third.id] })
+			.where(eq(characters.id, bramId));
+		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram leaves/);
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		expect(await contextText()).not.toContain(ARC);
+		await purgeStory(db, secondStoryId);
+		expect(await contextText()).not.toContain(ARC);
+	});
+
+	it('records only the stories read, and a rewrite after a mute drops the muted one', async () => {
+		const read = async () =>
+			(
+				await pool.query('select arc_summary_stories as ids from characters where id = $1', [
+					bramId
+				])
+			).rows[0].ids as string[];
+		expect([...(await read())].sort()).toEqual([firstStoryId, secondStoryId].sort());
+		await saveStoryLlmOverride(db, secondStoryId, { enabled: false });
+		reply = 'Bram stays at sea.';
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bramId }, deps);
+		expect(await read()).toEqual([firstStoryId]);
+		expect(await contextText()).toContain('Across the stories: Bram stays at sea.');
 	});
 });

@@ -396,6 +396,11 @@ export const characters = pgTable(
 		// A hash of the request the arc was written from. The arc is out of date
 		// when the request that would be sent now hashes differently.
 		arcSummaryInput: text('arc_summary_input'),
+		// The stories whose scenes the arc was written from. An out-of-date arc
+		// is not given to the Assistant when one of them is muted or gone, since
+		// it may retell that story. Plain ids, not references: a story deleted
+		// for good must still be found missing.
+		arcSummaryStories: uuid('arc_summary_stories').array(),
 		// Original card data if imported (SillyTavern etc).
 		importedFrom: jsonb('imported_from'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

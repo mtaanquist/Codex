@@ -3,7 +3,6 @@ import type { Database } from '../../auth.ts';
 import {
 	chapters,
 	characterStoryNotes,
-	entityMentions,
 	loreEntries,
 	loreStoryNotes,
 	notes,
@@ -446,7 +445,8 @@ async function buildScopeEntities(
 				details: table.details,
 				aliases: table.aliases,
 				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`,
-				arcSummaryInput: 'arcSummaryInput' in table ? table.arcSummaryInput : sql<null>`null`
+				arcSummaryInput: 'arcSummaryInput' in table ? table.arcSummaryInput : sql<null>`null`,
+				arcSummaryStories: 'arcSummaryStories' in table ? table.arcSummaryStories : sql<null>`null`
 			})
 			.from(table)
 			.where(inArray(table.id, ids))
@@ -461,28 +461,26 @@ async function buildScopeEntities(
 		shown.filter((c) => !arcIsCurrent(c, arcs.get(c.id) ?? null)).map((c) => c.id)
 	);
 	// An out-of-date arc may retell a story the Assistant has since been turned
-	// off for, and that story's text must not be sent. Which stories an arc
-	// read is not stored, so one whose character appears in such a story is
-	// left out.
-	const withheld = outOfDate.size
-		? await db
-				.selectDistinct({ id: entityMentions.targetId })
-				.from(entityMentions)
-				.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
-				.innerJoin(stories, eq(stories.id, scenes.storyId))
-				.where(
-					and(
-						eq(entityMentions.sourceType, 'scene'),
-						eq(entityMentions.targetType, 'character'),
-						inArray(entityMentions.targetId, [...outOfDate]),
-						eq(stories.universeId, universeId),
-						sql`not ${storyAssistantOn()}`
-					)
-				)
-		: [];
-	for (const row of withheld) {
+	// off for, and that story's text must not be sent. So it is left out unless
+	// every story it was written from is still there and still read. The list
+	// is stored with the arc, so this holds after the scenes that mentioned the
+	// character are gone. (A current arc was built from stories read now.)
+	const stale = shown.filter((c) => outOfDate.has(c.id));
+	const readStoryIds = [...new Set(stale.flatMap((c) => c.arcSummaryStories ?? []))];
+	const stillRead = new Set(
+		readStoryIds.length
+			? (
+					await db
+						.select({ id: stories.id })
+						.from(stories)
+						.where(and(inArray(stories.id, readStoryIds), storyAssistantOn()))
+				).map((row) => row.id)
+			: []
+	);
+	for (const row of stale) {
+		if (row.arcSummaryStories?.every((id) => stillRead.has(id))) continue;
 		outOfDate.delete(row.id);
-		characterRows.find((c) => c.id === row.id)!.arcSummaryMd = null;
+		row.arcSummaryMd = null;
 	}
 
 	// The per-story overlay note only exists with a story in focus; the

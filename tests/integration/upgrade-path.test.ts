@@ -215,6 +215,10 @@ describe('upgrading from the previous release', () => {
 		for (const characterId of [MARA, TAM]) {
 			const [entity] = await db.select().from(characters).where(eq(characters.id, characterId));
 			expect((await planArc(db, { kind: 'character', entity }))!.stale).toBe(true);
+			// Which stories they read was not recorded, so the upgrade lists every
+			// story of the universe (migration 0093): muting or deleting any of
+			// them keeps the arc from the Assistant.
+			expect(entity.arcSummaryStories).toEqual(['00000000-0000-4000-8000-0000000000c1']);
 		}
 
 		calls = [];

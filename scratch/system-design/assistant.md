@@ -841,9 +841,15 @@ hashes:
   (`arcLine` in `context/assemble.ts`, the one place that decides; a current
   arc is sent unlabelled). Nothing rewrites an arc without the writer asking,
   so leaving it out would drop a lead character's history after any edit.
-  The exception: an out-of-date arc of a character who appears in a story
-  the Assistant is turned off for is left out, since it may retell that
-  story (`buildScopeEntities`). Only the writer's Refresh arc writes one,
+  The exception: text of a story the Assistant is turned off for must never
+  reach the model, and an out-of-date arc may retell one. The arc job stores
+  the stories it read (`characters.arc_summary_stories`, plain ids), and an
+  out-of-date arc is left out unless every one of them still exists and is
+  still read (`buildScopeEntities`). The list is on the arc, not derived
+  from mentions, so it holds after the muted scene is deleted, the character
+  is written out of it, or the story is deleted for good; no save writes
+  anything for it. Arcs from before the column were given every story of
+  their universe by migration 0093. Unmuting brings the arc back. Only the writer's Refresh arc writes one,
   and it always calls the model. Only the characters that make the entity
   cap are checked, and the check reads one row per scene.
 - Chapter summaries: the context and an attached chapter leave an
@@ -955,8 +961,9 @@ context assembly and the cross-scene pass read them.
   reviewer row or a flag column), TBD at build time.
 - Cached character arc summaries: `characters.arc_summary_md` and
   `arc_summary_at` (migration 0079), with the fingerprint of their request in
-  `arc_summary_input` (migration 0082). `chapters.summary_input` holds the
-  same for chapter summaries (migration 0092).
+  `arc_summary_input` (migration 0082) and the stories it read in
+  `arc_summary_stories` (migration 0093). `chapters.summary_input` holds the
+  fingerprint for chapter summaries (migration 0092).
 - Persisted chats: `assistant_chats`, with `chat_id` on
   `assistant_chat_messages` and `assistant_chat_summaries` (migration 0080,
   which made each earlier conversation its scope's first chat).

@@ -137,7 +137,7 @@ beforeEach(async () => {
 	const arc = await arcRequest(db, { id: alice.id, name: 'Alice', universeId });
 	await db
 		.update(characters)
-		.set({ arcSummaryInput: arc!.input })
+		.set({ arcSummaryInput: arc!.input, arcSummaryStories: arc!.storyIds })
 		.where(eq(characters.id, alice.id));
 	await db
 		.insert(characterStoryNotes)
@@ -266,36 +266,22 @@ describe('assembleContext', () => {
 		expect(context!.text).toMatch(/Across the stories \(written before[^)]*\): Alice rises/);
 	});
 
-	it('leaves out an out-of-date arc of a character who appears in a muted story', async () => {
-		const [muted] = await db
-			.insert(stories)
-			.values({
-				universeId,
-				ownerId,
-				title: 'Kept Apart',
-				llmConfig: { enabled: false }
-			} as typeof stories.$inferInsert)
-			.returning({ id: stories.id });
-		const [scene] = await db
-			.insert(scenes)
-			.values({ storyId: muted.id, globalPosition: 1 })
-			.returning({ id: scenes.id });
-		const [alice] = await db
-			.select({ id: characters.id })
-			.from(characters)
-			.where(eq(characters.name, 'Alice'));
-		await db.insert(entityMentions).values({
-			sourceType: 'scene',
-			sourceId: scene.id,
-			targetType: 'character',
-			targetId: alice.id,
-			position: 0,
-			surroundingText: 'Alice in the muted story'
-		});
-		// Still current: the muted story is not part of what the arc reads.
-		let context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
-		expect(context!.text).toContain('Across the stories: Alice rises');
+	it('leaves out an out-of-date arc once a story it read is muted', async () => {
 		await db.update(scenes).set({ summaryMd: 'Alice leaves Bram.' }).where(eq(scenes.id, scene1Id));
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Kept Apart' })
+			.returning({ id: stories.id });
+		await db
+			.update(characters)
+			.set({ arcSummaryStories: [storyId, other.id] })
+			.where(eq(characters.name, 'Alice'));
+		let context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
+		expect(context!.text).toMatch(/Across the stories \(written before[^)]*\): Alice rises/);
+		await db
+			.update(stories)
+			.set({ llmConfig: { enabled: false } } as Partial<typeof stories.$inferInsert>)
+			.where(eq(stories.id, other.id));
 		context = await assembleContext(db, { userId: ownerId, storyId, sceneId: scene1Id });
 		expect(context!.text).not.toContain('Across the stories');
 	});
