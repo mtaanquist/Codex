@@ -6,11 +6,14 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
+import { PgBoss } from 'pg-boss';
 import * as schema from '../../src/lib/server/db/schema';
 import { characters, scenes } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import type { HttpRequest, Provider } from '../../src/lib/server/llm/providers/types';
+import type { ReviewCategory } from '../../src/lib/review-shape';
+import { LEGACY_ASSISTANT_REVIEW_QUEUE } from '../../src/lib/server/queues';
 import { textHash } from '../../src/lib/text-hash';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 
@@ -33,6 +36,7 @@ const { adoptCappedRun, legacyReviewScopeKey, reviewScopeKey } =
 const { gatherStory } = await import('../../src/lib/server/export');
 const { saveSceneBody } = await import('../../src/lib/server/scene-save');
 const { restoreUniverse } = await import('../../src/lib/server/universe-lifecycle');
+const { legacyJobCategories } = await import('../../src/worker/handlers');
 
 const id = (suffix: string) => `00000000-0000-4000-8000-0000000000${suffix}`;
 const USER = id('a1');
@@ -42,6 +46,8 @@ const TIDE = id('c1');
 const BEFORE = id('c2');
 const [QUAY, SALE, WAIT, LONG_AGO] = ['e1', 'e2', 'e3', 'e4'].map(id);
 const MARA = id('f1');
+const TAM = id('f2');
+const LEGACY_JOB = id('aa');
 
 const url = new URL(TEST_DATABASE_URL);
 url.pathname = `${url.pathname}_upgrade`;
@@ -141,20 +147,40 @@ describe('upgrading from the previous release', () => {
 	});
 
 	it('continues the capped review without reviewing its scenes again', async () => {
-		const scope = { storyId: TIDE };
-		// The pg-boss job lookup is stubbed: the worker makes its own schema, so
-		// this checks the stored state carries over, not the job lookup.
-		const adopted = await adoptCappedRun(db, {
-			userId: USER,
-			scope: reviewScopeKey(scope),
-			legacy: {
-				scope: legacyReviewScopeKey(scope)!,
-				categories: [],
-				jobCategories: async () => []
-			}
-		});
-		expect(adopted?.completed).toEqual([QUAY, SALE]);
-		expect(adopted?.notes).toBe(4);
+		// The job the capped run belonged to, as pg-boss holds it once done. The
+		// worker reads what it checked from there.
+		const boss = new PgBoss({ connectionString: DATABASE_URL, supervise: false, schedule: false });
+		boss.on('error', (error) => console.error(error));
+		await boss.start();
+		try {
+			await boss.createQueue(LEGACY_ASSISTANT_REVIEW_QUEUE);
+			await boss.send(
+				LEGACY_ASSISTANT_REVIEW_QUEUE,
+				{ userId: USER, storyId: TIDE, categories: ['prose', 'mechanics'] },
+				{ id: LEGACY_JOB }
+			);
+			await boss.fetch(LEGACY_ASSISTANT_REVIEW_QUEUE);
+			await boss.complete(LEGACY_ASSISTANT_REVIEW_QUEUE, LEGACY_JOB);
+
+			const scope = { storyId: TIDE, categories: ['mechanics', 'prose'] as ReviewCategory[] };
+			const adopt = (categories: ReviewCategory[]) =>
+				adoptCappedRun(db, {
+					userId: USER,
+					scope: reviewScopeKey({ ...scope, categories }),
+					legacy: {
+						scope: legacyReviewScopeKey(scope)!,
+						categories,
+						jobCategories: (jobId) => legacyJobCategories(boss, jobId)
+					}
+				});
+			// A review of other categories does not take over the old run.
+			expect(await adopt(['lore'])).toBeNull();
+			const adopted = await adopt(scope.categories);
+			expect(adopted?.completed).toEqual([QUAY, SALE]);
+			expect(adopted?.notes).toBe(4);
+		} finally {
+			await boss.stop({ graceful: false });
+		}
 	});
 
 	it('summarises only what has no summary, and keeps the writer summary', async () => {
@@ -172,15 +198,30 @@ describe('upgrading from the previous release', () => {
 		expect(calls).toHaveLength(2);
 	});
 
-	it('leaves arcs and entity reads that were current alone', async () => {
-		const [mara] = await db
-			.select({ arcSummaryAt: characters.arcSummaryAt })
-			.from(characters)
-			.where(eq(characters.id, MARA));
-		expect(arcIsStale(mara)).toBe(false);
+	it('re-reads what was out of date before the upgrade, and nothing else', async () => {
+		const stamps = async () => {
+			const rows = await db
+				.select({
+					id: characters.id,
+					arcSummaryAt: characters.arcSummaryAt,
+					enrichedAt: characters.assistantEnrichedAt
+				})
+				.from(characters);
+			return Object.fromEntries(rows.map((row) => [row.id, row]));
+		};
+		const upgraded = await stamps();
+		expect(arcIsStale(upgraded[MARA])).toBe(false);
+		// Tam's scene changed after his arc and his read: the upgrade keeps both
+		// marked out of date.
+		expect(arcIsStale(upgraded[TAM])).toBe(true);
+
 		calls = [];
 		await enrichUniverse(db, { userId: USER, universeId: HARBOUR }, deps);
-		expect(calls).toEqual([]);
+		expect(calls.length).toBeGreaterThan(0);
+		const after = await stamps();
+		expect(after[MARA].enrichedAt).toEqual(upgraded[MARA].enrichedAt);
+		expect(after[TAM].enrichedAt!.getTime()).toBeGreaterThan(upgraded[TAM].enrichedAt!.getTime());
+		expect(after[TAM].enrichedAt!.getFullYear()).toBeGreaterThan(2000);
 	});
 
 	it('exports every scene, including the one with the old line endings', async () => {
@@ -192,7 +233,11 @@ describe('upgrading from the previous release', () => {
 			descriptionMd: null
 		});
 		const text = content.scenes.map((scene) => scene.bodyMd).join('\n');
-		for (const line of ['Mara reached the quay.', 'The tide was out.', 'Mara sold the boat.'])
+		for (const line of [
+			'Mara reached the quay.',
+			'The tide was out.',
+			'Mara sold the boat to Tam.'
+		])
 			expect(text).toContain(line);
 		expect(content.scenes).toHaveLength(3);
 	});
