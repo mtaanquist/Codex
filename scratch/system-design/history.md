@@ -987,6 +987,7 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
+<<<<<<< HEAD
 - #1237: the transcript replay now says what it used to skip. When the endpoint
   reported no counts, no spend may be recorded (before, the check returned
   early), which pins the known gap that an OpenAI-style stream cut off before
@@ -994,6 +995,26 @@ triage.
   retry or fail label is only checked on the buffered path, because nothing
   retries a live stream, so the unused flag on the stream side was removed
   and the file header says so. The unused `# stream: buffered` header is gone.
+=======
+- #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
+  `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
+  `index.ts` runs at import and could not be tested. The test registers them
+  on a real pg-boss and compares against a second written-out list on purpose,
+  so a dropped sweep or a changed cron fails. The backup schedule stays in
+  `index.ts` since it depends on saved settings.
+- #1239: no selector can follow a variable into a later `.set()`, so the
+  one-clock rule now refuses `const x = new Date()` outright in server code,
+  and covers `src/routes/**/*.ts` and `src/worker/**` too. Nothing on main
+  tripped it. A `new Date()` written where it is compared is still fine.
+- #1155: payload tests for the split route sit in `route-authz.test.ts`, which
+  already calls the real handler. The editor half was not added: the position
+  maths is covered by the `withoutRanges` tests, and what is left of
+  `cursorOffset` is one line joining it to the selection.
+- #861: CI retries once, not twice, and uses Playwright's github reporter, which
+  lists tests that needed the retry as "flaky" on the run summary. Failing the
+  run on any retry was the other option; it was left out because a load hiccup
+  on an unrelated PR would then block a merge.
+>>>>>>> origin/staging/tooling-issues
 
 ## Issue triage fixes (2026-11-20)
 
