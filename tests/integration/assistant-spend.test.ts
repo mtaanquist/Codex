@@ -75,7 +75,13 @@ function cancelledAfterOneScene(controller: AbortController) {
 	return stub;
 }
 
-async function configure(opts: { spendCapUsd?: number | null; spendWarnUsd?: number | null } = {}) {
+async function configure(
+	opts: {
+		spendCapUsd?: number | null;
+		spendWarnUsd?: number | null;
+		modelPricingManual?: Record<string, { prompt: number; completion: number }>;
+	} = {}
+) {
 	await saveAccountLlmConfig(db, userId, {
 		enabled: true,
 		assistantName: '',
@@ -227,6 +233,34 @@ describe('pre-flight review estimate (#548)', () => {
 		);
 	});
 
+	it("prices a first read at Claude's cache write rate (#1274)", async () => {
+		const storyId = await seedStory(1);
+		const claude = (cacheTtl: '5m' | '1h') =>
+			saveAccountLlmConfig(db, userId, {
+				enabled: true,
+				assistantName: '',
+				persona: 'balanced',
+				provider: 'anthropic',
+				endpoint: '',
+				apiKey: 'sk',
+				models: { reviewer: 'claude-review' },
+				toolCallBudget: 8,
+				cacheTtl,
+				modelPricingManual: { 'claude-review': { prompt: PRICE_PER_TOKEN, completion: 0 } }
+			});
+		// One scene on the static basis: 2.5 requests' worth of prompt, the first
+		// of them written to the cache at 2x (one hour) or 1.25x (five minutes).
+		await claude('1h');
+		const hour = await estimateStoryReview(db, { userId, storyId });
+		expect(hour.multiplier).toBe(2.5);
+		expect(hour.estCostUsd! / (hour.estTokens * PRICE_PER_TOKEN)).toBeCloseTo(3.5 / 2.5, 3);
+
+		await claude('5m');
+		const minutes = await estimateStoryReview(db, { userId, storyId });
+		expect(minutes.estTokens).toBe(hour.estTokens);
+		expect(minutes.estCostUsd! / (minutes.estTokens * PRICE_PER_TOKEN)).toBeCloseTo(2.75 / 2.5, 3);
+	});
+
 	it('draws the completion figure from history once there is enough of it', async () => {
 		const storyId = await seedStory(1);
 		const bare = await estimateStoryReview(db, { userId, storyId });
@@ -290,6 +324,22 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.total).toBe(3);
 		expect(result.capped).toBe(true);
 		expect(result.spentUsd).toBeCloseTo(2, 6);
+	});
+
+	it('stops on a price the writer typed, with nothing discovered (#1274)', async () => {
+		const storyId = await seedStory(3);
+		await configure({
+			spendCapUsd: 1.5,
+			modelPricingManual: { [MODEL]: { prompt: PRICE_PER_TOKEN, completion: 0 } }
+		});
+		expect((await accountLlmView(db, userId)).modelPricing).toBeUndefined();
+		const { provider: p } = provider();
+		const result = await reviewStoryScenes(db, { userId, storyId }, { provider: p });
+
+		expect(result.reviewed).toBe(2);
+		expect(result.capped).toBe(true);
+		expect(result.spentUsd).toBeCloseTo(2, 6);
+		expect(result.failures).toHaveLength(0);
 	});
 
 	it('is its own outcome, not a failure or a cancellation', async () => {

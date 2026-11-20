@@ -7,7 +7,9 @@ import {
 	buildSystemMessage,
 	estimateTokens
 } from './context/assemble.ts';
+import { cacheWriteRate } from '../../assistant-cost.ts';
 import { AssistantDisabledError } from './gateway.ts';
+import { adapterKind } from './providers/presets.ts';
 import {
 	DEFAULT_SPEND_WARN_USD,
 	modelContextWindow,
@@ -336,6 +338,17 @@ export async function estimateStoryReview(
 	// does not apply to them.
 	const estTokens = Math.round(sceneTokens * multiplier + surveyTokens + patternTokens);
 	const price = resolved.config.modelPricing?.[model];
+	// Claude bills text it has not seen before above the plain price, to cache
+	// it (see cacheWriteRate). The first request of each scene and every survey
+	// request are priced as all new text; the further rounds of a scene resend
+	// what is by then cached, and stay at the plain price, so the figure errs
+	// high rather than low.
+	const firstReadRate =
+		adapterKind(resolved.config.provider) === 'anthropic'
+			? cacheWriteRate(resolved.config.cacheTtl)
+			: 1;
+	const promptUnits =
+		sceneTokens * (multiplier - 1 + firstReadRate) + (surveyTokens + patternTokens) * firstReadRate;
 	const estCompletionCostUsd = price ? estCompletionTokens * price.completion : undefined;
 
 	return {
@@ -348,7 +361,7 @@ export async function estimateStoryReview(
 		estCompletionTokens,
 		...(price && estCompletionCostUsd !== undefined
 			? {
-					estCostUsd: estTokens * price.prompt + estCompletionCostUsd,
+					estCostUsd: promptUnits * price.prompt + estCompletionCostUsd,
 					estCompletionCostUsd
 				}
 			: {}),

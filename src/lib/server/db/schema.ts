@@ -1450,6 +1450,12 @@ export const assistantUsage = pgTable(
 		model: text('model').notNull(),
 		promptTokens: integer('prompt_tokens'),
 		completionTokens: integer('completion_tokens'),
+		// The cache shares of promptTokens, where the endpoint reported them (see
+		// TokenUsage). Null on a request with none, and on every row from before
+		// they were stored; such a row is priced at the plain prompt price.
+		cachedPromptTokens: integer('cached_prompt_tokens'),
+		cacheWriteTokens: integer('cache_write_tokens'),
+		cacheWrite1hTokens: integer('cache_write_1h_tokens'),
 		// True when the counts are Codex's own estimate (a stream that failed or
 		// was cancelled before the endpoint reported them), not the endpoint's.
 		estimated: boolean('estimated').notNull().default(false),

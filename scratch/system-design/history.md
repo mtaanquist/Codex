@@ -1077,6 +1077,40 @@ reason for most of the lock-order rules.
 - A release that rewords a prompt puts every result of that kind out of
   date. Accepted: the stored result was written from other instructions.
 
+## Assistant price and cache lows (2026-11-20)
+
+#1274, lane `fix/assistant-price-lows` on `staging/assistant-remaining`: the
+low findings from the quick wins staging review.
+
+- The cache rates moved out of `spend.ts` into `$lib/assistant-cost.ts` so
+  the account page can price with them; the meter, the estimate and the usage
+  list now share one function.
+- Usage rows store the cache shares (migration 0091, three nullable integer
+  columns on `assistant_usage`, no backfill). A row without them prices at
+  the plain rate as before, so old rows do not change.
+- The review estimate prices a first read at the cache write rate on Claude.
+  Pricing every estimated prompt token at that rate was considered and
+  dropped: the agentic multiplier stands for rounds that resend cached text,
+  and doubling those would put the figure far above any real run. Only the
+  first request of each scene and the survey requests take the write rate;
+  the resent rounds stay at the plain price, which is still above what a
+  cache read bills. `estTokens` is unchanged.
+- A half price pair no longer refuses the Models form: that pair is skipped
+  (its stored entry untouched), the rest saves, and the reply carries a
+  message naming the model. The box keeps what was typed.
+- Typed prices are cleared when the provider or the endpoint host changes.
+  The alternative was a hint beside the boxes; clearing was chosen because a
+  stale price meters silently, while a missing one makes the cap say it was
+  not applied. Typed context windows are still kept: a wrong window costs a
+  failed request, not money, and a local server's window is the writer's own
+  launch setting. The switch-provider prompt now says the prices go too.
+- The streaming Claude path merges `message_delta`'s running input totals
+  the way the buffered path does (shared `mergeDeltaUsage`).
+- Still not verified against the live API (no key in the build
+  environment): `cache_control.ttl: "1h"`, the `usage.cache_creation` split,
+  and whether `message_delta` carries input totals on a web search turn.
+  The first two match the published API reference.
+
 ## Background jobs list (2026-11-20)
 
 #1271. A slow local model can keep a review or a details read going for many
@@ -1217,6 +1251,26 @@ name. It now reads full scenes.
 
 Staging branch `staging/assistant-quick-wins`.
 
+- #1275 (lows from the staging review). Pattern pass: the note checks
+  which of the pattern's scenes exist and have text when it is written, not
+  when the attempt read its scenes, so its "Shows up in" list and "first 25"
+  line leave out a scene deleted or emptied during the survey. The fix loop
+  no longer cuts the list to 25 up front; it stops once 25 scenes have been
+  asked about, so a scene skipped as deleted or empty gives its place to the
+  next one and the note's count matches the scenes that get fixes. A skipped
+  scene is not marked done: a continued run asks about it if it was restored
+  in between, and skips it again (no request) if not. An emptied
+  scene is skipped like a deleted one. Chat: `listChat` fills in the entry
+  type of an entity attachment stored before #1185 by looking the id up in
+  the three entity tables, so old chips get the right icon with no stored
+  row rewritten; an entry that is gone keeps the person icon. Tests: the
+  hostile Markdown cases run through `renderReplyBlocks` too, the chat route
+  has checks for a forged `entityType` and for a cut and renamed entry, and
+  `e2e/assistant-reply-blocks.spec.ts` covers a reply arriving in two parts
+  and a notice replacing a longer reply. Left alone: a tab loaded before
+  #1276 misreading a renamed entry in the attachments header. Only the
+  server could fix it, by keeping the old header format and sending names
+  in a second header for good, and a reload already clears it.
 - #1031 (prices for Claude): the Anthropic models list reports no prices, so
   the meter had none and a cap on Claude never applied. Each model a role
   runs on now has a typed price pair on the account page, stored per token
@@ -1239,7 +1293,7 @@ Staging branch `staging/assistant-quick-wins`.
   scene deleted since the run started is skipped with no request.
 - #1185: a stored entity attachment carries its entry type, read on the
   server and never taken from the browser, so the chip shows the right icon.
-  Attachments stored before this keep the person icon.
+  Attachments stored before this kept the person icon until #1275.
 - #1003: asked for a frame throttle on the streaming reply. A throttle would
   not have fixed the lost selection, so the bubble renders one `{@html}` per
   top-level Markdown block (`renderReplyBlocks`) and finished blocks keep

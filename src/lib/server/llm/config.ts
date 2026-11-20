@@ -702,7 +702,8 @@ export type SaveAccountInput = {
 	toolProfile?: ToolProfile;
 	// The writer's own context windows; absent keeps the stored map, {} clears it.
 	modelContextManual?: ModelContextMap;
-	// The writer's own per-token prices; absent keeps the stored map, {} clears it.
+	// The writer's own per-token prices; absent keeps the stored map, {} clears
+	// it. A provider or endpoint change clears it too (see saveAccountLlmConfig).
 	modelPricingManual?: ModelPricing;
 	// Absent keeps the stored setting (the partial-save pattern).
 	cacheTtl?: CacheTtl;
@@ -723,6 +724,14 @@ function carried(sent: unknown, stored: unknown): boolean {
 function originOf(endpoint: string): string {
 	try {
 		return new URL(endpoint).origin;
+	} catch {
+		return endpoint;
+	}
+}
+
+function hostOf(endpoint: string): string {
+	try {
+		return new URL(endpoint).hostname;
 	} catch {
 		return endpoint;
 	}
@@ -792,6 +801,12 @@ export async function saveAccountLlmConfig(
 	const connectionChanged =
 		providerChanged ||
 		(!preset && !!existing.endpoint && originOf(endpoint) !== originOf(existing.endpoint));
+	// Typed prices go only when the server itself changes: a new port or
+	// scheme on the same machine is the same models at the same prices, and
+	// dropping the prices there would leave the spend cap with nothing to meter.
+	const serverChanged =
+		providerChanged ||
+		(!preset && !!existing.endpoint && hostOf(endpoint) !== hostOf(existing.endpoint));
 	let apiKeyEnc = connectionChanged ? null : existing.apiKeyEnc;
 	if (input.apiKey) {
 		if (!secretsAvailable()) {
@@ -808,6 +823,10 @@ export async function saveAccountLlmConfig(
 	const models = normaliseModels(input.models);
 	const extraParams =
 		input.extraParams === undefined ? undefined : (normaliseExtraParams(input.extraParams) ?? {});
+	const pricingManual =
+		input.modelPricingManual === undefined
+			? undefined
+			: (normalisePricing(input.modelPricingManual) ?? {});
 	const value: StoredAccountConfig = {
 		enabled: input.enabled,
 		assistantName: normaliseAssistantName(input.assistantName),
@@ -838,9 +857,17 @@ export async function saveAccountLlmConfig(
 		...(input.modelContextManual === undefined
 			? {}
 			: { modelContextManual: normaliseContext(input.modelContextManual) ?? {} }),
-		...(input.modelPricingManual === undefined
-			? {}
-			: { modelPricingManual: normalisePricing(input.modelPricingManual) ?? {} }),
+		// A typed price belongs to the endpoint it was looked up for: another
+		// one can serve the same model id at another price, and the spend cap
+		// would meter at the old one. So a connection change drops the typed
+		// prices unless this save sent new ones, and the cap then reports the
+		// model as unpriced until the writer enters them again.
+		...(serverChanged &&
+		(pricingManual === undefined || carried(pricingManual, existing.modelPricingManual ?? {}))
+			? { modelPricingManual: {} }
+			: pricingManual === undefined
+				? {}
+				: { modelPricingManual: pricingManual }),
 		cacheTtl: input.cacheTtl === undefined ? existing.cacheTtl : normaliseCacheTtl(input.cacheTtl),
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})
