@@ -32,7 +32,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { queueEmail } = await import('#lib/server/jobs');
 const { requestSignInLink, redeemSignInLink } = await import('../../src/lib/server/sign-in-link');
-const { changePassword, confirmEmailChange, requestEmailChange } =
+const { changePassword, confirmEmailChange, requestEmailChange, revokeOtherSessions } =
 	await import('../../src/lib/server/account');
 const { requestPasswordReset, resetPassword } = await import('../../src/lib/server/password-reset');
 const { beginEnrollment, confirmEnrollment, TOTP_CHALLENGE_COOKIE } =
@@ -156,6 +156,16 @@ describe('a sign-in link dies when the account changes hands', () => {
 		expect(await redeemSignInLink(db, link)).toBeNull();
 	});
 
+	it('on signing out everywhere else', async () => {
+		const link = await sentLink();
+		const [session] = await db
+			.insert(sessions)
+			.values({ userId, tokenHash: 'h', expiresAt: new Date(Date.now() + 60_000) })
+			.returning({ id: sessions.id });
+		await revokeOtherSessions(db, userId, session.id);
+		expect(await redeemSignInLink(db, link)).toBeNull();
+	});
+
 	it('on a password reset', async () => {
 		const link = await sentLink();
 		const reset = await sentToken(db, (await requestPasswordReset(db, EMAIL))!);
@@ -240,13 +250,18 @@ describe('the page that asks for a link', () => {
 	it('shows the button for a live link without spending it, and says when one is dead', async () => {
 		const link = await sentLink();
 		const load = (token: string) =>
-			(linkPage.load as (e: unknown) => Promise<{ token: string; message: string | null }>)({
+			(
+				linkPage.load as (
+					e: unknown
+				) => Promise<{ token: string; email: string; message: string | null }>
+			)({
 				url: new URL(`http://localhost/login/link?token=${token}`)
 			});
-		expect(await load(link)).toMatchObject({ token: link, message: null });
-		expect(await load(link)).toMatchObject({ token: link, message: null });
+		// The page names the account the button signs in to.
+		expect(await load(link)).toMatchObject({ token: link, email: EMAIL, message: null });
+		expect(await load(link)).toMatchObject({ token: link, email: EMAIL, message: null });
 		const dead = await load('not-a-real-token');
-		expect(dead.token).toBe('');
+		expect(dead).toMatchObject({ token: '', email: '' });
 		expect(dead.message).toContain('not valid');
 		expect(await redeemSignInLink(db, link)).toBe(userId);
 	});

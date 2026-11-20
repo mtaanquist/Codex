@@ -24,9 +24,12 @@
 	// Pixels the pointer must travel before a press counts as a drag, so a plain
 	// click does not pin the window-relative default to a fixed width.
 	const DRAG_THRESHOLD = 3;
+	// A finger or pen tap wanders further than a mouse click does.
+	const TOUCH_DRAG_THRESHOLD = 10;
 
-	// Touch and pen get no dblclick here (the press is captured for dragging), so
-	// two taps this close together reset instead.
+	// Touch and pen do not reliably get a dblclick here, so two taps this close
+	// together reset instead. Where the browser sends one as well, the reset
+	// runs twice, which changes nothing.
 	const DOUBLE_TAP_MS = 400;
 	let lastTap = 0;
 
@@ -57,14 +60,19 @@
 		event.preventDefault();
 		measure();
 		drag = { startX: event.clientX, startW: width, moved: false };
-		handle?.setPointerCapture(event.pointerId);
+		try {
+			handle?.setPointerCapture(event.pointerId);
+		} catch {
+			// The pointer is already gone; the drag ends on its pointerup or cancel.
+		}
 		document.documentElement.classList.add('pane-resizing');
 	}
 
 	function onPointerMove(event: PointerEvent) {
 		if (!drag) return;
 		const dx = event.clientX - drag.startX;
-		if (!drag.moved && Math.abs(dx) < DRAG_THRESHOLD) return;
+		const threshold = event.pointerType === 'mouse' ? DRAG_THRESHOLD : TOUCH_DRAG_THRESHOLD;
+		if (!drag.moved && Math.abs(dx) < threshold) return;
 		drag.moved = true;
 		apply(side === 'left' ? drag.startW + dx : drag.startW - dx);
 	}

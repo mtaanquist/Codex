@@ -366,4 +366,6 @@ export async function revokeOtherSessions(
 				isNull(sessions.revokedAt)
 			)
 		);
+	// A sign-in link still in an inbox would open a new session afterwards.
+	await revokeTokens(db, userId, 'sign_in');
 }

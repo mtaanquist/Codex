@@ -1,6 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
+import { users } from '#lib/server/db/schema';
 import { publicOrigin } from '#lib/server/origin';
 import { queueEmail } from '#lib/server/jobs';
 import { rateLimit } from '#lib/server/rate-limit';
@@ -33,9 +35,16 @@ const INVALID =
 // with a dead one), the page asks for an email address to send a link to.
 export const load: PageServerLoad = async ({ url }) => {
 	const token = url.searchParams.get('token') ?? '';
-	const valid = token !== '' && (await peekToken(db, 'sign_in', token)) !== null;
+	const userId = token === '' ? null : await peekToken(db, 'sign_in', token);
+	const valid = userId !== null;
+	// Shown beside the button, so a link passed on by someone else cannot sign
+	// the reader in to an account they do not expect.
+	const [account] = userId
+		? await db.select({ email: users.email }).from(users).where(eq(users.id, userId))
+		: [];
 	return {
 		token: valid ? token : '',
+		email: account?.email ?? '',
 		message: token !== '' && !valid ? INVALID : null,
 		minutes: SIGN_IN_LINK_TTL_MINUTES
 	};

@@ -55,12 +55,16 @@ describe('registerUser', () => {
 	it('keeps the note of a request that waits for approval', async () => {
 		const input = { password: 'a-good-password', displayName: 'Nora' };
 		await registerUser(db, { ...input, email: 'note@example.com', note: '  A sea novel.\n ' });
+		// A line break posted as CRLF counts once, as it does in the field.
+		const atLimit = `${'x'.repeat(SIGNUP_NOTE_MAX - 2)}\r\ny`;
+		await registerUser(db, { ...input, email: 'limit@example.com', note: atLimit });
 		await registerUser(db, { ...input, email: 'blank@example.com', note: '   ' });
 		// An account that skips the queue has nobody to read a note.
 		await registerUser(db, { ...input, email: 'open@example.com', note: 'Hello' }, 'open');
 		const rows = await db.select({ email: users.email, note: users.signupNote }).from(users);
 		expect(Object.fromEntries(rows.map((row) => [row.email, row.note]))).toEqual({
 			'note@example.com': 'A sea novel.',
+			'limit@example.com': `${'x'.repeat(SIGNUP_NOTE_MAX - 2)}\ny`,
 			'blank@example.com': null,
 			'open@example.com': null
 		});
