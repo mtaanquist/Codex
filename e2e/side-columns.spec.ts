@@ -99,3 +99,54 @@ test('side columns resize by drag and keyboard, and remember the width', async (
 	expect(await width(page, '.pane.right')).toBeCloseTo(312, 0);
 	expect(await width(page, '.pane.left')).toBeCloseTo(264, 0);
 });
+
+// A stored width carries its own floor and cap, which may be hand-edited or
+// older than the current bounds; only the chosen width is trusted. The settings
+// rail reads the same left width, and a double-tap resets like a double-click.
+test('stored widths are re-bounded, shared with settings, and reset by double-tap', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await gotoReady(page, '/account');
+	await page.evaluate(() => {
+		localStorage.setItem('codex-left-w', 'clamp(10px, 50px, 90vw)');
+		localStorage.setItem('codex-right-w', 'clamp(10px, 1400px, 99vw)');
+	});
+	await page.reload();
+	expect(await width(page, '.admin-sidebar')).toBeCloseTo(264, 0);
+	await page.evaluate(() => localStorage.setItem('codex-left-w', 'clamp(264px, 400px, 30vw)'));
+	await page.reload();
+	expect(await width(page, '.admin-sidebar')).toBeCloseTo(400, 0);
+
+	await gotoReady(page, '/');
+	const universeName = `Bounds ${Date.now()}`;
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(universeName);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${universeName} - settings`);
+	await gotoReady(page, '/');
+	await startStoryInUniverse(page, universeName);
+	await page.getByLabel('New story').fill('Bounds');
+	await page.getByRole('button', { name: 'Create story' }).click();
+	await expect(page.locator('.story-title')).toHaveText('Bounds');
+	await page.getByRole('button', { name: 'New chapter' }).click();
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).toHaveURL(/scene=/);
+	await expect(page.locator('.pane.right')).toBeVisible();
+	expect(await width(page, '.pane.left')).toBeCloseTo(400, 0);
+	// The stored 1400px meets the real cap, 40% of the window.
+	expect(await width(page, '.pane.right')).toBeCloseTo(576, 0);
+
+	const tap = (name: string) =>
+		page.getByRole('separator', { name }).evaluate((el) => {
+			const init = { pointerType: 'touch', pointerId: 7, button: 0, bubbles: true };
+			el.dispatchEvent(new PointerEvent('pointerdown', init));
+			el.dispatchEvent(new PointerEvent('pointerup', init));
+		});
+	// One tap alone changes nothing.
+	await tap('Resize the left sidebar');
+	expect(await width(page, '.pane.left')).toBeCloseTo(400, 0);
+	await tap('Resize the left sidebar');
+	expect(await width(page, '.pane.left')).toBeCloseTo(264, 0);
+	expect(await page.evaluate(() => localStorage.getItem('codex-left-w'))).toBeNull();
+});

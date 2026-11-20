@@ -31,13 +31,14 @@ export function clampPaneWidth(side: PaneSide, px: number, viewport: number): nu
 
 // The token value for a chosen width. CSS clamp keeps the floor and the window
 // cap live, so a stored width still fits after the window shrinks. The pre-paint
-// script only accepts values of exactly this shape (PANE_VALUE_RE).
+// script only accepts values of exactly this shape (PANE_VALUE_RE), and takes
+// just the chosen width from one: it rebuilds the floor and the cap itself.
 export function paneWidthValue(side: PaneSide, px: number): string {
 	const { min, maxVw } = PANE_BOUNDS[side];
 	return `clamp(${min}px, ${Math.round(px)}px, ${maxVw}vw)`;
 }
 
-export const PANE_VALUE_RE = /^clamp\(\d+px, \d+px, \d+vw\)$/;
+export const PANE_VALUE_RE = /^clamp\(\d+px, (\d+)px, \d+vw\)$/;
 
 export function setPaneWidth(side: PaneSide, px: number): void {
 	const value = paneWidthValue(side, px);

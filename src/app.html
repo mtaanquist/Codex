@@ -36,13 +36,26 @@
 				} catch (e) {
 					/* default accent stands */
 				}
-				// Side column widths chosen by dragging (src/lib/pane-widths.ts).
+				// Side column widths chosen by dragging (src/lib/pane-widths.ts). Only
+				// the chosen width is taken from storage; the floor and the cap are
+				// rebuilt from the current bounds, which a unit test keeps equal to
+				// PANE_BOUNDS.
 				try {
-					var paneRe = /^clamp\(\d+px, \d+px, \d+vw\)$/;
+					var paneRe = /^clamp\(\d+px, (\d+)px, \d+vw\)$/;
+					var paneBounds = { left: [264, 30], right: [312, 40] };
 					['left', 'right'].forEach(function (side) {
-						var w = localStorage.getItem(side === 'left' ? 'codex-left-w' : 'codex-right-w');
-						if (w && paneRe.test(w))
-							document.documentElement.style.setProperty('--' + side + '-w', w);
+						var m = paneRe.exec(localStorage.getItem('codex-' + side + '-w') || '');
+						if (m)
+							document.documentElement.style.setProperty(
+								'--' + side + '-w',
+								'clamp(' +
+									paneBounds[side][0] +
+									'px, ' +
+									m[1] +
+									'px, ' +
+									paneBounds[side][1] +
+									'vw)'
+							);
 					});
 				} catch (e) {
 					/* default widths stand */

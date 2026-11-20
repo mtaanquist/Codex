@@ -12,8 +12,8 @@
 	// A drag handle on the inner edge of one side column of a workspace .body.
 	// Place it as the first child of the column's aside.pane, so it sits inside
 	// that landmark. It is positioned against the .body, not the aside, so it
-	// neither scrolls nor clips with the column. Arrow keys resize, double-click
-	// (or Enter) resets.
+	// neither scrolls nor clips with the column. Arrow keys resize; a double-click,
+	// a double-tap or Enter resets.
 	let { side }: { side: PaneSide } = $props();
 
 	let handle: HTMLDivElement | undefined = $state();
@@ -24,6 +24,11 @@
 	// Pixels the pointer must travel before a press counts as a drag, so a plain
 	// click does not pin the window-relative default to a fixed width.
 	const DRAG_THRESHOLD = 3;
+
+	// Touch and pen get no dblclick here (the press is captured for dragging), so
+	// two taps this close together reset instead.
+	const DOUBLE_TAP_MS = 400;
+	let lastTap = 0;
 
 	// Values for assistive tech from the start, not only after a focus.
 	$effect(() => {
@@ -69,7 +74,14 @@
 	// resize cursor and the selection lock.
 	function endDrag(event: PointerEvent) {
 		if (!drag) return;
+		const tapped = event.type === 'pointerup' && !drag.moved && event.pointerType !== 'mouse';
 		drag = null;
+		if (tapped) {
+			if (event.timeStamp - lastTap < DOUBLE_TAP_MS) {
+				lastTap = 0;
+				reset();
+			} else lastTap = event.timeStamp;
+		}
 		if (handle?.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
 		document.documentElement.classList.remove('pane-resizing');
 	}
@@ -109,7 +121,7 @@
 	aria-valuenow={width || undefined}
 	aria-valuemin={PANE_BOUNDS[side].min}
 	aria-valuemax={viewport ? paneMax(side, viewport) : undefined}
-	title="Drag to resize. Double-click to reset."
+	title="Drag to resize. Double-click or double-tap to reset."
 	tabindex="0"
 	onpointerdown={onPointerDown}
 	onpointermove={onPointerMove}

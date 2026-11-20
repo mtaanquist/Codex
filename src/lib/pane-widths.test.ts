@@ -31,10 +31,12 @@ describe('pane widths', () => {
 		expect(tokens).toContain(`--right-w: clamp(${PANE_BOUNDS.right.min}px,`);
 	});
 
-	it('is restored by the pre-paint script with the same check', () => {
+	it('is restored by the pre-paint script with the same check and bounds', () => {
 		const html = readFileSync('src/app.html', 'utf8');
 		expect(html).toContain(PANE_VALUE_RE.source);
-		expect(html).toContain("'codex-left-w'");
-		expect(html).toContain("'codex-right-w'");
+		const { left, right } = PANE_BOUNDS;
+		expect(html).toContain(
+			`{ left: [${left.min}, ${left.maxVw}], right: [${right.min}, ${right.maxVw}] }`
+		);
 	});
 });
