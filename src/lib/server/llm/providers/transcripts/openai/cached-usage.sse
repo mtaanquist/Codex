@@ -1,0 +1,13 @@
+# about: Cached prompt tokens reported as part of the prompt
+# outcome: reply
+# text: Cached.
+# finish: stop
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{"content":"Cached."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"gpt-test","choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":3,"total_tokens":1003,"prompt_tokens_details":{"cached_tokens":800}}}
+
+data: [DONE]
+

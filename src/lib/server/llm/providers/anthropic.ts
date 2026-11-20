@@ -434,6 +434,8 @@ async function* sseFrames(body: AsyncIterable<Uint8Array>): AsyncGenerator<unkno
 // that ends in an error event, without an output total, or cut off (the writer
 // stopped it, the connection dropped) still emits what it was billed,
 // estimated from the text and thinking streamed.
+const CLOSED_EARLY = 'The connection closed before the reply finished.';
+
 async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<StreamEvent> {
 	let promptTokens: number | undefined;
 	let cachedPromptTokens = 0;
@@ -514,10 +516,13 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 		if (billed) yield billed;
 		throw err;
 	}
-	// The stream ended without an explicit message_stop; close it out anyway.
+	// The stream ended without a message_stop. Some compatible endpoints close
+	// after message_delta, so a stop reason means the reply is whole; without
+	// one the connection dropped partway, and the text is not a finished reply.
 	const billed = usage();
 	if (billed) yield billed;
-	yield { type: 'done', ...(finishReason ? { finishReason } : {}) };
+	if (finishReason) yield { type: 'done', finishReason };
+	else yield { type: 'error', message: CLOSED_EARLY };
 }
 
 type BufferedMessage = {
@@ -696,7 +701,7 @@ async function assembleFrames(
 	// Some Anthropic-compatible endpoints close the body after message_delta
 	// without a message_stop. Once the stop reason is in, the reply is whole.
 	if (stopReason !== undefined) return finished();
-	throw new Error('The endpoint closed the stream before the reply finished.');
+	throw new Error(CLOSED_EARLY);
 }
 
 // The reply to a stream: true request. An endpoint that ignores the flag and

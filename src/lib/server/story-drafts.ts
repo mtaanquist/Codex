@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
+import { dbNow } from './db-clock.ts';
 import {
 	chapters,
 	characters,
@@ -21,6 +22,7 @@ import {
 import type { ActionFailure } from './action-result.ts';
 import { recordRevision } from './revisions.ts';
 import { markChapterSummariesStale } from './scene-lifecycle.ts';
+import { lockStoryScenes } from './row-locks.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { uniqueSlug } from './slugs.ts';
 import { isSerializationFailure, isUniqueViolation } from './db-errors.ts';
@@ -592,14 +594,18 @@ export async function restoreDraftScene(
 				.for('update');
 			if (copy) return await restoreOnto(copy);
 		}
+		// Before the maximum positions are read, so a split shifting scenes
+		// finishes first and the copy does not share a position with one.
+		await lockStoryScenes(tx, storyId);
 		const [chapter] = saved.chapterId
 			? await tx
 					.select({ id: chapters.id })
 					.from(chapters)
 					.where(and(eq(chapters.id, saved.chapterId), eq(chapters.storyId, storyId)))
+					.for('key share')
 			: [];
 		const chapterId = chapter?.id ?? null;
-		const stamp = new Date();
+		const stamp = await dbNow(tx);
 		const [created] = await tx
 			.insert(scenes)
 			.values({
@@ -675,7 +681,7 @@ export async function newStoryFromDraft(
 				.returning({ id: stories.id, slug: stories.slug });
 
 			const sceneIds = new Map<string, string>();
-			const stamp = new Date();
+			const stamp = await dbNow(tx);
 			let globalPosition = 0;
 			const insertScene = async (
 				scene: DraftContent['scenes'][number],

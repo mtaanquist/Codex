@@ -155,7 +155,7 @@ export const universes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		// Only live universes reserve a slug, so a name freed by the trash can be
@@ -228,7 +228,7 @@ export const stories = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		// Live stories only, as with universes.
@@ -258,7 +258,7 @@ export const chapters = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [index('chapters_story_idx').on(table.storyId)]
 );
@@ -302,7 +302,7 @@ export const scenes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date()),
+			.$onUpdate(() => sql`clock_timestamp()`),
 		// When anything about the scene last changed, prose or not (a status, a
 		// move, the trash). The story card's edited time and the scene a story
 		// opens on read it; updated_at stays the prose clock the Assistant
@@ -392,7 +392,7 @@ export const characters = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		// The palette search filters by owner and substring-matches the name.
@@ -417,7 +417,7 @@ export const characterStoryNotes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [unique('character_story_notes_unique').on(table.characterId, table.storyId)]
 );
@@ -482,7 +482,7 @@ export const loreEntries = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		// The palette search filters by owner and substring-matches the title.
@@ -507,7 +507,7 @@ export const loreStoryNotes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [unique('lore_story_notes_unique').on(table.loreEntryId, table.storyId)]
 );
@@ -551,7 +551,7 @@ export const places = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		// The palette search filters by owner and substring-matches the name.
@@ -576,7 +576,7 @@ export const placeStoryNotes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [unique('place_story_notes_unique').on(table.placeId, table.storyId)]
 );
@@ -719,7 +719,7 @@ export const entityRelationships = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		index('entity_relationships_from_idx').on(table.fromType, table.fromId),
@@ -792,7 +792,7 @@ export const notes = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [
 		index('notes_universe_idx').on(table.universeId),
@@ -1011,7 +1011,7 @@ export const sceneMarkers = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [index('scene_markers_scene_idx').on(table.sceneId)]
 );
@@ -1236,7 +1236,7 @@ export const reviewComments = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true })
 			.notNull()
 			.defaultNow()
-			.$onUpdate(() => new Date())
+			.$onUpdate(() => sql`clock_timestamp()`)
 	},
 	(table) => [index('review_comments_thread_idx').on(table.threadId)]
 );
@@ -1535,7 +1535,7 @@ export const assistantReviewRuns = pgTable('assistant_review_runs', {
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()
 		.defaultNow()
-		.$onUpdate(() => new Date())
+		.$onUpdate(() => sql`clock_timestamp()`)
 });
 
 // What one queued Assistant job has spent so far, keyed by its pg-boss job id,
@@ -1551,7 +1551,7 @@ export const assistantJobSpend = pgTable('assistant_job_spend', {
 	updatedAt: timestamp('updated_at', { withTimezone: true })
 		.notNull()
 		.defaultNow()
-		.$onUpdate(() => new Date())
+		.$onUpdate(() => sql`clock_timestamp()`)
 });
 
 // What rides beside a chat turn's text; mirrors the panel's card data. A

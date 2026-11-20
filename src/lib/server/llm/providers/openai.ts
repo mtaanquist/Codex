@@ -241,6 +241,8 @@ function truncate(text: string, max = 300): string {
 	return clean.length > max ? `${clean.slice(0, max)}...` : clean;
 }
 
+const CLOSED_EARLY = 'The connection closed before the reply finished.';
+
 // Parse an OpenAI streaming response: newline-delimited "data: {json}" frames,
 // terminated by "data: [DONE]". Content arrives as choices[0].delta.content;
 // a reasoning model's separate choices[0].delta.reasoning_content is thinking,
@@ -254,44 +256,68 @@ async function* parseSse(body: AsyncIterable<Uint8Array>): AsyncGenerator<Stream
 		type: 'done',
 		...(finishReason ? { finishReason } : {})
 	});
+	// One frame line; true once the stream says it is over, or has failed.
+	function* line(raw: string): Generator<StreamEvent, boolean> {
+		const text = raw.replace(/\r$/, '');
+		if (!text.startsWith('data:')) return false;
+		const data = text.slice(5).trim();
+		if (data === '[DONE]') return true;
+		if (!data) return false;
+		let json: unknown;
+		try {
+			json = JSON.parse(data);
+		} catch {
+			return false;
+		}
+		const frame = json as {
+			choices?: { delta?: { content?: unknown }; finish_reason?: unknown }[];
+			error?: { message?: unknown };
+		};
+		const choice = frame?.choices?.[0];
+		// An error partway (OpenRouter sends one when its upstream drops): the
+		// reply is cut off, not finished.
+		if (frame?.error || choice?.finish_reason === 'error') {
+			const usage = parseUsage((json as { usage?: unknown })?.usage);
+			if (usage) yield { type: 'usage', usage };
+			const message = frame.error?.message;
+			yield {
+				type: 'error',
+				message: typeof message === 'string' && message ? message : CLOSED_EARLY
+			};
+			failed = true;
+			return true;
+		}
+		const delta = contentText(choice?.delta?.content);
+		if (delta.length > 0) {
+			const out = think.push(delta);
+			if (out) yield { type: 'token', text: out };
+		}
+		finishReason = parseFinishReason(choice?.finish_reason) ?? finishReason;
+		const usage = parseUsage((json as { usage?: unknown })?.usage);
+		if (usage) yield { type: 'usage', usage };
+		return false;
+	}
+	let over = false;
+	let failed = false;
 	for await (const chunk of body) {
 		buffer += decoder.decode(chunk, { stream: true });
 		let newline: number;
-		while ((newline = buffer.indexOf('\n')) !== -1) {
-			const line = buffer.slice(0, newline).replace(/\r$/, '');
+		while (!over && (newline = buffer.indexOf('\n')) !== -1) {
+			const raw = buffer.slice(0, newline);
 			buffer = buffer.slice(newline + 1);
-			if (!line.startsWith('data:')) continue;
-			const data = line.slice(5).trim();
-			if (data === '[DONE]') {
-				const tail = think.flush();
-				if (tail) yield { type: 'token', text: tail };
-				yield done();
-				return;
-			}
-			if (!data) continue;
-			let json: unknown;
-			try {
-				json = JSON.parse(data);
-			} catch {
-				continue;
-			}
-			const choice = (
-				json as { choices?: { delta?: { content?: unknown }; finish_reason?: unknown }[] }
-			)?.choices?.[0];
-			const delta = contentText(choice?.delta?.content);
-			if (delta.length > 0) {
-				const text = think.push(delta);
-				if (text) yield { type: 'token', text };
-			}
-			finishReason = parseFinishReason(choice?.finish_reason) ?? finishReason;
-			const usage = parseUsage((json as { usage?: unknown })?.usage);
-			if (usage) yield { type: 'usage', usage };
+			over = yield* line(raw);
 		}
+		if (over) break;
 	}
-	// The stream ended without an explicit [DONE]; close it out anyway.
+	// A last line the endpoint did not end with a newline.
+	if (!over) over = yield* line(buffer + decoder.decode());
+	if (failed) return;
 	const tail = think.flush();
 	if (tail) yield { type: 'token', text: tail };
-	yield done();
+	// Without [DONE], a finish reason still means the reply is whole; without
+	// either the connection dropped partway.
+	if (over || finishReason) yield done();
+	else yield { type: 'error', message: CLOSED_EARLY };
 }
 
 export const openaiProvider: Provider = {

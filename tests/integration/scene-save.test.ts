@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { asc, eq } from 'drizzle-orm';
@@ -241,5 +241,48 @@ describe('saveSceneBody', () => {
 		);
 		[row] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
 		expect([row.anchorStart, row.anchorEnd]).toEqual([2, 6]);
+	});
+});
+
+// #1139, #1194: stored stamps come from the database clock, so an app server
+// whose clock runs ahead (or behind) cannot order two writes the wrong way.
+describe('saves stamp the database clock', () => {
+	const dbTime = async () =>
+		new Date((await pool.query<{ at: string }>('select clock_timestamp() as at')).rows[0].at);
+
+	async function withAppClockAhead(run: () => Promise<void>) {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(Date.now() + 3_600_000);
+		try {
+			await run();
+		} finally {
+			vi.useRealTimers();
+		}
+	}
+
+	it('a title-only save stamps updated_at and the mention index from the database', async () => {
+		await pool.query('update scenes set mentions_indexed_at = updated_at where id = $1', [sceneId]);
+		const before = await dbTime();
+		await withAppClockAhead(async () => {
+			expect((await saveSceneBody(db, sceneId, save({ title: 'Renamed' }))).ok).toBe(true);
+		});
+		const after = await dbTime();
+		const row = await stored();
+		expect(row.title).toBe('Renamed');
+		for (const at of [row.updatedAt, row.mentionsIndexedAt!, row.touchedAt!]) {
+			expect(at.getTime()).toBeGreaterThanOrEqual(before.getTime());
+			expect(at.getTime()).toBeLessThanOrEqual(after.getTime());
+		}
+	});
+
+	it('a body save stamps updated_at from the database', async () => {
+		const before = await dbTime();
+		await withAppClockAhead(async () => {
+			expect((await saveSceneBody(db, sceneId, save({ bodyMd: 'The gate shut.' }))).ok).toBe(true);
+		});
+		const after = await dbTime();
+		const { updatedAt } = await stored();
+		expect(updatedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+		expect(updatedAt.getTime()).toBeLessThanOrEqual(after.getTime());
 	});
 });

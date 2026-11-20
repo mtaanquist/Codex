@@ -277,7 +277,7 @@ export async function appendChat(
 	// The picker lists chats by when they were last used.
 	await db
 		.update(assistantChats)
-		.set({ updatedAt: new Date() })
+		.set({ updatedAt: sql`clock_timestamp()` })
 		.where(eq(assistantChats.id, chatId));
 	return true;
 }

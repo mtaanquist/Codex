@@ -5,18 +5,14 @@ import { e2eDatabaseUrl } from './database';
 import { gotoReady } from './navigate';
 import { pickFromLibraryMenu, startStoryInUniverse } from './library';
 
-// Signs in as the account with the Assistant switched on.
-test.use({ storageState: { cookies: [], origins: [] } });
+// Runs as the account with the Assistant switched on.
+test.use({ storageState: 'e2e/.auth/assistant.json' });
 
 // A writer with two earlier chats in a universe opens the newest, switches to
 // the other from the chat list (searching it), starts a new chat, and deletes
 // one. The chats are seeded straight into the database; no reply is needed.
 test('the Assistant keeps several chats and switches between them', async ({ page }) => {
-	await gotoReady(page, '/login');
-	await page.getByLabel('Email').fill('assistant-e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await gotoReady(page, '/');
 
 	const name = `Chats ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
@@ -109,11 +105,7 @@ test('the Assistant keeps several chats and switches between them', async ({ pag
 // mounted; the Assistant panel must follow to the new story's chats rather
 // than keep the old ones.
 test('the Assistant panel follows a switch to another story', async ({ page }) => {
-	await gotoReady(page, '/login');
-	await page.getByLabel('Email').fill('assistant-e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await gotoReady(page, '/');
 
 	const name = `Switch ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
@@ -177,14 +169,10 @@ test('the Assistant panel follows a switch to another story', async ({ page }) =
 	).toHaveCount(0);
 });
 
-// Signs in as the Assistant account, starts a story in a fresh universe, and
-// opens the Assistant tab on a new chat.
+// Starts a story in a fresh universe and opens the Assistant tab on a new
+// chat.
 async function freshStoryPanel(page: Page, label: string, storyTitle = 'Cinders') {
-	await gotoReady(page, '/login');
-	await page.getByLabel('Email').fill('assistant-e2e@example.com');
-	await page.getByLabel('Password').fill('e2e-password');
-	await page.getByRole('button', { name: 'Sign in' }).click();
-	await expect(page).toHaveURL('/');
+	await gotoReady(page, '/');
 
 	const name = `${label} ${Date.now()}`;
 	await pickFromLibraryMenu(page, 'New universe');
@@ -527,4 +515,137 @@ test('a catch-up keeps the model picked for a new chat', async ({ page }) => {
 	expect(patched[0].url).toContain(recapId);
 	expect(patched[0].body).toEqual({ settings: { model: 'small-model' } });
 	await expect(chip).toContainText('small-model');
+});
+
+// A reply the server did not store stays on screen, with a note when some of
+// it arrived (which can still be inserted), and the next question does not
+// send it back as part of the chat: a stream that ends in an error partway, one that closes without
+// saying it finished, and an error before any text.
+const UNFINISHED = [
+	{
+		name: 'ends in an error partway',
+		frames: [
+			{ type: 'token', text: 'The boat is at' },
+			{ type: 'error', message: 'The connection closed before the reply finished.' }
+		],
+		shows: 'This reply was not saved.',
+		insertable: true
+	},
+	{
+		name: 'closes without finishing',
+		frames: [{ type: 'token', text: 'The boat is at' }],
+		shows: 'This reply was not saved.',
+		insertable: true
+	},
+	{
+		name: 'finishes but fails to save',
+		frames: [
+			{ type: 'token', text: 'The boat is at' },
+			{ type: 'done' },
+			{ type: 'error', message: 'The reply could not be saved.' }
+		],
+		shows: 'This reply was not saved.',
+		insertable: true
+	},
+	{
+		name: 'fails before any text',
+		frames: [{ type: 'error', message: 'The connection closed before the reply finished.' }],
+		shows: 'The connection closed before the reply finished.',
+		insertable: false
+	}
+];
+
+for (const unfinished of UNFINISHED) {
+	test(`a reply that ${unfinished.name} is not sent back with the next question`, async ({
+		page
+	}) => {
+		const { panel } = await freshStoryPanel(page, 'Broken');
+		// An open scene, so a reply that can be inserted shows its button.
+		await page.getByRole('button', { name: 'New chapter' }).click();
+		await expect(page.locator('.chapter-name')).toHaveText('Chapter 1');
+		await page.getByRole('button', { name: 'New scene' }).click();
+		await expect(page).toHaveURL(/scene=/);
+		const sent: { role: string; content: string }[][] = [];
+		await page.route('**/api/assistant/chat', async (route) => {
+			const body = route.request().postDataJSON() as {
+				newChatId?: string;
+				chatId?: string;
+				messages: { role: string; content: string }[];
+			};
+			sent.push(body.messages);
+			const frames =
+				sent.length === 1
+					? unfinished.frames
+					: [{ type: 'token', text: 'The boat is at the quay.' }, { type: 'done' }];
+			await route.fulfill({
+				status: 200,
+				headers: {
+					'content-type': 'text/event-stream',
+					'x-chat-id': body.chatId ?? body.newChatId ?? '',
+					'x-chat-created': sent.length === 1 ? '1' : '0',
+					'x-chat-title': encodeURIComponent('Where is the boat?')
+				},
+				body: frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('')
+			});
+		});
+		const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+		await composer.fill('Where is the boat?');
+		await composer.press('Enter');
+		const chat = panel.locator('.chat-scroll');
+		await expect(chat).toContainText(unfinished.shows);
+		const insert = panel.getByRole('button', { name: 'Insert at cursor' });
+		await expect(insert).toHaveCount(unfinished.insertable ? 1 : 0);
+
+		await composer.fill('Where is the boat?');
+		await composer.press('Enter');
+		await expect(chat).toContainText('The boat is at the quay.');
+		await expect(insert).toHaveCount(unfinished.insertable ? 2 : 1);
+		expect(sent[1]).toEqual([...sent[0], sent[0].at(-1)]);
+	});
+}
+
+// A command's help text is not part of the chat the next question sends, and a
+// command typed while a reply is on its way waits, so the reply cannot land in
+// the command's message.
+test('help text is not sent back, and waits while a reply is on its way', async ({ page }) => {
+	const { panel } = await freshStoryPanel(page, 'Help');
+	const sent: { role: string; content: string }[][] = [];
+	let release = () => {};
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as {
+			newChatId?: string;
+			chatId?: string;
+			messages: { role: string; content: string }[];
+		};
+		sent.push(body.messages);
+		await new Promise<void>((resolve) => (release = resolve));
+		await route.fulfill({
+			status: 200,
+			headers: {
+				'content-type': 'text/event-stream',
+				'x-chat-id': body.chatId ?? body.newChatId ?? '',
+				'x-chat-created': sent.length === 1 ? '1' : '0',
+				'x-chat-title': encodeURIComponent('Where is the boat?')
+			},
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'At the quay.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	const chat = panel.locator('.chat-scroll');
+	await composer.fill('/help');
+	await composer.press('Enter');
+	await expect(chat).toContainText('Commands you can type here');
+
+	await composer.fill('Where is the boat?');
+	await composer.press('Enter');
+	await expect.poll(() => sent.length).toBe(1);
+	expect(sent[0].some((m) => m.content.includes('Commands you can type here'))).toBe(false);
+	await composer.fill('/who');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('/who');
+	release();
+	await expect(chat).toContainText('At the quay.');
+	await expect(chat).not.toContainText('Name who to look up');
 });

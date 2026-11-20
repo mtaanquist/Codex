@@ -1,0 +1,6 @@
+# about: Service unavailable
+# outcome: retry
+# status: 503
+# content-type: text/plain
+
+upstream down

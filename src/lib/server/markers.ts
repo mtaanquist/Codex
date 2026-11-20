@@ -58,7 +58,7 @@ export async function setMarkerResolved(
 ): Promise<boolean> {
 	const updated = await db
 		.update(sceneMarkers)
-		.set({ resolvedAt: resolved ? new Date() : null })
+		.set({ resolvedAt: resolved ? sql`now()` : null })
 		.where(and(eq(sceneMarkers.id, markerId), eq(sceneMarkers.ownerId, userId), inLiveScene(db)))
 		.returning({ id: sceneMarkers.id });
 	return updated.length > 0;

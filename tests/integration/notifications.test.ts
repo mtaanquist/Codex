@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
@@ -421,6 +421,34 @@ describe('reviewer digests', () => {
 
 		await markReviewerNotified(db, guest.id, digest!.upTo);
 		expect(await buildReviewerDigest(db, guest.id, 'https://codex.test')).toBeNull();
+	});
+
+	it('keeps a reply from the same millisecond as the last digested one', async () => {
+		const { owner, thread, guest } = await seedReview();
+		// Two replies 300 microseconds apart, inside one millisecond.
+		const { rows } = await db.execute<{ base: string }>(
+			sql`select (date_trunc('milliseconds', now()) + interval '1 hour')::text as base`
+		);
+		const at = (micros: number) =>
+			sql`${rows[0].base}::timestamptz + make_interval(secs => ${micros} / 1000000.0)`;
+		await db.insert(reviewComments).values({
+			threadId: thread.id,
+			authorUserId: owner.id,
+			bodyMd: 'First.',
+			createdAt: at(100)
+		});
+		const digest = await buildReviewerDigest(db, guest.id, 'https://codex.test');
+		await db.insert(reviewComments).values({
+			threadId: thread.id,
+			authorUserId: owner.id,
+			bodyMd: 'Second.',
+			createdAt: at(400)
+		});
+		await markReviewerNotified(db, guest.id, digest!.upTo);
+
+		const next = await buildReviewerDigest(db, guest.id, 'https://codex.test');
+		expect(next?.email.text).toContain('Second.');
+		expect(next?.email.text).not.toContain('First.');
 	});
 
 	it('stays silent for opted-out and account-linked reviewers', async () => {

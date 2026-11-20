@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { desc, eq, inArray, isNotNull, and } from 'drizzle-orm';
+import { desc, eq, inArray, isNotNull, and, sql } from 'drizzle-orm';
 import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import type { Database } from './auth.ts';
@@ -365,7 +365,7 @@ export async function runBackup(
 		if (previous?.contentHash === contentHash) {
 			await db
 				.update(backupRuns)
-				.set({ status: 'skipped', sizeBytes, contentHash, finishedAt: new Date() })
+				.set({ status: 'skipped', sizeBytes, contentHash, finishedAt: sql`now()` })
 				.where(eq(backupRuns.id, run.id));
 			return { ok: true, key: null, skipped: true };
 		}
@@ -374,7 +374,7 @@ export async function runBackup(
 		await store.put(key, createReadStream(scratch));
 		await db
 			.update(backupRuns)
-			.set({ status: 'ok', objectKey: key, sizeBytes, contentHash, finishedAt: new Date() })
+			.set({ status: 'ok', objectKey: key, sizeBytes, contentHash, finishedAt: sql`now()` })
 			.where(eq(backupRuns.id, run.id));
 
 		// Tiered pruning; the dump that just landed is inside the recent
@@ -390,7 +390,7 @@ export async function runBackup(
 			.set({
 				status: 'failed',
 				error: error instanceof Error ? error.message : String(error),
-				finishedAt: new Date()
+				finishedAt: sql`now()`
 			})
 			.where(eq(backupRuns.id, run.id));
 		return { ok: false, reason: error instanceof Error ? error.message : String(error) };

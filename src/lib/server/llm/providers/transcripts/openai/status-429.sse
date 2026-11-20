@@ -1,0 +1,6 @@
+# about: Rate limited
+# outcome: retry
+# status: 429
+# content-type: application/json
+
+{"error": {"message": "Rate limit", "type": "rate_limit"}}

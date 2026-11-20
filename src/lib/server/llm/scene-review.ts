@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
+import { dbNowText } from '../db-clock.ts';
 import {
 	reviewComments,
 	reviewSuggestions,
@@ -1179,8 +1180,9 @@ export async function reviewStoryScenes(
 		if (done.has(scene.id)) continue;
 		run.state.currentSceneTitle = scene.title;
 		// When the pass read the scene, so a continuation can tell an edit made
-		// since then and review the scene again (see adoptCappedRun).
-		run.state.reviewedAt = { ...run.state.reviewedAt, [scene.id]: new Date().toISOString() };
+		// since then and review the scene again (see adoptCappedRun). The
+		// database clock, the one updated_at is stamped with.
+		run.state.reviewedAt = { ...run.state.reviewedAt, [scene.id]: await dbNowText(db) };
 		await run.save();
 		try {
 			const pass = await reviewOneScene(

@@ -164,6 +164,14 @@
 		proposals?: SplitProposal[];
 		// The reply was cut short; a note under it says why.
 		stopped?: StopReason;
+		// The server did not store this reply, so it is not sent back as history.
+		unsaved?: boolean;
+		// An error or a hint rather than the Assistant's writing: it cannot be
+		// inserted.
+		notice?: boolean;
+		// Why a reply with some text broke off; a note under it says so. What
+		// arrived can still be inserted.
+		failed?: string;
 		// A /rewrite reply: its affordance replaces the selection rather than
 		// inserting at the cursor.
 		rewrite?: boolean;
@@ -276,6 +284,16 @@
 		}
 	}
 
+	// The last reply was not stored; `notice` when it is an error rather than
+	// writing the writer may want to insert.
+	function markUnsaved(notice: boolean) {
+		const last = messages[messages.length - 1];
+		if (last && last.role === 'assistant') {
+			last.unsaved = true;
+			if (notice) last.notice = true;
+		}
+	}
+
 	function markStopped(reason: StopReason) {
 		const last = messages[messages.length - 1];
 		if (last && last.role === 'assistant') last.stopped = reason;
@@ -358,6 +376,7 @@
 		const controller = new AbortController();
 		pending = controller;
 		let startedIn: string | null = null;
+		let finished = false;
 		let storedTitle = title;
 		const creating = chatId === null;
 		// A chat message is stored before its reply, so a stopped send leaves its
@@ -400,25 +419,28 @@
 				chatId = null;
 				freshChatId();
 				chatSettings = {};
-				messages = [{ role: 'assistant', content: 'This chat was deleted.' }];
+				messages = [
+					{ role: 'assistant', content: 'This chat was deleted.', unsaved: true, notice: true }
+				];
 				olderSummarised = false;
 				return 'gone';
 			}
 			if (response.status >= 400 && response.status < 500) {
 				appendToReply(failure || 'The Assistant could not take that request.');
+				markUnsaved(true);
 				return 'refused';
 			}
 			if (!response.ok || !response.body) {
 				appendToReply(
 					'Sorry, I could not reach the Assistant. Check the endpoint in your account settings.'
 				);
+				markUnsaved(true);
 				return;
 			}
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
 			let streamError = '';
-			let finished = false;
 			for (;;) {
 				const { done, value } = await reader.read();
 				if (done) break;
@@ -434,18 +456,39 @@
 				}
 			}
 			const reply = messages[messages.length - 1];
-			// The same test the server applies before it stores a reply.
+			// The same test the server applies before it stores a reply. An error
+			// after done means storing it failed.
 			const stored =
 				finished &&
+				!streamError &&
 				reply?.role === 'assistant' &&
 				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
 			if (startedIn && stored) adopt(startedIn);
-			if (reply && reply.role === 'assistant' && reply.content === '') {
-				reply.content = streamError || 'The Assistant did not return a response.';
+			if (reply?.role === 'assistant' && !stored) {
+				// Not stored, so not sent back. Text that broke off can still be
+				// inserted; an error in its place cannot.
+				reply.unsaved = true;
+				if (reply.content.trim() === '') {
+					reply.content = streamError || 'The Assistant did not return a response.';
+					reply.notice = true;
+				} else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
-			if (!controller.signal.aborted) {
+			const reply = messages[messages.length - 1];
+			if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
+				// A Stop or a dropped connection after done lands while the server
+				// stores the reply, which it still does.
+				if (startedIn) adopt(startedIn);
+			} else if (controller.signal.aborted) {
+				// A writer's own Stop keeps what arrived to insert, but the server
+				// stored none of it.
+				markUnsaved(false);
+			} else if (reply?.role === 'assistant' && reply.content.trim() !== '') {
+				markUnsaved(false);
+				reply.failed = 'The connection to the Assistant was lost.';
+			} else {
 				appendToReply('Sorry, something went wrong reaching the Assistant.');
+				markUnsaved(true);
 				// No answer at all (offline, a dropped connection): nothing was stored.
 				if (!reached) return 'unreached';
 			}
@@ -509,12 +552,16 @@
 			{
 				...scopeBody(),
 				...(isStory ? { sceneId } : {}),
-				messages: turns.slice(-CHAT_WINDOW_TURNS).map((m) => ({
-					role: m.role,
-					content: m.content,
-					reference: m.reference,
-					attachments: m.attachments
-				})),
+				// A reply the server did not store is not sent back either.
+				messages: turns
+					.filter((m) => !m.unsaved && m.content.trim() !== '')
+					.slice(-CHAT_WINDOW_TURNS)
+					.map((m) => ({
+						role: m.role,
+						content: m.content,
+						reference: m.reference,
+						attachments: m.attachments
+					})),
 				// A stored chat keeps its choice through the chip's own save, so a
 				// stale tab cannot overwrite it; a new chat sends it to be stored.
 				...(chatId ? {} : { settings: $state.snapshot(chatSettings) })
@@ -531,7 +578,9 @@
 				...messages.slice(0, -2),
 				{
 					role: 'assistant',
-					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`
+					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
+					unsaved: true,
+					notice: true
 				}
 			];
 		}
@@ -542,7 +591,9 @@
 				{
 					role: 'assistant',
 					content:
-						'This chat was deleted. Your message was not sent; send it again to start a new chat.'
+						'This chat was deleted. Your message was not sent; send it again to start a new chat.',
+					unsaved: true,
+					notice: true
 				}
 			];
 		}
@@ -651,26 +702,15 @@
 				void enrichEntries();
 				break;
 			case 'help':
-				messages = [
-					...messages,
-					{
-						role: 'assistant',
-						content:
-							'Commands you can type here:\n\n' +
-							commandsForScope(!isStory)
-								.map((c) => `/${c.name} - ${c.detail}`)
-								.join('\n')
-					}
-				];
+				assistantSay(
+					'Commands you can type here:\n\n' +
+						commandsForScope(!isStory)
+							.map((c) => `/${c.name} - ${c.detail}`)
+							.join('\n')
+				);
 				break;
 			default:
-				messages = [
-					...messages,
-					{
-						role: 'assistant',
-						content: `I do not know the command "/${name}". Type /help to see the commands.`
-					}
-				];
+				assistantSay(`I do not know the command "/${name}". Type /help to see the commands.`);
 		}
 	}
 
@@ -706,7 +746,7 @@
 
 	// A plain assistant message, for usage hints and command errors.
 	function assistantSay(content: string) {
-		messages = [...messages, { role: 'assistant', content }];
+		messages = [...messages, { role: 'assistant', content, unsaved: true, notice: true }];
 	}
 
 	// POST a brief (and optional selection) to the buffered co-author endpoint and
@@ -736,18 +776,24 @@
 			if (!response.ok) {
 				reply.content =
 					'Sorry, the Assistant could not draft that passage. The command is back in the chat box to try again.';
+				markUnsaved(true);
 				return false;
 			}
 			const { text } = (await response.json()) as { text?: string };
 			reply.content = text?.trim() || 'The Assistant did not return a passage.';
-			if (opts.rewrite) reply.rewrite = true;
+			if (!text?.trim()) markUnsaved(true);
+			else if (opts.rewrite) reply.rewrite = true;
 			return true;
 		} catch {
-			if (controller.signal.aborted) return true;
+			if (controller.signal.aborted) {
+				markUnsaved(false);
+				return true;
+			}
 			const reply = messages[messages.length - 1];
 			if (reply && reply.role === 'assistant') {
 				reply.content =
 					'Sorry, something went wrong reaching the Assistant. The command is back in the chat box to try again.';
+				markUnsaved(true);
 			}
 			return false;
 		} finally {
@@ -1398,7 +1444,7 @@
 								{@html renderReplyMarkdown(message.content)}
 							{/if}
 						</div>
-						{#if message.content && !(busy && index === messages.length - 1) && index > 0}
+						{#if message.content && !message.notice && !(busy && index === messages.length - 1) && index > 0}
 							{#if message.rewrite && onReplaceSelection}
 								<button
 									class="msg-insert"
@@ -1420,6 +1466,11 @@
 									<Icon name="plus" size={12} /> Insert at cursor
 								</button>
 							{/if}
+						{/if}
+						{#if message.failed}
+							<p class="stopped-note">
+								This reply was not saved. {message.failed}
+							</p>
 						{/if}
 						{#if message.stopped === 'budget'}
 							<p class="stopped-note">

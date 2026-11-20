@@ -1,0 +1,6 @@
+# about: Rate limited before the stream opened
+# outcome: retry
+# status: 429
+# content-type: application/json
+
+{"type": "error", "error": {"type": "rate_limit_error", "message": "Slow down"}}

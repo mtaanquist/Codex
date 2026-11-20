@@ -982,6 +982,117 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Upgrade-path test (2026-11-19)
+
+Several findings were data or jobs left by the previous version, while the
+suite starts from an empty, fully migrated database. #1196 added
+`tests/integration/upgrade-path.test.ts`: a database of its own is migrated
+only as far as the last release (`upgrade/previous-release.json`), seeded with
+that release's row shapes in plain SQL (`upgrade/seed.sql`: CRLF bodies, a
+writer's own summary, a capped review under the old scope key, arcs and reads
+current at the time, a trashed universe), migrated to head, then
+summarised, enriched, continued, exported, saved and restored. Nothing may be
+lost or asked of the model again. Pending jobs on the legacy queues are not in
+the fixture (the capped review's job lookup is stubbed, so only its stored
+state is checked): pg-boss creates its own schema when the worker starts, outside the
+migrations. The release flow in `CLAUDE.md` now refreshes the fixture.
+
+## Stream transcripts (2026-11-19)
+
+Stream handling and spend metering drew a finding nearly every review round,
+each fixed with a test for that one case, so #1195 added recorded replies
+under `src/lib/server/llm/providers/transcripts/` (one `.sse` file per case,
+with `# key: value` lines for the expected outcome) and `transcripts.test.ts`,
+which replays each through the live stream (and the buffered reply, where it
+takes a stream: all Anthropic files, and OpenAI ones with a failed status)
+whole, one byte at a time and in uneven chunks, and replays every reply cut
+off at each event boundary. The rules are the same for every file: the outcome
+and text match, chunking changes nothing, only failures a resend could fix are
+retried on the buffered path, and billed usage is never below what the body
+reported and is marked estimated exactly when the output count is a guess. It
+found one gap: a live stream that dropped before its stop reason ended as a
+finished reply (and was saved to the chat as one). It now ends with an error
+in both adapters, as the Anthropic buffered path already did (OpenAI's
+buffered call is one JSON body). The chat panel keeps the partial text of such
+a reply on screen with a note that it was not saved. A chat or recap reply the
+server did not store is left out of the turns the next question sends: an
+error, a stream that closed without finishing or failed to save after it
+finished, a writer's own Stop, and the panel's own hints (/write and /rewrite
+passages, which are never stored, are still sent). Errors and hints, including
+failed /write and /rewrite replies and the "not sent" notices, offer no
+insert; text that arrived before a Stop or a break can still be inserted. A
+slash command waits while a reply is on its way, as the composer already did
+for chosen commands. Merging main brought the composer's refused and unreached
+paths, which follow the same rules. An OpenAI-style error frame partway
+through (OpenRouter sends one when its upstream drops) also ends in an error
+now, where it used to finish the reply. The first review also found the OpenAI
+stream dropping a last line sent without a newline (losing its text, finish
+reason and usage); `no-final-newline.sse` covers it. The spend rule only bites
+where the body reported counts: the OpenAI stream sends usage only in its last
+chunk and does not estimate, so a cut-off OpenAI stream records no spend. A
+new edge case is a new file.
+
+## Lock order and race harness (2026-11-19)
+
+Deadlocks and positions shared by two scenes were found one pair of
+operations at a time (#1147, #1149, #1159, #1160), so #1192 added
+`tests/integration/lock-order.test.ts`. It does not guess which pairs to race.
+For every write operation and every row of a small seeded story, a holder locks
+the row first, so the operation stops there, and the rows it already holds are
+probed with `nowait` in each lock mode (the mode it waits for comes from its
+tuple lock in `pg_locks`). Two stops that each wait for a row the other holds,
+in conflicting modes, with nothing they both hold keeping them apart, are a
+deadlock. The same stops then pause one operation while each structural
+operation (split, restore, reorder, chapter create and delete, and so on) runs,
+and check that both finish without a database error and no two scenes or
+chapters share a position. The race half takes about two minutes; the stops
+dedupe by held rows. Disabling a fix brings its finding back, which is how the
+harness was checked.
+
+The rule it enforces is in `src/lib/server/row-locks.ts`: a story's scenes,
+then the story, then entities, then its chapters, each lowest id first, with
+`for no key update` on rows that are only updated so foreign-key checks pass.
+Reorder, chapter delete, scene create and both restores now lock the story's
+scenes first; purge locks the story before its chapters; chapter create locks
+the story row. #1140 (story rename against a character's first story note) did
+not reproduce: the rename's update takes no key update on the story, which a
+foreign-key check's key share does not wait for, since the slug's unique index
+is partial and so not a key.
+
+The first staging review found that a story with no scenes had no scene rows
+to lock, so two scene creates read the same top position and a chapter delete
+racing a create failed on the foreign key. `lockStoryScenes` now locks the
+story row (`for no key update`) after the scenes, and a separate block of the
+harness races both on a story with no scenes, since the seeded story always
+has five. The second review found that a change waiting in
+`lockStoryScenes` did not lock a scene the change before it inserted (a
+`for update` select only sees rows that existed when it started), so a mention
+rebuild of that scene could deadlock with it on the story row. An advisory
+lock on the story now comes first, so the waiter's scene select starts after
+the insert commits. Chapter move now reads the chapter list under its locks.
+Both have tests in the same block.
+
+## One clock (2026-11-19)
+
+Several review findings came from comparing a stamp written with the app
+server's clock (`new Date()`) against one written by Postgres (#1120, #1139,
+#1143). #1194 made the database clock the only one for stored timestamps:
+every `updated_at` `$onUpdate` now writes `clock_timestamp()` (no migration:
+the hook is app-side, and inserts already used `defaultNow()`), the remaining
+`new Date()` writes became `now()`, copies (duplicate, add back, new story from
+a draft) stamp with `dbNow`, and the review continuation stamps `reviewedAt`
+with `dbNowText` and compares it with `updated_at` in SQL at microsecond
+precision. The reviewer email digest keeps its watermark as Postgres text for
+the same reason: a JS Date dropped the microseconds, so a reply in the same
+millisecond as the last digested one was never sent. An ESLint rule refuses
+`new Date()` in `.set`, `.values`, `sql` templates and `$onUpdate` under
+`src/lib/server`; a `new Date()` held in a variable first is not caught, so the
+rule is in `design.md` too. #1143 also said a continued review counts a redone
+scene's notes twice. It does not: a pass counts only the notes it adds, and the
+earlier ones stay open, so the count is left as it was. Stamps read back into a
+JS Date (the mention index's `loadedAt`, `dbNow`) still lose microseconds, but
+only in the safe direction: a scene can be reindexed once more, never missed.
+
 ## Assistant composer (2026-11-19)
 
 Mads asked for the Assistant panel to feel less cramped and to look more like
