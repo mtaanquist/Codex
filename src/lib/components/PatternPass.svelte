@@ -88,12 +88,14 @@
 </script>
 
 <div class="review-panel">
-	<div class="inspector-head">
+	<div class="inspector-head pp-head">
 		<button class="back-btn" type="button" onclick={onStop}>
 			<span class="rv-back-ic"><Icon name="chevron" size={14} /></span> Stop
 		</button>
-		<span class="inspector-kind">{name}</span>
-		{#if step}<span class="pp-count">{position} of {total}</span>{/if}
+		<span class="inspector-kind pp-title">{name}</span>
+		<span class="pp-count"
+			>{#if step}{position} of {total}{/if}</span
+		>
 	</div>
 	<div class="rv-panel-scroll">
 		{#if reread === 'running'}
@@ -229,8 +231,22 @@
 </div>
 
 <style>
+	/* Stop and the count take equal side columns so the title sits centred
+	   between them, clear of both. */
+	.pp-head {
+		display: grid;
+		grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr);
+		gap: 12px;
+	}
+	.pp-head .back-btn {
+		justify-self: start;
+	}
+	.pp-title {
+		text-align: center;
+	}
 	.pp-count {
-		margin-left: auto;
+		justify-self: end;
+		white-space: nowrap;
 		font-size: var(--text-meta);
 		color: var(--text-faint);
 		font-variant-numeric: tabular-nums;
