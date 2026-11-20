@@ -143,6 +143,10 @@ export const universes = pgTable(
 		// setting's canon, with the author's material overriding where they
 		// differ.
 		establishedSetting: boolean('established_setting').notNull().default(false),
+		// The Assistant models chosen for this universe, laid over the account's
+		// and under a story's own: { models }. Normalised in
+		// #lib/server/llm/config.ts.
+		llmConfig: jsonb('llm_config').notNull().default({}),
 		// The auto-created home for one-off stories outside any universe; at
 		// most one per owner, made lazily the first time it is needed.
 		standalone: boolean('standalone').notNull().default(false),

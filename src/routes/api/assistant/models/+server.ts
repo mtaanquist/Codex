@@ -3,13 +3,15 @@ import { db } from '#lib/server/db';
 import { assistantLayout, resolveLlmConfig } from '#lib/server/llm/config';
 import { listEndpointModels } from '#lib/server/llm/models';
 import { ownedStory } from '#lib/server/story-access';
+import { ownedUniverse } from '#lib/server/universe-access';
 import { rateLimitLookups } from '#lib/server/write-guard';
 
 // The models the composer's model chip offers: what the account's endpoint
 // lists, plus any model the writer has already set for a role, so an endpoint
 // that cannot list its models still offers those. A failed listing is not an
 // error; the chip shows what it has and says the list is incomplete. With
-// ?storyId= (the story the panel is on) the models set for that story count.
+// ?storyId= (the story the panel is on) the models set for that story and its
+// universe count; with ?universeId= the ones set for that universe.
 export const GET: RequestHandler = async ({ url, locals }) => {
 	const userId = locals.user!.id;
 	rateLimitLookups(userId);
@@ -18,7 +20,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	// A config that cannot be read (a key that no longer decrypts) lists nothing.
 	const storyRef = url.searchParams.get('storyId');
 	const storyId = storyRef ? (await ownedStory(storyRef, userId)).story.id : undefined;
-	const config = await resolveLlmConfig(db, userId, storyId)
+	const universeRef = storyId ? null : url.searchParams.get('universeId');
+	const universeId = universeRef ? (await ownedUniverse(universeRef, userId)).id : undefined;
+	const config = await resolveLlmConfig(db, userId, { storyId, universeId })
 		.then((resolved) => resolved.config)
 		.catch(() => null);
 	if (!config) return Response.json({ models: [], complete: false });

@@ -982,6 +982,47 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Models per universe and story (2026-11-20)
+
+#1266. A universe and a story can each choose the Assistant's model per kind
+of work; the most specific choice wins (story, universe, account).
+
+- Storage: `universes.llm_config` (migration 0089, additive) holds `models`
+  only. A story already stored `models` in `stories.llm_config` and the
+  resolver already read them, but nothing could set them.
+- `resolveLlmConfig` takes a story id as before, or `{ storyId, universeId }`.
+  A story brings its own universe, so story callers did not change. The
+  gateway passes the request's `universeId`, which until now was only the
+  retrieval reach for tools; the enrichment calls and the character arc now
+  send it so universe-wide work runs on the universe's models.
+- A role's tuning (reply length, temperature, thinking) stays the account's
+  even when a universe or story swaps the model. The chat's own model chip
+  resets tuning on a swap; here it does not, because the usual reason to
+  swap is a larger window for the same kind of work, and silently losing
+  "thinking off" would be the bigger surprise. If a swapped model rejects a
+  setting, the error says so and the writer can change it.
+- The pickers list what the endpoint lists (`/api/assistant/models`, now
+  with `?universeId=`), not the stored discovery snapshots: a local endpoint
+  reports neither prices nor windows, so its snapshot is empty.
+- An unpicked row says what it will run on, worked out the way the server
+  does (`resolveRoleModel` over the levels above plus this level's other
+  picks), so "Default: x" is the truth even when this level picks only a
+  Rubber duck model.
+- Prices, context windows and the spend cap stay on the account. A window
+  for a model only a universe uses is set on the account page like any other.
+- Review of the PR (nothing high; three medium, six low), fixed before
+  merge. A provider switch now clears the picks on the user's universes and
+  stories with the account's, since they name the old provider's models. The
+  account page gives a context window and price boxes to models chosen only
+  on a universe or story (`scopeChosenModels`). The pickers fetch the model
+  list only when their section is open. Also: one owner-checked read per
+  resolve instead of three queries (the mute is still read whoever owns the
+  story, since it only subtracts); the composer's model menu names the
+  universe; a pick does not bump the universe's `updatedAt`; tests pin arcs
+  and `/enrich` to the universe's model.
+- Not built: per-universe tuning, a per-universe mute, and showing on the
+  account page which universes or stories override a role.
+
 ## Find more reads whole scenes (2026-11-20)
 
 #1170. "Suggest details with the Assistant" sent at most 16 snippets of about
@@ -994,8 +1035,8 @@ name. It now reads full scenes.
   fits one request; the background universe pass keeps snippets, because full
   scenes for every entity cost millions of tokens on a novel; the model stays
   the utility model. Storage and resolution allow a per-story model
-  (`stories.llm_config.models`), but no screen sets it, and a universe has
-  no setting at all; both are #1266.
+  (`stories.llm_config.models`), but no screen set it, and a universe had
+  no setting at all; both shipped with #1266.
 - Not built: batching several entities into one book request with a cache
   breakpoint (step 4 of the issue). It only pays off if the background pass
   reads the book, which it does not.

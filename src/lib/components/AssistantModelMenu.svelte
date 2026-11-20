@@ -23,6 +23,7 @@
 		info,
 		settings,
 		storyId = null,
+		universeId = null,
 		onChange,
 		close,
 		refocus
@@ -30,6 +31,8 @@
 		info: ChatModelInfo;
 		// The story the panel is on, so models set for that story are offered.
 		storyId?: string | null;
+		// The universe the panel is on when it is on no one story.
+		universeId?: string | null;
 		settings: ChatModelSettings;
 		onChange: (settings: ChatModelSettings) => void;
 		close: () => void;
@@ -42,7 +45,11 @@
 
 	$effect(() => {
 		const controller = new AbortController();
-		const query = storyId ? `?storyId=${encodeURIComponent(storyId)}` : '';
+		const query = storyId
+			? `?storyId=${encodeURIComponent(storyId)}`
+			: universeId
+				? `?universeId=${encodeURIComponent(universeId)}`
+				: '';
 		fetch(`/api/assistant/models${query}`, { signal: controller.signal })
 			.then(async (response) => {
 				if (!response.ok) throw new Error('failed');

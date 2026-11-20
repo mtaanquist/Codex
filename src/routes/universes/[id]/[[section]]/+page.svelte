@@ -13,6 +13,7 @@
 	import AppBar from '#lib/components/AppBar.svelte';
 	import { universePath } from '#lib/chrome';
 	import SettingsShell from '#lib/components/SettingsShell.svelte';
+	import ScopeModels from '#lib/components/ScopeModels.svelte';
 	import { dayKey, formatLongDate, formatNumber, formatTime } from '#lib/format';
 	import type { ActionData, PageData } from './$types';
 
@@ -21,13 +22,17 @@
 	// Each section is its own page (/universes/<slug>/categories, ...);
 	// a plain /universes/<slug> is the details. Forms post to the section
 	// they sit on, so a reload lands where the form lives.
-	type Section = 'details' | 'categories' | 'history' | 'export';
-	const NAV: { id: Section; label: string }[] = [
-		{ id: 'details', label: 'Details' },
-		{ id: 'categories', label: 'Entity categories' },
-		{ id: 'history', label: 'History' },
-		{ id: 'export', label: 'Import and export' }
-	];
+	type Section = 'details' | 'categories' | 'assistant' | 'history' | 'export';
+	// The Assistant section shows once the Assistant is set up on the account.
+	const NAV: { id: Section; label: string }[] = $derived(
+		[
+			{ id: 'details' as const, label: 'Details' },
+			{ id: 'categories' as const, label: 'Entity categories' },
+			{ id: 'assistant' as const, label: 'Assistant' },
+			{ id: 'history' as const, label: 'History' },
+			{ id: 'export' as const, label: 'Import and export' }
+		].filter((item) => item.id !== 'assistant' || data.assistantModels)
+	);
 	let active: Section = $derived((page.params.section as Section) ?? 'details');
 
 	function sectionHref(section: Section): ResolvedPathname {
@@ -399,6 +404,22 @@
 			</form>
 		</div>
 	</section>
+
+	{#if data.assistantModels}
+		<section class="admin-section" class:active={active === 'assistant'}>
+			<div class="admin-block">
+				{#key data.universe.id}
+					<ScopeModels
+						level="universe"
+						settings={data.assistantModels}
+						modelsQuery="universeId={data.universe.id}"
+						active={active === 'assistant'}
+						saved={form?.action === 'assistant-models' && form.saved}
+					/>
+				{/key}
+			</div>
+		</section>
+	{/if}
 
 	<section class="admin-section" class:active={active === 'history'}>
 		<div class="admin-block">

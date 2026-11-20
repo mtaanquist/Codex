@@ -196,7 +196,7 @@ export async function loadAssistantChat(
 		listChats(db, userId, scope),
 		// The chip is a convenience: a config that cannot be read (a key that no
 		// longer decrypts) must not take the page down with it.
-		resolveLlmConfig(db, userId, 'storyId' in scope ? scope.storyId : undefined).then(
+		resolveLlmConfig(db, userId, scope).then(
 			(resolved) => chatModelInfo(resolved.config),
 			(): ChatModelInfo => ({ model: '', effort: null, claude: false })
 		)

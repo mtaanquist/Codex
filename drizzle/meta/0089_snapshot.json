@@ -1,5 +1,5 @@
 {
-	"id": "f2e21100-fb35-4aa6-9765-b0ad6519e768",
+	"id": "6c89e1b4-9b76-45ed-bb84-a0b7b8c408af",
 	"prevId": "4bf0d024-f599-49d0-bdfc-98a21df0699b",
 	"version": "7",
 	"dialect": "postgresql",
@@ -5214,6 +5214,13 @@
 					"notNull": true,
 					"default": false
 				},
+				"llm_config": {
+					"name": "llm_config",
+					"type": "jsonb",
+					"primaryKey": false,
+					"notNull": true,
+					"default": "'{}'::jsonb"
+				},
 				"standalone": {
 					"name": "standalone",
 					"type": "boolean",
@@ -5653,12 +5660,6 @@
 				"approved_at": {
 					"name": "approved_at",
 					"type": "timestamp with time zone",
-					"primaryKey": false,
-					"notNull": false
-				},
-				"signup_note": {
-					"name": "signup_note",
-					"type": "text",
 					"primaryKey": false,
 					"notNull": false
 				},

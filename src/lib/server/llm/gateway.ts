@@ -162,8 +162,9 @@ function conversationTokens(messages: ChatMessage[]): number {
 export type GatewayRequest = {
 	userId: string;
 	storyId?: string;
-	// The retrieval reach for tools. Given explicitly on the universe surface;
-	// derived from storyId's own universe on the story-focused surfaces.
+	// The universe the work is in when there is no one story: it brings the
+	// models chosen for that universe, and is the retrieval reach for tools.
+	// On the story-focused surfaces both come from storyId's own universe.
 	universeId?: string;
 	role: AssistantRole;
 	// A chat's own model and effort for this role (the composer's model chip).
@@ -365,7 +366,10 @@ async function webSearchAllowed(
 }
 
 async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Promise<Prepared> {
-	const base = await resolveLlmConfig(db, req.userId, req.storyId);
+	const base = await resolveLlmConfig(db, req.userId, {
+		storyId: req.storyId,
+		universeId: req.universeId
+	});
 	const resolved = { ...base, config: withRoleOverride(base.config, req.role, req.override) };
 	// The backstop gate: surfaces check this before calling, but a background
 	// caller might not, so refuse here too. surfacesEnabled is account-on and
