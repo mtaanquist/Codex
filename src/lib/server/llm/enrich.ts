@@ -19,7 +19,6 @@ import {
 	enrichTextBudget,
 	entityExcerpts,
 	estimateEnrich,
-	MAX_ENRICH_PARTS,
 	formatExcerpts,
 	splitExcerptParts,
 	type EnrichEstimate,
@@ -190,16 +189,28 @@ export type EnrichTextResult = {
 	// when there is something the writer can do.
 	partial?: boolean;
 	partialNote?: string;
+	// Set when the spend cap stopped the read between parts, with what it had
+	// spent.
+	capped?: boolean;
+	spentUsd?: number;
+	// Set when the entity is not the user's, or not in the scope's universe.
+	missing?: boolean;
 };
 
-// The text needs more requests than one press of the button makes.
-export class EnrichTooLongError extends Error {
-	constructor(requests: number) {
-		super(
-			`This would take ${requests} requests, more than one read can make. Choose a model with a larger context window for Background work under Account, Assistant.`
-		);
-		this.name = 'EnrichTooLongError';
-	}
+// The entity a read or an estimate is about, when it is the user's and in the
+// universe the scope reads from; null otherwise.
+export async function enrichTarget(
+	db: Database,
+	opts: { userId: string; scope: EnrichScope; entityId: string }
+): Promise<{ kind: 'character' | 'place' | 'lore'; name: string; universeId: string } | null> {
+	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
+		universeId: table.universeId,
+		name: entityNameColumn(table)
+	}));
+	if (!entity) return null;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return null;
+	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
+	return { kind, name: entity.name, universeId: entity.universeId };
 }
 
 // Whether the entity belongs to the universe the scope reads from: the named
@@ -218,18 +229,19 @@ async function entityInScope(
 	return story?.universeId === universeId;
 }
 
-// The button's read: the full text of the scenes that mention the entity with
-// the scene before and after each, or the whole book. Text that does not fit
-// one request is read in parts in reading order, each told what the earlier
-// ones found. Each part's finds are staged as it is read, so a later part that
-// fails, or a connection that drops, keeps what the earlier parts found. A
-// text that needs more than MAX_ENRICH_PARTS requests is refused.
+// The button's read, run as a background job: the full text of the scenes that
+// mention the entity with the scene before and after each, or the whole book.
+// Text that does not fit one request is read in parts in reading order, each
+// told what the earlier ones found. Each part's finds are staged as it is
+// read, so a later part that fails, or a job that is stopped, keeps what the
+// earlier parts found. With a job id the spend cap applies between parts.
 export async function enrichEntityFromText(
 	db: Database,
-	opts: EnrichOptions & { mode: EnrichTextMode },
+	opts: EnrichOptions & { mode: EnrichTextMode; jobId?: string },
 	deps: GatewayDeps = {}
 ): Promise<EnrichTextResult> {
 	const none = { suggestions: [], scenes: 0, requests: 0 };
+	const missing = { ...none, missing: true };
 	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
 		universeId: table.universeId,
 		name: entityNameColumn(table),
@@ -237,15 +249,22 @@ export async function enrichEntityFromText(
 		details: table.details,
 		summaryMd: table.summaryMd
 	}));
-	if (!entity) return none;
-	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return none;
+	if (!entity) return missing;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return missing;
 	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
 
 	const excerpts = await entityExcerpts(db, { ...opts, kind });
 	if (excerpts.length === 0) return none;
 	const budget = await enrichTextBudget(db, opts.userId, opts.scope);
 	const parts = splitExcerptParts(excerpts, budget.partTokens);
-	if (parts.length > MAX_ENRICH_PARTS) throw new EnrichTooLongError(parts.length);
+	// Keyed by the job, so a retry carries on from what it already spent.
+	const meter =
+		opts.meter ??
+		(await jobSpendMeter(db, {
+			userId: opts.userId,
+			storyId: 'storyId' in opts.scope ? opts.scope.storyId : undefined,
+			jobId: opts.jobId
+		}));
 	const withStory = new Set(excerpts.map((scene) => scene.storyId)).size > 1;
 	const summaryClosed = await summarySuggestionClosed(db, {
 		ownerId: opts.userId,
@@ -265,9 +284,14 @@ export async function enrichEntityFromText(
 	const suggestions: EntitySuggestion[] = [];
 	let requests = 0;
 	let failure: unknown;
+	let capped = false;
 	for (const [index, part] of parts.entries()) {
 		if (opts.signal?.aborted) {
 			failure = opts.signal.reason ?? new Error('stopped');
+			break;
+		}
+		if (meter.capReached) {
+			capped = true;
 			break;
 		}
 		const last = index === parts.length - 1;
@@ -296,7 +320,7 @@ export async function enrichEntityFromText(
 					enableTools: false,
 					messages: [{ role: 'user', content }],
 					maxTokens: ENRICH_TEXT_REPLY_TOKENS,
-					meter: opts.meter,
+					meter,
 					signal: opts.signal
 				},
 				deps
@@ -332,6 +356,7 @@ export async function enrichEntityFromText(
 			break;
 		}
 	}
+	await meter.flush();
 	// With nothing found there is nothing to show for the read, so the caller
 	// gets the error itself.
 	if (failure && found.length === 0) throw failure;
@@ -349,7 +374,8 @@ export async function enrichEntityFromText(
 		requests,
 		...(failure ? { partial: true } : {}),
 		// A cut-off reply is something the writer can fix in the settings.
-		...(failure instanceof ReplyCutOffError ? { partialNote: failure.message } : {})
+		...(failure instanceof ReplyCutOffError ? { partialNote: failure.message } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {})
 	};
 }
 

@@ -2,26 +2,20 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
 import {
 	readAssistantPayload,
-	requestSignal,
 	requireAssistantStory,
-	requireAssistantUniverse,
-	throwAssistantError
+	requireAssistantUniverse
 } from '#lib/server/llm/assistant-route';
-import {
-	enrichEntityFromText,
-	EnrichTooLongError,
-	estimateEntityEnrich,
-	type EnrichScope
-} from '#lib/server/llm/enrich';
+import { enrichTarget, estimateEntityEnrich, type EnrichScope } from '#lib/server/llm/enrich';
+import { queueAssistantDetails } from '#lib/server/jobs';
 
-// Inline entity enrichment: from the scenes that mention an entity in this
+// Entity enrichment for one entry: from the scenes that mention it in this
 // story (storyId) or across its universe (universeId), with the scene before
 // and after each, the Assistant suggests new aliases, quick details, and a
 // summary, staged for the writer to accept or reject in the entity editor.
-// mode 'book' reads the whole story instead. Synchronous; a long text is read
-// in several requests. Returns the staged suggestions. Nothing is applied to
-// the entity here. With estimate: true it sends nothing and returns what the
-// reads would send, for the editor's confirm step.
+// mode 'book' reads the whole story instead. The read is queued as a
+// background job, since a slow model can take minutes; the writer is notified
+// when it is done. With estimate: true nothing is queued and the response says
+// what the reads would send, for the editor's confirm step.
 
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const { userId, payload } = await readAssistantPayload<{
@@ -34,7 +28,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const entityId = typeof payload.entityId === 'string' ? payload.entityId : '';
 	if (!entityId) error(400, 'entityId is required.');
 	// The entity is checked against the same user, and against the universe the
-	// scope reads from, inside the read and the estimate.
+	// scope reads from, in enrichTarget and the estimate.
 	let scope: EnrichScope;
 	if (typeof payload.universeId === 'string') {
 		const universe = await requireAssistantUniverse(userId, payload.universeId);
@@ -58,21 +52,26 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const mode = payload.mode ?? 'scenes';
 	if (mode === 'book' && !('storyId' in scope)) error(400, 'The whole book needs a story.');
 
-	let result;
-	try {
-		result = await enrichEntityFromText(db, {
-			userId,
-			scope,
-			entityId,
-			mode,
-			signal: requestSignal(request)
-		});
-	} catch (err) {
-		if (err instanceof EnrichTooLongError) error(400, err.message);
-		throwAssistantError(err, 'The Assistant could not suggest anything for this entry.');
-	}
+	const target = await enrichTarget(db, { userId, scope, entityId });
+	if (!target) error(404, 'Not found.');
 
-	return new Response(JSON.stringify(result), {
-		headers: { 'content-type': 'application/json' }
+	const jobId = await queueAssistantDetails({
+		userId,
+		universeId: target.universeId,
+		read: {
+			entityId,
+			name: target.name,
+			mode,
+			...('storyId' in scope ? { storyId: scope.storyId } : {})
+		}
 	});
+	if (jobId === 'coalesced') {
+		error(
+			409,
+			'The Assistant is already reading for this entry. It carries on; this started nothing new.'
+		);
+	}
+	if (!jobId) error(503, 'Could not start the read. Try again in a moment.');
+
+	return Response.json({ ok: true, jobId });
 };

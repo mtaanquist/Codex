@@ -1027,6 +1027,18 @@ name. It now reads full scenes.
   to the story's universe; a cut-off later part passes its advice on; costs
   under a cent say so; tests now pin the mute and trash filters and the
   cut-off path.
+- Moved to a background job before merge. Mads's local model takes minutes
+  per reply, and a web request held that long gets dropped. The read is now
+  an `assistant-enrich` job carrying `read` (one unfinished read per entity
+  by singleton key), handled by `entityDetails` like a character arc:
+  activity card, Stop, a notice at the end. That removed the 8-request
+  ceiling and `tooLong` (the job has the spend cap and Stop instead) and put
+  the read under the background spend cap. The editor waits on the job,
+  then reloads the page data and adds the new rows; if the writer has left,
+  the notice links back to the entry. The estimate stays a plain request.
+  The job stores the entity's name for the card rather than looking it up
+  across three tables. Not covered by a test: the route's queue call for
+  the owner (the handler, the running-jobs list and the editor flow are).
 - The whole-book choice shows after the first press on a page, because the
   count that says whether it fits comes back with that press. Counting on
   every entry open was the alternative and was not worth a query per click.

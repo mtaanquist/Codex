@@ -9,7 +9,9 @@ test.use({ storageState: 'e2e/.auth/assistant.json' });
 
 // #1170: "Suggest details with the Assistant" counts what it would read first.
 // A large read is confirmed before it runs, and the whole book is offered when
-// it fits. The endpoint is stubbed, so no model is needed.
+// it fits. The read is a background job: the endpoint and the job status are
+// stubbed, so no model or worker is needed, and what the job would have found
+// is written to the database for the page to pick up when the job settles.
 // A story with one character in the universe; returns their ids.
 async function storyWithCharacter(page: Page) {
 	await gotoReady(page, '/');
@@ -45,6 +47,25 @@ async function storyWithCharacter(page: Page) {
 	return { storyId, characterId };
 }
 
+// Leaves a pending suggestion on the character, as a finished read would.
+async function leaveSuggestion(
+	characterId: string,
+	field: string,
+	label: string | null,
+	value: string
+) {
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	try {
+		await pool.query(
+			`insert into entity_suggestions (owner_id, entity_kind, entity_id, field, label, value)
+			 select owner_id, 'character', id, $2, $3, $4 from characters where id = $1`,
+			[characterId, field, label, value]
+		);
+	} finally {
+		await pool.end();
+	}
+}
+
 test('a large read is confirmed first, and the whole book can be read after', async ({ page }) => {
 	const { storyId, characterId } = await storyWithCharacter(page);
 
@@ -63,16 +84,13 @@ test('a large read is confirmed first, and the whole book can be read after', as
 			return;
 		}
 		modes.push(body.mode);
-		await route.fulfill({
-			json: {
-				suggestions:
-					body.mode === 'book'
-						? [{ id: 'b1', field: 'alias', label: null, value: 'the harbourmaster' }]
-						: [{ id: 's1', field: 'detail', label: 'Eyes', value: 'grey' }],
-				scenes: 12,
-				requests: 2
-			}
-		});
+		if (body.mode === 'book')
+			await leaveSuggestion(characterId, 'alias', null, 'the harbourmaster');
+		else await leaveSuggestion(characterId, 'detail', 'Eyes', 'grey');
+		await route.fulfill({ json: { ok: true, jobId: `job-${modes.length}` } });
+	});
+	await page.route('**/api/assistant/job-status*', async (route) => {
+		await route.fulfill({ json: { state: 'done' } });
 	});
 
 	await gotoReady(page, `/stories/${storyId}/plan?entity=${characterId}`);
@@ -105,40 +123,23 @@ test('a large read is confirmed first, and the whole book can be read after', as
 	await expect(page.getByRole('button', { name: 'Read the whole book' })).toHaveCount(0);
 });
 
-test('nothing is read when the count fails or the text is too long', async ({ page }) => {
+test('nothing is read when the count fails', async ({ page }) => {
 	const { storyId, characterId } = await storyWithCharacter(page);
 	let reads = 0;
-	let estimate: 'fail' | 'tooLong' = 'fail';
 	await page.route('**/api/assistant/enrich', async (route) => {
 		const body = route.request().postDataJSON() as { estimate?: boolean };
 		if (!body.estimate) {
 			reads += 1;
-			await route.fulfill({ json: { suggestions: [], scenes: 0, requests: 0 } });
-		} else if (estimate === 'fail') {
-			await route.fulfill({ status: 500, json: { message: 'Internal Error' } });
+			await route.fulfill({ json: { ok: true, jobId: 'job-1' } });
 		} else {
-			await route.fulfill({
-				json: {
-					model: 'stub',
-					scenes: { scenes: 300, requests: 40, estTokens: 240000 },
-					confirm: true,
-					tooLong: true
-				}
-			});
+			await route.fulfill({ status: 500, json: { message: 'Internal Error' } });
 		}
 	});
 
 	await gotoReady(page, `/stories/${storyId}/plan?entity=${characterId}`);
 	const suggest = page.getByRole('button', { name: 'Suggest details with the Assistant' });
-	const note = page.locator('.assist-enrich .assist-note');
 	await suggest.click();
-	await expect(note).not.toBeEmpty();
+	await expect(page.locator('.assist-enrich .assist-note')).not.toBeEmpty();
 	await expect(suggest).toBeEnabled();
-	expect(reads).toBe(0);
-
-	estimate = 'tooLong';
-	await suggest.click();
-	await expect(note).toContainText('300 scenes, about 240,000 tokens, too long to read here');
-	await expect(page.locator('.assist-ask')).toHaveCount(0);
 	expect(reads).toBe(0);
 });

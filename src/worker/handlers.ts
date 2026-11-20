@@ -48,7 +48,11 @@ import {
 import type { ReviewFailure } from '../lib/server/db/schema.ts';
 import { parseCategories, type PatternScope, type ReviewCategory } from '../lib/review-shape.ts';
 import { summariseStory } from '../lib/server/llm/summaries.ts';
-import { enrichUniverse, MAX_FAILURES_IN_A_ROW } from '../lib/server/llm/enrich.ts';
+import {
+	enrichEntityFromText,
+	enrichUniverse,
+	MAX_FAILURES_IN_A_ROW
+} from '../lib/server/llm/enrich.ts';
 import {
 	AssistantDisabledError,
 	NoModelError,
@@ -76,6 +80,7 @@ const defaultServices = {
 	reviewUniverseContinuity,
 	summariseStory,
 	enrichUniverse,
+	enrichEntityFromText,
 	summariseCharacterArc,
 	sendEmail,
 	s3AssetStore
@@ -104,7 +109,14 @@ export type AssistantReviewData = {
 export type AssistantSummariesData = { userId: string; storyId: string };
 
 // characterId set: rewrite that character's arc instead of the enrichment pass.
-export type AssistantEnrichData = { userId: string; universeId: string; characterId?: string };
+// read set: a full-text read of one entity (the "Suggest details" button),
+// from the story it names or else across the universe.
+export type AssistantEnrichData = {
+	userId: string;
+	universeId: string;
+	characterId?: string;
+	read?: { entityId: string; name: string; storyId?: string; mode: 'scenes' | 'book' };
+};
 
 // The first distinct thing that went wrong in a run, for the notification
 // title. The whole list rides on the job status the review modal polls.
@@ -122,6 +134,7 @@ function staged(notes: number): string {
 // The arc button reads Write arc or Refresh arc, so the notices name neither.
 const ARC_AGAIN = "try again from the character's entry in Plan";
 const PICK_MODEL = 'Pick one under Account, Assistant, Models per role';
+const DETAILS_AGAIN = 'select "Suggest details with the Assistant" on the entry again';
 
 // "1 entry", "3 other entries", for an enrich notice.
 function entries(n: number, other = false): string {
@@ -282,6 +295,98 @@ export function createHandlers(deps: WorkerDeps) {
 		}
 		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 		logEvent('info', 'assistant.arc', { characterId });
+	}
+
+	// A full-text read of one entity for details, from an assistant-enrich job
+	// that names it. What each part finds is staged as it is read, so every
+	// notice says what was left behind.
+	async function entityDetails(
+		job: JobWithMetadata<AssistantEnrichData>,
+		read: NonNullable<AssistantEnrichData['read']>
+	) {
+		const { userId, universeId } = job.data;
+		const { entityId, name } = read;
+		const scope = read.storyId ? { storyId: read.storyId } : { universeId };
+		const href = read.storyId
+			? `/stories/${read.storyId}/plan?entity=${entityId}`
+			: `/universes/${universeId}/plan?entity=${entityId}`;
+		const count = (n: number) => `${n} ${n === 1 ? 'suggestion' : 'suggestions'}`;
+		let title: string;
+		try {
+			const result = await withJobRunSignal(boss, job, (signal) =>
+				services.enrichEntityFromText(db, {
+					userId,
+					scope,
+					entityId,
+					mode: read.mode,
+					jobId: job.id,
+					signal
+				})
+			);
+			if (result.missing) {
+				logEvent('warn', 'assistant.details_skipped', { entityId, userId });
+				return;
+			}
+			const staged = result.suggestions.length;
+			const left = staged > 0 ? `, with ${count(staged)} left on the entry` : '';
+			if (result.capped) {
+				title = `The Assistant stopped reading for details about ${name} at ${spentPhrase(result.spentUsd ?? 0)}${left}. Raise the cap in settings, then ${DETAILS_AGAIN}.`;
+			} else if (result.partial) {
+				title = `The Assistant stopped partway through reading for details about ${name}${left}. ${result.partialNote ?? `To read the rest, ${DETAILS_AGAIN}.`}`;
+			} else if (result.scenes === 0) {
+				title = `The Assistant found no scenes that mention ${name}, so there was nothing to read.`;
+			} else if (staged === 0) {
+				title = `The Assistant read ${result.scenes} ${result.scenes === 1 ? 'scene' : 'scenes'} and found nothing new to suggest for ${name}.`;
+			} else {
+				title = `The Assistant left ${count(staged)} for ${name}. Open the entry to accept or reject them.`;
+			}
+			logEvent('info', 'assistant.details', {
+				entityId,
+				scenes: result.scenes,
+				requests: result.requests,
+				staged,
+				...(result.partial ? { partial: true } : {}),
+				...(result.capped ? { capped: true } : {})
+			});
+		} catch (error) {
+			// Thrown only when nothing was found before the failure.
+			logEvent('error', 'assistant.details_failed', { entityId, ...errorFields(error) });
+			const settled =
+				error instanceof ReplyCutOffError ||
+				error instanceof ReplyRefusedError ||
+				error instanceof EndpointReplyError ||
+				error instanceof AssistantDisabledError;
+			if (settled) {
+				// A retry would end the same way, so say why and end here, settled
+				// as completed with a failed output like an arc.
+				await boss.complete(ASSISTANT_ENRICH_QUEUE, job, { failed: true });
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_enrich', {
+						title:
+							error instanceof ReplyCutOffError
+								? `The Assistant could not read for details about ${name}. ${error.message}`
+								: error instanceof ReplyRefusedError
+									? `The model declined to read for details about ${name}, so nothing was suggested.`
+									: error instanceof EndpointReplyError
+										? `The Assistant could not read for details about ${name}: the endpoint did not send a reply. Check the endpoint in your settings, then ${DETAILS_AGAIN}.`
+										: error instanceof NoModelError
+											? `No model is chosen for the Assistant, so it did not read for details about ${name}. ${PICK_MODEL}, then ${DETAILS_AGAIN}.`
+											: `The Assistant is turned off, so it did not read for details about ${name}. Switch it back on in your settings, then ${DETAILS_AGAIN}.`,
+						href
+					})
+				);
+				return;
+			}
+			// Nothing was found, so a retry repeats no kept work. Say nothing
+			// until the last attempt.
+			if (!job.signal?.aborted && job.retryCount < job.retryLimit) throw error;
+			title = job.signal?.aborted
+				? `Reading for details about ${name} was stopped before anything was found.`
+				: `The Assistant could not read for details about ${name}. Check the endpoint in your settings.`;
+			await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
+			throw error;
+		}
+		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 	}
 
 	return {
@@ -641,12 +746,17 @@ export function createHandlers(deps: WorkerDeps) {
 
 		// The background enrichment pass over a universe's entities: stages alias,
 		// detail, and summary suggestions for every entry with new prose to read.
-		// A job naming a character rewrites that character's arc instead. Owner
+		// A job naming a character rewrites that character's arc instead, and one
+		// naming a read reads one entry's scenes in full. Owner
 		// re-checked at run time; the writer is notified when it is done.
 		async assistantEnrich(jobs: JobWithMetadata<AssistantEnrichData>[]) {
 			for (const job of jobs) {
 				if (job.data.characterId) {
 					await characterArc(job, job.data.characterId);
+					continue;
+				}
+				if (job.data.read) {
+					await entityDetails(job, job.data.read);
 					continue;
 				}
 				const { userId, universeId } = job.data;

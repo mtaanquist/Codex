@@ -385,6 +385,31 @@ export async function queueAssistantArc(input: {
 	}
 }
 
+// Queues a full-text read of one entity (the "Suggest details" button). It
+// shares the enrichment queue; the singleton key holds one unfinished read per
+// entity. name is the entity's name when queued, for the activity card.
+export async function queueAssistantDetails(input: {
+	userId: string;
+	universeId: string;
+	read: { entityId: string; name: string; storyId?: string; mode: 'scenes' | 'book' };
+}): Promise<string | 'coalesced' | null> {
+	try {
+		const boss = await getBoss();
+		const jobId = await boss.send(ASSISTANT_ENRICH_QUEUE, input, {
+			singletonKey: `details:${input.read.entityId}`,
+			...assistantSendOptions(input.userId)
+		});
+		return jobId ?? 'coalesced';
+	} catch (error) {
+		logEvent('error', 'job.queue_failed', {
+			queue: ASSISTANT_ENRICH_QUEUE,
+			entityId: input.read.entityId,
+			...errorFields(error)
+		});
+		return null;
+	}
+}
+
 // Where the activity center's polling reads a queued Assistant job's progress.
 // pg-boss archives a job once it settles, so a job it can no longer find by id
 // is treated as done rather than lost.
@@ -409,7 +434,8 @@ const JOB_QUEUES = {
 	review: [ASSISTANT_REVIEW_QUEUE, LEGACY_ASSISTANT_REVIEW_QUEUE],
 	summaries: [ASSISTANT_SUMMARIES_QUEUE, LEGACY_ASSISTANT_SUMMARIES_QUEUE],
 	enrich: [ASSISTANT_ENRICH_QUEUE],
-	arc: [ASSISTANT_ENRICH_QUEUE]
+	arc: [ASSISTANT_ENRICH_QUEUE],
+	details: [ASSISTANT_ENRICH_QUEUE]
 } as const;
 
 export async function getAssistantJobState(

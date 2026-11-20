@@ -41,9 +41,6 @@ const TASK_TOKENS = 600;
 export const ENRICH_TEXT_REPLY_TOKENS = 1500;
 // A read estimated above this is confirmed by the writer before it runs.
 export const ENRICH_CONFIRM_TOKENS = 8000;
-// The most requests one press of the button makes. The read is one web
-// request the writer waits on, so a text that needs more is refused.
-export const MAX_ENRICH_PARTS = 8;
 // The story and chapter headings a scene may bring with it. An allowance.
 const HEADING_TOKENS = 16;
 
@@ -274,8 +271,6 @@ export type EnrichEstimate = {
 	book?: EnrichReadEstimate;
 	// Whether the scenes read is large enough to confirm first.
 	confirm: boolean;
-	// Set when the scenes read needs more requests than one press makes.
-	tooLong?: boolean;
 };
 
 function readEstimate(
@@ -323,7 +318,6 @@ export async function estimateEnrich(
 		model: budget.model,
 		scenes: scenesRead,
 		...(book ? { book } : {}),
-		confirm: scenesRead.estTokens > ENRICH_CONFIRM_TOKENS,
-		...(scenesRead.requests > MAX_ENRICH_PARTS ? { tooLong: true } : {})
+		confirm: scenesRead.estTokens > ENRICH_CONFIRM_TOKENS
 	};
 }

@@ -22,7 +22,7 @@ import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 process.env.APP_SECRET = process.env.APP_SECRET || 'entity-enrich-text-test-secret';
 
 const { listPendingForEntity } = await import('../../src/lib/server/entity-suggestions');
-const { enrichEntityFromText, EnrichTooLongError, estimateEntityEnrich } =
+const { enrichEntityFromText, estimateEntityEnrich } =
 	await import('../../src/lib/server/llm/enrich');
 const { ReplyCutOffError } = await import('../../src/lib/server/llm/gateway');
 const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOverride } =
@@ -272,7 +272,7 @@ describe('an entity and a story from different universes', () => {
 		await writeScenes(other.id, ['Bram is named here too.', 'A second scene.']);
 		for (const mode of ['scenes', 'book'] as const) {
 			const result = await read(mode, { storyId: other.id });
-			expect(result).toEqual({ suggestions: [], scenes: 0, requests: 0 });
+			expect(result).toEqual({ suggestions: [], scenes: 0, requests: 0, missing: true });
 		}
 		expect(prompts).toHaveLength(0);
 		expect(
@@ -410,22 +410,45 @@ describe('a text too long for one request', () => {
 		expect(await listPendingForEntity(db, ownerId, 'character', bram)).toHaveLength(0);
 	});
 
-	it('refuses a text that needs more requests than one read makes, asking nothing', async () => {
+	it('reads a text of any length, and stops between parts at the spend cap', async () => {
 		// About 5,000 tokens each, so one scene per request.
 		const huge = (i: number) => `Bram ${i}. ${'word '.repeat(4000)}`;
 		await writeScenes(
 			storyId,
 			Array.from({ length: 9 }, (_, i) => huge(i))
 		);
-		await expect(read('scenes')).rejects.toBeInstanceOf(EnrichTooLongError);
-		expect(prompts).toHaveLength(0);
-		const counted = await estimateEntityEnrich(db, {
-			userId: ownerId,
-			scope: { storyId },
-			entityId: bram
-		});
-		expect(counted!.tooLong).toBe(true);
-		expect(counted!.scenes.requests).toBe(9);
+		const whole = await read('scenes');
+		expect(whole.requests).toBe(9);
+		expect(whole.partial).toBeUndefined();
+
+		prompts = [];
+		let calls = 0;
+		const meter = {
+			// Reached once two requests have been paid for.
+			get capReached() {
+				return calls >= 2;
+			},
+			record() {
+				calls += 1;
+			},
+			async flush() {},
+			spentUsd: 1.5,
+			spentEstimated: false
+		};
+		const result = await enrichEntityFromText(
+			db,
+			{
+				userId: ownerId,
+				scope: { storyId },
+				entityId: bram,
+				mode: 'scenes',
+				meter: meter as never
+			},
+			deps
+		);
+		expect(result.capped).toBe(true);
+		expect(result.requests).toBe(2);
+		expect(prompts).toHaveLength(2);
 	});
 
 	it('fails outright when the first part fails, staging nothing', async () => {
@@ -482,7 +505,6 @@ describe('the estimate', () => {
 		await writeScenes(storyId, ['Before.', 'Bram counted the boats.', 'After.']);
 		const counted = await estimate();
 		expect(counted!.confirm).toBe(false);
-		expect(counted!.tooLong).toBeUndefined();
 		expect(counted!.scenes.scenes).toBe(3);
 		expect(counted!.scenes.estCostUsd).toBeUndefined();
 	});

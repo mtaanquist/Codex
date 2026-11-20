@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
@@ -18,7 +18,7 @@
 	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
 	import type { SaveStatus } from '#lib/autosave';
 	import { apiErrorMessage, formatNumber, pluralSuffix } from '#lib/format';
-	import { startArcJob } from '#lib/assistant-actions';
+	import { startArcJob, startDetailsJob } from '#lib/assistant-actions';
 	import { renderReplyMarkdown } from '#lib/markdown';
 
 	let {
@@ -140,7 +140,6 @@
 		scenes: ReadEstimate;
 		book?: ReadEstimate;
 		confirm: boolean;
-		tooLong?: boolean;
 	};
 	type EnrichMode = 'scenes' | 'book';
 	// The read waiting for a yes, with its estimate.
@@ -191,11 +190,6 @@
 			enriching = false;
 			return;
 		}
-		if (estimate.tooLong) {
-			enrichNote = `That is ${readPhrase(estimate.scenes)}, too long to read here with this model. Choose a model with a larger context window for Background work on your account page.`;
-			enriching = false;
-			return;
-		}
 		if (estimate.confirm) {
 			enrichAsk = { mode: 'scenes', read: estimate.scenes };
 			enriching = false;
@@ -204,34 +198,30 @@
 		await runEnrich('scenes');
 	}
 
+	// Queues the read and follows it in the activity card. It runs in the
+	// background, so the writer can leave the page; when it settles while this
+	// entry is still open, the page data reloads and the new suggestions show.
 	async function runEnrich(mode: EnrichMode) {
 		enriching = true;
 		enrichNote = '';
 		enrichAsk = null;
 		try {
-			const response = await postEnrich({ mode });
-			if (!response.ok) {
-				enrichNote = await apiErrorMessage(response, 'The Assistant could not suggest anything.');
-				return;
-			}
-			const body = (await response.json()) as {
-				suggestions: AssistantSuggestion[];
-				partial?: boolean;
-				partialNote?: string;
-			};
-			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
+			await startDetailsJob({
+				entityId: entity.id,
+				request: storyId ? { storyId } : { universeId: universeRef ?? '' },
+				scope: storyId ? { storyId } : { universeId: entity.universeId ?? universeRef ?? '' },
+				mode,
+				name
+			});
+			if (!mounted) return;
+			await refreshAll();
+			await tick();
+			const fresh = assistantSuggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
 			suggestions = [...suggestions, ...fresh];
-			if (body.partial) {
-				enrichNote = `The Assistant stopped partway. ${body.partialNote ?? 'These are from the part it read.'}`;
-			} else if (fresh.length === 0) {
-				enrichNote =
-					mode === 'book'
-						? 'Nothing new to suggest from the whole book.'
-						: `Nothing new to suggest from this ${storyId ? 'story' : 'universe'}.`;
+			if (fresh.length === 0) {
+				enrichNote = 'No new suggestions. Your notifications say how the read went.';
 			}
-			if (mode === 'book' && !body.partial) bookRead = null;
-		} catch {
-			enrichNote = 'Something went wrong reaching the Assistant.';
+			if (mode === 'book') bookRead = null;
 		} finally {
 			enriching = false;
 		}
@@ -518,7 +508,7 @@
 	{#if assistantEnabled && (storyId || universeRef)}
 		<div class="assist-enrich">
 			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={startEnrich}>
-				{enriching ? 'Thinking...' : 'Suggest details with the Assistant'}
+				{enriching ? 'Reading...' : 'Suggest details with the Assistant'}
 			</button>
 			{#if enrichNote}
 				<span class="assist-note">{enrichNote}</span>

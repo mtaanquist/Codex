@@ -19,7 +19,7 @@ import {
 
 export type RunningAssistantJob = {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich' | 'arc';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
 	mode: 'full' | 'continuity';
 	storyId: string | null;
 	chapterId: string | null;
@@ -34,6 +34,8 @@ type JobData = {
 	chapterId?: string;
 	universeId?: string;
 	characterId?: string;
+	// A full-text read of one entity (the "Suggest details" button).
+	read?: { entityId?: string; name?: string };
 	mode?: 'full' | 'continuity';
 };
 
@@ -65,7 +67,9 @@ export async function findRunningAssistantJobs(
 				: row.name === ASSISTANT_ENRICH_QUEUE
 					? row.data.characterId
 						? ('arc' as const)
-						: ('enrich' as const)
+						: row.data.read
+							? ('details' as const)
+							: ('enrich' as const)
 					: ('review' as const),
 		data: row.data
 	}));
@@ -147,6 +151,10 @@ export async function findRunningAssistantJobs(
 			// An arc job is named for its character, within a live universe.
 			if (title !== undefined && job.data.characterId) {
 				title = characterNames.get(job.data.characterId);
+			}
+			// A details read is named for its entity, as it was when queued.
+			if (title !== undefined && job.data.read) {
+				title = typeof job.data.read.name === 'string' ? job.data.read.name : undefined;
 			}
 		} else if (storyId) {
 			title = storyTitles.get(storyId);
