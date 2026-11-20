@@ -1290,6 +1290,9 @@ export const reviewSuggestions = pgTable(
 			(): AnyPgColumn => reviewSuggestions.id,
 			{ onDelete: 'set null' }
 		),
+		// The Assistant's short reason for the change, shown to the author. Null
+		// for people's suggestions and for edits from before the column.
+		reason: text('reason'),
 		status: text('status', { enum: ['pending', 'accepted', 'rejected'] })
 			.notNull()
 			.default('pending'),

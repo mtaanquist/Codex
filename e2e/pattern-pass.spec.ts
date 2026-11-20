@@ -231,6 +231,10 @@ test.describe('with the Assistant on', () => {
 			const [after] = await scenesOf();
 			const at = after.body_md.indexOf('ford');
 			const id = await seedEdit(pool, after, threadId, [at, at + 4], 'river', suggestionId);
+			await pool.query('update review_suggestions set reason = $1 where id = $2', [
+				'A river reads larger than a ford.',
+				id
+			]);
 			if (status === 200) await route.fulfill({ json: { staged: 1, ids: [id] } });
 			else await route.fulfill({ status, body: 'Gateway timeout' });
 		});
@@ -265,6 +269,10 @@ test.describe('with the Assistant on', () => {
 			await pass.getByRole('button', { name: 'Skip' }).click();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
+			// The Assistant's reason shows under the change.
+			await expect(current.locator('.rv-reason')).toHaveText(
+				'Why:A river reads larger than a ford.'
+			);
 			await expect(page.locator('.review-edit .cm-content')).toContainText('Kara crossed');
 		} finally {
 			await done();
