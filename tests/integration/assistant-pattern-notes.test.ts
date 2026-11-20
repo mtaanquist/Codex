@@ -170,6 +170,38 @@ describe('leave_pattern_note', () => {
 		expect(linked).toHaveLength(2);
 	});
 
+	it('keeps within its limits: a long kept list is cut, and a scoped turn is refused', async () => {
+		const kept = Array.from({ length: 200 }, (_, i) => ({
+			quote: `kept instance number ${i} of the elf`,
+			reason: 'it helps the rhythm of the paragraph here'
+		}));
+		const outcome = await tool(
+			'leave_pattern_note',
+			patternArgs(
+				[
+					{ original: 'The elf crossed', replacement: 'Kara crossed' },
+					{ original: '  ', replacement: 'x' }
+				],
+				kept
+			)
+		);
+		expect(outcome.staged).toBe(true);
+		expect(outcome.result).toContain('1 linked edit');
+		expect(outcome.result).toContain('an edit with no original text');
+		const [note] = await db.select().from(reviewComments);
+		expect(note.bodyMd.length).toBeLessThanOrEqual(5000);
+		expect(note.bodyMd).toContain('kept instance number 0 ');
+
+		const scoped = await tool(
+			'leave_pattern_note',
+			patternArgs([{ original: 'The elf had seen', replacement: 'She had seen' }]),
+			{ maxEdits: 1 }
+		);
+		expect(scoped.staged).toBe(false);
+		expect(scoped.result).toContain('suggest_edit');
+		expect(await db.select().from(reviewThreads)).toHaveLength(1);
+	});
+
 	it('refuses a note with no edits and a scene the user does not own', async () => {
 		const empty = await tool('leave_pattern_note', patternArgs([]));
 		expect(empty.staged).toBe(false);
@@ -206,6 +238,22 @@ describe('the pattern link', () => {
 		if (!created.ok) throw new Error(created.reason);
 		return created.threadId;
 	}
+
+	it('stages nothing more on a note the writer has resolved', async () => {
+		const threadId = await note();
+		await db
+			.update(reviewThreads)
+			.set({ resolvedAt: new Date() })
+			.where(eq(reviewThreads.id, threadId));
+		const late = await tool(
+			'suggest_edit',
+			{ sceneId, original: 'The elf crossed', replacement: 'Kara crossed' },
+			{ patternThreadId: threadId }
+		);
+		expect(late.staged).toBe(false);
+		expect(late.result).toContain('resolved');
+		expect(await listSuggestions(db, storyId)).toHaveLength(0);
+	});
 
 	it('links suggest_edit under a pattern scope and holds it to the edit window', async () => {
 		const threadId = await note();

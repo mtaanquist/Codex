@@ -8,6 +8,7 @@ import {
 	addComment,
 	createSuggestion,
 	createThread,
+	MAX_COMMENT_LENGTH,
 	openAssistantNote,
 	updateAssistantSuggestion
 } from '../../review.ts';
@@ -508,6 +509,9 @@ const REPORT_QUOTE = 80;
 // note stages even when some edits do not locate; those are reported back so
 // the model can retry them. A retry with the same comment adds to the open
 // note rather than opening a second one.
+// The most edits one leave_pattern_note call may carry.
+const MAX_PATTERN_EDITS = 40;
+
 async function leavePatternNote(
 	ctx: ToolContext,
 	input: {
@@ -517,6 +521,11 @@ async function leavePatternNote(
 		kept: { quote: string; reason: string }[];
 	}
 ): Promise<ToolOutcome> {
+	// A turn confined to one note, a stretch of a scene or a number of edits
+	// offers suggest_edit only; this tool would step around those limits.
+	if (ctx.scope?.patternThreadId || ctx.scope?.editWindow || ctx.scope?.maxEdits !== undefined) {
+		return { result: 'Use suggest_edit for this task.', staged: false };
+	}
 	const comment = input.comment.trim();
 	if (!comment) return { result: 'Provide the note text.', staged: false };
 	if (!input.edits.length) {
@@ -535,12 +544,19 @@ async function leavePatternNote(
 		: null;
 	let staged = 0;
 	if (!threadId) {
-		const kept = input.kept.filter((entry) => entry.quote.trim());
-		const body = kept.length
-			? `${comment}\n\nLeft as is on purpose:\n${kept
-					.map((entry) => `- "${entry.quote.trim()}": ${entry.reason.trim()}`)
-					.join('\n')}`
-			: comment;
+		// The kept list is cut to what the note has room for, so a long one
+		// cannot fail the whole call.
+		const heading = '\n\nLeft as is on purpose:';
+		const lines: string[] = [];
+		let length = comment.length + heading.length;
+		for (const entry of input.kept) {
+			if (!entry.quote.trim()) continue;
+			const line = `\n- "${entry.quote.trim()}": ${entry.reason.trim()}`;
+			if (length + line.length > MAX_COMMENT_LENGTH) break;
+			lines.push(line);
+			length += line.length;
+		}
+		const body = lines.length ? `${comment}${heading}${lines.join('')}` : comment;
 		const created = await createThread(ctx.db, {
 			storyId: scene.storyId,
 			sceneId: scene.id,
@@ -555,9 +571,12 @@ async function leavePatternNote(
 
 	const missed: string[] = [];
 	let edits = 0;
-	for (const edit of input.edits) {
+	for (const edit of input.edits.slice(0, MAX_PATTERN_EDITS)) {
 		const quote = edit.original.trim().slice(0, REPORT_QUOTE);
-		if (!edit.original) continue;
+		if (!edit.original.trim()) {
+			missed.push('- an edit with no original text: give the exact passage to replace');
+			continue;
+		}
 		const found = locateQuote(scene.bodyMd, edit.original);
 		if (!found.ok) {
 			missed.push(
@@ -576,6 +595,11 @@ async function leavePatternNote(
 		});
 		if (result.ok) edits += 1;
 		else missed.push(`- "${quote}": ${result.reason}`);
+	}
+	if (input.edits.length > MAX_PATTERN_EDITS) {
+		missed.push(
+			`- ${input.edits.length - MAX_PATTERN_EDITS} more: only the first ${MAX_PATTERN_EDITS} edits of a call are read`
+		);
 	}
 	staged += edits;
 	const lines = [
