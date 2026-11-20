@@ -982,6 +982,23 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Tooling issues (2026-11-20)
+
+Staging branch `staging/tooling-issues`, the open "tooling" issues after the
+triage.
+
+- #1238: the upgrade fixture seeds a second character (Tam) whose arc and read
+  were out of date under the previous release's rule, so migration 0083's
+  backfill is exercised: after the upgrade his arc is marked stale and enrich
+  re-reads him and leaves Mara alone. The capped-review step no longer stubs
+  the job lookup: `legacyJobCategories` moved out of the handler closure to an
+  exported function, and the test reads a finished job from a real pg-boss on
+  the legacy queue (and checks that other categories do not take the run
+  over). Not done: normalising CRLF in `gatherStory`. The review pages read
+  scenes through it and anchor suggestions by offset into the stored text, so
+  changing the text there is not safe; the export keeps the stored bytes and
+  the next save of the scene normalises them.
+
 ## Issue triage fixes (2026-11-20)
 
 The 2026-11-19 triage closed 13 of 78 open issues as not planned or duplicate and ranked the bugs that were left. Fixes, in that order:
