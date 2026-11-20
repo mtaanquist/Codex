@@ -145,7 +145,11 @@
 		saver.keepMine(conflict.bodyMd);
 		void autosave.flush();
 	}
-	const scheduleSave = autosave.schedule;
+	// True while the doc is being replaced with the server's text.
+	let syncingFromServer = false;
+	const scheduleSave = () => {
+		if (!syncingFromServer) autosave.schedule();
+	};
 
 	// Same contract as SceneEditor's, so the page can land pending saves before
 	// an action that reads the stored text.
@@ -318,11 +322,18 @@
 		if (incoming !== appliedBody) {
 			if (!autosave.isDirty()) {
 				if (view.state.doc.toString() !== incoming) {
-					// The server's own text, so it lands even while typing is paused.
-					view.dispatch({
-						changes: { from: 0, to: view.state.doc.length, insert: incoming },
-						annotations: landsWhilePaused.of(true)
-					});
+					// The server's own text, so it lands even while typing is paused,
+					// and it is not an edit to save: a save queued for it would be
+					// refused when a second change lands before it goes.
+					syncingFromServer = true;
+					try {
+						view.dispatch({
+							changes: { from: 0, to: view.state.doc.length, insert: incoming },
+							annotations: landsWhilePaused.of(true)
+						});
+					} finally {
+						syncingFromServer = false;
+					}
 				}
 				// Only once the editor shows it, or the next save would build on
 				// text the writer never saw.
