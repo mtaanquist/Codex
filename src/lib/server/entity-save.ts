@@ -159,6 +159,12 @@ export async function saveEntity(
 	// snapshot, so tag, summary, category, and detail changes register even
 	// when the body is untouched), and the story-note upsert commit together.
 	await db.transaction(async (tx) => {
+		// The story before the entity, the order row-locks.ts sets: the note
+		// insert below takes this same lock for its foreign key, and taking it
+		// after the entity row would cross a universe purge.
+		if (save.storyId !== undefined) {
+			await tx.execute(sql`select id from stories where id = ${save.storyId} for key share`);
+		}
 		await rows.update(tx, entity.id, {
 			name,
 			tags,
