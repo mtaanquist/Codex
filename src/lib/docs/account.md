@@ -232,7 +232,10 @@ Your words are sent only to the endpoint you set here.
   details, earlier turns) is cached by the API and billed far cheaper on reuse.
   Text sent for the first time is billed a little higher so it can be reused.
   The cost in the list and the spend cap both count reused text at a tenth of
-  the price and first-time text at Claude's higher rate. Requests made before
+  the price and first-time text at Claude's higher rate. With any other
+  provider, reused text is counted at the full price, because what an endpoint
+  charges for it is not known. If your provider gives a discount, the cost
+  shown runs high and a spend cap stops a little early. Requests made before
   Codex kept those counts are priced with every token sent at the plain price.
   The estimate shown before a review counts each scene's first read, and the
   passes over the whole story, at the higher first-time rate.

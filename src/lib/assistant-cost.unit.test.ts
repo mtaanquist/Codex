@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cacheWriteRate, usageCostUsd } from './assistant-cost';
+import { cacheReadRate, cacheWriteRate, usageCostUsd } from './assistant-cost';
 
 const price = { prompt: 0.001, completion: 0.002 };
 
@@ -30,13 +30,24 @@ describe('usageCostUsd', () => {
 	it('prices a mixed row share by share', () => {
 		// 1000 prompt tokens: 400 read from the cache, 300 written (100 of them
 		// to the one hour cache), 300 fresh.
-		const cost = usageCostUsd(price, {
-			promptTokens: 1000,
-			completionTokens: 50,
-			cachedPromptTokens: 400,
-			cacheWriteTokens: 300,
-			cacheWrite1hTokens: 100
-		});
+		const cost = usageCostUsd(
+			price,
+			{
+				promptTokens: 1000,
+				completionTokens: 50,
+				cachedPromptTokens: 400,
+				cacheWriteTokens: 300,
+				cacheWrite1hTokens: 100
+			},
+			true
+		);
 		expect(cost).toBeCloseTo((300 + 400 * 0.1 + 200 * 1.25 + 100 * 2) * 0.001 + 50 * 0.002, 10);
+	});
+
+	it('gives a cache read no discount unless the provider is Claude', () => {
+		const usage = { promptTokens: 1000, completionTokens: 0, cachedPromptTokens: 400 };
+		expect(usageCostUsd(price, usage, false)).toBeCloseTo(1000 * 0.001, 10);
+		expect(usageCostUsd(price, usage, true)).toBeCloseTo((600 + 400 * 0.1) * 0.001, 10);
+		expect(cacheReadRate(false)).toBeGreaterThanOrEqual(cacheReadRate(true));
 	});
 });

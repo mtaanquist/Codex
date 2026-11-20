@@ -1152,6 +1152,23 @@ low findings from the quick wins staging review.
   and whether `message_delta` carries input totals on a web search turn.
   The first two match the published API reference.
 
+Second staging review, branch `fix/staging-review-2-cost`: the tenth for cache
+reads was applied to every endpoint, but OpenAI-compatible endpoints report
+cached tokens too and charge anything from a tenth to the full price for
+them, so a cap could stop late. `cacheReadRate` now gives the tenth to the
+Claude provider only and the full price elsewhere. A flat half was
+considered: it matches the dearest published discount known at the time, but
+a custom endpoint can be any server, and no rate under the full price is safe
+for all of them. Usage rows do not record their provider and no column was
+added: the list prices with the saved provider, and a row from before a
+provider switch seldom has a price left, since a switch drops both the
+discovered and the typed prices. An endpoint save that drops typed prices now
+says which, in the form's status line (and on a Test connection reply). The
+half-price message skips a model the same save took off its last role. A
+pattern whose scenes were all deleted or emptied during the survey is dropped
+without a failure line. The out-of-date arc hint names "Refresh arc" only
+when the button is shown.
+
 ## Background jobs list (2026-11-20)
 
 #1271. A slow local model can keep a review or a details read going for many
