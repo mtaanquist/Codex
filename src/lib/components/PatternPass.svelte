@@ -102,16 +102,27 @@
 	// The button the writer pressed goes with the step, so focus moves to the
 	// new step rather than falling back to the page, unless the writer had
 	// already moved it somewhere outside the pass.
+	// Keyed on the step, or for the end of the pass on whether it is still
+	// waiting, so a re-read finishing under a step on screen moves nothing.
+	let shownKey: string | null = null;
 	$effect(() => {
 		const id = stepId;
-		if (!scroller) return;
+		const key = id ?? (rereading ? 'end:waiting' : 'end:done');
+		if (!scroller || key === shownKey) return;
+		// The wait at the end turning into the end itself is the same place: it
+		// only picks up focus the swap dropped, without scrolling.
+		const settled = shownKey === 'end:waiting' && key === 'end:done';
+		shownKey = key;
 		void tick().then(() => {
 			const card = id ? cardOf(id) : scroller?.querySelector<HTMLElement>('.pp-end');
-			card?.scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' });
 			const active = document.activeElement;
-			if (card && (!active || active === document.body || scroller?.contains(active))) {
-				card.focus({ preventScroll: true });
+			const lost = !active || active === document.body;
+			if (settled) {
+				if (card && lost) card.focus({ preventScroll: true });
+				return;
 			}
+			card?.scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' });
+			if (card && (lost || scroller?.contains(active))) card.focus({ preventScroll: true });
 		});
 	});
 

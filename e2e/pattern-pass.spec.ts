@@ -302,6 +302,10 @@ test.describe('with the Assistant on', () => {
 				page.locator('.activity-card').filter({ hasText: 'Follow-up added' })
 			).toBeVisible();
 			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone');
+			// The re-read ending takes neither focus nor typing from the box.
+			await expect(pass.getByLabel('Your wording')).toBeFocused();
+			await page.keyboard.type(' again');
+			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone again');
 			await pass.getByRole('button', { name: 'Accept my wording' }).click();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
@@ -431,10 +435,39 @@ test.describe('with the Assistant on', () => {
 			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
 			await note.getByRole('button', { name: /Work through this/ }).click();
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
-			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			// Skip, so only the re-read from before the restart is running.
+			await pass.getByRole('button', { name: 'Skip' }).click();
 			await expect(pass.getByText('The Assistant is still re-reading')).toBeVisible();
+			await expect(pass.getByRole('button', { name: 'Resolve the note' })).toHaveCount(0);
 			release();
 			await expect(current.getByText('Follow-up')).toBeVisible();
+		} finally {
+			await done();
+		}
+	});
+
+	// A follow-up that turns up at the end while the writer types in the
+	// manuscript shows in the pane without moving them.
+	test('a follow-up at the end does not pull the writer out of the manuscript', async ({
+		page
+	}) => {
+		let release!: () => void;
+		const { pass, current, done } = await openPass(page, new Promise<void>((r) => (release = r)));
+		try {
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(pass.getByText('The Assistant is still re-reading')).toBeVisible();
+			const editor = page.locator('.review-edit .cm-content');
+			await expect(editor).toContainText('Kara looked back.');
+			await editor.click();
+			await page.keyboard.press('ControlOrMeta+End');
+			release();
+			await expect(current.getByText('Follow-up')).toBeVisible();
+			// Still in the second scene, still typing there.
+			await page.keyboard.type(' Twice.');
+			await expect(editor).toContainText('Kara looked back. Twice.');
+			await expect(editor).toBeFocused();
 		} finally {
 			await done();
 		}

@@ -525,7 +525,9 @@
 
 	// Each new step opens its scene and points the manuscript at the change.
 	// Only a new step does: the writer may open another scene mid-pass to read
-	// around, and is not pulled back until the next step.
+	// around, and is not pulled back until the next step. Nor is a writer
+	// typing in the manuscript when a step turns up on its own (a follow-up
+	// arriving at the end of the pass): the step shows in the pane only.
 	let lastStepId: string | null = null;
 	$effect(() => {
 		const step = passStep;
@@ -538,6 +540,7 @@
 		untrack(() => {
 			if (!pass) return;
 			pass.currentId = step.id;
+			if (document.activeElement?.closest('.review-edit')) return;
 			if (step.sceneId !== selectedSceneId && orderedScenes.some((s) => s.id === step.sceneId)) {
 				selectScene(step.sceneId);
 			}
