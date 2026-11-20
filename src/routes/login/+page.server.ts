@@ -1,14 +1,13 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
-import { createSession, SESSION_COOKIE, verifyCredentials } from '#lib/server/auth';
+import { verifyCredentials } from '#lib/server/auth';
+import { continueSignIn } from '#lib/server/sign-in';
 import { signupMode } from '#lib/server/settings';
-import { isTotpEnabled, issueTotpChallenge, TOTP_CHALLENGE_COOKIE } from '#lib/server/two-factor';
 import { rateLimit } from '#lib/server/rate-limit';
 import { logEvent } from '#lib/server/log';
 import { formText } from '#lib/server/validation';
 
-const CHALLENGE_MAX_AGE_SECONDS = 10 * 60;
 // Keyed by the targeted account, so brute force against one login is slowed
 // without locking the whole instance out; ample for a human retyping.
 const LOGIN_LIMIT = 15;
@@ -64,30 +63,9 @@ export const actions: Actions = {
 			return fail(403, { email, message: 'This account has been suspended.' });
 		}
 
-		// With two-factor on, the password is only half the sign-in: hold a signed
-		// challenge in a short-lived cookie and ask for a code before any session
-		// exists.
-		if (await isTotpEnabled(db, result.user.id)) {
-			cookies.set(TOTP_CHALLENGE_COOKIE, await issueTotpChallenge(db, result.user.id), {
-				path: '/',
-				httpOnly: true,
-				sameSite: 'lax',
-				maxAge: CHALLENGE_MAX_AGE_SECONDS
-			});
-			redirect(303, '/login/totp');
-		}
-
-		const session = await createSession(db, result.user.id, {
-			userAgent: request.headers.get('user-agent'),
-			ip: getClientAddress()
-		});
-		logEvent('info', 'login.ok', { userId: result.user.id });
-		cookies.set(SESSION_COOKIE, session.token, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax',
-			expires: session.expiresAt
-		});
-		redirect(303, '/');
+		redirect(
+			303,
+			await continueSignIn(db, result.user.id, { request, cookies, getClientAddress }, 'password')
+		);
 	}
 };

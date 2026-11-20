@@ -16,6 +16,8 @@ const PUBLIC_PATHS = new Set([
 	// The two-factor challenge runs before a session exists; it guards itself on
 	// the signed challenge cookie.
 	'/login/totp',
+	// Asking for a sign-in link by email, and using one.
+	'/login/link',
 	'/signup',
 	'/verify-email',
 	'/forgot-password',

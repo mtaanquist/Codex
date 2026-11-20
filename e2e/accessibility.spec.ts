@@ -122,6 +122,7 @@ const signedIn = () => [
 
 const signedOut = () => [
 	['sign in', '/login'],
+	['sign in with a link', '/login/link'],
 	['public story', readingPath],
 	['not found', '/@nobody-here/no-such-story']
 ];

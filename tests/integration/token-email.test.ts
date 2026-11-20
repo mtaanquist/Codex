@@ -68,6 +68,7 @@ describe('token emails', () => {
 		const cases = [
 			['email_verify', '/verify-email'],
 			['email_change', '/confirm-email-change'],
+			['sign_in', '/login/link'],
 			['deletion_cancel', '/cancel-deletion']
 		] as const;
 		for (const [kind, path] of cases) {

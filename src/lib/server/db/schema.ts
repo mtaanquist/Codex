@@ -1044,7 +1044,7 @@ export const authTokens = pgTable('auth_tokens', {
 		.references(() => users.id)
 		.notNull(),
 	kind: text('kind', {
-		enum: ['email_verify', 'password_reset', 'deletion_cancel', 'email_change']
+		enum: ['email_verify', 'password_reset', 'deletion_cancel', 'email_change', 'sign_in']
 	}).notNull(),
 	tokenHash: text('token_hash').notNull(),
 	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
