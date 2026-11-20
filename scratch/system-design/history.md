@@ -1023,6 +1023,40 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 2 (2026-11-20)
+
+Fixes from the second pair of reviews of #1168, branch
+`fix/scene-draft-review-2` on `staging/scene-drafting`.
+
+- The cap figure could still be lower than the limit sent: a non-thinking
+  role with a "Longest reply" above the draft's need was sent that setting
+  and counted at the words asked for. A draft request is now `boundedReply`:
+  without thinking, the setting can lower the limit but not raise it, and
+  the estimate counts the limit sent for every role ("up to", always). The
+  flat persona figure and chars/4 counting in the prompt side were left.
+- An empty reply was thrown and retried, paying three times for the same
+  nothing. It is settled as failed with a note and the job ends; in a
+  chapter run the run ends at that scene.
+- A chapter scene was told it followed the run's previous draft even when
+  that scene was not adjacent, or the draft was already kept (then the
+  context held it twice). Carried only for the adjacent, undecided one. A
+  scene trashed mid-run still breaks the chain, as before.
+- Two windows on one draft: saves and the keeping choices send the md5 of
+  the text last seen, compared in the statement that writes. Chosen over a
+  version column to avoid a migration.
+- Client: edits are held in module state by draft id, so a slow save from
+  an unmounted card cannot be overtaken by the remount's read, and are
+  flushed on pagehide (keepalive when the body fits, else the page asks
+  before leaving). Brief forms moved from module state to `sessionStorage`.
+  A start is ignored for 700 ms after the estimate shows; a fixed delay was
+  chosen over a second confirm step to keep the form at two presses.
+- The slash menu's ranked matcher is kept, but a one-letter query uses menu
+  order as on main. Against main, the only first-row change comes from the
+  new `/draft` commands and `/write` being relabelled.
+- Deferred, to file: discarding the scene being written in a chapter run
+  does not stop its request; the flat persona figure and chars/4 counting
+  in the estimate.
+
 ## Scene drafting, review round 1 (2026-11-20)
 
 Fixes from two reviews of #1168 steps 1 and 2, branch

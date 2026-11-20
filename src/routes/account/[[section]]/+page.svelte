@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dropAllDraftForms } from '#lib/draft-forms';
 	import type { ResolvedPathname } from '$app/types';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -277,7 +278,7 @@
 			class="admin-health"
 			style="background:transparent;box-shadow:none;border:0;padding:12px 4px 2px;"
 		>
-			<form method="POST" action={resolve('/logout')}>
+			<form method="POST" action={resolve('/logout')} onsubmit={dropAllDraftForms}>
 				<button class="btn btn-secondary" type="submit" style="width:100%;justify-content:center;"
 					>Sign out</button
 				>

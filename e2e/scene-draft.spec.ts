@@ -98,10 +98,20 @@ test('a scene draft is costed first, waits for the writer, and fills the empty s
 	await card.getByRole('button', { name: 'Check the cost' }).click();
 	// The count is shown, the keyboard is on the button that starts the draft,
 	// and nothing has been asked for yet.
-	await expect(card).toContainText(/This sends about [\d,]+ tokens and writes about [\d,]+\./);
+	await expect(card).toContainText(/This sends about [\d,]+ tokens and writes up to [\d,]+\./);
 	await expect(card).toContainText('This model has no price on record');
 	await expect(card.getByRole('button', { name: 'Draft the scene' })).toBeFocused();
 	expect(asked).toEqual([]);
+	// Pressing again at once (a double press, a second click) starts nothing:
+	// the cost has to have been on screen for a moment first.
+	await page.keyboard.press('Enter');
+	await page.waitForTimeout(100);
+	await page.keyboard.press('Enter');
+	await card.getByRole('button', { name: 'Draft the scene' }).dblclick();
+	await page.waitForTimeout(300);
+	expect(asked).toEqual([]);
+	await expect(card.getByRole('button', { name: 'Draft the scene' })).toBeVisible();
+	await page.waitForTimeout(800);
 	await page.keyboard.press('Enter');
 
 	// The finished draft waits in the panel; the scene is still empty.
@@ -120,10 +130,19 @@ test('a scene draft is costed first, waits for the writer, and fills the empty s
 	await text.fill(edited);
 	await text.blur();
 	await saved;
-	await gotoReady(page, `/stories/crossing-${stamp}?scene=${sceneId}&draft=1`);
+	await gotoReady(page, `/stories/crossing-${stamp}?scene=${sceneId}&draft=show`);
 	await expect(text).toHaveValue(edited);
-	await expect(page).not.toHaveURL(/draft=1/);
+	await expect(page).not.toHaveURL(/draft=/);
 	await expect(page).toHaveURL(new RegExp(`scene=${sceneId}`));
+
+	// An edit is not lost to a reload that comes before the save was due.
+	const hurried = `${edited}\n\nNot once.`;
+	await text.fill(hurried);
+	await page.reload();
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(text).toHaveValue(hurried);
+	await text.fill(edited);
+	await text.blur();
 
 	// The writer's edit is what is kept, and it goes into the empty scene.
 	await card.getByRole('button', { name: 'Fill this scene' }).click();
@@ -134,6 +153,13 @@ test('a scene draft is costed first, waits for the writer, and fills the empty s
 	await page.reload();
 	await expect(page.locator('.cm-content')).toContainText('Ilse stepped onto the ferry');
 	await expect(page.locator('.scene-row')).toHaveCount(1);
+
+	// The notice's link, followed after the draft was decided, opens nothing:
+	// not the draft, and not a new form.
+	await gotoReady(page, `/stories/crossing-${stamp}?scene=${sceneId}&draft=show`);
+	await expect(page).not.toHaveURL(/draft=/);
+	await expect(page.getByPlaceholder('Ask about your story', { exact: false })).toBeVisible();
+	await expect(card).toHaveCount(0);
 });
 
 test('a scene draft can be added as a new scene, and closing the form returns to the chat box', async ({
@@ -154,20 +180,62 @@ test('a scene draft can be added as a new scene, and closing the form returns to
 	await expect(card).toHaveCount(0);
 	await expect(composer).toBeFocused();
 
-	// A draft the job has written, waiting on the scene.
-	await sql(
-		`insert into assistant_drafts
-		   (user_id, story_id, scene_id, brief, target_words, text_md, status, job_id)
-		 select st.owner_id, sc.story_id, sc.id, 'The landing.', 800, $2, 'ready', gen_random_uuid()
-		 from scenes sc join stories st on st.id = sc.story_id where sc.id = $1`,
-		[sceneId, DRAFT]
-	);
-	// The story is then muted: the draft already written can still be kept.
+	// Asking again while a form is open keeps what is typed in it.
+	const briefBox = card.getByLabel('What happens in this scene');
+	await composer.fill('/draft Ilse lands at dusk.');
+	await page.keyboard.press('Enter');
+	await briefBox.fill('Typed by hand, half done');
+	await card.getByLabel('Point of view (optional)').fill('Ilse');
+	await openRowMenu(page, page.locator('.scene-row').first());
+	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
+	await page.locator('.row-submenu').getByRole('menuitem', { name: 'Draft this scene...' }).click();
+	await expect(briefBox).toBeFocused();
+	await expect(briefBox).toHaveValue('Typed by hand, half done');
+	await expect(card.getByLabel('Point of view (optional)')).toHaveValue('Ilse');
+	// So does a reload, until the form is cancelled.
+	await page.reload();
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(briefBox).toHaveValue('Typed by hand, half done');
+	await card.getByRole('button', { name: 'Cancel' }).click();
+	await page.reload();
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(composer).toBeVisible();
+	await expect(card).toHaveCount(0);
+
+	// A draft that could not be written offers another try, with its brief.
+	const stage = (status: string, text: string, note: string | null) =>
+		sql(
+			`insert into assistant_drafts
+			   (user_id, story_id, scene_id, brief, target_words, text_md, status, note, job_id)
+			 select st.owner_id, sc.story_id, sc.id, 'The landing.', 800, $2, $3, $4, gen_random_uuid()
+			 from scenes sc join stories st on st.id = sc.story_id where sc.id = $1`,
+			[sceneId, text, status, note]
+		);
+	await stage('failed', '', 'The model did not answer.');
+	await gotoReady(page, `/stories/landing-${stamp}?scene=${sceneId}&draft=show`);
+	await expect(card).toContainText('The model did not answer.');
+	await card.getByRole('button', { name: 'Try again' }).click();
+	await expect(briefBox).toHaveValue('The landing.');
+	await card.getByRole('button', { name: 'Cancel' }).click();
+	await expect(card).toContainText('The model did not answer.');
+
+	// The story is then muted: nothing new can be asked for, but what is
+	// already there can still be decided.
 	await sql(
 		`update stories set llm_config = '{"enabled":false}'
 		 where id = (select story_id from scenes where id = $1)`,
 		[sceneId]
 	);
+	await gotoReady(page, `/stories/landing-${stamp}?scene=${sceneId}&draft=show`);
+	await expect(page.getByText('The Assistant is off for this story.')).toBeVisible();
+	await expect(card).toContainText('The model did not answer.');
+	await expect(card.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+	await expect(composer).toHaveCount(0);
+	await card.getByRole('button', { name: 'Discard' }).click();
+	await expect(card).toHaveCount(0);
+
+	// A draft the job has written, waiting on the scene.
+	await stage('ready', DRAFT, null);
 	await gotoReady(page, `/stories/landing-${stamp}?scene=${sceneId}&draft=1`);
 	await expect(page.getByText('The Assistant is off for this story.')).toBeVisible();
 	await expect(

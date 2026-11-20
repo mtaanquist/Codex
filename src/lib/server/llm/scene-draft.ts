@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { assistantDrafts, scenes, stories } from '../db/schema.ts';
 import { storyIsLive } from '../universe-scope.ts';
@@ -126,8 +126,10 @@ export type SceneDraftInput = {
 // What a chapter draft adds to one scene's request.
 type ChapterContext = {
 	chapterBrief: string;
-	// The scene drafted just before this one, when there is one.
-	previousDraft: string | null;
+	// The scene drafted last in this run, when its draft is still only a draft.
+	// It rides with the request only when that scene is the one directly
+	// before this one in the story.
+	previous: { sceneId: string; text: string } | null;
 	// The writer's brief for each scene the run drafts, by scene id.
 	plans: Map<string, string>;
 };
@@ -171,6 +173,31 @@ async function followingScene(db: Database, scene: DraftScene, plans?: Map<strin
 	return opening ? { title: next.title, text: opening, kind: 'opening' as const } : null;
 }
 
+// The live scene directly before this one in story order, if any.
+async function precedingSceneId(db: Database, scene: DraftScene): Promise<string | null> {
+	const [before] = await db
+		.select({ id: scenes.id })
+		.from(scenes)
+		.where(
+			and(
+				eq(scenes.storyId, scene.storyId),
+				isNull(scenes.deletedAt),
+				lt(scenes.globalPosition, scene.globalPosition)
+			)
+		)
+		.orderBy(desc(scenes.globalPosition))
+		.limit(1);
+	return before?.id ?? null;
+}
+
+// Why a draft with no text in it was not written, for its card and notice.
+// Such a reply is paid for and would come back the same way, so it is not
+// asked for again.
+export const EMPTY_DRAFT_CUT_OFF_NOTE =
+	'The model used up its whole reply length before it wrote any of the scene. Raise Longest reply for Write in its Tune window under Account, Assistant, then ask again.';
+export const EMPTY_DRAFT_NOTE =
+	'The model sent back an empty reply. Ask again, or choose another model for Write under Account, Assistant.';
+
 // The request a draft would send as things stand, and what bounds its reply.
 // Null when the scene is not the user's. Throws NoModelError when no model is
 // chosen for the role.
@@ -193,6 +220,12 @@ async function sceneDraftRequest(db: Database, input: SceneDraftInput, chapter?:
 		budgetTokens: contextBudgetTokens(contextWindow)
 	});
 	const hasProse = scene.bodyMd.trim() !== '';
+	// "The scene before this one" is only said of the scene that is. With a
+	// scene left out between them, or the earlier draft already kept (it is
+	// then in the manuscript, and in the context), nothing is carried.
+	const previous = chapter?.previous;
+	const previousDraft =
+		previous && (await precedingSceneId(db, scene)) === previous.sceneId ? previous.text : null;
 	const task: ChatMessage = {
 		role: 'user',
 		content: buildSceneDraftMessage({
@@ -204,7 +237,7 @@ async function sceneDraftRequest(db: Database, input: SceneDraftInput, chapter?:
 			existingProse: hasProse && !context ? bodyTail(scene.bodyMd) : null,
 			following: await followingScene(db, scene, chapter?.plans),
 			chapterBrief: chapter?.chapterBrief,
-			previousDraft: chapter?.previousDraft ? draftTail(chapter.previousDraft) : null
+			previousDraft: previousDraft ? draftTail(previousDraft) : null
 		})
 	};
 	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];
@@ -216,7 +249,9 @@ async function sceneDraftRequest(db: Database, input: SceneDraftInput, chapter?:
 		messages,
 		maxTokens,
 		// The limit the gateway sends for this request, resolved the same way.
-		limit: requestReplyLimit(config, 'coauthor', maxTokens, contextWindow)
+		// Bounded: the draft knows what it needs, so the writer's "Longest reply"
+		// lowers the limit but does not raise it past that.
+		limit: requestReplyLimit(config, 'coauthor', maxTokens, contextWindow, true)
 	};
 }
 
@@ -252,10 +287,12 @@ function priceDraft(
 	const expected = draftExpectedTokens(targetWords);
 	const { maxTokens: limit, thinks, setByWriter } = request.limit;
 	const limited = limit < expected;
-	// Thinking is billed at the reply rate and counts toward the limit, so a
-	// model that may think can spend the whole limit: the figure is then the
-	// most the reply can cost, not what the scene's words alone would.
-	const estCompletionTokens = (thinks || limited ? limit : expected) * sceneCount;
+	// The reply is counted at the limit the request is sent with, whatever the
+	// role: nothing stops a reply before its limit (one scene is one request,
+	// so the meter cannot), and a model that thinks, by its settings or on its
+	// own, spends the limit on thinking too. The figure held against the cap
+	// is therefore never lower than what can be charged.
+	const estCompletionTokens = limit * sceneCount;
 	const price = config.modelPricing?.[model];
 	// Claude bills text it has not seen before above the plain price, to cache it.
 	const firstReadRate =
@@ -268,7 +305,7 @@ function priceDraft(
 		model,
 		estTokens,
 		estCompletionTokens,
-		...(thinks ? { estCompletionUpTo: true } : {}),
+		mayThink: thinks,
 		...(estCostUsd !== undefined ? { estCostUsd } : {}),
 		...(capUsd ? { capUsd } : {}),
 		capEnforceable: Boolean(price),
@@ -306,24 +343,34 @@ export async function estimateChapterDraft(
 	input: ChapterDraftInput
 ): Promise<Omit<ChapterDraftEstimate, 'skipped'> | null> {
 	const plans = new Map(input.scenes.map((scene) => [scene.sceneId, scene.brief]));
-	// The scene before is not written yet, so it is counted at the length asked
-	// for, up to how much of it rides along.
-	const carried = Math.min(
-		draftExpectedTokens(input.targetWords),
-		estimateTokens('x'.repeat(PREVIOUS_DRAFT_CHARS))
-	);
 	let first: DraftRequest | null = null;
+	let before: string | null = null;
 	let estTokens = 0;
 	let count = 0;
 	for (const scene of input.scenes) {
+		// The scene before is not written yet, so it is counted as long as its
+		// reply limit allows, up to how much of it rides along. Going through the
+		// request itself counts the lines that introduce it as well, and leaves
+		// it out where the run would.
+		const carried: string | null = first
+			? 'x'.repeat(Math.min(first.limit.maxTokens * 4, PREVIOUS_DRAFT_CHARS))
+			: null;
 		const request = await sceneDraftRequest(
 			db,
 			{ ...input, sceneId: scene.sceneId, brief: scene.brief },
-			{ chapterBrief: input.brief, previousDraft: null, plans }
+			{
+				chapterBrief: input.brief,
+				previous: before && carried ? { sceneId: before, text: carried } : null,
+				plans
+			}
 		);
-		if (!request) continue;
-		estTokens += requestTokens(request) + (count > 0 ? carried : 0);
+		if (!request) {
+			before = null;
+			continue;
+		}
+		estTokens += requestTokens(request);
 		first ??= request;
+		before = scene.sceneId;
 		count += 1;
 	}
 	if (!first) return null;
@@ -340,6 +387,9 @@ export type SceneDraftResult =
 	| { outcome: 'capped'; spentUsd: number }
 	// The writer stopped it; the draft is discarded.
 	| { outcome: 'stopped' }
+	// The reply had no text in it. The draft is marked failed with `note`, and
+	// the request is not sent again.
+	| { outcome: 'empty'; note: string }
 	| { outcome: 'ready'; words: number; cutOff: boolean; capNotApplied?: string };
 
 const UNSETTLED = ['pending', 'running'] as const;
@@ -440,6 +490,7 @@ export async function runSceneDraft(
 				enableTools: false,
 				messages: request.messages,
 				maxTokens: request.maxTokens,
+				boundedReply: true,
 				meter,
 				signal
 			},
@@ -457,7 +508,11 @@ export async function runSceneDraft(
 		await meter.flush();
 	}
 	const text = result.content.trim();
-	if (!text) throw new Error('The Assistant returned an empty draft.');
+	if (!text) {
+		const note = result.cutOff ? EMPTY_DRAFT_CUT_OFF_NOTE : EMPTY_DRAFT_NOTE;
+		const failed = await settleDraft(db, draftId, { status: 'failed', note });
+		return failed ? { outcome: 'empty', note } : await settledElsewhere(db, draftId);
+	}
 
 	// A draft cut off at the limit is kept: it is paid for, and most of a scene
 	// is still worth reading. The note says it may end early.
@@ -466,15 +521,28 @@ export async function runSceneDraft(
 		textMd: text,
 		note: result.cutOff ? DRAFT_CUT_OFF_NOTE : null
 	});
-	// Discarded (or settled as an orphan) while it was being written: there is
-	// no draft to tell the writer about.
-	if (!kept) return { outcome: 'missing' };
+	if (!kept) return await settledElsewhere(db, draftId);
 	return {
 		outcome: 'ready',
 		words: wordCount(text),
 		cutOff: result.cutOff === true,
 		...(meter.notAppliedMessage ? { capNotApplied: meter.notAppliedMessage } : {})
 	};
+}
+
+// A draft that was settled while its request was out: discarded by the
+// writer, or settled by a read of it after a Stop the worker had not yet seen.
+// The Stop keeps its reason; otherwise there is nothing to tell the writer.
+async function settledElsewhere(db: Database, draftId: string): Promise<SceneDraftResult> {
+	const [row] = await db
+		.select({ status: assistantDrafts.status, note: assistantDrafts.note })
+		.from(assistantDrafts)
+		.where(eq(assistantDrafts.id, draftId));
+	return stoppedRow(row) ? { outcome: 'stopped' } : { outcome: 'missing' };
+}
+
+function stoppedRow(row: { status: string; note: string | null } | undefined): boolean {
+	return row?.status === 'discarded' && row.note === DRAFT_STOPPED_NOTE;
 }
 
 export type ChapterDraftResult =
@@ -490,8 +558,10 @@ export type ChapterDraftResult =
 			cutOff: number;
 			// Scenes that were deleted or moved to the trash before their turn.
 			gone: number;
-			// Why the run ended before the last scene, when it did.
-			ended?: 'stopped' | 'capped' | 'off';
+			// Why the run ended before the last scene, when it did. empty: a
+			// scene's reply had no text in it; `emptyNote` says what to do.
+			ended?: 'stopped' | 'capped' | 'off' | 'empty';
+			emptyNote?: string;
 			spentUsd: number;
 			capNotApplied?: string;
 	  };
@@ -564,7 +634,8 @@ export async function runChapterDraft(
 					id: assistantDrafts.id,
 					sceneId: assistantDrafts.sceneId,
 					brief: assistantDrafts.brief,
-					status: assistantDrafts.status
+					status: assistantDrafts.status,
+					note: assistantDrafts.note
 				})
 				.from(assistantDrafts)
 				.where(
@@ -575,19 +646,25 @@ export async function runChapterDraft(
 					)
 				)
 		: [];
-	if (!rows.some((row) => row.status === 'pending' || row.status === 'running')) {
+	// A Stop the worker has not seen yet may already have been settled by a
+	// read of the drafts; the run still ends as stopped, with its notice.
+	if (
+		!rows.some((row) => row.status === 'pending' || row.status === 'running') &&
+		!rows.some(stoppedRow)
+	) {
 		return { outcome: 'missing' };
 	}
 	const known = new Set(rows.map((row) => row.id));
 	const plans = new Map(rows.flatMap((row) => (row.sceneId ? [[row.sceneId, row.brief]] : [])));
 
 	const meter = await jobSpendMeter(db, { userId, storyId, jobId: opts.jobId });
-	let previousDraft: string | null = null;
+	let previous: { sceneId: string; text: string } | null = null;
+	let emptyNote: string | undefined;
 	let drafted = 0;
 	let words = 0;
 	let cutOff = 0;
 	let gone = 0;
-	let ended: 'stopped' | 'capped' | 'off' | undefined;
+	let ended: 'stopped' | 'capped' | 'off' | 'empty' | undefined;
 
 	for (const draftId of draftIds) {
 		if (!known.has(draftId)) continue;
@@ -599,11 +676,18 @@ export async function runChapterDraft(
 			drafted += 1;
 			words += wordCount(draft.textMd);
 			if (draft.note === DRAFT_CUT_OFF_NOTE) cutOff += 1;
-			previousDraft = draft.textMd;
+			// A draft already kept is in the manuscript, and so in the context.
+			previous = draft.status === 'ready' ? { sceneId: draft.sceneId, text: draft.textMd } : null;
 			continue;
 		}
+		if (stoppedRow(draft)) {
+			ended = 'stopped';
+			break;
+		}
+		// Only the draft of the row just before is carried, so a scene skipped
+		// here breaks the chain.
 		if (draft.status !== 'pending' && draft.status !== 'running') {
-			previousDraft = null;
+			previous = null;
 			continue;
 		}
 
@@ -633,7 +717,7 @@ export async function runChapterDraft(
 				targetWords: draft.targetWords,
 				pov: draft.pov
 			},
-			{ chapterBrief: opts.brief, previousDraft, plans }
+			{ chapterBrief: opts.brief, previous, plans }
 		);
 		if (!request) {
 			await settleDraft(db, draftId, {
@@ -641,7 +725,7 @@ export async function runChapterDraft(
 				note: 'The scene is no longer there, so it was not drafted.'
 			});
 			gone += 1;
-			previousDraft = null;
+			previous = null;
 			continue;
 		}
 
@@ -661,6 +745,7 @@ export async function runChapterDraft(
 					enableTools: false,
 					messages: request.messages,
 					maxTokens: request.maxTokens,
+					boundedReply: true,
 					meter,
 					signal
 				},
@@ -678,7 +763,14 @@ export async function runChapterDraft(
 			await meter.flush();
 		}
 		const text = result.content.trim();
-		if (!text) throw new Error('The Assistant returned an empty draft.');
+		if (!text) {
+			// Paid for, and the next attempt would come back the same: the run
+			// ends at this scene, keeping the ones before it.
+			emptyNote = result.cutOff ? EMPTY_DRAFT_CUT_OFF_NOTE : EMPTY_DRAFT_NOTE;
+			await settleDraft(db, draftId, { status: 'failed', note: emptyNote });
+			ended = 'empty';
+			break;
+		}
 
 		// A draft the writer discarded while it was being written stays discarded.
 		const kept = await settleDraft(db, draftId, {
@@ -687,13 +779,18 @@ export async function runChapterDraft(
 			note: result.cutOff ? DRAFT_CUT_OFF_NOTE : null
 		});
 		if (!kept) {
-			previousDraft = null;
+			const [now] = await db.select().from(assistantDrafts).where(mine(draftId));
+			if (stoppedRow(now)) {
+				ended = 'stopped';
+				break;
+			}
+			previous = null;
 			continue;
 		}
 		drafted += 1;
 		words += wordCount(text);
 		if (result.cutOff) cutOff += 1;
-		previousDraft = text;
+		previous = { sceneId: draft.sceneId, text };
 	}
 
 	if (ended) await discardRest(db, [...known]);
@@ -705,6 +802,7 @@ export async function runChapterDraft(
 		cutOff,
 		gone,
 		...(ended ? { ended } : {}),
+		...(emptyNote ? { emptyNote } : {}),
 		spentUsd: meter.spentUsd,
 		...(meter.notAppliedMessage ? { capNotApplied: meter.notAppliedMessage } : {})
 	};

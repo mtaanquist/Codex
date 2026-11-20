@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { createHash, randomUUID } from 'node:crypto';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { isUniqueViolation } from './db-errors';
@@ -22,6 +22,8 @@ import { wordCount } from '#lib/word-count';
 import {
 	CHAPTER_CAP_ADVICE,
 	defaultDraftWords,
+	DRAFT_CHANGED_ELSEWHERE,
+	DRAFT_EMPTY_SAVE,
 	SCENE_CAP_ADVICE,
 	type ChapterDraftDefaults,
 	type ChapterDraftEstimate,
@@ -44,6 +46,16 @@ const NOT_READY: ActionFailure = {
 	ok: false,
 	code: 'conflict',
 	reason: 'That draft is not ready to use.'
+};
+const CHANGED: ActionFailure = {
+	ok: false,
+	code: 'conflict',
+	reason: DRAFT_CHANGED_ELSEWHERE
+};
+const EMPTY_SAVE: ActionFailure = {
+	ok: false,
+	code: 'invalid',
+	reason: DRAFT_EMPTY_SAVE
 };
 const EMPTY: ActionFailure = {
 	ok: false,
@@ -92,16 +104,15 @@ const QUEUE_GRACE_MS = 60_000;
 // dropped, since it only settles a draft that is still unsettled.
 async function settleOrphan(
 	db: Database,
-	draft: { id: string; status: string; jobId: string | null; createdAt: Date },
+	draft: { id: string; status: string; jobId: string | null },
 	jobState: DraftJobState | undefined
 ): Promise<boolean> {
 	if (draft.status !== 'pending' && draft.status !== 'running') return false;
 	if (!jobState) return false;
-	const young = Date.now() - draft.createdAt.getTime() < QUEUE_GRACE_MS;
 	// Every row is written with its job's id. One without (from before that)
 	// has nothing to write it once the grace has passed.
 	const state = draft.jobId ? await jobState(draft.jobId) : 'missing';
-	if (state === 'running' || (state === 'missing' && young)) return false;
+	if (state === 'running') return false;
 	const rows = await db
 		.update(assistantDrafts)
 		.set(
@@ -110,7 +121,15 @@ async function settleOrphan(
 				: { status: 'failed', note: DRAFT_DID_NOT_FINISH }
 		)
 		.where(
-			and(eq(assistantDrafts.id, draft.id), inArray(assistantDrafts.status, ['pending', 'running']))
+			and(
+				eq(assistantDrafts.id, draft.id),
+				inArray(assistantDrafts.status, ['pending', 'running']),
+				// A job the queue does not know may only not be queued yet. The
+				// row's age is taken on the database's clock, which stamped it.
+				state === 'missing'
+					? sql`${assistantDrafts.createdAt} < now() - make_interval(secs => ${QUEUE_GRACE_MS / 1000})`
+					: undefined
+			)
 		)
 		.returning({ id: assistantDrafts.id });
 	return rows.length > 0;
@@ -157,6 +176,7 @@ export async function sceneDraftFor(
 		targetWords: draft.targetWords,
 		pov: draft.pov,
 		textMd: draft.textMd,
+		textVersion: draftTextVersion(draft.textMd),
 		note: draft.note,
 		jobId: draft.jobId,
 		createdAt: draft.createdAt.toISOString(),
@@ -191,7 +211,7 @@ export async function requestSceneDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This draft is estimated at ${estimate.estCompletionUpTo ? 'up to' : 'about'} $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
+			reason: `This draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
 		};
 	}
 
@@ -290,6 +310,12 @@ async function lockReadyDraft(tx: Database, userId: string, draftId: string) {
 	return draft ?? null;
 }
 
+// The fingerprint of a draft's stored text. md5, so the save can compare it in
+// the same statement that writes (Postgres md5() over the same UTF-8 bytes).
+export function draftTextVersion(text: string): string {
+	return createHash('md5').update(text, 'utf8').digest('hex');
+}
+
 // The text the writer accepts: the draft as they edited it in the panel, or
 // the stored draft when they changed nothing.
 function acceptedText(edited: string | undefined, stored: string): string {
@@ -308,7 +334,10 @@ export async function fillSceneFromDraft(
 	db: Database,
 	userId: string,
 	draftId: string,
-	edited?: string
+	edited?: string,
+	// The version of the draft the writer was looking at; a draft saved from
+	// another window since is not decided from the older copy.
+	base?: string
 ): Promise<{ ok: true; sceneId: string } | ActionFailure> {
 	const draft = await ownedDraft(db, userId, draftId);
 	if (!draft || !draft.sceneId) return NOT_FOUND;
@@ -325,6 +354,7 @@ export async function fillSceneFromDraft(
 		if (!scene) return SCENE_GONE;
 		const ready = await lockReadyDraft(tx, userId, draftId);
 		if (!ready) return NOT_READY;
+		if (base && draftTextVersion(ready.textMd) !== base) return CHANGED;
 		if (scene.bodyMd.trim() !== '') return SCENE_HAS_TEXT;
 		const text = acceptedText(edited, ready.textMd);
 		if (!text) return EMPTY;
@@ -358,7 +388,10 @@ export async function addDraftAsScene(
 	db: Database,
 	userId: string,
 	draftId: string,
-	edited?: string
+	edited?: string,
+	// The version of the draft the writer was looking at; a draft saved from
+	// another window since is not decided from the older copy.
+	base?: string
 ): Promise<{ ok: true; newSceneId: string } | ActionFailure> {
 	const draft = await ownedDraft(db, userId, draftId);
 	if (!draft || !draft.sceneId) return NOT_FOUND;
@@ -372,6 +405,7 @@ export async function addDraftAsScene(
 		if (!scene) return SCENE_GONE;
 		const ready = await lockReadyDraft(tx, userId, draftId);
 		if (!ready) return NOT_READY;
+		if (base && draftTextVersion(ready.textMd) !== base) return CHANGED;
 		const text = acceptedText(edited, ready.textMd);
 		if (!text) return EMPTY;
 
@@ -429,9 +463,15 @@ export async function saveDraftText(
 	db: Database,
 	userId: string,
 	draftId: string,
-	text: string
-): Promise<{ ok: true } | ActionFailure> {
+	text: string,
+	// The version of the draft these edits were made to. When the stored text
+	// has moved on (saved from another window), the save is refused.
+	base?: string
+): Promise<{ ok: true; textVersion: string } | ActionFailure> {
 	if (!isUuid(draftId)) return NOT_FOUND;
+	// A draft is paid for and has no history: it is dropped by Discard, never
+	// by a save that would leave it blank.
+	if (!text.trim()) return EMPTY_SAVE;
 	const rows = await db
 		.update(assistantDrafts)
 		.set({ textMd: text })
@@ -439,12 +479,15 @@ export async function saveDraftText(
 			and(
 				eq(assistantDrafts.id, draftId),
 				eq(assistantDrafts.userId, userId),
-				eq(assistantDrafts.status, 'ready')
+				eq(assistantDrafts.status, 'ready'),
+				base ? sql`md5(${assistantDrafts.textMd}) = ${base}` : undefined
 			)
 		)
 		.returning({ id: assistantDrafts.id });
-	if (rows.length > 0) return { ok: true };
-	return (await ownedDraft(db, userId, draftId)) ? NOT_READY : NOT_FOUND;
+	if (rows.length > 0) return { ok: true, textVersion: draftTextVersion(text) };
+	const draft = await ownedDraft(db, userId, draftId);
+	if (!draft) return NOT_FOUND;
+	return draft.status === 'ready' ? CHANGED : NOT_READY;
 }
 
 // ---- A chapter, drafted scene by scene ----
@@ -518,13 +561,18 @@ export async function hasWaitingDrafts(
 	userId: string,
 	storyId: string
 ): Promise<boolean> {
+	// By the scene's own story, and only scenes still in it: a draft whose
+	// scene is in the trash, or has moved to another story, cannot be reached
+	// from this one.
 	const [row] = await db
 		.select({ id: assistantDrafts.id })
 		.from(assistantDrafts)
+		.innerJoin(scenes, eq(scenes.id, assistantDrafts.sceneId))
 		.where(
 			and(
 				eq(assistantDrafts.userId, userId),
-				eq(assistantDrafts.storyId, storyId),
+				eq(scenes.storyId, storyId),
+				isNull(scenes.deletedAt),
 				inArray(assistantDrafts.status, ['ready', 'failed'])
 			)
 		)
@@ -718,7 +766,7 @@ export async function requestChapterDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This chapter draft is estimated at ${estimate.estCompletionUpTo ? 'up to' : 'about'} $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
+			reason: `This chapter draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
 		};
 	}
 

@@ -57,8 +57,14 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
-const { estimateSceneDraft, runSceneDraft, sceneDraftDefaults, failSceneDraft } =
-	await import('../../src/lib/server/llm/scene-draft');
+const {
+	estimateSceneDraft,
+	runSceneDraft,
+	sceneDraftDefaults,
+	failSceneDraft,
+	EMPTY_DRAFT_CUT_OFF_NOTE,
+	EMPTY_DRAFT_NOTE
+} = await import('../../src/lib/server/llm/scene-draft');
 const {
 	addDraftAsScene,
 	discardSceneDraft,
@@ -316,7 +322,9 @@ describe('the estimate', () => {
 		const estimate = await estimateSceneDraft(db, input());
 		expect(estimate).toMatchObject({
 			model: 'write-model',
-			estCompletionTokens: 1400,
+			// 1000 words at 1.4 tokens each, plus the headroom the request allows.
+			estCompletionTokens: 1800,
+			mayThink: false,
 			overCap: false
 		});
 		expect(estimate!.estTokens).toBeGreaterThan(100);
@@ -327,7 +335,7 @@ describe('the estimate', () => {
 	it('prices the draft when the model has a price', async () => {
 		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0.001, completion: 0.002 } });
 		const estimate = await estimateSceneDraft(db, input());
-		expect(estimate!.estCostUsd).toBeCloseTo(estimate!.estTokens * 0.001 + 1400 * 0.002, 6);
+		expect(estimate!.estCostUsd).toBeCloseTo(estimate!.estTokens * 0.001 + 1800 * 0.002, 6);
 	});
 
 	it('says where a shorter reply length would stop the draft', async () => {
@@ -385,11 +393,61 @@ describe('the estimate', () => {
 			...extra
 		});
 
-	it('counts the scene itself when the model does not think, under the limit sent', async () => {
-		const plain = await estimateSceneDraft(db, input());
-		expect(plain!.estCompletionTokens).toBe(1400);
-		expect(plain!.estCompletionUpTo).toBeUndefined();
-		expect(await limitSent()).toBe(1800);
+	// The figure held against the cap is never lower than the limit the request
+	// goes out with: one scene is one request, so nothing else can stop it.
+	it.each([
+		['an OpenAI-compatible model that does not think', {}, 1800],
+		[
+			'one with a Longest reply above what the draft needs',
+			{ tuning: { coauthor: { maxTokens: 8000 } } },
+			1800
+		],
+		[
+			'one with a Longest reply below what the draft needs',
+			{ tuning: { coauthor: { maxTokens: 700 } } },
+			700
+		],
+		['one with Thinking on', { tuning: { coauthor: { thinking: true } } }, undefined],
+		[
+			'one with Thinking on and a Longest reply',
+			{ tuning: { coauthor: { thinking: true, maxTokens: 8000 } } },
+			8000
+		],
+		['the Claude provider', { provider: 'anthropic' }, 16_384],
+		[
+			'the Claude provider with a Longest reply',
+			{ provider: 'anthropic', tuning: { coauthor: { maxTokens: 3000 } } },
+			3000
+		]
+	])('holds the limit sent against the cap for %s', async (_name, extra, expected) => {
+		await account(extra);
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const estimate = (await estimateSceneDraft(db, input()))!;
+		const sent = await limitSent();
+		if (expected !== undefined) expect(sent).toBe(expected);
+		expect(estimate.estCompletionTokens).toBeGreaterThanOrEqual(sent);
+		expect(estimate.estCostUsd).toBeGreaterThanOrEqual(sent * 0.001 - 1e-9);
+		expect(estimate.mayThink).toBe(
+			'provider' in extra || JSON.stringify(extra).includes('thinking')
+		);
+
+		// A cap just under what the request can spend refuses it.
+		await account({ ...extra, spendCapUsd: sent * 0.001 - 0.01 });
+		expect(await estimateSceneDraft(db, input())).toMatchObject({ overCap: true });
+		const refused = await requestSceneDraft(db, input(), { queue: jobs.queueAssistantDraft });
+		expect(refused).toMatchObject({ ok: false, code: 'conflict' });
+	});
+
+	it('does not let a Longest reply raise the limit past what a draft needs', async () => {
+		// 300 words need 420 tokens and are sent with room for 820, not 8000.
+		await account({ tuning: { coauthor: { maxTokens: 8000 } }, spendCapUsd: 5 });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const estimate = (await estimateSceneDraft(db, input({ targetWords: 300 })))!;
+		expect(estimate).toMatchObject({ estCompletionTokens: 820, overCap: false });
+		expect(estimate.limitedToWords).toBeUndefined();
+		const { draftId } = await request({ targetWords: 300 });
+		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
+		expect(maxTokensSent.at(-1)).toBe(820);
 	});
 
 	it('counts the reply at the limit actually sent on the Claude provider', async () => {
@@ -397,7 +455,7 @@ describe('the estimate', () => {
 		// tokens: the request goes out with the thinking limit, not the scene's.
 		await account({ provider: 'anthropic' });
 		const claude = await estimateSceneDraft(db, input());
-		expect(claude).toMatchObject({ estCompletionTokens: 16_384, estCompletionUpTo: true });
+		expect(claude).toMatchObject({ estCompletionTokens: 16_384, mayThink: true });
 		expect(claude!.limitedToWords).toBeUndefined();
 		const sent = await limitSent();
 		expect(sent).toBe(16_384);
@@ -408,7 +466,7 @@ describe('the estimate', () => {
 		// An OpenAI-compatible endpoint with Thinking switched on for Write.
 		await account({ tuning: { coauthor: { thinking: true } } });
 		const thinking = await estimateSceneDraft(db, input());
-		expect(thinking).toMatchObject({ estCompletionUpTo: true });
+		expect(thinking).toMatchObject({ mayThink: true });
 		const sent = await limitSent();
 		expect(sent).toBeGreaterThan(1800);
 		expect(thinking!.estCompletionTokens).toBeGreaterThanOrEqual(sent);
@@ -417,7 +475,7 @@ describe('the estimate', () => {
 	it('uses the limit the writer set for Write when the model may think', async () => {
 		await account({ provider: 'anthropic', tuning: { coauthor: { maxTokens: 3000 } } });
 		const estimate = await estimateSceneDraft(db, input());
-		expect(estimate).toMatchObject({ estCompletionTokens: 3000, estCompletionUpTo: true });
+		expect(estimate).toMatchObject({ estCompletionTokens: 3000, mayThink: true });
 		expect(await limitSent()).toBe(3000);
 	});
 
@@ -556,7 +614,7 @@ describe('the endpoint', () => {
 			draftRoute.POST,
 			event(owner, { body: { ...body(), estimate: true } })
 		);
-		expect(estimate).toMatchObject({ status: 200, body: { estCompletionTokens: 1260 } });
+		expect(estimate).toMatchObject({ status: 200, body: { estCompletionTokens: 1660 } });
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
 
 		const started = await call(draftRoute.POST, event(owner, { body: body() }));
@@ -647,6 +705,55 @@ describe('the endpoint', () => {
 		expect((await draftRow(draftId)).textMd).toBe('As the writer changed it.');
 		expect(await scenesSnapshot()).toEqual(snapshot);
 		expect(await revisionCount()).toBe(revisionsBefore);
+	});
+
+	it('refuses an edit or a decision made from an older copy of the draft', async () => {
+		const draftId = await readyDraft('As written.');
+		const send = (method: 'PATCH' | 'POST', body: Record<string, unknown>) =>
+			call(
+				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
+				event({ id: ownerId }, { method, params: { id: draftId }, body })
+			);
+		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		// One window saves; its answer carries the version to send next.
+		const first = await send('PATCH', { text: 'Edited in window one.', base: seen });
+		expect(first.status).toBe(200);
+		const next = first.body.textVersion as string;
+		expect(next).toBe((await sceneDraftFor(db, ownerId, target))!.textVersion);
+
+		// The other window still holds the first copy: nothing of its is taken.
+		const stale = await send('PATCH', { text: 'Edited in window two.', base: seen });
+		expect(stale.status).toBe(409);
+		expect(stale.body.message).toBe('This draft was changed in another window.');
+		for (const action of ['fill', 'add']) {
+			const kept = await send('POST', { action, text: 'Edited in window two.', base: seen });
+			expect(kept.status).toBe(409);
+		}
+		expect((await draftRow(draftId)).textMd).toBe('Edited in window one.');
+		expect((await draftRow(draftId)).status).toBe('ready');
+		expect((await sceneRow(target)).bodyMd).toBe('');
+		expect((await send('PATCH', { text: 'x', base: 'not-a-version' })).status).toBe(400);
+
+		// From the current copy both go through.
+		expect((await send('PATCH', { text: 'Edited again.', base: next })).status).toBe(200);
+		const current = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		expect((await send('POST', { action: 'fill', base: current })).status).toBe(200);
+		expect((await sceneRow(target)).bodyMd).toBe('Edited again.');
+	});
+
+	it('refuses a save that would leave the draft blank', async () => {
+		const draftId = await readyDraft('As written.');
+		const patch = (text: string) =>
+			call(
+				decideRoute.PATCH,
+				event({ id: ownerId }, { method: 'PATCH', params: { id: draftId }, body: { text } })
+			);
+		for (const text of ['', '  \n\t ']) {
+			const refused = await patch(text);
+			expect(refused.status).toBe(400);
+			expect(refused.body.message).toMatch(/Discard/);
+		}
+		expect((await draftRow(draftId)).textMd).toBe('As written.');
 	});
 
 	it('refuses edits to a draft that is not ready, or already kept or discarded', async () => {
@@ -943,6 +1050,55 @@ describe('the job', () => {
 	});
 });
 
+describe('a reply with no text in it', () => {
+	it('is asked for once, and fails the draft with what to do when the limit was all spent', async () => {
+		// A thinking model with a small reply length spends it all on thinking.
+		reply = '   ';
+		cutOff = true;
+		const { draftId, jobId } = await request();
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toEqual({ outcome: 'empty', note: EMPTY_DRAFT_CUT_OFF_NOTE });
+		expect(EMPTY_DRAFT_CUT_OFF_NOTE).toMatch(/Longest reply for Write/);
+		expect(EMPTY_DRAFT_CUT_OFF_NOTE).not.toMatch(/endpoint/i);
+		// One request: an empty reply is paid for, and is not sent for again.
+		expect(prompts).toHaveLength(1);
+		expect(await draftRow(draftId)).toMatchObject({
+			status: 'failed',
+			note: EMPTY_DRAFT_CUT_OFF_NOTE,
+			textMd: ''
+		});
+		// The job is over: a second run of it asks nothing more.
+		expect(await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps)).toEqual({
+			outcome: 'missing'
+		});
+		expect(prompts).toHaveLength(1);
+	});
+
+	it('says so plainly when the reply was simply empty', async () => {
+		reply = '';
+		const { draftId, jobId } = await request();
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toEqual({ outcome: 'empty', note: EMPTY_DRAFT_NOTE });
+		expect(prompts).toHaveLength(1);
+		expect((await draftRow(draftId)).status).toBe('failed');
+	});
+});
+
+describe('a Stop the worker has not seen yet', () => {
+	it('is still reported as stopped when a read of the draft settled it first', async () => {
+		const { draftId, jobId } = await request();
+		// While the request is out, the panel reads the draft; the queue says
+		// the job was stopped, so the row is settled there.
+		whileWriting = async () => {
+			jobs.assistantDraftJobState.mockResolvedValue('stopped');
+			await sceneDraftFor(db, ownerId, target, jobs.assistantDraftJobState);
+		};
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toEqual({ outcome: 'stopped' });
+		expect((await draftRow(draftId)).status).toBe('discarded');
+	});
+});
+
 describe('reading a draft back', () => {
 	it('shows the draft for its scene to its owner only', async () => {
 		const draftId = await readyDraft();
@@ -966,6 +1122,27 @@ describe('reading a draft back', () => {
 		expect(await hasWaitingDrafts(db, strangerId, storyId)).toBe(false);
 		await discardSceneDraft(db, ownerId, draftId);
 		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+	});
+
+	it('does not count a draft whose scene is in the trash or has left the story', async () => {
+		await readyDraft();
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		await trashScene(db, ownerId, target);
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		await db.update(scenes).set({ deletedAt: null }).where(eq(scenes.id, target));
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+
+		// The scene moves to another story; the draft's own story column is stale.
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Another' })
+			.returning({ id: stories.id });
+		await db
+			.update(scenes)
+			.set({ storyId: other.id, chapterId: null })
+			.where(eq(scenes.id, target));
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		expect(await hasWaitingDrafts(db, ownerId, other.id)).toBe(true);
 	});
 
 	it('says when the scene is no longer empty', async () => {
@@ -1224,6 +1401,52 @@ describe('Add as a new scene after this one', () => {
 		expect((await addDraftAsScene(db, ownerId, draftId)).ok).toBe(true);
 		expect(await addDraftAsScene(db, ownerId, draftId)).toMatchObject({ ok: false });
 		expect(await storyScenes()).toHaveLength(4);
+	});
+});
+
+describe('two decisions at once', () => {
+	// The draft's row is locked and its status read again inside each
+	// decision, so only one of two that race can take it.
+	const outcomes = async (work: (() => Promise<{ ok: boolean }>)[]) =>
+		(await Promise.all(work.map((run) => run()))).map((result) => result.ok).sort();
+	const liveScenes = async () =>
+		(await db.select().from(scenes).where(eq(scenes.storyId, storyId))).filter(
+			(scene) => scene.deletedAt === null
+		);
+
+	it('adds the draft as one scene when Add is pressed in two windows', async () => {
+		for (let round = 0; round < 5; round++) {
+			const draftId = await readyDraft(`Round ${round}.`);
+			const before = (await liveScenes()).length;
+			expect(
+				await outcomes([
+					() => addDraftAsScene(db, ownerId, draftId),
+					() => addDraftAsScene(db, ownerId, draftId)
+				])
+			).toEqual([false, true]);
+			expect((await liveScenes()).length).toBe(before + 1);
+			expect((await draftRow(draftId)).status).toBe('accepted');
+		}
+	});
+
+	it('takes the draft once when Add and Fill race', async () => {
+		for (let round = 0; round < 5; round++) {
+			await db.update(scenes).set({ bodyMd: '' }).where(eq(scenes.id, target));
+			const draftId = await readyDraft(`Round ${round}.`);
+			const before = (await liveScenes()).length;
+			expect(
+				await outcomes([
+					() => fillSceneFromDraft(db, ownerId, draftId),
+					() => addDraftAsScene(db, ownerId, draftId)
+				])
+			).toEqual([false, true]);
+			const added = (await liveScenes()).length - before;
+			const filled = (await sceneRow(target)).bodyMd !== '';
+			// One or the other, never both.
+			expect([added, filled]).toSatisfy(
+				([count, fill]: [number, boolean]) => (count === 1) !== fill && count <= 1
+			);
+		}
 	});
 });
 

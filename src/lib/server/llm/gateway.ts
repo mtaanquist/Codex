@@ -180,6 +180,10 @@ export type GatewayRequest = {
 	// model's arguments.
 	toolScope?: ToolScope;
 	maxTokens?: number;
+	// maxTokens is what this reply needs, worked out by the surface (a draft of
+	// a known length). The writer's "Longest reply" for the role may then lower
+	// it but not raise it, unless the role may think.
+	boundedReply?: boolean;
 	// Raise the tool-call ceiling for this run above the account's budget. A
 	// full review needs one call per note plus one read per scene, far beyond
 	// the conservative account default; server-set only, never client input.
@@ -285,21 +289,25 @@ export function surfaceMaxTokens(
 // writer set for the role wins over the surface's own (a local model that
 // answers in 300 tokens or one that needs 8000 is theirs to know, and the
 // surfaces cannot), else the surface's figure, raised to the thinking default
-// when the role may think. An estimate reads the same resolution, so what it
-// counts is what is sent.
+// when the role may think. A bounded request knows what its reply needs, so
+// there the writer's figure only ever lowers the limit while the role does not
+// think: a reply that needs 800 tokens is not sent with room for 8000. An
+// estimate reads the same resolution, so what it counts is what is sent.
+// setByWriter says the limit sent is the writer's figure.
 export function requestReplyLimit(
 	config: ResolvedConfig,
 	role: AssistantRole,
 	requested: number | undefined,
-	contextWindow?: number
+	contextWindow?: number,
+	bounded = false
 ): { maxTokens: number; thinks: boolean; setByWriter: boolean } {
 	const thinks = roleMayThink(adapterKind(config.provider) === 'anthropic', config.tuning[role]);
 	const set = roleMaxTokens(config, role);
-	return {
-		maxTokens: set ?? surfaceMaxTokens(role, requested, thinks, contextWindow),
-		thinks,
-		setByWriter: set !== undefined
-	};
+	let maxTokens = set ?? surfaceMaxTokens(role, requested, thinks, contextWindow);
+	if (bounded && !thinks && set !== undefined && requested !== undefined) {
+		maxTokens = Math.min(set, requested);
+	}
+	return { maxTokens, thinks, setByWriter: set !== undefined && maxTokens === set };
 }
 
 type Prepared = {
@@ -472,7 +480,13 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		extraParams: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
 		cacheTtl: resolved.config.cacheTtl,
-		maxTokens: requestReplyLimit(resolved.config, req.role, req.maxTokens, contextWindow).maxTokens,
+		maxTokens: requestReplyLimit(
+			resolved.config,
+			req.role,
+			req.maxTokens,
+			contextWindow,
+			req.boundedReply
+		).maxTokens,
 		contextWindow,
 		sleep: deps.sleep ?? realSleep
 	};

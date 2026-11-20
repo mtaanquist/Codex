@@ -113,6 +113,7 @@
 		insertPaused = false,
 		getSelection,
 		onLandDraft,
+		onDraftDecided,
 		reviewHref
 	}: {
 		// The conversation this panel serves: a single story (Write, Review, story
@@ -167,7 +168,14 @@
 		// Keeps a scene draft, as the writer chose: into the open scene while it
 		// is empty (fill) or as a new scene after it (add). Resolves to a message
 		// when it did not go through. Only Write passes it, so only Write drafts.
-		onLandDraft?: (draftId: string, action: 'fill' | 'add', text: string) => Promise<string | null>;
+		onLandDraft?: (
+			draftId: string,
+			action: 'fill' | 'add',
+			text: string,
+			base: string
+		) => Promise<string | null>;
+		// Called once a draft is kept or discarded.
+		onDraftDecided?: () => void;
 		// The story's review page, for /copyedit to open when notes are staged.
 		// Story surfaces pass it; the universe surface does not.
 		reviewHref?: ResolvedPathname;
@@ -946,8 +954,8 @@
 		}
 		return null;
 	}
-	function openSceneDraft(brief: string): boolean {
-		const refusal = draftingRefusal('/draft');
+	function openSceneDraft(brief: string, showOnly = false): boolean {
+		const refusal = showOnly ? null : draftingRefusal('/draft');
 		if (refusal) {
 			assistantSay(refusal);
 			return false;
@@ -956,7 +964,7 @@
 			assistantSay('Open the scene you want drafted, then type /draft.');
 			return false;
 		}
-		draftRequest = { brief, sceneId };
+		draftRequest = { brief, sceneId, showOnly };
 		return true;
 	}
 
@@ -1320,9 +1328,9 @@
 		if (muted) {
 			// Nothing is asked of the Assistant while it is off, but a link to a
 			// draft written before still shows it.
-			if (intent.kind === 'draft' && sceneId) {
+			if (intent.kind === 'draft') {
 				assistantIntent.pending = null;
-				draftRequest = { brief: '', sceneId, showOnly: true };
+				if (sceneId && !intent.gone) draftRequest = { brief: '', sceneId, showOnly: true };
 			} else if (intent.kind === 'draft-chapter') {
 				assistantIntent.pending = null;
 				openChapterDraft('', intent.chapterId, true);
@@ -1336,7 +1344,8 @@
 		} else if (intent.kind === 'prefill') {
 			prefill(intent.text);
 		} else if (intent.kind === 'draft') {
-			openSceneDraft('');
+			if (intent.gone) assistantSay('The scene that draft was for is no longer in this story.');
+			else openSceneDraft('', intent.showOnly);
 		} else if (intent.kind === 'draft-chapter') {
 			openChapterDraft('', intent.chapterId, intent.showOnly);
 		} else if (intent.kind === 'catchup') {
@@ -1547,7 +1556,10 @@
 				request={draftRequest?.sceneId === sceneId ? draftRequest : null}
 				canDraft={!muted}
 				onLand={onLandDraft}
-				onDecided={() => (draftsDecided += 1)}
+				onDecided={() => {
+					draftsDecided += 1;
+					onDraftDecided?.();
+				}}
 				onRequestTaken={() => (draftRequest = null)}
 				onClose={() => composer?.focus()}
 			/>
@@ -1560,6 +1572,7 @@
 				storyId={scope.storyId}
 				chapterId={draftChapterId}
 				request={chapterRequest?.chapterId === draftChapterId ? chapterRequest : null}
+				canDraft={!muted}
 				decided={draftsDecided}
 				onRequestTaken={() => (chapterRequest = null)}
 				onClose={() => composer?.focus()}

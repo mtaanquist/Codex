@@ -1,19 +1,8 @@
-<script module lang="ts">
-	// Brief forms the writer has open, by chapter, so one half typed is still
-	// there after the panel was closed or another chapter was opened. Kept for
-	// the page's life; a reload starts fresh.
-	type OpenForm = {
-		brief: string;
-		targetWords: number;
-		pov: string;
-		scenes: Record<string, { chosen: boolean; brief: string }>;
-	};
-	const openForms: Record<string, OpenForm | undefined> = {};
-</script>
-
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { apiErrorMessage } from '#lib/format';
+	import { createConfirmGuard } from '#lib/confirm-guard';
+	import { dropDraftForm, keepDraftForm, readDraftForm } from '#lib/draft-forms';
 	import { post } from '#lib/api';
 	import { pollPause, trackedJobs } from '#lib/activity.svelte';
 	import { followChapterDraft, sceneDraftPath, startChapterDraft } from '#lib/assistant-actions';
@@ -41,6 +30,7 @@
 		storyId,
 		chapterId,
 		request = null,
+		canDraft = true,
 		decided = 0,
 		onRequestTaken,
 		onClose
@@ -52,6 +42,9 @@
 		// link to the chapter's drafts) shows the drafts waiting and opens no
 		// form.
 		request?: { brief: string; showOnly?: boolean } | null;
+		// False while the Assistant is off for the story or the account: drafts
+		// already written are listed, but no form opens.
+		canDraft?: boolean;
 		// Goes up each time a scene's draft is kept or discarded in its own
 		// card, so the list here is read again.
 		decided?: number;
@@ -69,7 +62,13 @@
 	let briefEl = $state<HTMLTextAreaElement>();
 	let alive = true;
 
-	// The brief form.
+	// The brief form. It is remembered as it is typed (see draft-forms).
+	type OpenForm = {
+		brief: string;
+		targetWords: number;
+		pov: string;
+		scenes: Record<string, { chosen: boolean; brief: string }>;
+	};
 	type Row = { sceneId: string; title: string | null; brief: string; chosen: boolean } & Pick<
 		ChapterDraftDefaults['scenes'][number],
 		'hasText' | 'hasDraft'
@@ -206,7 +205,7 @@
 			'Could not open the draft form.'
 		);
 		if (!alive) return;
-		const open = openForms[chapterId];
+		const open = readDraftForm<OpenForm>('chapter', chapterId);
 		brief = typed || open?.brief || '';
 		pov = open?.pov ?? '';
 		if (!response.ok) {
@@ -219,7 +218,8 @@
 				const was = open?.scenes[scene.sceneId];
 				return {
 					...scene,
-					brief: was?.brief || scene.brief,
+					// A line the writer emptied on purpose stays empty.
+					brief: was ? was.brief : scene.brief,
 					// A scene with text is left for the writer to choose: its draft could
 					// only be added as a new scene.
 					chosen: !scene.hasDraft && (was ? was.chosen : !scene.hasText)
@@ -235,18 +235,18 @@
 	// The open form is remembered as it is typed.
 	$effect(() => {
 		if (view !== 'form' || rows.length === 0) return;
-		openForms[chapterId] = {
+		keepDraftForm('chapter', chapterId, {
 			brief,
 			targetWords,
 			pov,
 			scenes: Object.fromEntries(
 				rows.map((row) => [row.sceneId, { chosen: row.chosen, brief: row.brief }])
 			)
-		};
+		});
 	});
 
 	onMount(() => {
-		if (openForms[chapterId]) void openForm('', false);
+		if (canDraft && readDraftForm('chapter', chapterId)) void openForm('', false);
 		else {
 			void readRunSurely().then((found) => {
 				if (!alive || view !== 'hidden') return;
@@ -275,7 +275,7 @@
 				show(found);
 				await reveal();
 				card?.focus();
-			} else if (!asked.showOnly) await openForm(asked.brief);
+			} else if (!asked.showOnly && canDraft) await openForm(asked.brief);
 		})();
 	});
 
@@ -325,8 +325,10 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ ...formBody(), estimate: true })
 			});
-			if (response.ok) estimate = (await response.json()) as ChapterDraftEstimate;
-			else error = await apiErrorMessage(response, 'The Assistant could not count the draft.');
+			if (response.ok) {
+				estimate = (await response.json()) as ChapterDraftEstimate;
+				guard.shown();
+			} else error = await apiErrorMessage(response, 'The Assistant could not count the draft.');
 		} catch {
 			error = 'Something went wrong reaching the Assistant.';
 		} finally {
@@ -345,7 +347,7 @@
 			error = started.message;
 			return;
 		}
-		delete openForms[chapterId];
+		dropDraftForm('chapter', chapterId);
 		const skipped = started.skipped;
 		const found = await readRunSurely();
 		if (!alive) return;
@@ -358,7 +360,13 @@
 	}
 
 	// The form's one main button: it counts the cost, then starts the run.
+	// The start waits until the cost has been on screen for a moment.
 	const confirmed = $derived(estimate !== null && !estimate.overCap);
+	const guard = createConfirmGuard();
+	function pressMain(event: MouseEvent) {
+		if (!confirmed) void checkCost();
+		else if (guard.allows(event)) void start();
+	}
 
 	const STATUS: Record<SceneDraftStatus, string> = {
 		pending: 'Waiting',
@@ -370,7 +378,7 @@
 	};
 
 	async function cancelForm() {
-		delete openForms[chapterId];
+		dropDraftForm('chapter', chapterId);
 		estimate = null;
 		error = '';
 		// Back to the chapter's waiting drafts, when it has some.
@@ -413,6 +421,7 @@
 						rows="3"
 						maxlength={MAX_DRAFT_BRIEF_CHARS}
 						bind:this={briefEl}
+						readonly={working}
 						bind:value={brief}
 						oninput={() => (estimate = null)}></textarea>
 				</div>
@@ -426,6 +435,7 @@
 							min={MIN_DRAFT_WORDS}
 							max={MAX_DRAFT_WORDS}
 							step="50"
+							readonly={working}
 							bind:value={targetWords}
 							oninput={() => (estimate = null)}
 						/>
@@ -437,6 +447,7 @@
 							class="input"
 							type="text"
 							maxlength={MAX_DRAFT_POV_CHARS}
+							readonly={working}
 							bind:value={pov}
 							oninput={() => (estimate = null)}
 						/>
@@ -453,7 +464,7 @@
 								<input
 									type="checkbox"
 									bind:checked={row.chosen}
-									disabled={row.hasDraft}
+									disabled={row.hasDraft || working}
 									aria-describedby={row.hasDraft || row.hasText
 										? `chapter-draft-hint-${index}`
 										: undefined}
@@ -480,6 +491,7 @@
 									maxlength={MAX_DRAFT_BRIEF_CHARS}
 									aria-label="What happens in {name}"
 									placeholder="What happens in this scene"
+									readonly={working}
 									bind:value={row.brief}
 									oninput={() => (estimate = null)}></textarea>
 							{/if}
@@ -507,7 +519,8 @@
 						type="button"
 						disabled={!formReady}
 						aria-busy={working}
-						onclick={confirmed ? start : checkCost}
+						onclick={pressMain}
+						onkeydown={guard.keydown}
 					>
 						{#if confirmed}
 							{working ? 'Starting...' : 'Draft the chapter'}

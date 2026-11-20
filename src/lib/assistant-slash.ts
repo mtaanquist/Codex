@@ -195,23 +195,27 @@ export function slashQuery(input: string): string | null {
  * The commands a menu query matches: a command whose name starts with the
  * query, or whose label has a word that does. The command named exactly comes
  * first, then the other names the query starts, then the label matches, each
- * in menu order, so Enter on a typed name runs that command. An empty query
- * matches every command on the surface.
+ * in menu order, so Enter on a typed name runs that command. A single letter
+ * names nothing yet, so its matches stay in menu order: Enter after one
+ * letter must not jump to a command that starts work at once ("/s" is the
+ * model switch, not a summaries run). An empty query matches every command
+ * on the surface.
  */
 export function matchCommands(query: string, universe = false): SlashCommand[] {
 	const q = query.trim().toLowerCase().replace(/^\//, '');
 	const scoped = commandsForScope(universe);
 	if (!q) return scoped;
+	const labelled = (command: SlashCommand) =>
+		command.label
+			.toLowerCase()
+			.split(/\s+/)
+			.some((word) => word.startsWith(q));
+	if (q.length === 1) {
+		return scoped.filter((command) => command.name.startsWith(q) || labelled(command));
+	}
 	const exact = scoped.filter((command) => command.name === q);
 	const byName = scoped.filter((command) => command.name !== q && command.name.startsWith(q));
-	const byLabel = scoped.filter(
-		(command) =>
-			!command.name.startsWith(q) &&
-			command.label
-				.toLowerCase()
-				.split(/\s+/)
-				.some((word) => word.startsWith(q))
-	);
+	const byLabel = scoped.filter((command) => !command.name.startsWith(q) && labelled(command));
 	return [...exact, ...byName, ...byLabel];
 }
 
