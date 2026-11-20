@@ -982,6 +982,12 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Issue triage fixes (2026-11-20)
+
+The 2026-11-19 triage closed 13 of 78 open issues as not planned or duplicate and ranked the bugs that were left. Fixes, in that order:
+
+- **Chat box commands (#1219).** A typed line is a command only when its first word is one (`isSlashCommand`); anything else stays in the chat box with a hint, and a space in front of the "/" sends it as a message. The typed menu's highlight resets whenever the text changes. A failed model save goes back to the last choice the server stored, not to an earlier unsaved pick. The context picker finds an untitled chapter as "Chapter N". Not done: the whole-book price already reads "each time it is sent", which covers tool rounds well enough, and earlier attachments are still not resent (the note to the model now says so).
+
 ## Upgrade-path test (2026-11-19)
 
 Several findings were data or jobs left by the previous version, while the

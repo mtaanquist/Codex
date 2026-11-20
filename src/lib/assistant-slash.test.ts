@@ -4,6 +4,7 @@ import {
 	matchSlash,
 	slashName,
 	slashArgs,
+	isSlashCommand,
 	commandsForScope,
 	SLASH_COMMANDS,
 	matchCommands,
@@ -107,5 +108,20 @@ describe('matchCommands', () => {
 
 	it('lists every command for an empty query', () => {
 		expect(matchCommands('')).toEqual(SLASH_COMMANDS);
+	});
+});
+
+describe('isSlashCommand', () => {
+	it('knows the commands and their older names, whatever follows', () => {
+		expect(isSlashCommand('/write a storm scene')).toBe(true);
+		expect(isSlashCommand('/Help')).toBe(true);
+		expect(isSlashCommand('/clear')).toBe(true);
+		expect(isSlashCommand('/catch-up')).toBe(true);
+	});
+
+	it('is false for a line that only looks like a command', () => {
+		expect(isSlashCommand('/r/fantasy says this is overdone')).toBe(false);
+		expect(isSlashCommand('/reveiw')).toBe(false);
+		expect(isSlashCommand('/')).toBe(false);
 	});
 });
