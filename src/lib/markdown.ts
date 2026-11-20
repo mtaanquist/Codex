@@ -100,6 +100,34 @@ export function renderReplyMarkdown(markdown: string): string {
 	return replyRenderer.render(markdown);
 }
 
+// The same HTML as renderReplyMarkdown, cut into its top-level blocks (a
+// paragraph, a whole list, a code block). A reply that is still arriving only
+// ever changes its last block or two, so a caller that renders each block on
+// its own leaves the finished ones in place, and a text selection or a hovered
+// link inside them survives the next token. The reply is parsed once as a
+// whole, so a block renders exactly as it would in the full reply.
+export function renderReplyBlocks(markdown: string): string[] {
+	const env = {};
+	const tokens = replyRenderer.parse(markdown, env);
+	const blocks: string[] = [];
+	let start = 0;
+	let depth = 0;
+	tokens.forEach((token, index) => {
+		depth += token.nesting;
+		if (depth !== 0) return;
+		blocks.push(
+			replyRenderer.renderer.render(tokens.slice(start, index + 1), replyRenderer.options, env)
+		);
+		start = index + 1;
+	});
+	// Unbalanced tokens cannot come out of the parser; if they ever did, the
+	// rest still renders rather than vanishing.
+	if (start < tokens.length) {
+		blocks.push(replyRenderer.renderer.render(tokens.slice(start), replyRenderer.options, env));
+	}
+	return blocks;
+}
+
 // Asset references in prose look like /assets/<uuid>; exports bundle the
 // files and rewrite the links to a relative assets/ folder.
 const ASSET_REFERENCE = new RegExp(`/assets/(${UUID_BODY})`, 'g');

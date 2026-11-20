@@ -3,7 +3,9 @@ import {
 	CHAT_TITLE_MAX,
 	chatTitle,
 	newChatId,
+	attachedHeader,
 	attachmentKey,
+	parseAttachedHeader,
 	chatEffort,
 	attachmentLabel,
 	MAX_ATTACHMENTS,
@@ -105,6 +107,22 @@ describe('readAttachments', () => {
 		]);
 	});
 
+	it('keeps the entry type on a library entry only, and only a known one', () => {
+		const other = '22222222-2222-4222-8222-222222222222';
+		const third = '33333333-3333-4333-8333-333333333333';
+		expect(
+			readAttachments([
+				{ kind: 'entity', id, label: 'The Quay', entityType: 'place' },
+				{ kind: 'entity', id: other, label: 'Mira', entityType: 'dragon' },
+				{ kind: 'scene', id: third, label: 'The gate', entityType: 'lore' }
+			])
+		).toEqual([
+			{ kind: 'entity', id, label: 'The Quay', entityType: 'place' },
+			{ kind: 'entity', id: other, label: 'Mira' },
+			{ kind: 'scene', id: third, label: 'The gate' }
+		]);
+	});
+
 	it('drops malformed entries and duplicates, and caps the list', () => {
 		expect(readAttachments('x')).toEqual([]);
 		expect(
@@ -157,5 +175,47 @@ describe('chatEffort', () => {
 	it('shows none where the model takes none', () => {
 		expect(chatEffort({ model: 'claude-haiku-4-5' }, info)).toBeNull();
 		expect(chatEffort({}, { model: 'local', effort: null, claude: false })).toBeNull();
+	});
+});
+
+describe('the sent-attachments header', () => {
+	const id = '11111111-1111-4111-8111-111111111111';
+
+	it('round-trips keys, the shortened mark and names with any punctuation', () => {
+		const sent = [
+			{
+				kind: 'story' as const,
+				id,
+				depth: 'book' as const,
+				label: 'Ash, Ember = Fire!',
+				shortened: true
+			},
+			{ kind: 'scene' as const, id, label: 'Caf\u00e9 at night' }
+		];
+		const picked = sent.map((a) => ({ ...a, label: 'An older name' }));
+		const header = attachedHeader(sent, picked).join(',');
+		expect(header).toMatch(/^[\x20-\x7e]*$/);
+		const parsed = parseAttachedHeader(header);
+		expect(parsed.get(`story:${id}:book`)).toEqual({
+			shortened: true,
+			label: 'Ash, Ember = Fire!'
+		});
+		expect(parsed.get(`scene:${id}`)).toEqual({ shortened: false, label: 'Caf\u00e9 at night' });
+	});
+
+	it('leaves out a name the browser already has', () => {
+		const stored = [{ kind: 'scene' as const, id, label: 'Scene 1', shortened: true }];
+		expect(attachedHeader(stored, [{ kind: 'scene', id, label: 'Scene 1' }])).toEqual([
+			`scene:${id}!`
+		]);
+		expect(attachedHeader(stored, [{ kind: 'scene', id, label: 'Old' }])).toEqual([
+			`scene:${id}!=Scene%201`
+		]);
+	});
+
+	it('reads an entry with no name, or one that does not decode, as no name', () => {
+		const parsed = parseAttachedHeader(`scene:${id}!,note:${id}=%E0%A4%A`);
+		expect(parsed.get(`scene:${id}`)).toEqual({ shortened: true });
+		expect(parsed.get(`note:${id}`)).toEqual({ shortened: false });
 	});
 });

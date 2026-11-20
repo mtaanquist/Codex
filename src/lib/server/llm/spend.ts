@@ -6,15 +6,15 @@ import type { TokenUsage } from './providers/types.ts';
 // the meter at a boundary where stopping stages nothing partial.
 //
 // A cost figure only ever exists when the model that answered has a price in
-// the discovered snapshot AND the endpoint reported token counts for the
-// request. Missing either one, the meter records that the cap could not be
+// the account's prices (discovered, or entered by the writer) AND the endpoint
+// reported token counts for the request. Missing either one, the meter records that the cap could not be
 // applied, and the run says so; it never guesses a price, never assumes a
 // request was free, and never skips the ceiling in silence.
 
 // The line a result and a notification carry when a cap was set but the run
 // could not price itself because the model has no known price.
 export const CAP_NOT_APPLIED_MESSAGE =
-	'A spend cap is set but the model has no known price, so it was not applied.';
+	'A spend cap is set but the model has no known price, so it was not applied. Enter its price in your Assistant settings.';
 
 // The other reason a priced run cannot be metered: the endpoint answered at
 // least one request without reporting how many tokens it billed, so that
@@ -22,10 +22,18 @@ export const CAP_NOT_APPLIED_MESSAGE =
 export const CAP_NOT_APPLIED_NO_USAGE_MESSAGE =
 	'A spend cap is set but the endpoint did not report token counts for every request, so the cap could not be fully applied.';
 
-// Cache reads bill at a fraction of fresh prompt tokens. Providers differ, but
-// they cluster around a tenth; this provisional rate is applied to every
-// endpoint until per-model cache pricing is discoverable.
+// Cache reads bill at a fraction of fresh prompt tokens. Providers and models
+// differ, from a fortieth to a tenth; the tenth is applied to every endpoint,
+// so a figure errs high rather than low.
 const CACHED_PROMPT_RATE = 0.1;
+// Cache writes bill above the plain prompt rate. Only Claude reports them, at
+// these multiples for its five-minute and one-hour caches.
+const CACHE_WRITE_RATE = 1.25;
+const CACHE_WRITE_1H_RATE = 2;
+
+function share(value: number | undefined, max: number): number {
+	return Math.min(Math.max(value ?? 0, 0), max);
+}
 
 export function requestCostUsd(
 	pricing: ModelPricing | undefined,
@@ -34,15 +42,18 @@ export function requestCostUsd(
 ): number | undefined {
 	const price = pricing?.[model];
 	if (!price) return undefined;
-	// cachedPromptTokens is a subset of promptTokens (see TokenUsage), so the
-	// fresh share is what is left after it.
-	const cached = Math.min(Math.max(usage.cachedPromptTokens ?? 0, 0), usage.promptTokens);
-	const fresh = usage.promptTokens - cached;
-	return (
-		fresh * price.prompt +
-		cached * price.prompt * CACHED_PROMPT_RATE +
-		usage.completionTokens * price.completion
-	);
+	// The cache counts are subsets of promptTokens (see TokenUsage), so the
+	// fresh share is what is left after them.
+	const cached = share(usage.cachedPromptTokens, usage.promptTokens);
+	const written = share(usage.cacheWriteTokens, usage.promptTokens - cached);
+	const writtenHour = share(usage.cacheWrite1hTokens, written);
+	const fresh = usage.promptTokens - cached - written;
+	const promptUnits =
+		fresh +
+		cached * CACHED_PROMPT_RATE +
+		(written - writtenHour) * CACHE_WRITE_RATE +
+		writtenHour * CACHE_WRITE_1H_RATE;
+	return promptUnits * price.prompt + usage.completionTokens * price.completion;
 }
 
 // What a stopped run reports it spent: the figure, and whether it includes

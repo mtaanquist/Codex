@@ -1043,6 +1043,47 @@ name. It now reads full scenes.
   count that says whether it fits comes back with that press. Counting on
   every entry open was the alternative and was not worth a query per click.
 
+## Assistant quick wins (2026-11-20)
+
+Staging branch `staging/assistant-quick-wins`.
+
+- #1031 (prices for Claude): the Anthropic models list reports no prices, so
+  the meter had none and a cap on Claude never applied. Each model a role
+  runs on now has a typed price pair on the account page, stored per token
+  in `llmConfig.modelPricingManual` and laid over the discovered snapshot
+  (the same split as `modelContextManual`), so it survives rediscovery. A
+  built-in price table was considered and dropped: it would go stale and the
+  meter must never guess. The boxes show for suggested models as well as
+  picked ones, since a suggested model is what runs when nothing is picked.
+  A half-filled pair holds its own autosave; the server refuses a half pair.
+- #1031 (cache): the meter prices Claude cache writes at 1.25x (5 minutes)
+  and 2x (1 hour) and reads at 0.1x. An account setting picks the cache
+  lifetime; the default stays 5 minutes because 1 hour doubles the first
+  send. Not verified against the live API: the `ttl: "1h"` marker and the
+  `usage.cache_creation` split are built from the published API shapes.
+  The usage list and the review estimate still count at the plain price.
+- #1255: a bare `/who` or `/find` keeps the typed line; the "first 25" line
+  on a pattern note counts live scenes only (`patternLiveScenes`, shared
+  with the fix loop).
+- #1207: each apply request of a pattern pass re-reads the scene, and a
+  scene deleted since the run started is skipped with no request.
+- #1185: a stored entity attachment carries its entry type, read on the
+  server and never taken from the browser, so the chip shows the right icon.
+  Attachments stored before this keep the person icon.
+- #1003: asked for a frame throttle on the streaming reply. A throttle would
+  not have fixed the lost selection, so the bubble renders one `{@html}` per
+  top-level Markdown block (`renderReplyBlocks`) and finished blocks keep
+  their DOM nodes. No timer.
+- #1002: closed, not planned. No Assistant text reaches `teaser()`; every
+  caller passes text a person typed.
+- Staging review round 1: nothing above low. Fixed from it: the sent
+  attachments header carries a name only when it differs from the one the
+  browser sent (eight long non-ASCII names could pass a proxy's header
+  limit, and an old tab misread the new format), a label cut no longer
+  leaves half an emoji, the apply re-read is scoped to the story, the 1 hour
+  help says "about twice", and three help passages no longer say a price
+  must come from the endpoint. The rest is filed as issues.
+
 ## Tooling issues (2026-11-20)
 
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the

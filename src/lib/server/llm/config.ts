@@ -146,10 +146,17 @@ export type StoredAccountConfig = {
 	// config; set by hand for an endpoint that cannot stream or call tools.
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
-	// Per-token USD prices snapshotted at the last model discovery, for the
-	// endpoints that report them (OpenRouter). Used to estimate costs on the
-	// usage log; absent for endpoints that report no prices.
+	// Per-token USD prices. modelPricing is the snapshot from the last model
+	// discovery, for the endpoints that report prices (OpenRouter), replaced
+	// whenever discovery runs. modelPricingManual is what the writer typed, for
+	// the many endpoints that report none (Claude, OpenAI, a local server), and
+	// always wins (the modelContextManual pattern). Nothing else ever supplies a
+	// price: a model in neither map has no known price.
 	modelPricing?: ModelPricing;
+	modelPricingManual?: ModelPricing;
+	// How long Claude keeps a cached prompt prefix: five minutes unless the
+	// writer chose an hour. Only the Anthropic adapter reads it.
+	cacheTtl: CacheTtl;
 	// Context windows in tokens, per model id. modelContext is the snapshot from
 	// the last discovery, replaced whenever discovery runs; modelContextManual is
 	// what the writer typed and always wins, because a local server's operative
@@ -178,17 +185,37 @@ export type ModelContextMap = Record<string, number>;
 
 export type ModelPricing = Record<string, { prompt: number; completion: number }>;
 
+export const CACHE_TTLS = ['5m', '1h'] as const;
+export type CacheTtl = (typeof CACHE_TTLS)[number];
+
+function normaliseCacheTtl(raw: unknown): CacheTtl {
+	return raw === '1h' ? '1h' : '5m';
+}
+
+// A price is kept only when both halves are real, non-negative numbers: a
+// negative or half-entered price would make a run look cheaper than it is.
 function normalisePricing(raw: unknown): ModelPricing | undefined {
 	if (!raw || typeof raw !== 'object') return undefined;
 	const out: ModelPricing = {};
 	for (const [model, value] of Object.entries(raw as Record<string, unknown>)) {
-		const prompt = Number((value as { prompt?: unknown })?.prompt);
-		const completion = Number((value as { completion?: unknown })?.completion);
-		if (Number.isFinite(prompt) && Number.isFinite(completion)) {
-			out[model] = { prompt, completion };
-		}
+		if (!value || typeof value !== 'object') continue;
+		const { prompt, completion } = value as { prompt?: unknown; completion?: unknown };
+		if (typeof prompt !== 'number' || typeof completion !== 'number') continue;
+		if (!Number.isFinite(prompt) || !Number.isFinite(completion)) continue;
+		if (prompt < 0 || completion < 0) continue;
+		out[model] = { prompt, completion };
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// The prices everything downstream reads: the discovered snapshot with the
+// writer's own entries laid over it.
+export function effectivePricing(config: {
+	modelPricing?: ModelPricing;
+	modelPricingManual?: ModelPricing;
+}): ModelPricing | undefined {
+	const merged = { ...(config.modelPricing ?? {}), ...(config.modelPricingManual ?? {}) };
+	return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 // Snapshot the prices a model discovery reported, replacing the previous
@@ -278,6 +305,8 @@ function normaliseAccount(raw: Record<string, unknown>): StoredAccountConfig {
 		supportsStreaming: normaliseCapability(raw.supportsStreaming),
 		supportsTools: normaliseCapability(raw.supportsTools),
 		modelPricing: normalisePricing(raw.modelPricing),
+		modelPricingManual: normalisePricing(raw.modelPricingManual),
+		cacheTtl: normaliseCacheTtl(raw.cacheTtl),
 		modelContext: normaliseContext(raw.modelContext),
 		modelContextManual: normaliseContext(raw.modelContextManual),
 		spendCapUsd: normaliseUsd(raw.spendCapUsd),
@@ -391,10 +420,11 @@ export type ResolvedConfig = {
 	// Context windows per model id: the discovered snapshot with the writer's own
 	// entries laid over it. A model missing here has an unknown window.
 	modelContext: ModelContextMap;
-	// Per-token prices from the last discovery, for the runs that price what they
-	// spend. Absent for an endpoint that reports no prices, and a model missing
-	// from it has no known price at all.
+	// Per-token prices for the runs that price what they spend: the discovered
+	// snapshot with the writer's own entries laid over it. A model missing from
+	// it has no known price at all.
 	modelPricing?: ModelPricing;
+	cacheTtl: CacheTtl;
 	spendCapUsd?: number;
 	spendWarnUsd?: number;
 };
@@ -429,7 +459,8 @@ export async function resolveLlmConfig(
 			supportsStreaming: account.supportsStreaming,
 			supportsTools: account.supportsTools,
 			modelContext: { ...(account.modelContext ?? {}), ...(account.modelContextManual ?? {}) },
-			modelPricing: account.modelPricing,
+			modelPricing: effectivePricing(account),
+			cacheTtl: account.cacheTtl,
 			spendCapUsd: account.spendCapUsd,
 			spendWarnUsd: account.spendWarnUsd
 		}
@@ -530,9 +561,11 @@ export type AccountLlmView = {
 	toolProfile: ToolProfile;
 	supportsStreaming?: boolean;
 	supportsTools?: boolean;
-	modelPricing?: ModelPricing;
 	// Kept apart for the settings screen: what discovery found, and what the
 	// writer typed over it.
+	modelPricing?: ModelPricing;
+	modelPricingManual?: ModelPricing;
+	cacheTtl: CacheTtl;
 	modelContext?: ModelContextMap;
 	modelContextManual?: ModelContextMap;
 	spendCapUsd?: number;
@@ -558,6 +591,8 @@ export async function accountLlmView(db: Database, userId: string): Promise<Acco
 		supportsStreaming: c.supportsStreaming,
 		supportsTools: c.supportsTools,
 		modelPricing: c.modelPricing,
+		modelPricingManual: c.modelPricingManual,
+		cacheTtl: c.cacheTtl,
 		modelContext: c.modelContext,
 		modelContextManual: c.modelContextManual,
 		spendCapUsd: c.spendCapUsd,
@@ -589,6 +624,10 @@ export type SaveAccountInput = {
 	toolProfile?: ToolProfile;
 	// The writer's own context windows; absent keeps the stored map, {} clears it.
 	modelContextManual?: ModelContextMap;
+	// The writer's own per-token prices; absent keeps the stored map, {} clears it.
+	modelPricingManual?: ModelPricing;
+	// Absent keeps the stored setting (the partial-save pattern).
+	cacheTtl?: CacheTtl;
 	// The spend ceiling and the estimate's warning threshold, in USD. Absent
 	// keeps what is stored; null, zero, or anything unreadable clears it.
 	spendCapUsd?: number | null;
@@ -721,6 +760,10 @@ export async function saveAccountLlmConfig(
 		...(input.modelContextManual === undefined
 			? {}
 			: { modelContextManual: normaliseContext(input.modelContextManual) ?? {} }),
+		...(input.modelPricingManual === undefined
+			? {}
+			: { modelPricingManual: normalisePricing(input.modelPricingManual) ?? {} }),
+		cacheTtl: input.cacheTtl === undefined ? existing.cacheTtl : normaliseCacheTtl(input.cacheTtl),
 		...(supportsStreaming !== undefined ? { supportsStreaming } : {}),
 		...(supportsTools !== undefined ? { supportsTools } : {})
 	};

@@ -21,6 +21,7 @@ const {
 	roleMaxTokens,
 	saveAccountLlmConfig,
 	saveModelContext,
+	saveModelPricing,
 	saveStoryLlmOverride
 } = await import('../../src/lib/server/llm/config');
 const { egressPolicy, saveEgressPolicy } = await import('../../src/lib/server/llm/egress');
@@ -216,6 +217,62 @@ describe('account config round-trip', () => {
 		await saveAccountLlmConfig(db, userId, { ...base, modelContextManual: { small: 8192 } });
 		await saveAccountLlmConfig(db, userId, base);
 		expect((await accountLlmView(db, userId)).modelContextManual).toEqual({ small: 8192 });
+	});
+
+	it('a price the writer typed wins over discovery and survives a rediscovery', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'http://localhost:11434/v1',
+			apiKey: '',
+			models: { chat: 'big', reviewer: 'small' },
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		// No discovered prices at all, as with Claude: nothing is priced.
+		expect((await resolveLlmConfig(db, userId)).config.modelPricing).toBeUndefined();
+
+		const typed = { big: { prompt: 0.000003, completion: 0.000015 } };
+		await saveAccountLlmConfig(db, userId, { ...base, modelPricingManual: typed });
+		expect((await resolveLlmConfig(db, userId)).config.modelPricing).toEqual(typed);
+
+		// A discovery that reports its own prices replaces only the snapshot.
+		await saveModelPricing(db, userId, {
+			big: { prompt: 1, completion: 1 },
+			small: { prompt: 2, completion: 2 }
+		});
+		expect((await resolveLlmConfig(db, userId)).config.modelPricing).toEqual({
+			...typed,
+			small: { prompt: 2, completion: 2 }
+		});
+		expect((await accountLlmView(db, userId)).modelPricingManual).toEqual(typed);
+
+		// A partial save from another form keeps the typed prices; {} clears them.
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await accountLlmView(db, userId)).modelPricingManual).toEqual(typed);
+		await saveAccountLlmConfig(db, userId, { ...base, modelPricingManual: {} });
+		expect((await resolveLlmConfig(db, userId)).config.modelPricing?.big).toEqual({
+			prompt: 1,
+			completion: 1
+		});
+	});
+
+	it('keeps the cache lifetime across saves that do not carry it', async () => {
+		const base = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'http://localhost:11434/v1',
+			apiKey: '',
+			models: {},
+			toolCallBudget: 8
+		};
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await resolveLlmConfig(db, userId)).config.cacheTtl).toBe('5m');
+		await saveAccountLlmConfig(db, userId, { ...base, cacheTtl: '1h' });
+		await saveAccountLlmConfig(db, userId, base);
+		expect((await resolveLlmConfig(db, userId)).config.cacheTtl).toBe('1h');
 	});
 
 	it('a preset owns its endpoint: the submitted URL is ignored', async () => {

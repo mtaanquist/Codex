@@ -127,7 +127,8 @@ layers) and a native Anthropic adapter speaking the Messages API. The config
 carries a provider discriminator (default 'custom' for configs that predate
 it) and the gateway picks the adapter from it. Each adapter carries its own
 side of the wire: the Anthropic one maps the per-role tuning onto adaptive
-thinking and effort and marks the prompt cache; the OpenAI-compatible one
+thinking and effort and marks the prompt cache (five minutes, or an hour when
+the account's `cacheTtl` says so); the OpenAI-compatible one
 sends the per-role temperature (near-greedy decoding for the review passes,
 which quote the text they edit) and drops the thinking a local reasoning
 model emits inline, in `<think>` tags or a separate `reasoning_content`
@@ -274,8 +275,12 @@ summaries; a rerun skips the ones already fresh). Two account settings sit in `u
 (the pre-flight confirm step turns into a warning above it, default 2) and
 `spendCapUsd` (the run stops at the next scene boundary once it has spent
 that much, staging nothing partial; a retry resumes through the existing
-completed-scene skip). Both are priced from the `modelPricing` snapshot the
-last model discovery wrote. A cost figure is only ever shown or enforced when
+completed-scene skip). Both are priced from the account's prices: the
+`modelPricing` snapshot the last model discovery wrote, with
+`modelPricingManual` (what the writer typed, for the many endpoints that
+report no prices, Claude among them) laid over it. Claude's cache writes are
+metered at their premium (1.25x, 2x for the one-hour cache) and cache reads at
+a tenth. A cost figure is only ever shown or enforced when
 the resolved model actually has a price there: with no price the pre-flight
 estimate reports tokens alone, and a set cap is reported as not applied
 rather than guessed at or skipped in silence. The estimate itself
@@ -980,7 +985,9 @@ calls the gateway, which proxies through the egress guard.
 - [built] Read: `accountLlmView` (never exposes the key; has `hasKey`,
   `assistantName`, `persona`, `models`, `toolCallBudget` (stored as
   `toolCallLimit`), `toolProfile`,
-  capability flags, `modelPricing`, and the context windows: `modelContext` (the
+  capability flags, `cacheTtl`, the prices (`modelPricing`, the discovery
+  snapshot, and `modelPricingManual`, what the writer entered, which wins;
+  `effectivePricing` merges them), and the context windows: `modelContext` (the
   discovery snapshot) and `modelContextManual` (what the writer entered, which
   wins). `modelContextWindow(config, role)` resolves the window for a role's
   model, or undefined when unknown.

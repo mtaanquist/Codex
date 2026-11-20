@@ -12,7 +12,7 @@ import {
 import {
 	CHAT_MISSING,
 	CHAT_STORED_HEADER,
-	attachmentKey,
+	attachedHeader,
 	chatTitle,
 	readAttachments,
 	readChatSettings,
@@ -246,8 +246,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		summarised: fitted.summarised,
 		attached:
 			newest.role === 'user' && newest.attachments.length > 0
-				? attached.map(
-						(item) => attachmentKey(item.attachment) + (item.attachment.shortened ? '!' : '')
+				? attachedHeader(
+						attached.map((item) => item.attachment),
+						newest.attachments
 					)
 				: undefined,
 		errorMessage: 'The Assistant could not complete that request.'
