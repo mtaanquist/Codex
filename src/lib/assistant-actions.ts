@@ -259,7 +259,9 @@ export async function startDetailsJob(opts: {
 // Where a scene's draft shows: the scene in Write, with the draft open in the
 // Assistant panel.
 export function sceneDraftPath(storyId: string, sceneId: string): ResolvedPathname {
-	return withQuery(resolve('/stories/[id]', { id: storyId }), { scene: sceneId, draft: '1' });
+	// "show" opens the draft the scene has and nothing else: a link followed
+	// after the draft was decided does not open a new form.
+	return withQuery(resolve('/stories/[id]', { id: storyId }), { scene: sceneId, draft: 'show' });
 }
 
 // Asks for a scene draft. The server stages the draft and queues the job that

@@ -649,6 +649,40 @@ describe('the endpoint', () => {
 		expect(await revisionCount()).toBe(revisionsBefore);
 	});
 
+	it('refuses an edit or a decision made from an older copy of the draft', async () => {
+		const draftId = await readyDraft('As written.');
+		const send = (method: 'PATCH' | 'POST', body: Record<string, unknown>) =>
+			call(
+				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
+				event({ id: ownerId }, { method, params: { id: draftId }, body })
+			);
+		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		// One window saves; its answer carries the version to send next.
+		const first = await send('PATCH', { text: 'Edited in window one.', base: seen });
+		expect(first.status).toBe(200);
+		const next = first.body.textVersion as string;
+		expect(next).toBe((await sceneDraftFor(db, ownerId, target))!.textVersion);
+
+		// The other window still holds the first copy: nothing of its is taken.
+		const stale = await send('PATCH', { text: 'Edited in window two.', base: seen });
+		expect(stale.status).toBe(409);
+		expect(stale.body.message).toBe('This draft was changed in another window.');
+		for (const action of ['fill', 'add']) {
+			const kept = await send('POST', { action, text: 'Edited in window two.', base: seen });
+			expect(kept.status).toBe(409);
+		}
+		expect((await draftRow(draftId)).textMd).toBe('Edited in window one.');
+		expect((await draftRow(draftId)).status).toBe('ready');
+		expect((await sceneRow(target)).bodyMd).toBe('');
+		expect((await send('PATCH', { text: 'x', base: 'not-a-version' })).status).toBe(400);
+
+		// From the current copy both go through.
+		expect((await send('PATCH', { text: 'Edited again.', base: next })).status).toBe(200);
+		const current = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		expect((await send('POST', { action: 'fill', base: current })).status).toBe(200);
+		expect((await sceneRow(target)).bodyMd).toBe('Edited again.');
+	});
+
 	it('refuses edits to a draft that is not ready, or already kept or discarded', async () => {
 		const pending = await request();
 		const patch = (id: string) =>

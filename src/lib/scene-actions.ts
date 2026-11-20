@@ -44,10 +44,16 @@ export async function duplicateScene(storyId: string, sceneId: string) {
 // still empty (fill), or as a new scene directly after it (add). text is the
 // draft as the writer edited it. The server checks the stored scene, so flush
 // any pending autosave first.
-export async function landSceneDraft(draftId: string, action: 'fill' | 'add', text: string) {
+export async function landSceneDraft(
+	draftId: string,
+	action: 'fill' | 'add',
+	text: string,
+	// The version of the draft the text was edited from.
+	base?: string
+) {
 	return await post<{ sceneId?: string; newSceneId?: string }>(
 		`/api/assistant/draft/${draftId}`,
-		{ action, text },
+		{ action, text, base },
 		'Could not add the draft.'
 	);
 }

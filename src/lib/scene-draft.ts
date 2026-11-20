@@ -99,6 +99,9 @@ export const SCENE_CAP_ADVICE =
 export const CHAPTER_CAP_ADVICE =
 	'Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.';
 
+// What an edit or a decision made from an older copy of a draft is told.
+export const DRAFT_CHANGED_ELSEWHERE = 'This draft was changed in another window.';
+
 // What the brief form opens with.
 export type SceneDraftDefaults = {
 	brief: string;
@@ -118,6 +121,10 @@ export type SceneDraftView = {
 	targetWords: number;
 	pov: string | null;
 	textMd: string;
+	// A fingerprint of textMd as stored. The panel sends it back with an edit
+	// or a decision, so one made from an older copy (another window) is
+	// refused instead of replacing the newer text.
+	textVersion: string;
 	note: string | null;
 	jobId: string | null;
 	createdAt: string;
@@ -177,8 +184,10 @@ export type ChapterDraftView = {
 
 // Where a story page opens a scene's draft: the notice, the activity card and
 // the background jobs list all link here.
+// draft=show opens the draft the scene has and nothing else, so a link
+// followed after the draft was decided does not open a new form.
 export function sceneDraftHref(storyId: string, sceneId: string): string {
-	return `/stories/${storyId}?scene=${sceneId}&draft=1`;
+	return `/stories/${storyId}?scene=${sceneId}&draft=show`;
 }
 
 // Where a story page opens a chapter's drafts.

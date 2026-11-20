@@ -621,25 +621,36 @@
 	// The Assistant tab shows: the account has it on, or it is off but drafts
 	// it wrote before still wait here.
 	const assistantTab = $derived(data.assistant.tabEnabled || data.assistant.draftsWaiting);
-	// A link to a scene's draft (its notice, the background jobs list, the
-	// scene's menu) carries draft=1; one to a chapter's drafts (the notice,
-	// the background jobs list) carries draftChapter. Either opens the
-	// Assistant panel on what it names, once: the parameter is then taken off
-	// the address, so a refresh of the page's data, or a reload, does not open
-	// it again.
-	const draftAsked = $derived(
-		page.url.searchParams.get('draft') === '1' ? page.url.searchParams.get('scene') : null
-	);
+	// A link to a scene's draft carries draft=show (its notice, the background
+	// jobs list, the chapter's list of drafts) or draft=1 (the scene's menu,
+	// which also opens the form when the scene has no draft); one to a
+	// chapter's drafts carries draftChapter. Either opens the Assistant panel
+	// on what it names, once: the parameter is then taken off the address, so
+	// a refresh of the page's data, or a reload, does not open it again.
+	const draftAsked = $derived.by(() => {
+		const how = page.url.searchParams.get('draft');
+		const sceneId = page.url.searchParams.get('scene');
+		return (how === '1' || how === 'show') && sceneId
+			? { sceneId, showOnly: how === 'show' }
+			: null;
+	});
 	const chapterDraftAsked = $derived(page.url.searchParams.get('draftChapter'));
 	$effect(() => {
-		const sceneId = draftAsked;
+		const scene = draftAsked;
 		const chapterId = chapterDraftAsked;
-		if (!sceneId && !chapterId) return;
+		if (!scene && !chapterId) return;
 		untrack(() => {
 			if (assistantTab) {
 				if (chapterId && data.chapters.some((chapter) => chapter.id === chapterId)) {
 					assistantIntent.pending = { kind: 'draft-chapter', chapterId, showOnly: true };
-				} else if (sceneId) assistantIntent.pending = { kind: 'draft' };
+				} else if (scene) {
+					assistantIntent.pending = {
+						kind: 'draft',
+						showOnly: scene.showOnly,
+						// The scene the link names was deleted since.
+						gone: data.selectedScene?.id !== scene.sceneId
+					};
+				}
 			}
 			const url = new URL(page.url.href);
 			url.searchParams.delete('draft');
@@ -649,6 +660,13 @@
 		});
 	});
 
+	// With the Assistant off for the account, its tab is only here for drafts
+	// written before. Once one is kept or discarded the page's data is read
+	// again, so the tab goes with the last of them.
+	function draftDecidedWhileOff() {
+		void refreshAll();
+	}
+
 	// Keeps a scene draft the way the writer chose in the Assistant panel. The
 	// server decides against the stored text (Fill is refused once the scene
 	// has any), so pending saves land first; then the scene the draft went to
@@ -656,13 +674,14 @@
 	async function landSceneDraft(
 		draftId: string,
 		action: 'fill' | 'add',
-		text: string
+		text: string,
+		base: string
 	): Promise<string | null> {
 		if (typingPaused) return BUSY;
 		if (uploading()) return WAIT_UPLOADING;
 		return pauseTypingWhile(async () => {
 			if (!(await flushEditors())) return SAVE_FAILED;
-			const result = await landSceneDraftAction(draftId, action, text);
+			const result = await landSceneDraftAction(draftId, action, text, base);
 			if (!result.ok) return result.message;
 			const target = result.newSceneId ?? result.sceneId;
 			if (target) await openSceneKeepingPane(target);
@@ -1170,8 +1189,9 @@
 									chapterId={data.scenes.find((s) => s.id === data.selectedScene?.id)?.chapterId ??
 										null}
 									name={data.assistant.name}
-									muted={data.assistant.muted}
+									muted={data.assistant.muted || !data.assistant.tabEnabled}
 									off={!data.assistant.tabEnabled}
+									onDraftDecided={data.assistant.tabEnabled ? undefined : draftDecidedWhileOff}
 									revisionPreview={Boolean(data.revisionPreview)}
 									suggestions={assistantSuggestions}
 									chat={data.assistantChat}

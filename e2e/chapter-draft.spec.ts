@@ -96,6 +96,12 @@ test('a chapter draft is costed first, and each drafted scene is kept on its own
 	);
 	await expect(card.getByRole('button', { name: 'Draft the chapter' })).toBeFocused();
 	expect(asked).toEqual([]);
+	// A second press at once starts nothing: the cost has to have been on
+	// screen for a moment first.
+	await page.keyboard.press('Enter');
+	await page.waitForTimeout(300);
+	expect(asked).toEqual([]);
+	await page.waitForTimeout(800);
 	await card.getByRole('button', { name: 'Draft the chapter' }).click();
 
 	// Both scenes are listed as ready, and neither scene has changed.

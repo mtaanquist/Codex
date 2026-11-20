@@ -1,18 +1,14 @@
-<script module lang="ts">
-	// Brief forms the writer has open, by scene, so one half typed is still
-	// there after the panel was closed or another scene was opened. Kept for
-	// the page's life; a reload starts fresh.
-	type OpenForm = { brief: string; targetWords: number; pov: string; sceneTitle: string | null };
-	const openForms: Record<string, OpenForm | undefined> = {};
-</script>
-
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { apiErrorMessage } from '#lib/format';
 	import { post } from '#lib/api';
 	import { pollPause, trackedJobs } from '#lib/activity.svelte';
 	import { followSceneDraft, startSceneDraft } from '#lib/assistant-actions';
+	import { createConfirmGuard } from '#lib/confirm-guard';
+	import { adoptStored, draftEdit, dropDraftEdit, type DraftEdit } from '#lib/draft-edits';
+	import { dropDraftForm, keepDraftForm, readDraftForm } from '#lib/draft-forms';
 	import {
+		DRAFT_CHANGED_ELSEWHERE,
 		MAX_DRAFT_BRIEF_CHARS,
 		MAX_DRAFT_POV_CHARS,
 		MAX_DRAFT_WORDS,
@@ -53,7 +49,13 @@
 		// Keeps the draft: into the scene itself (fill) or as a new scene after
 		// it (add). The page lands pending saves first and opens the result.
 		// Resolves to a message when it did not go through.
-		onLand: (draftId: string, action: 'fill' | 'add', text: string) => Promise<string | null>;
+		// base is the version of the draft the text was edited from.
+		onLand: (
+			draftId: string,
+			action: 'fill' | 'add',
+			text: string,
+			base: string
+		) => Promise<string | null>;
 		// Called once a draft is kept or discarded, so a list of the chapter's
 		// drafts can drop it.
 		onDecided?: () => void;
@@ -71,7 +73,8 @@
 	let briefEl = $state<HTMLTextAreaElement>();
 	let alive = true;
 
-	// The brief form.
+	// The brief form. It is remembered as it is typed (see draft-forms).
+	type OpenForm = { brief: string; targetWords: number; pov: string; sceneTitle: string | null };
 	let brief = $state('');
 	let targetWords = $state(800);
 	let pov = $state('');
@@ -80,11 +83,14 @@
 	let working = $state(false);
 	let error = $state('');
 
-	// The finished draft, as the writer edits it before keeping it. savedText is
-	// what the draft's row holds, as far as this card knows.
+	// The finished draft, as the writer edits it before keeping it. The edit,
+	// and the saving of it, live outside the card (see draft-edits), so they
+	// outlive it; these mirror that state for the card to show.
 	let text = $state('');
-	let savedText = '';
+	let edit: DraftEdit | null = null;
 	let saveError = $state('');
+	// The draft was changed in another window since this copy was read.
+	let changedElsewhere = $state(false);
 	let landing = $state<'fill' | 'add' | 'discard' | null>(null);
 	// The draft could not be read back; the card keeps what it has and retries.
 	let unread = $state(false);
@@ -150,15 +156,36 @@
 		});
 	}
 
+	function mirrorEdit() {
+		saveError = edit?.error ?? '';
+		changedElsewhere = edit?.conflict ?? false;
+	}
+	// Leaves the draft's edit state to save on its own.
+	function releaseEdit() {
+		if (!edit) return;
+		edit.onChange = undefined;
+		edit.autosave.flushSoon();
+		edit = null;
+	}
+
 	function show(found: SceneDraftView) {
-		// The writer's unsaved edits to this same draft stay in the box.
-		const dirty = draft?.id === found.id && text !== savedText;
 		draft = found;
 		sceneTitle = found.sceneTitle;
-		if (!dirty) {
-			text = found.textMd;
-			savedText = found.textMd;
+		if (found.status === 'ready') {
+			// The writer's unsaved edits to this same draft stay in the box,
+			// whether typed in this card or in one that has since gone.
+			const held = draftEdit(found.id, found);
+			if (held !== edit) {
+				releaseEdit();
+				edit = held;
+				edit.onChange = mirrorEdit;
+			}
+			text = held.text;
+		} else {
+			releaseEdit();
+			text = '';
 		}
+		mirrorEdit();
 		error = '';
 		view = 'draft';
 		if (found.status === 'pending' || found.status === 'running') void follow(found);
@@ -247,11 +274,11 @@
 
 	// The open form is remembered as it is typed.
 	$effect(() => {
-		if (view === 'form') openForms[sceneId] = { brief, targetWords, pov, sceneTitle };
+		if (view === 'form') keepDraftForm('scene', sceneId, { brief, targetWords, pov, sceneTitle });
 	});
 
 	onMount(() => {
-		const open = canDraft ? openForms[sceneId] : undefined;
+		const open = canDraft ? readDraftForm<OpenForm>('scene', sceneId) : undefined;
 		if (open) {
 			({ brief, targetWords, pov, sceneTitle } = open);
 			view = 'form';
@@ -262,15 +289,14 @@
 			// any other draft is what there is to decide.
 			if (view === 'form' && found.status === 'failed') draft ??= found;
 			else if (view === 'hidden' || view === 'form') {
-				delete openForms[sceneId];
+				dropDraftForm('scene', sceneId);
 				show(found);
 			}
 		});
 		return () => {
 			alive = false;
-			// Edits not yet saved go with the page still able to send them.
-			clearTimeout(saveTimer);
-			if (draft?.status === 'ready' && text !== savedText) void saveText(true);
+			// Edits not yet saved are sent now; the save outlives the card.
+			releaseEdit();
 		};
 	});
 
@@ -282,6 +308,20 @@
 		handled = asked;
 		onRequestTaken?.();
 		void (async () => {
+			// After the mount, which may have brought back a form left open.
+			await tick();
+			if (!alive) return;
+			// A form already open keeps what is typed in it. Words that came with
+			// the request (a typed "/draft ...") replace the brief; none leave it.
+			if (view === 'form' && canDraft && !asked.showOnly) {
+				if (asked.brief) {
+					brief = asked.brief;
+					estimate = null;
+				}
+				await reveal();
+				briefEl?.focus();
+				return;
+			}
 			const found = draft ?? (await readDraftSurely());
 			if (!alive) return;
 			if (found) {
@@ -302,7 +342,13 @@
 			Number(targetWords) <= MAX_DRAFT_WORDS
 	);
 	// The form's one main button: it counts the cost, then starts the draft.
+	// The start waits until the cost has been on screen for a moment.
 	const confirmed = $derived(estimate !== null && !estimate.overCap);
+	const guard = createConfirmGuard();
+	function pressMain(event: MouseEvent) {
+		if (!confirmed) void checkCost();
+		else if (guard.allows(event)) void run();
+	}
 
 	// Counts what the draft would send before anything runs.
 	async function checkCost() {
@@ -316,8 +362,10 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ ...formBody(), estimate: true })
 			});
-			if (response.ok) estimate = (await response.json()) as SceneDraftEstimate;
-			else error = await apiErrorMessage(response, 'The Assistant could not count the draft.');
+			if (response.ok) {
+				estimate = (await response.json()) as SceneDraftEstimate;
+				guard.shown();
+			} else error = await apiErrorMessage(response, 'The Assistant could not count the draft.');
 		} catch {
 			error = 'Something went wrong reaching the Assistant.';
 		} finally {
@@ -333,7 +381,7 @@
 		if (!alive) return;
 		working = false;
 		if (!started.ok) error = started.message;
-		else delete openForms[sceneId];
+		else dropDraftForm('scene', sceneId);
 		// On a refusal the scene may have a draft from another window by now.
 		const found = started.ok ? await readDraftSurely() : await readDraft();
 		if (!alive) return;
@@ -344,68 +392,65 @@
 		} else if (started.ok) await close();
 	}
 
-	// Saves the writer's edits to the draft's row, a moment after they stop
-	// typing and when they leave the box, so the edits outlive the panel.
-	const SAVE_AFTER_MS = 1200;
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	let saves: Promise<unknown> = Promise.resolve();
-	function queueSave() {
-		clearTimeout(saveTimer);
-		saveTimer = setTimeout(() => void saveText(), SAVE_AFTER_MS);
+	// The writer typed in the draft: it is saved a moment after they stop, when
+	// they leave the box, and when the page is hidden or left.
+	function edited() {
+		if (!edit) return;
+		edit.text = text;
+		edit.autosave.schedule();
 	}
-	function saveText(leaving = false): Promise<boolean> {
-		clearTimeout(saveTimer);
-		const id = draft?.status === 'ready' ? draft.id : null;
-		const run = saves.then(async () => {
-			const sending = text;
-			if (!id || sending === savedText) return true;
-			try {
-				const response = await fetch(`/api/assistant/draft/${id}`, {
-					method: 'PATCH',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ text: sending }),
-					// Lets the request finish after the card has gone.
-					keepalive: leaving
-				});
-				if (!response.ok) {
-					if (alive) {
-						saveError = await apiErrorMessage(
-							response,
-							'Could not save your changes to the draft.'
-						);
-					}
-					return false;
-				}
-			} catch {
-				if (alive) saveError = 'Could not save your changes to the draft. Check your connection.';
-				return false;
+	function pageHidden() {
+		if (document.visibilityState === 'hidden') edit?.autosave.flushSoon();
+	}
+
+	// Takes the draft as it is stored now, over this card's copy.
+	async function loadCurrent() {
+		const fresh = await readDraft();
+		if (!alive) return;
+		if (!fresh || !edit || fresh.id !== draft?.id || fresh.status !== 'ready') {
+			// Kept or discarded elsewhere: there is nothing to load.
+			if (fresh !== undefined) {
+				if (draft) dropDraftEdit(draft.id);
+				edit = null;
+				if (fresh) show(fresh);
+				else await close();
 			}
-			savedText = sending;
-			saveError = '';
-			return true;
-		});
-		saves = run;
-		return run;
+			return;
+		}
+		adoptStored(edit, fresh);
+		draft = fresh;
+		text = edit.text;
+		error = '';
 	}
 
 	async function land(action: 'fill' | 'add') {
-		if (!draft || landing || !text.trim()) return;
+		if (!draft || !edit || landing || !text.trim()) return;
 		const id = draft.id;
+		const held = edit;
 		landing = action;
 		error = '';
-		// Keeping the draft carries the text as it stands; saving first means a
-		// late save cannot arrive after the draft is decided.
-		await saveText();
-		const failed = await onLand(id, action, text);
+		// Saved first, so a late save cannot arrive after the draft is decided,
+		// and so a copy that has fallen behind another window is caught here.
+		held.text = text;
+		await held.autosave.flush();
+		let failed: string | null = held.conflict ? DRAFT_CHANGED_ELSEWHERE : null;
+		// Keeping the draft carries the text as it stands, in case that save did
+		// not get through.
+		failed ??= await onLand(id, action, text, held.version);
 		// Adding a scene opens it, which takes this card away: say so first.
 		if (!failed) {
+			dropDraftEdit(id);
 			onDecided?.();
 			onClose?.();
 		}
 		if (!alive) return;
 		landing = null;
 		if (failed) {
-			error = failed;
+			if (failed === DRAFT_CHANGED_ELSEWHERE) {
+				held.conflict = true;
+				held.error = failed;
+				mirrorEdit();
+			} else error = failed;
 			// The scene may have gained text, so Fill may no longer be offered.
 			const fresh = await readDraft();
 			if (alive && fresh && fresh.id === id) draft = { ...fresh };
@@ -413,21 +458,25 @@
 			card?.focus();
 			return;
 		}
-		savedText = text;
+		edit = null;
 		draft = null;
 		view = 'hidden';
 	}
 
 	async function discard() {
 		if (!draft || landing) return;
+		const id = draft.id;
 		landing = 'discard';
 		error = '';
-		clearTimeout(saveTimer);
 		const result = await post(
-			`/api/assistant/draft/${draft.id}`,
+			`/api/assistant/draft/${id}`,
 			{ action: 'discard' },
 			'Could not discard the draft.'
 		);
+		if (result.ok) {
+			dropDraftEdit(id);
+			onDecided?.();
+		}
 		if (!alive) return;
 		landing = null;
 		if (!result.ok) {
@@ -436,15 +485,14 @@
 			card?.focus();
 			return;
 		}
-		savedText = text;
+		edit = null;
 		draft = null;
 		view = 'hidden';
-		onDecided?.();
 		onClose?.();
 	}
 
 	function cancelForm() {
-		delete openForms[sceneId];
+		dropDraftForm('scene', sceneId);
 		estimate = null;
 		error = '';
 		// Back to the failed draft the form was opened from, when there is one.
@@ -453,6 +501,12 @@
 		else void tick().then(() => card?.focus());
 	}
 </script>
+
+<svelte:window
+	onpagehide={() => edit?.autosave.flushOnPageHide()}
+	onbeforeunload={(event) => edit?.autosave.warnBeforeUnload(event)}
+/>
+<svelte:document onvisibilitychange={pageHidden} />
 
 {#if view !== 'hidden'}
 	<div
@@ -478,6 +532,7 @@
 					class="textarea"
 					rows="4"
 					maxlength={MAX_DRAFT_BRIEF_CHARS}
+					readonly={working}
 					bind:this={briefEl}
 					bind:value={brief}
 					oninput={() => (estimate = null)}></textarea>
@@ -492,6 +547,7 @@
 						min={MIN_DRAFT_WORDS}
 						max={MAX_DRAFT_WORDS}
 						step="50"
+						readonly={working}
 						bind:value={targetWords}
 						oninput={() => (estimate = null)}
 					/>
@@ -503,6 +559,7 @@
 						class="input"
 						type="text"
 						maxlength={MAX_DRAFT_POV_CHARS}
+						readonly={working}
 						bind:value={pov}
 						oninput={() => (estimate = null)}
 					/>
@@ -514,13 +571,15 @@
 			<FormStatus block {error} />
 			<div class="assist-card-actions">
 				<!-- One button for both steps, so the keyboard stays on it. It is
-				     not disabled while it works, which would drop focus. -->
+				     not disabled while it works, which would drop focus; a second
+				     press right after the cost shows does not start the draft. -->
 				<button
 					class="btn btn-primary"
 					type="button"
 					disabled={!formReady}
 					aria-busy={working}
-					onclick={confirmed ? run : checkCost}
+					onclick={pressMain}
+					onkeydown={guard.keydown}
 				>
 					{#if confirmed}
 						{working ? 'Starting...' : 'Draft the scene'}
@@ -570,11 +629,22 @@
 					id="draft-text"
 					class="textarea draft-text"
 					rows="12"
+					readonly={landing !== null}
 					bind:value={text}
-					oninput={queueSave}
-					onblur={() => void saveText()}></textarea>
+					oninput={edited}
+					onblur={() => edit?.autosave.flushSoon()}></textarea>
 			</div>
 			<FormStatus block error={error || saveError} />
+			{#if changedElsewhere}
+				<div class="assist-card-actions">
+					<button class="btn" type="button" disabled={landing !== null} onclick={loadCurrent}>
+						Load the current text
+					</button>
+				</div>
+				<p class="field-hint">
+					Loading it replaces what is in the box above with the draft as it was last saved.
+				</p>
+			{/if}
 			<div class="assist-card-actions">
 				{#if draft.sceneEmpty}
 					<button
