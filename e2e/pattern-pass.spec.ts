@@ -250,19 +250,22 @@ test.describe('with the Assistant on', () => {
 		};
 	}
 
-	// The follow-up is the next step, even though the pass had already moved
-	// on to the next scene.
-	test('a follow-up from the re-read comes next', async ({ page }) => {
+	// The follow-up joins the back of the queue: the pass goes on to the next
+	// scene and only then back to the first for the follow-up.
+	test('a follow-up from the re-read comes last', async ({ page }) => {
 		const { pass, current, done } = await openPass(page);
 		try {
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(
+				page.locator('.activity-card').filter({ hasText: 'Follow-up added' })
+			).toBeVisible();
+			await expect(pass.getByText('2 of 3')).toBeVisible();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await expect(current.getByText('Follow-up')).toHaveCount(0);
+			await pass.getByRole('button', { name: 'Skip' }).click();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');
 			await expect(page.locator('.review-edit .cm-content')).toContainText('Kara crossed');
-			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
-			// Then on to the second scene.
-			await expect(pass.locator('.pp-para')).toContainText('looked back.');
-			await expect(current.getByText('Follow-up')).toHaveCount(0);
 		} finally {
 			await done();
 		}
@@ -328,21 +331,23 @@ test.describe('with the Assistant on', () => {
 			await expect(cards).toHaveCount(2);
 			await expect(pass.locator('.pp-faded').getByRole('button')).toHaveCount(0);
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
-			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(cards).toHaveCount(3);
+			await pass.getByRole('button', { name: 'Skip' }).click();
+			await expect(pass.locator('.pp-faded').filter({ hasText: 'Skipped' })).toHaveCount(1);
+			await expect(current.getByText('Follow-up')).toBeVisible();
 			const accepted = pass.locator('.pp-faded').filter({ hasText: 'Accepted' });
 			await expect(accepted).toHaveCount(1);
 			await current.getByRole('button', { name: 'Follows an earlier change' }).click();
 			await expect(accepted).toHaveClass(/pp-flash/);
-
-			await pass.getByRole('button', { name: 'Skip' }).click();
-			await expect(pass.locator('.pp-faded').filter({ hasText: 'Skipped' })).toHaveCount(1);
 
 			// After a reload the follow-up still links back.
 			await page.reload();
 			await page.locator('html[data-hydrated="true"]').waitFor();
 			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
 			await note.getByRole('button', { name: /Work through this/ }).click();
+			// The skipped edit comes round again first.
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await pass.getByRole('button', { name: 'Skip' }).click();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(
 				current.getByRole('button', { name: 'Follows an earlier change' })

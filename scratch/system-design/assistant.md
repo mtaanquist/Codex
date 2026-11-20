@@ -1128,7 +1128,8 @@ calls the gateway, which proxies through the egress guard.
   (`ToolScope.patternThreadId`) and to the accepted edit
   (`ToolScope.followsSuggestionId`, stored as
   `review_suggestions.follows_suggestion_id`, set null when that edit is
-  deleted), so a follow-up becomes the next step. The pass shows every edit of
+  deleted). A follow-up joins the back of the queue, after the note's own
+  edits, oldest first (#1296), so the pass only moves forward. The pass shows every edit of
   the note as one list (#1297): the current one full with its buttons, the rest
   faded with their outcome, and a follow-up links back to its original. The
   re-read's status shows as a corner activity card (#1295).

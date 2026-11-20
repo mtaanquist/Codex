@@ -263,11 +263,18 @@ describe('the guided pass over a pattern note', () => {
 		id: string,
 		sceneId: string,
 		start: number | null,
-		over: Partial<{ patternThreadId: string | null; status: string }> = {}
+		over: Partial<{
+			patternThreadId: string | null;
+			status: string;
+			followsId: string | null;
+			createdAt: string;
+		}> = {}
 	) => ({
 		id,
 		sceneId,
 		patternThreadId: 'note',
+		followsId: null as string | null,
+		createdAt: '2026-11-20T10:00:00Z',
 		status: 'pending',
 		anchor: start === null ? null : { start, end: start + 1 },
 		...over
@@ -316,6 +323,20 @@ describe('the guided pass over a pattern note', () => {
 			['s1', 's2']
 		);
 		expect(edits.map((s) => s.id)).toEqual(['first', 'accepted', 'rejected', 'late']);
+	});
+
+	it("puts follow-ups after the note's own edits, oldest first", () => {
+		const queue = patternQueue(
+			[
+				edit('newer', 's1', 0, { followsId: 'a', createdAt: '2026-11-20T10:02:00Z' }),
+				edit('late', 's2', 40),
+				edit('older', 's2', 99, { followsId: 'b', createdAt: '2026-11-20T10:01:00Z' }),
+				edit('first', 's1', 10)
+			],
+			'note',
+			['s1', 's2']
+		);
+		expect(queue.map((s) => s.id)).toEqual(['first', 'late', 'older', 'newer']);
 	});
 
 	it('names the pattern from its label, or from the first line', () => {

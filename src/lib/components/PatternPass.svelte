@@ -25,8 +25,7 @@
 		onAccepted,
 		onSkip,
 		beforeAccept,
-		onStop,
-		onHeld
+		onStop
 	}: {
 		note: ReviewThread;
 		// Every edit of the note, decided or not, in the order the pass shows them.
@@ -53,9 +52,6 @@
 		// writer's latest text; false when that save failed.
 		beforeAccept: () => Promise<boolean>;
 		onStop: () => void;
-		// Told whether the writer is rewording or accepting the current edit, so
-		// the workspace does not swap the step out from under them.
-		onHeld: (held: boolean) => void;
 	} = $props();
 
 	const name = $derived(patternName(note.comments[0]?.body ?? ''));
@@ -84,10 +80,6 @@
 		void stepId;
 		editing = false;
 		failure = null;
-	});
-
-	$effect(() => {
-		onHeld(editing || busy);
 	});
 
 	function startEdit() {
