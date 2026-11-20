@@ -105,6 +105,22 @@ describe('readAttachments', () => {
 		]);
 	});
 
+	it('keeps the entry type on a library entry only, and only a known one', () => {
+		const other = '22222222-2222-4222-8222-222222222222';
+		const third = '33333333-3333-4333-8333-333333333333';
+		expect(
+			readAttachments([
+				{ kind: 'entity', id, label: 'The Quay', entityType: 'place' },
+				{ kind: 'entity', id: other, label: 'Mira', entityType: 'dragon' },
+				{ kind: 'scene', id: third, label: 'The gate', entityType: 'lore' }
+			])
+		).toEqual([
+			{ kind: 'entity', id, label: 'The Quay', entityType: 'place' },
+			{ kind: 'entity', id: other, label: 'Mira' },
+			{ kind: 'scene', id: third, label: 'The gate' }
+		]);
+	});
+
 	it('drops malformed entries and duplicates, and caps the list', () => {
 		expect(readAttachments('x')).toEqual([]);
 		expect(
