@@ -2,9 +2,8 @@ import { showPanel, type EditorView, type Panel } from '@codemirror/view';
 import { StateField, type Extension } from '@codemirror/state';
 import { getSearchQuery, searchPanelOpen } from '@codemirror/search';
 
-// A "Search in" row under the editor's find panel (Ctrl+F). "This scene" is
-// the panel itself; the chapter and story choices hand the search over to the
-// page, which opens find and replace across that wider scope.
+// A row under the editor's find panel (Ctrl+F) that hands the search over to
+// the page, which opens find and replace across the chapter or the story.
 
 export type SearchScope = 'chapter' | 'story';
 export type WiderSearch = {
@@ -22,34 +21,26 @@ export function searchScopeExtension(wider: WiderSearch): Extension {
 		dom.className = 'cm-search-scope';
 		const label = document.createElement('span');
 		label.className = 'cm-search-scope-label';
-		label.id = `cm-search-scope-${Math.random().toString(36).slice(2)}`;
-		label.textContent = 'Search in';
-		const group = document.createElement('div');
-		group.className = 'seg';
-		group.setAttribute('role', 'group');
-		group.setAttribute('aria-labelledby', label.id);
-		const button = (text: string, scope: SearchScope | null) => {
+		label.textContent = 'Find and replace in';
+		dom.append(label);
+		const button = (text: string, scope: SearchScope) => {
 			const el = document.createElement('button');
 			el.type = 'button';
-			el.className = scope ? 'seg-btn' : 'seg-btn active';
+			el.className = 'cm-button';
 			el.textContent = text;
-			el.setAttribute('aria-pressed', scope ? 'false' : 'true');
-			if (scope) {
-				el.addEventListener('click', () => {
-					const query = getSearchQuery(view.state);
-					wider.open(scope, {
-						find: query.search,
-						matchCase: query.caseSensitive,
-						wholeWord: query.wholeWord
-					});
+			el.setAttribute('aria-haspopup', 'dialog');
+			el.addEventListener('click', () => {
+				const query = getSearchQuery(view.state);
+				wider.open(scope, {
+					find: query.search,
+					matchCase: query.caseSensitive,
+					wholeWord: query.wholeWord
 				});
-			}
-			group.append(el);
+			});
+			dom.append(el);
 		};
-		button('This scene', null);
-		if (wider.hasChapter()) button('This chapter', 'chapter');
-		button('Whole story', 'story');
-		dom.append(label, group);
+		if (wider.hasChapter()) button('This chapter...', 'chapter');
+		button('Whole story...', 'story');
 		return { dom, top: false };
 	};
 	return StateField.define<boolean>({

@@ -1027,8 +1027,8 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 
 #1302. The editor's Ctrl+F is CodeMirror's own search panel and only sees the
 open scene, so changing a word through a book meant visiting every scene.
-Decided with Mads: a "Search in" row under the find panel (this scene, this
-chapter, whole story), plus the chapter row menu and a palette command; story
+Decided with Mads: a row under the find panel that widens it to the chapter
+or the whole story, plus the chapter row menu and a palette command; story
 and chapter only, no universe scope (entity renames already sweep the
 universe); no one-step undo of a whole batch, since each changed scene gets its
 own History checkpoint.

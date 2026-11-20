@@ -41,10 +41,7 @@ test('find and replace across a chapter, with a per-match choice', async ({ page
 	await page.keyboard.press('ControlOrMeta+f');
 	const panel = page.locator('.cm-panel.cm-search');
 	await panel.getByRole('textbox', { name: 'Find', exact: true }).fill('city');
-	await page
-		.getByRole('group', { name: 'Search in' })
-		.getByRole('button', { name: 'This chapter' })
-		.click();
+	await page.locator('.cm-search-scope').getByRole('button', { name: 'This chapter...' }).click();
 
 	const dialog = page.getByRole('dialog', { name: 'Find and replace' });
 	await expect(dialog.getByRole('status').first()).toContainText('3 matches in 2 scenes');

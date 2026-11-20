@@ -63,6 +63,7 @@ export type StoryFindResult = {
 export type StoryReplaceResult = {
 	scenesChanged: number;
 	replaced: number;
-	// Scenes left alone because they changed (or went) since the search.
-	skipped: { sceneId: string; title: string | null }[];
+	// Scenes left alone: changed (or gone) since the search, or the replace
+	// would make them longer than a scene can be saved.
+	skipped: { sceneId: string; title: string | null; reason: 'changed' | 'too_long' }[];
 };

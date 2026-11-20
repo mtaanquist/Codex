@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { modal } from '#lib/modal';
 	import { post } from '#lib/api';
@@ -17,7 +17,8 @@
 		chapters,
 		scenes,
 		prepare,
-		afterReplace
+		afterReplace,
+		onClosed
 	}: {
 		storyId: string;
 		chapters: { id: string; title: string | null }[];
@@ -26,6 +27,8 @@
 		prepare: () => Promise<string | null>;
 		// Reloads the editors on the replaced text.
 		afterReplace: () => Promise<void>;
+		// Puts focus back in the writing when what opened the window is gone.
+		onClosed: () => void;
 	} = $props();
 
 	let find = $state('');
@@ -156,6 +159,25 @@
 	}
 
 	const pickedCount = $derived(picked.size);
+
+	const changedSkips = $derived(outcome?.skipped.filter((s) => s.reason === 'changed') ?? []);
+	const longSkips = $derived(outcome?.skipped.filter((s) => s.reason === 'too_long') ?? []);
+
+	// One live region that stays mounted, so screen readers hear each result.
+	const announcement = $derived.by(() => {
+		if (outcome) {
+			const done =
+				outcome.replaced > 0
+					? `Replaced ${matches(outcome.replaced)} in ${sceneCount(outcome.scenesChanged)}.`
+					: 'Nothing was replaced.';
+			return outcome.skipped.length > 0
+				? `${done} ${sceneCount(outcome.skipped.length)} left alone.`
+				: done;
+		}
+		if (!results) return '';
+		if (results.scenes.length === 0) return 'No matches.';
+		return `${matches(results.matchCount)} in ${sceneCount(results.scenes.length)}.`;
+	});
 	const sameText = $derived(matchCase && replace === find);
 
 	async function apply() {
@@ -179,12 +201,14 @@
 				}))
 				.filter((scene) => scene.starts.length > 0)
 		};
+		let sent = false;
 		try {
 			const ready = await prepare();
 			if (ready) {
 				error = ready;
 				return;
 			}
+			sent = true;
 			const result = await post<StoryReplaceResult>(
 				`/api/stories/${storyId}/find-replace`,
 				payload,
@@ -201,24 +225,35 @@
 			};
 			results = null;
 			picked.clear();
-			if (result.scenesChanged > 0) await afterReplace();
 		} finally {
-			busy = null;
+			// Each scene is replaced on its own, so even a failed request may
+			// have changed some: always reload the editors once it was sent.
+			try {
+				if (sent) await afterReplace();
+			} finally {
+				busy = null;
+			}
 		}
 	}
 
 	function close() {
 		if (busy) return;
 		closeFindReplace();
+		onClosed();
 	}
+
+	// Leaving the page while it is open must not reopen it on the next story.
+	onDestroy(() => closeFindReplace());
 </script>
 
 {#if findReplace.open}
 	<div
-		class="modal-backdrop"
+		class="modal-backdrop top"
 		role="presentation"
 		onclick={(event) => {
-			if (event.target === event.currentTarget) close();
+			// Typed terms and ticked matches are not thrown away by a stray click.
+			if (event.target === event.currentTarget && (outcome || (find === '' && replace === '')))
+				close();
 		}}
 	>
 		<div
@@ -226,7 +261,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="fr-title"
-			use:modal={{ close, initialFocus: find ? '#fr-replace' : '#fr-find' }}
+			use:modal={{ close, initialFocus: findReplace.request.find ? '#fr-replace' : '#fr-find' }}
 		>
 			<div class="modal-head">
 				<div class="modal-head-main">
@@ -311,9 +346,10 @@
 				</form>
 
 				<FormStatus {error} block />
+				<p class="visually-hidden" role="status">{announcement}</p>
 
 				{#if outcome}
-					<div class="fr-outcome" role="status">
+					<div class="fr-outcome">
 						{#if outcome.replaced > 0}
 							<p>
 								Replaced {matches(outcome.replaced)} in {sceneCount(outcome.scenesChanged)}. To
@@ -322,14 +358,26 @@
 						{:else}
 							<p>Nothing was replaced.</p>
 						{/if}
-						{#if outcome.skipped.length > 0}
+						{#if changedSkips.length > 0}
 							<p>
-								{outcome.skipped.length === 1 ? 'This scene was' : 'These scenes were'} left alone because
-								{outcome.skipped.length === 1 ? 'it' : 'they'} changed after you searched. Select Find
-								to search again.
+								{changedSkips.length === 1 ? 'This scene was' : 'These scenes were'} left alone because
+								{changedSkips.length === 1 ? 'it' : 'they'} changed after you searched. Select Find to
+								search again.
 							</p>
 							<ul class="fr-skipped">
-								{#each outcome.skipped as scene (scene.sceneId)}
+								{#each changedSkips as scene (scene.sceneId)}
+									<li>{sceneTitle(scene.sceneId, scene.title)}</li>
+								{/each}
+							</ul>
+						{/if}
+						{#if longSkips.length > 0}
+							<p>
+								{longSkips.length === 1 ? 'This scene was' : 'These scenes were'} left alone because the
+								change would make {longSkips.length === 1 ? 'it' : 'them'} too long to save. Split
+								{longSkips.length === 1 ? 'it' : 'them'} first.
+							</p>
+							<ul class="fr-skipped">
+								{#each longSkips as scene (scene.sceneId)}
 									<li>{sceneTitle(scene.sceneId, scene.title)}</li>
 								{/each}
 							</ul>
@@ -337,10 +385,10 @@
 					</div>
 				{:else if results}
 					{#if results.scenes.length === 0}
-						<p class="fr-summary" role="status">No matches.</p>
+						<p class="fr-summary">No matches.</p>
 					{:else}
 						<div class="fr-summary-row">
-							<p class="fr-summary" role="status">
+							<p class="fr-summary">
 								{matches(results.matchCount)} in {sceneCount(results.scenes.length)}.
 								{#if results.truncated}
 									Only the first {matches(results.scenes.reduce((n, s) => n + s.matches.length, 0))} are
@@ -378,6 +426,7 @@
 												<label class="choice fr-match">
 													<input
 														type="checkbox"
+														aria-label={`Replace in: ${match.before}${match.text}${match.after}`}
 														checked={picked.has(key(scene.sceneId, match.start))}
 														onchange={() => toggleMatch(scene.sceneId, match.start)}
 													/>
@@ -491,13 +540,13 @@
 		overflow-wrap: anywhere;
 	}
 	.fr-snippet del {
-		color: var(--danger);
+		color: var(--danger-ink);
 		background: color-mix(in srgb, var(--danger) 10%, transparent);
 	}
 	.fr-snippet ins {
 		margin-left: 2px;
 		text-decoration: none;
-		color: var(--status-final);
+		color: var(--status-final-ink);
 		background: color-mix(in srgb, var(--status-final) 12%, transparent);
 	}
 	.fr-outcome {

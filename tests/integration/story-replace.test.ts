@@ -209,7 +209,7 @@ describe('replaceInStory', () => {
 		expect(result).toEqual({
 			scenesChanged: 0,
 			replaced: 0,
-			skipped: [{ sceneId: third, title: null }]
+			skipped: [{ sceneId: third, title: null, reason: 'changed' }]
 		});
 		expect(await body(third)).toBe('The city burned twice.');
 	});
@@ -286,5 +286,71 @@ describe('replaceInStory', () => {
 		expect(after).toBe('A town.\nThe town slept.');
 		const [moved] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
 		expect(after.slice(moved.anchorStart!, moved.anchorEnd!)).toBe('slept');
+	});
+
+	it('detaches a marker whose passage is replaced with nothing', async () => {
+		const [marker] = await db
+			.insert(sceneMarkers)
+			.values({ sceneId: third, ownerId, anchorStart: 4, anchorEnd: 8 })
+			.returning();
+		const found = await findInStory(db, { storyId, chapterId: chapterTwo }, 'city ', {
+			matchCase: true,
+			wholeWord: false
+		});
+		const [scene] = found.scenes;
+		const result = await replaceInStory(
+			db,
+			{ storyId, chapterId: chapterTwo },
+			{
+				find: 'city ',
+				replace: '',
+				options: { matchCase: true, wholeWord: false },
+				scenes: [{ sceneId: third, baseHash: scene.baseHash, starts: [4] }]
+			}
+		);
+		expect(result.replaced).toBe(1);
+		expect(await body(third)).toBe('The burned.');
+		const [after] = await db.select().from(sceneMarkers).where(eq(sceneMarkers.id, marker.id));
+		expect(after.anchorStart).toBeNull();
+		expect(after.anchorEnd).toBeNull();
+	});
+
+	it('writes nothing when the replacement leaves the text as it was', async () => {
+		const loose = { matchCase: false, wholeWord: true };
+		const found = await findInStory(db, { storyId, chapterId: chapterTwo }, 'CITY', loose);
+		const [scene] = found.scenes;
+		const result = await replaceInStory(
+			db,
+			{ storyId, chapterId: chapterTwo },
+			{
+				find: 'CITY',
+				replace: 'city',
+				options: loose,
+				scenes: [{ sceneId: third, baseHash: scene.baseHash, starts: [4] }]
+			}
+		);
+		expect(result).toEqual({ scenesChanged: 0, replaced: 0, skipped: [] });
+		expect(await db.select().from(revisions).where(eq(revisions.entityId, third))).toHaveLength(0);
+	});
+
+	it('leaves a scene alone when the replace would make it too long to save', async () => {
+		const long = 'city '.repeat(399_000);
+		await db.update(scenes).set({ bodyMd: long }).where(eq(scenes.id, third));
+		const found = await findInStory(db, { storyId, chapterId: chapterTwo }, 'city', WORD);
+		const [scene] = found.scenes;
+		const result = await replaceInStory(
+			db,
+			{ storyId, chapterId: chapterTwo },
+			{
+				find: 'city',
+				replace: 'metropolis',
+				options: WORD,
+				scenes: [
+					{ sceneId: third, baseHash: scene.baseHash, starts: scene.matches.map((m) => m.start) }
+				]
+			}
+		);
+		expect(result.skipped).toEqual([{ sceneId: third, title: null, reason: 'too_long' }]);
+		expect(await body(third)).toBe(long);
 	});
 });

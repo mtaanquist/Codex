@@ -1,10 +1,11 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sceneMarkers, scenes } from './db/schema';
 import { updateMarkerAnchors } from './markers';
 import { recordRevision } from './revisions';
 import { queueSceneMentions } from './jobs';
 import { inLiveStory } from './universe-scope.ts';
+import { MAX_PROSE_CHARS } from './validation';
 import {
 	findMatches,
 	matchContext,
@@ -101,11 +102,11 @@ export async function replaceInStory(
 					)
 				)
 				.for('update');
-			if (!scene) return { skipped: true as const, title: null };
+			const changed = { skipped: true as const, reason: 'changed' as const };
+			if (!scene) return { ...changed, title: null };
 			if (scope.chapterId && scene.chapterId !== scope.chapterId)
-				return { skipped: true as const, title: scene.title };
-			if (textHash(scene.bodyMd) !== target.baseHash)
-				return { skipped: true as const, title: scene.title };
+				return { ...changed, title: scene.title };
+			if (textHash(scene.bodyMd) !== target.baseHash) return { ...changed, title: scene.title };
 			const body = toLf(scene.bodyMd);
 			const chosen: TextMatch[] = findMatches(body, find, options).filter((match) =>
 				wanted.has(match.start)
@@ -125,6 +126,12 @@ export async function replaceInStory(
 					marker.anchorStart !== null && marker.anchorEnd !== null
 			);
 			const replaced = replaceMatches(body, chosen, replace, markers);
+			// A replacement that leaves the text as it was (only the case
+			// differed and match case is off) is not a change.
+			if (replaced.body === body) return { skipped: false as const, count: 0 };
+			// Past the save limit, every later autosave of the scene would fail.
+			if (replaced.body.length > MAX_PROSE_CHARS)
+				return { skipped: true as const, title: scene.title, reason: 'too_long' as const };
 			// History ends on the text as it was, even for a scene that never
 			// went through the editor (an import), so the replace can be undone.
 			await recordRevision(tx, 'scene', target.sceneId, scene.bodyMd);
@@ -132,14 +139,36 @@ export async function replaceInStory(
 				.update(scenes)
 				.set({ bodyMd: replaced.body, wordCount: wordCount(replaced.body) })
 				.where(eq(scenes.id, target.sceneId));
-			await updateMarkerAnchors(tx, target.sceneId, replaced.anchors, replaced.body.length);
+			// A marker whose whole passage was replaced with nothing has nothing
+			// left to point at: detach it, as the autosave's remap does.
+			const emptied = replaced.anchors.filter((anchor) => anchor.anchorStart >= anchor.anchorEnd);
+			if (emptied.length > 0)
+				await tx
+					.update(sceneMarkers)
+					.set({ anchorStart: null, anchorEnd: null })
+					.where(
+						inArray(
+							sceneMarkers.id,
+							emptied.map((anchor) => anchor.id)
+						)
+					);
+			await updateMarkerAnchors(
+				tx,
+				target.sceneId,
+				replaced.anchors.filter((anchor) => anchor.anchorStart < anchor.anchorEnd),
+				replaced.body.length
+			);
 			// A checkpoint, so the replace stands apart in History and never
 			// coalesces into surrounding autosaves.
 			await recordRevision(tx, 'scene', target.sceneId, replaced.body, 'checkpoint', { label });
 			return { skipped: false as const, count: chosen.length };
 		});
 		if (outcome.skipped) {
-			result.skipped.push({ sceneId: target.sceneId, title: outcome.title });
+			result.skipped.push({
+				sceneId: target.sceneId,
+				title: outcome.title,
+				reason: outcome.reason
+			});
 			continue;
 		}
 		if (outcome.count === 0) continue;

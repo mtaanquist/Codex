@@ -466,9 +466,20 @@
 	// and remount them, so none saves the old text back over it.
 	async function afterFindReplace() {
 		await pauseTypingWhile(async () => {
-			await refreshAll();
-			editorNonce++;
+			try {
+				await refreshAll();
+			} finally {
+				editorNonce++;
+			}
 		});
+	}
+	// The window's opener may be gone by the time it closes (a remounted
+	// editor, a closed menu or palette): put focus back in the writing then.
+	async function findReplaceClosed() {
+		await tick();
+		const active = document.activeElement;
+		if (active && active !== document.body && active.isConnected) return;
+		(sceneEditor?.getView() ?? toolbarView())?.focus();
 	}
 	// The find panel's "Search in" row, for one scene's editor.
 	function widerSearchFor(sceneId: string): WiderSearch {
@@ -1290,6 +1301,7 @@
 	scenes={data.scenes}
 	prepare={prepareFindReplace}
 	afterReplace={afterFindReplace}
+	onClosed={() => void findReplaceClosed()}
 />
 
 {#if data.assistant.surfacesEnabled}
