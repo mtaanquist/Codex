@@ -68,6 +68,13 @@ export type TokenUsage = {
 	// report the cached share here. Cache reads bill far cheaper than fresh
 	// prompt tokens (see spend.ts).
 	cachedPromptTokens?: number;
+	// The part of promptTokens the endpoint wrote to its prompt cache, where it
+	// reports one (Claude does), and the share of that written to the one-hour
+	// cache. Both are subsets, like cachedPromptTokens: cacheWrite1hTokens of
+	// cacheWriteTokens, and cacheWriteTokens of promptTokens. Cache writes bill
+	// above the plain prompt rate (see spend.ts).
+	cacheWriteTokens?: number;
+	cacheWrite1hTokens?: number;
 	// Set when a count is the adapter's own estimate rather than the endpoint's
 	// report: a stream that failed or was cancelled before the endpoint sent its
 	// totals. The usage log marks these rows so they are never read as billed.
@@ -104,6 +111,9 @@ export type CompletionRequest = {
 	// sets it only for an account that opted in, on a universe marked as an
 	// established published setting.
 	webSearch?: boolean;
+	// Keep the cached prompt prefix for an hour instead of the default five
+	// minutes. Only the Anthropic adapter reads it.
+	cacheTtl?: '5m' | '1h';
 	// Extra body fields from the account config, for whatever the writer's server
 	// needs that Codex has no field of its own for. The OpenAI-compatible adapter
 	// merges them into the request; the Anthropic adapter ignores them. The

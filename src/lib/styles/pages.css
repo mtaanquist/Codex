@@ -936,6 +936,12 @@
 	padding-bottom: 0;
 	font-size: 13px;
 }
+/* A model's two price boxes, side by side under its context window. */
+.price-pair {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+}
 
 /* revision timeline */
 .revision-filters {

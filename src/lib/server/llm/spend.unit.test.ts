@@ -34,6 +34,28 @@ describe('requestCostUsd', () => {
 		expect(cost).toBeCloseTo(200 * 0.001 + 800 * 0.001 * 0.1, 10);
 	});
 
+	it('prices cache writes above the prompt rate, the one-hour share highest', () => {
+		const cost = requestCostUsd(pricing, 'priced', {
+			promptTokens: 1000,
+			completionTokens: 0,
+			cachedPromptTokens: 500,
+			cacheWriteTokens: 400,
+			cacheWrite1hTokens: 100
+		});
+		expect(cost).toBeCloseTo(0.001 * (100 + 500 * 0.1 + 300 * 1.25 + 100 * 2), 10);
+	});
+
+	it('never counts more cache writes than the prompt had left after its reads', () => {
+		const cost = requestCostUsd(pricing, 'priced', {
+			promptTokens: 100,
+			completionTokens: 0,
+			cachedPromptTokens: 60,
+			cacheWriteTokens: 500,
+			cacheWrite1hTokens: 900
+		});
+		expect(cost).toBeCloseTo(0.001 * (60 * 0.1 + 40 * 2), 10);
+	});
+
 	it('never counts more cached tokens than the prompt held', () => {
 		const cost = requestCostUsd(pricing, 'priced', {
 			promptTokens: 100,

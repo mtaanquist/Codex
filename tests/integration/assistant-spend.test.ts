@@ -578,7 +578,7 @@ describe('per-run spend cap (#549)', () => {
 		expect(result.capped).toBeUndefined();
 		expect(result.reviewed).toBe(2);
 		expect(result.failures.map((f) => f.message)).toContain(
-			'A spend cap is set but the model has no known price, so it was not applied.'
+			'A spend cap is set but the model has no known price, so it was not applied. Enter its price in your Assistant settings.'
 		);
 	});
 
