@@ -29,7 +29,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		if (!contents) error(404, 'No such story.');
 		// A config that cannot be read (a key that no longer decrypts) still
 		// lists the story, just without a price.
-		const config = await resolveLlmConfig(db, userId, storyId)
+		const config = await resolveLlmConfig(db, userId)
 			.then((resolved) => resolved.config)
 			.catch(() => null);
 		const model = url.searchParams.get('model') || (config ? pickModel(config, 'chat') : '');

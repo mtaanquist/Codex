@@ -277,7 +277,8 @@ A universe or a story can use different models from your account. For example,
 you can give one long story a model that takes more text at once.
 
 1. Open the universe's settings, or the story's settings, and select
-   "Assistant". The section shows once the Assistant is set up on this page.
+   "Assistant". The section shows once the Assistant is set up on your account
+   page.
 2. For each kind of work, choose a model, or leave the row on "Default". A
    "Default" row names the model it will use.
 3. Your choice saves as soon as you make it.
@@ -288,9 +289,11 @@ or a character arc, uses the universe's models. To go back, set the row to
 "Default" again.
 
 The other settings for a kind of work (reply length, temperature, thinking),
-prices and context windows stay the ones on this page. If a model you choose for
-a universe or story has no context window listed, add it under "Context window"
-above.
+prices and context windows stay the ones on this page. A model you choose for a
+universe or story gets its own "Context window" and "Prices" boxes above, so you
+can fill them in when your endpoint does not report them. If you switch provider,
+the choices on your universes and stories are cleared along with your account's,
+since they name the old provider's models.
 
 ## Display
 

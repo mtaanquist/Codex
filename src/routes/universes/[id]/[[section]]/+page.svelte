@@ -408,12 +408,15 @@
 	{#if data.assistantModels}
 		<section class="admin-section" class:active={active === 'assistant'}>
 			<div class="admin-block">
-				<ScopeModels
-					level="universe"
-					settings={data.assistantModels}
-					modelsQuery="universeId={data.universe.id}"
-					saved={form?.action === 'assistant-models' && form.saved}
-				/>
+				{#key data.universe.id}
+					<ScopeModels
+						level="universe"
+						settings={data.assistantModels}
+						modelsQuery="universeId={data.universe.id}"
+						active={active === 'assistant'}
+						saved={form?.action === 'assistant-models' && form.saved}
+					/>
+				{/key}
 			</div>
 		</section>
 	{/if}

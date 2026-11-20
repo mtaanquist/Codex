@@ -1010,6 +1010,16 @@ of work; the most specific choice wins (story, universe, account).
   Rubber duck model.
 - Prices, context windows and the spend cap stay on the account. A window
   for a model only a universe uses is set on the account page like any other.
+- Review of the PR (nothing high; three medium, six low), fixed before
+  merge. A provider switch now clears the picks on the user's universes and
+  stories with the account's, since they name the old provider's models. The
+  account page gives a context window and price boxes to models chosen only
+  on a universe or story (`scopeChosenModels`). The pickers fetch the model
+  list only when their section is open. Also: one owner-checked read per
+  resolve instead of three queries (the mute is still read whoever owns the
+  story, since it only subtracts); the composer's model menu names the
+  universe; a pick does not bump the universe's `updatedAt`; tests pin arcs
+  and `/enrich` to the universe's model.
 - Not built: per-universe tuning, a per-universe mute, and showing on the
   account page which universes or stories override a role.
 

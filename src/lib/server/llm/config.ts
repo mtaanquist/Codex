@@ -405,33 +405,70 @@ async function storyOverride(db: Database, storyId: string): Promise<StoredStory
 // story (a universe chat, a pass over a universe's entries, a character arc).
 export type LlmScope = { storyId?: string; universeId?: string };
 
-// The models chosen on the universe and on the story, each empty when nothing
-// is set there. The universe is the story's own when a story is given. Only
-// the user's own universe counts.
+// What a scope adds to the account's settings: the story's mute, and the
+// models chosen on the story and on its universe (each empty when nothing is
+// set there). The universe is the story's own when a story is given. Models
+// count only from the user's own story and universe; the mute is read
+// whoever owns the story, since it can only switch things off.
+async function scopeOverrides(
+	db: Database,
+	userId: string,
+	scope: LlmScope
+): Promise<{ override?: StoredStoryOverride; universe: ModelMap; story: ModelMap }> {
+	const universeModels = sql<unknown>`${universes.llmConfig} -> 'models'`;
+	if (scope.storyId) {
+		const [row] = await db
+			.select({
+				llmConfig: stories.llmConfig,
+				universeModels,
+				storyOwner: stories.ownerId,
+				universeOwner: universes.ownerId
+			})
+			.from(stories)
+			.innerJoin(universes, eq(universes.id, stories.universeId))
+			.where(eq(stories.id, scope.storyId));
+		const override = normaliseOverride((row?.llmConfig ?? {}) as Record<string, unknown>);
+		return {
+			override,
+			universe: row?.universeOwner === userId ? normaliseModels(row.universeModels) : {},
+			story: row?.storyOwner === userId ? (override.models ?? {}) : {}
+		};
+	}
+	if (!scope.universeId) return { universe: {}, story: {} };
+	const [row] = await db
+		.select({ universeModels })
+		.from(universes)
+		.where(and(eq(universes.id, scope.universeId), eq(universes.ownerId, userId)));
+	return { universe: normaliseModels(row?.universeModels), story: {} };
+}
+
+// The models chosen on the universe and on the story, for the settings pages.
 export async function scopeModels(
 	db: Database,
 	userId: string,
 	scope: LlmScope
 ): Promise<{ universe: ModelMap; story: ModelMap }> {
-	let story: ModelMap = {};
-	let universeId = scope.universeId;
-	if (scope.storyId) {
-		const [row] = await db
-			.select({ llmConfig: stories.llmConfig, universeId: stories.universeId })
+	const { universe, story } = await scopeOverrides(db, userId, scope);
+	return { universe, story };
+}
+
+// Every model the user has chosen on a universe or a story, so the account
+// page can offer a context window and a price for each.
+export async function scopeChosenModels(db: Database, userId: string): Promise<string[]> {
+	const [fromUniverses, fromStories] = await Promise.all([
+		db
+			.select({ models: sql<unknown>`${universes.llmConfig} -> 'models'` })
+			.from(universes)
+			.where(and(eq(universes.ownerId, userId), sql`${universes.llmConfig} ? 'models'`)),
+		db
+			.select({ models: sql<unknown>`${stories.llmConfig} -> 'models'` })
 			.from(stories)
-			.where(eq(stories.id, scope.storyId));
-		story = normaliseModels((row?.llmConfig as Record<string, unknown> | undefined)?.models);
-		universeId = row?.universeId;
-	}
-	if (!universeId) return { universe: {}, story };
-	const [row] = await db
-		.select({ llmConfig: universes.llmConfig })
-		.from(universes)
-		.where(and(eq(universes.id, universeId), eq(universes.ownerId, userId)));
-	return {
-		universe: normaliseModels((row?.llmConfig as Record<string, unknown> | undefined)?.models),
-		story
-	};
+			.where(and(eq(stories.ownerId, userId), sql`${stories.llmConfig} ? 'models'`))
+	]);
+	const ids = [...fromUniverses, ...fromStories].flatMap((row) =>
+		Object.values(normaliseModels(row.models))
+	);
+	return [...new Set(ids)].sort();
 }
 
 // The most specific choice wins, role by role: the story's, then the
@@ -481,11 +518,9 @@ export async function resolveLlmConfig(
 	scope?: string | LlmScope
 ): Promise<Resolved> {
 	const where: LlmScope = typeof scope === 'string' ? { storyId: scope } : (scope ?? {});
-	const storyId = where.storyId;
 	const account = await accountLlmConfig(db, userId);
-	const override = storyId ? await storyOverride(db, storyId) : undefined;
-	const chosen = await scopeModels(db, userId, where);
-	const gate = assistantGate(account, override);
+	const chosen = await scopeOverrides(db, userId, where);
+	const gate = assistantGate(account, chosen.override);
 	return {
 		gate,
 		config: {
@@ -827,10 +862,30 @@ export async function saveAccountLlmConfig(
 	const { toolCallBudget, ...rest } = value;
 	const limit = input.toolCallBudget === undefined ? {} : { toolCallLimit: toolCallBudget };
 	const stored: Record<string, unknown> = { ...rest, ...limit, ...spend, ...snapshots };
-	await db
-		.update(users)
-		.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })
-		.where(eq(users.id, userId));
+	await db.transaction(async (tx) => {
+		await tx
+			.update(users)
+			.set({ llmConfig: sql`${users.llmConfig} || ${JSON.stringify(stored)}::jsonb` })
+			.where(eq(users.id, userId));
+		if (providerChanged) {
+			// The picks on universes and stories name the old provider's models
+			// too, and would be sent to the new one. A story's mute stays.
+			await tx
+				.update(universes)
+				.set({
+					llmConfig: sql`${universes.llmConfig} - 'models'`,
+					updatedAt: sql`${universes.updatedAt}`
+				})
+				.where(and(eq(universes.ownerId, userId), sql`${universes.llmConfig} ? 'models'`));
+			await tx
+				.update(stories)
+				.set({
+					llmConfig: sql`${stories.llmConfig} - 'models'`,
+					updatedAt: sql`${stories.updatedAt}`
+				})
+				.where(and(eq(stories.ownerId, userId), sql`${stories.llmConfig} ? 'models'`));
+		}
+	});
 	return { ok: true };
 }
 
@@ -846,7 +901,10 @@ export async function saveUniverseModels(
 		Object.keys(clean).length > 0
 			? sql`${universes.llmConfig} || ${JSON.stringify({ models: clean })}::jsonb`
 			: sql`${universes.llmConfig} - 'models'`;
-	await db.update(universes).set({ llmConfig: expression }).where(eq(universes.id, universeId));
+	await db
+		.update(universes)
+		.set({ llmConfig: expression, updatedAt: sql`${universes.updatedAt}` })
+		.where(eq(universes.id, universeId));
 }
 
 // Sets or clears a story's override: a value writes the key, null removes it so

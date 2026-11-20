@@ -23,7 +23,8 @@ const {
 	saveModelContext,
 	saveModelPricing,
 	saveStoryLlmOverride,
-	saveUniverseModels
+	saveUniverseModels,
+	scopeChosenModels
 } = await import('../../src/lib/server/llm/config');
 const { modelsFromForm, scopeModelSettings } =
 	await import('../../src/lib/server/llm/scope-models');
@@ -783,6 +784,52 @@ describe('models per universe and story', () => {
 		expect(pickModel(await models(storyId), 'chat')).toBe('story-chat');
 	});
 
+	it('a save replaces the choices at that level, it does not add to them', async () => {
+		await saveUniverseModels(db, universeId, { utility: 'u-utility', reviewer: 'u-reviewer' });
+		await saveUniverseModels(db, universeId, { utility: 'u-utility' });
+		expect(pickModel(await models({ universeId }), 'reviewer')).toBe('account-chat');
+
+		await saveStoryLlmOverride(db, storyId, { models: { utility: 's-utility', chat: 's-chat' } });
+		await saveStoryLlmOverride(db, storyId, { models: { utility: 's-utility' } });
+		expect(pickModel(await models(storyId), 'chat')).toBe('account-chat');
+	});
+
+	it('choosing a model does not move the universe up the library', async () => {
+		const updatedAt = async () =>
+			(await db.select().from(universes).where(eq(universes.id, universeId)))[0].updatedAt;
+		const before = await updatedAt();
+		await saveUniverseModels(db, universeId, { utility: 'u-utility' });
+		expect(await updatedAt()).toEqual(before);
+	});
+
+	it('lists every model chosen on a universe or story, for the account page', async () => {
+		expect(await scopeChosenModels(db, userId)).toEqual([]);
+		await saveUniverseModels(db, universeId, { utility: 'big-local', chat: 'small-local' });
+		await saveStoryLlmOverride(db, storyId, { enabled: false, models: { chat: 'big-local' } });
+		expect(await scopeChosenModels(db, userId)).toEqual(['big-local', 'small-local']);
+	});
+
+	it('a provider switch clears the choices on universes and stories, keeping a mute', async () => {
+		await saveUniverseModels(db, universeId, { utility: 'old-provider-model' });
+		await saveStoryLlmOverride(db, storyId, { enabled: false, models: { chat: 'old-chat' } });
+		const account = {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced' as const,
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'account-chat', utility: 'account-utility' }
+		};
+
+		// A save that keeps the provider keeps them.
+		await saveAccountLlmConfig(db, userId, account);
+		expect(await scopeChosenModels(db, userId)).toEqual(['old-chat', 'old-provider-model']);
+
+		await saveAccountLlmConfig(db, userId, { ...account, provider: 'anthropic', models: {} });
+		expect(await scopeChosenModels(db, userId)).toEqual([]);
+		expect((await resolveLlmConfig(db, userId, storyId)).gate.surfacesEnabled).toBe(false);
+	});
+
 	it('a role with no choice anywhere follows the nearest Rubber duck model', async () => {
 		await saveUniverseModels(db, universeId, { chat: 'universe-chat' });
 		const config = await models({ universeId });
@@ -808,8 +855,14 @@ describe('models per universe and story', () => {
 			.insert(universes)
 			.values({ ownerId: other.id, name: 'Theirs' })
 			.returning({ id: universes.id });
+		const [theirStory] = await db
+			.insert(stories)
+			.values({ universeId: theirs.id, ownerId: other.id, title: 'Theirs' })
+			.returning({ id: stories.id });
 		await saveUniverseModels(db, theirs.id, { utility: 'their-model' });
+		await saveStoryLlmOverride(db, theirStory.id, { models: { utility: 'their-story-model' } });
 		expect(pickModel(await models({ universeId: theirs.id }), 'utility')).toBe('account-utility');
+		expect(pickModel(await models(theirStory.id), 'utility')).toBe('account-utility');
 	});
 
 	it('gives the settings pages what is chosen here and what is chosen above', async () => {

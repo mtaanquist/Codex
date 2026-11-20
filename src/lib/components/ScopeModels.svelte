@@ -13,6 +13,7 @@
 		level,
 		settings,
 		modelsQuery,
+		active,
 		error = null,
 		saved = false
 	}: {
@@ -20,6 +21,8 @@
 		settings: { saved: Models; inherited: Models; suggested: Record<AssistantRole, string> };
 		// The query for /api/assistant/models that names this universe or story.
 		modelsQuery: string;
+		// Whether the section is the one on screen; the list is fetched then.
+		active: boolean;
 		error?: string | null;
 		saved?: boolean;
 	} = $props();
@@ -32,7 +35,10 @@
 	// already chosen somewhere, so a pick is never dropped from its own list.
 	let listed = $state<string[]>([]);
 	let complete = $state(true);
+	let asked = false;
 	$effect(() => {
+		if (!active || asked) return;
+		asked = true;
 		const controller = new AbortController();
 		fetch(`/api/assistant/models?${modelsQuery}`, { signal: controller.signal })
 			.then(async (response) => {
@@ -44,7 +50,6 @@
 			.catch(() => {
 				if (!controller.signal.aborted) complete = false;
 			});
-		return () => controller.abort();
 	});
 	const options = $derived(
 		[

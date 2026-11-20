@@ -142,10 +142,14 @@
 		return manualContext[id] ?? discoveredContext[id];
 	}
 	// The models with a context field and price boxes: every model a role runs
-	// on right now, picked or not. With Claude a role nobody picked a model for
-	// runs on its suggested one, and that one needs a price like any other.
+	// on right now, picked or not, and every model chosen on a universe or a
+	// story. With Claude a role nobody picked a model for runs on its suggested
+	// one, and that one needs a price like any other.
 	const chosenModels = $derived([
-		...new Set(ROLE_META.map((role) => runningModel(role.id)).filter(Boolean))
+		...new Set([
+			...ROLE_META.map((role) => runningModel(role.id)).filter(Boolean),
+			...data.scopeModels
+		])
 	]);
 	function modelLabel(id: string): string {
 		const price = modelPricing[id];

@@ -1674,6 +1674,7 @@
 					<AssistantModelMenu
 						info={modelInfo}
 						storyId={'storyId' in scope ? scope.storyId : null}
+						universeId={'universeId' in scope ? scope.universeId : null}
 						settings={chatSettings}
 						onChange={changeSettings}
 						close={() => (modelOpen = false)}

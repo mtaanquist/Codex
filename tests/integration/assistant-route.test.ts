@@ -43,7 +43,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	pool: pg.Pool;
 };
 const { resetRateLimits } = await import('#lib/server/rate-limit');
-const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
+const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniverseModels } =
 	await import('../../src/lib/server/llm/config');
 const { deleteChat, listChat, listChats, resolveChat } =
 	await import('../../src/lib/server/llm/chat-history');
@@ -916,6 +916,18 @@ describe('the model list', () => {
 			toolCallBudget: 8
 		});
 		await expectStatus(getModels(`?storyId=${storyId}`, other.id), 404);
+
+		// The same for a universe, and a story in it offers the universe's too.
+		await saveUniverseModels(db, universeId, { utility: 'universe-model' });
+		expect((await (await getModels(`?universeId=${universeId}`)).json()).models).toEqual([
+			'chat-model',
+			'universe-model'
+		]);
+		expect((await (await getModels(`?storyId=${storyId}`)).json()).models).toEqual([
+			'story-model',
+			'universe-model'
+		]);
+		await expectStatus(getModels(`?universeId=${universeId}`, other.id), 404);
 	});
 });
 

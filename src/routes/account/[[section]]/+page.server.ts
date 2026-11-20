@@ -34,6 +34,7 @@ import { saveLibraryView, savePreferences, userPreferences } from '#lib/server/p
 import { createUserInvite, deleteUserInviteCode, listUserInviteCodes } from '#lib/server/invites';
 import {
 	accountLlmView,
+	scopeChosenModels,
 	ASSISTANT_ROLES,
 	EFFORT_LEVELS,
 	type EffortLevel,
@@ -149,6 +150,9 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		preferences: await userPreferences(db, user.id),
 		pageSetup: await userPageSetup(db, user.id),
 		assistant: await accountLlmView(db, user.id),
+		// Models chosen only on a universe or a story, which need a context
+		// window and a price like the account's own.
+		scopeModels: await scopeChosenModels(db, user.id),
 		toolCallLimitMax: MAX_TOOL_BUDGET,
 		// The usage log pages through ?usage=N (zero-based, newest first).
 		assistantUsage: await recentAssistantUsage(
