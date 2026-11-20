@@ -1,4 +1,5 @@
 <script lang="ts" module>
+	import { untrack } from 'svelte';
 	import type {
 		ChatAttachment,
 		ChatModelInfo,
@@ -60,6 +61,8 @@
 		MAX_ATTACHMENTS,
 		type AttachmentKind,
 		CHAT_MISSING,
+		CHAT_STORED_HEADER,
+		NO_REPLY_TEXT,
 		CHAT_WINDOW_TURNS,
 		chatTitle,
 		newChatId,
@@ -75,6 +78,9 @@
 		SLASH_COMMANDS,
 		matchSlash,
 		slashName,
+		hasStrayArgs,
+		isSlashCommand,
+		slashQuery,
 		slashArgs,
 		type SlashCommand
 	} from '#lib/assistant-slash';
@@ -202,10 +208,22 @@
 	const opening = isStory
 		? `I've read your codex for ${scopeTitle}. Ask me about your characters, check continuity, or work a scene.`
 		: `I've read your codex for ${scopeTitle}. Ask me anything across its stories - characters, places, lore, or continuity between the books.`;
+	// A reply cut short before any text shows a line in its place, as a notice:
+	// it is not text to insert, and it is not sent back as history.
+	function standIn(
+		content: string,
+		stopped: StopReason | undefined,
+		proposals: number
+	): { content: string; notice?: boolean } {
+		if (content.trim() === '' && stopped && proposals === 0) {
+			return { content: NO_REPLY_TEXT, notice: true };
+		}
+		return { content };
+	}
 	function toMessages(stored: StoredChatTurn[]): Message[] {
 		const seeded = stored.map((m) => ({
 			role: m.role,
-			content: m.content,
+			...standIn(m.content, m.meta?.stopped, m.meta?.proposals?.length ?? 0),
 			reference: m.meta?.reference,
 			attachments: m.meta?.attachments,
 			proposals: m.meta?.proposals?.map((p) => ({ ...p })),
@@ -381,6 +399,7 @@
 		const creating = chatId === null;
 		// A chat message is stored before its reply, so a stopped send leaves its
 		// turn in the chat the next send reuses.
+		const hadEarlierSend = nextChatMayExist;
 		if (creating && storesTurnFirst) nextChatMayExist = true;
 		let reached = false;
 		// A chat this request started without the chip's choice (a recap) is
@@ -425,9 +444,14 @@
 				olderSummarised = false;
 				return 'gone';
 			}
-			if (response.status >= 400 && response.status < 500) {
+			if (
+				(response.status >= 400 && response.status < 500) ||
+				response.headers.get(CHAT_STORED_HEADER) === '0'
+			) {
 				appendToReply(failure || 'The Assistant could not take that request.');
 				markUnsaved(true);
+				// Nothing was stored by this send, so it left no chat behind.
+				if (creating && !hadEarlierSend) nextChatMayExist = false;
 				return 'refused';
 			}
 			if (!response.ok || !response.body) {
@@ -456,28 +480,30 @@
 				}
 			}
 			const reply = messages[messages.length - 1];
-			// The same test the server applies before it stores a reply. An error
-			// after done means storing it failed.
+			// The server sends done once it has stored the reply, and stores one
+			// that has text, a proposal or a cut-short note.
 			const stored =
 				finished &&
 				!streamError &&
 				reply?.role === 'assistant' &&
-				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
+				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0 || !!reply.stopped);
+			if (stored) {
+				Object.assign(reply, standIn(reply.content, reply.stopped, reply.proposals?.length ?? 0));
+			}
 			if (startedIn && stored) adopt(startedIn);
 			if (reply?.role === 'assistant' && !stored) {
 				// Not stored, so not sent back. Text that broke off can still be
 				// inserted; an error in its place cannot.
 				reply.unsaved = true;
 				if (reply.content.trim() === '') {
-					reply.content = streamError || 'The Assistant did not return a response.';
+					reply.content = streamError || NO_REPLY_TEXT;
 					reply.notice = true;
 				} else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
 			const reply = messages[messages.length - 1];
 			if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
-				// A Stop or a dropped connection after done lands while the server
-				// stores the reply, which it still does.
+				// A Stop or a dropped connection after done: the reply is stored.
 				if (startedIn) adopt(startedIn);
 			} else if (controller.signal.aborted) {
 				// A writer's own Stop keeps what arrived to insert, but the server
@@ -511,23 +537,25 @@
 	async function send(text?: string, typed?: string) {
 		const line = (text ?? input).trim();
 		if (!line) return;
-		// A line that starts with "/" is a command, not a message to the model.
-		if (line.startsWith('/')) {
+		// A line that starts with "/" is a command, not a message to the model;
+		// a space in front of the "/" makes it a message.
+		if ((text ?? input).startsWith('/')) {
 			// Commands wait for the reply in progress, and the line stays put.
-			if (busy || switching) return;
+			if ((busy || switching) && !runsWhileBusy(line)) return;
 			runSlashCommand(line);
 			return;
 		}
 		// A model just picked is saved before the message goes, so it answers;
 		// the draft is read after the wait, so nothing typed meanwhile is lost.
-		if (settingsSaving) await settingsSaving;
+		// A pick made during the wait queues another save, so wait for them all.
+		while (settingsSaving) await settingsSaving;
 		if (busy || switching) {
 			// A /who or /find line the chat box already gave up goes back.
 			if (typed) restoreDraft(typed, {});
 			return;
 		}
 		const question = (text ?? input).trim();
-		if (!question || question.startsWith('/')) return;
+		if (!question || (text ?? input).startsWith('/')) return;
 		// Text passed in (a starter suggestion) leaves the writer's draft alone.
 		if (text === undefined) {
 			input = '';
@@ -554,7 +582,7 @@
 				...(isStory ? { sceneId } : {}),
 				// A reply the server did not store is not sent back either.
 				messages: turns
-					.filter((m) => !m.unsaved && m.content.trim() !== '')
+					.filter((m) => !m.unsaved && !m.notice && m.content.trim() !== '')
 					.slice(-CHAT_WINDOW_TURNS)
 					.map((m) => ({
 						role: m.role,
@@ -578,7 +606,11 @@
 				...messages.slice(0, -2),
 				{
 					role: 'assistant',
-					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
+					// With no answer at all, the message may still have arrived.
+					content:
+						outcome === 'unreached'
+							? 'Your message may not have been sent. It is back in the chat box.'
+							: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
 					unsaved: true,
 					notice: true
 				}
@@ -597,7 +629,9 @@
 				}
 			];
 		}
-		if (outcome) restoreDraft(typed ?? question, turn);
+		// A message that starts with "/" keeps the space that made it a message.
+		if (outcome)
+			restoreDraft(typed ?? (question.startsWith('/') ? ` ${question}` : question), turn);
 	}
 
 	// Puts a message that did not go out back in the chat box, alongside
@@ -624,9 +658,36 @@
 
 	// `typed` says the line came from the chat box, which it then clears; a
 	// command chosen from the menu leaves the writer's draft alone.
+	// A model or context popover opened by a command returns focus to the chat
+	// box when it closes; one opened by its button returns it to the button.
+	let popoverFromComposer = false;
+	// These only open a popover, so they need not wait for a reply in progress.
+	// Only the bare command: anything else would answer with a message, and a
+	// message added now would take the rest of the reply being written.
+	function runsWhileBusy(raw: string): boolean {
+		if (switching || slashArgs(raw) !== '') return false;
+		const name = slashName(raw);
+		return name === 'context' || (name === 'model' && !settingsLocked);
+	}
 	function runSlashCommand(raw: string, typed = true) {
 		commandSelected = 0;
 		const name = slashName(raw);
+		// Not a command (a path, a subreddit, a typo): the line stays in the
+		// chat box to correct or reword.
+		if (!isSlashCommand(raw)) {
+			assistantSay(
+				`I do not know the command "/${name}". Type /help to see the commands. To send a message that starts with "/", put a space in front of it.`
+			);
+			return;
+		}
+		// Words after a command that takes none: more likely a message, and
+		// running the command would throw the line away.
+		if (typed && hasStrayArgs(raw)) {
+			assistantSay(
+				`/${name} takes nothing after it, so it was not run. To send this as a message, put a space in front of the "/".`
+			);
+			return;
+		}
 		const story = SLASH_COMMANDS.find((c) => c.name === name)?.scope === 'story';
 		if (story && !isStory) {
 			assistantSay(`/${name} works in a story. Open a story to use it.`);
@@ -641,6 +702,8 @@
 			commandsOpen = false;
 			modelOpen = false;
 			contextOpen = false;
+			// Opened from the chat box, so closing it goes back there.
+			popoverFromComposer = true;
 		}
 		switch (name) {
 			case 'history':
@@ -709,8 +772,6 @@
 							.join('\n')
 				);
 				break;
-			default:
-				assistantSay(`I do not know the command "/${name}". Type /help to see the commands.`);
 		}
 	}
 
@@ -731,7 +792,7 @@
 			return;
 		}
 		// Like a typed command, it waits for the reply in progress.
-		if (busy || switching) {
+		if ((busy || switching) && !runsWhileBusy(`/${command.name}`)) {
 			if (draft) {
 				flashActivity(
 					'failed',
@@ -950,6 +1011,13 @@
 	$effect(() => {
 		if (commandSelected >= shownCommands.length) commandSelected = 0;
 	});
+	// A new typed filter starts at its first match, so Enter never runs a row
+	// highlighted under the earlier filter.
+	const typedQuery = $derived(slashQuery(input));
+	$effect(() => {
+		void typedQuery;
+		commandSelected = 0;
+	});
 	function toggleCommands() {
 		commandsOpen = !commandsOpen;
 		commandQuery = '';
@@ -1008,9 +1076,16 @@
 	// until that message is stored. Saves run one after another so the newest
 	// lands last; if the newest fails, the earlier choice comes back.
 	let settingsSaving: Promise<void> | null = null;
+	// The choice the server last stored for the open chat, which a failed save
+	// goes back to; null until a save is in flight.
+	let storedSettings: ChatModelSettings | null = null;
+	let storedFor: string | null = null;
 	const settingsLocked = $derived(switching || (busy && !chatId));
 	$effect(() => {
-		if (settingsLocked) modelOpen = false;
+		if (settingsLocked && untrack(() => modelOpen)) {
+			modelOpen = false;
+			composer?.focus();
+		}
 	});
 	function changeSettings(next: ChatModelSettings) {
 		if (settingsLocked) return;
@@ -1020,9 +1095,16 @@
 	}
 	function saveSettings(next: ChatModelSettings, previous: ChatModelSettings) {
 		const savingFor = chatId;
+		// A save queued behind one in flight starts from an unsaved pick, so the
+		// stored choice is the one from before the first of them.
+		if (!settingsSaving || storedFor !== savingFor) {
+			storedSettings = previous;
+			storedFor = savingFor;
+		}
 		const failed = () => {
 			if (settingsSaving !== saving) return;
-			if (chatId === savingFor) chatSettings = previous;
+			if (chatId === savingFor)
+				chatSettings = (storedFor === savingFor && storedSettings) || previous;
 			flashActivity(
 				'failed',
 				'Could not save the model',
@@ -1039,6 +1121,7 @@
 			)
 			.then((response) => {
 				if (!response.ok) failed();
+				else if (storedFor === savingFor) storedSettings = next;
 			})
 			.catch(failed)
 			.finally(() => {
@@ -1070,6 +1153,7 @@
 		attachments = [...attachments, attachment];
 	}
 	function toggleContext() {
+		popoverFromComposer = false;
 		contextOpen = !contextOpen;
 		if (contextOpen) {
 			commandsOpen = false;
@@ -1208,11 +1292,9 @@
 	let deleting = $state(false);
 	async function deleteChat() {
 		if (deleting || busy || switching) return;
-		if (!chatId) {
-			// A stopped first send may have stored its question; it goes too.
-			if (nextChatMayExist) {
-				void fetch(`/api/assistant/chats/${nextChatId}`, { method: 'DELETE' }).catch(() => {});
-			}
+		// A new chat with nothing stored has nothing to delete. A stopped first
+		// send may have stored its question, so that one is asked about too.
+		if (!chatId && !nextChatMayExist) {
 			newChat();
 			return;
 		}
@@ -1225,12 +1307,15 @@
 		// The menu item that asked is gone by now, so focus goes back to the
 		// composer rather than being lost.
 		composer?.focus();
-		if (!ok || deleting || busy || switching || !chatId) return;
+		if (!ok || deleting || busy || switching) return;
+		const unopened = chatId === null;
+		if (unopened && !nextChatMayExist) return;
 		deleting = true;
-		const id = chatId;
+		const id = chatId ?? nextChatId;
 		try {
 			const response = await fetch(`/api/assistant/chats/${id}`, { method: 'DELETE' });
-			if (!response.ok) {
+			// The stopped send may have stored nothing, and then there is no chat.
+			if (!response.ok && !(unopened && response.status === 404)) {
 				flashActivity('failed', 'Could not delete the chat', 'Try again in a moment.');
 				return;
 			}
@@ -1516,12 +1601,24 @@
 					modelOpen = false;
 					contextOpen = false;
 				},
-				refocus: () =>
-					(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus()
+				refocus: () => {
+					if (document.activeElement === composer) return;
+					if (!commandsOpen && popoverFromComposer) composer?.focus();
+					else
+						(commandsOpen ? commandsTrigger : contextOpen ? contextTrigger : modelTrigger)?.focus();
+				}
 			}}
 		>
 			{#if commandsOpen || slashOpen}
-				<div class="composer-pop">
+				<!-- A press on the typed menu (its scrollbar included) must not blur
+				     the chat box, which would close it. -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="composer-pop"
+					onmousedown={(event) => {
+						if (!commandsOpen) event.preventDefault();
+					}}
+				>
 					<AssistantCommandMenu
 						id={commandListId}
 						commands={shownCommands}
@@ -1548,7 +1645,7 @@
 						model={chipModel || undefined}
 						onAdd={addAttachment}
 						onClose={() => {
-							contextTrigger?.focus();
+							(popoverFromComposer ? composer : contextTrigger)?.focus();
 							contextOpen = false;
 						}}
 					/>
@@ -1558,10 +1655,11 @@
 				<div class="composer-pop">
 					<AssistantModelMenu
 						info={modelInfo}
+						storyId={'storyId' in scope ? scope.storyId : null}
 						settings={chatSettings}
 						onChange={changeSettings}
 						close={() => (modelOpen = false)}
-						refocus={() => (modelTrigger ?? composer)?.focus()}
+						refocus={() => ((popoverFromComposer ? composer : modelTrigger) ?? composer)?.focus()}
 					/>
 				</div>
 			{/if}
@@ -1580,6 +1678,16 @@
 					oninput={grow}
 					onkeydown={onKeydown}
 					onblur={() => (slashDismissed = input)}></textarea>
+				<!-- A textarea cannot be a combobox, so the highlighted command is
+				     read out from here as the writer types or moves through the list. -->
+				<span class="visually-hidden" aria-live="polite">
+					{#if slashOpen && shownCommands[commandSelected]}
+						/{shownCommands[commandSelected].name}, {shownCommands[commandSelected].detail}
+						({commandSelected + 1} of {shownCommands.length})
+					{:else if slashOpen}
+						No matching command
+					{/if}
+				</span>
 				<div class="composer-row">
 					<div class="composer-tools">
 						<button
@@ -1620,6 +1728,7 @@
 							disabled={settingsLocked}
 							onclick={() => {
 								modelOpen = !modelOpen;
+								popoverFromComposer = false;
 								if (modelOpen) {
 									commandsOpen = false;
 									contextOpen = false;

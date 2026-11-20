@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { isHttpError } from '@sveltejs/kit';
 import type pg from 'pg';
-import { scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	reviewSuggestions,
+	revisions,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import type { Provider, StreamEvent } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase } from './test-db';
@@ -52,6 +59,7 @@ const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
 const modelsRoute = await import('../../src/routes/api/assistant/models/+server');
 const contextRoute = await import('../../src/routes/api/assistant/context/+server');
+const rereadRoute = await import('../../src/routes/api/assistant/pattern-reread/+server');
 
 let userId: string;
 let universeId: string;
@@ -350,6 +358,41 @@ describe('assistantSseResponse', () => {
 			{ role: 'assistant', content: 'What I read so far.', meta: { stopped: 'budget' } }
 		]);
 	});
+
+	it('stores a reply that was cut short before any text, so its note survives a reload', async () => {
+		providerSlot.current = streamingProvider(async function* () {
+			yield { type: 'stopped', reason: 'context' };
+			yield { type: 'done' };
+		});
+		const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
+		expect(parseFrames(await response.text())).toEqual([
+			{ type: 'stopped', reason: 'context' },
+			{ type: 'done' }
+		]);
+		expect(await listChat(db, userId, chatId)).toEqual([
+			{ role: 'assistant', content: '', meta: { stopped: 'context' } }
+		]);
+	});
+
+	it('sends an error and no done when the reply cannot be stored', async () => {
+		providerSlot.current = streamingProvider(async function* () {
+			yield { type: 'token', text: 'Lost.' };
+			yield { type: 'done' };
+		});
+		const insert = vi.spyOn(db, 'insert').mockImplementationOnce(() => {
+			throw new Error('the database went away');
+		});
+		try {
+			const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
+			expect(parseFrames(await response.text())).toEqual([
+				{ type: 'token', text: 'Lost.' },
+				{ type: 'error', message: 'The Assistant could not complete that request.' }
+			]);
+		} finally {
+			insert.mockRestore();
+		}
+		expect(await listChat(db, userId, chatId)).toEqual([]);
+	});
 });
 
 describe('assistant gates', () => {
@@ -646,6 +689,44 @@ describe('chats over the endpoints', () => {
 		expect(models.at(-1)).toBe('chat-model');
 	});
 
+	it('sends two user turns in a row as one, so the turns alternate', async () => {
+		const roles: string[][] = [];
+		const contents: string[][] = [];
+		const answer = async function* (): AsyncIterable<StreamEvent> {
+			yield { type: 'token', text: 'Answer.' };
+			yield { type: 'done' };
+		};
+		const record = (messages: { role: string; content: string }[]) => {
+			const turns = messages.filter((m) => m.role !== 'system');
+			roles.push(turns.map((m) => m.role));
+			contents.push(turns.map((m) => m.content));
+		};
+		providerSlot.current = {
+			...streamingProvider(answer),
+			chatStream: (req) => {
+				record(req.messages);
+				return answer();
+			},
+			async respond(req) {
+				record(req.messages);
+				return { content: 'Answer.', toolCalls: [] };
+			}
+		};
+		// The reply to the first question was stopped, so it is not in the history.
+		await (
+			await chatPost({
+				storyId,
+				chatId,
+				messages: [
+					{ role: 'user', content: 'First question.' },
+					{ role: 'user', content: 'Second question.' }
+				]
+			})
+		).text();
+		expect(roles.at(-1)).toEqual(['user']);
+		expect(contents.at(-1)![0]).toBe('First question.\n\nSecond question.');
+	});
+
 	it('sends attachments with the newest message only, and stores them with it', async () => {
 		const sent: string[][] = [];
 		const answer = async function* (): AsyncIterable<StreamEvent> {
@@ -689,7 +770,9 @@ describe('chats over the endpoints', () => {
 			})
 		).text();
 		const last = sent.at(-1)!;
-		expect(last[0]).toContain('(The writer attached scene "Scene 1" to this message.)');
+		expect(last[0]).toContain(
+			'(The writer attached scene "Scene 1" to this message. The text was sent with that message and is not repeated here.)'
+		);
 		// A message without attachments says nothing about them.
 		expect(
 			(
@@ -706,14 +789,29 @@ describe('chats over the endpoints', () => {
 			[userId]
 		);
 		const before = (await listChats(db, userId, { storyId })).length;
-		await expect(
-			chatPost({
-				storyId,
-				newChatId: '22222222-2222-4222-8222-222222222222',
-				messages: [{ role: 'user', content: 'Hi.' }]
-			})
-		).rejects.toThrow();
+		const response = await chatPost({
+			storyId,
+			newChatId: '22222222-2222-4222-8222-222222222222',
+			messages: [{ role: 'user', content: 'Hi.' }]
+		});
+		expect(response.status).toBe(500);
 		expect(await listChats(db, userId, { storyId })).toHaveLength(before);
+	});
+
+	it('says the message was not stored when a step before storing it fails', async () => {
+		await pool.query(
+			`update users set llm_config = llm_config || '{"apiKeyEnc":"not-a-secret"}'::jsonb where id = $1`,
+			[userId]
+		);
+		const response = await chatPost({
+			storyId,
+			chatId,
+			messages: [{ role: 'user', content: 'Hi.' }]
+		});
+		expect(response.status).toBe(500);
+		expect(response.headers.get('x-chat-stored')).toBe('0');
+		expect((await response.json()).message).toMatch(/before your message was stored/);
+		expect(await listChat(db, userId, chatId)).toEqual([]);
 	});
 
 	it("refuses to save the model on another writer's chat", async () => {
@@ -757,9 +855,10 @@ describe('chats over the endpoints', () => {
 });
 
 describe('the model list', () => {
-	function getModels() {
+	function getModels(query = '', as = userId) {
 		return modelsRoute.GET({
-			locals: { user: { id: userId } }
+			url: new URL(`http://localhost/api/assistant/models${query}`),
+			locals: { user: { id: as } }
 		} as unknown as Parameters<typeof modelsRoute.GET>[0]) as Promise<Response>;
 	}
 
@@ -790,6 +889,32 @@ describe('the model list', () => {
 		await configure(false);
 		await expectStatus(getModels(), 403);
 	});
+
+	it("offers a model set for the story the panel is on, to that story's writer only", async () => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {}),
+			async listModels() {
+				throw new Error('no listing');
+			}
+		};
+		await saveStoryLlmOverride(db, storyId, { models: { chat: 'story-model' } });
+		expect((await (await getModels(`?storyId=${storyId}`)).json()).models).toEqual(['story-model']);
+		expect((await (await getModels()).json()).models).toEqual(['chat-model']);
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'O', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await saveAccountLlmConfig(db, other.id, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		});
+		await expectStatus(getModels(`?storyId=${storyId}`, other.id), 404);
+	});
 });
 
 describe('the context picker', () => {
@@ -817,6 +942,68 @@ describe('the context picker', () => {
 	it('refuses while the Assistant is off', async () => {
 		await configure(false);
 		await expectStatus(getContext('q='), 403);
+	});
+});
+
+describe('the pattern re-read endpoint', () => {
+	function rereadPost(body: object, as = userId) {
+		const request = new Request('http://localhost/api/assistant/pattern-reread', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		return rereadRoute.POST({
+			request,
+			locals: { user: { id: as } }
+		} as unknown as Parameters<typeof rereadRoute.POST>[0]) as Promise<Response>;
+	}
+
+	async function suggestion(): Promise<string> {
+		const [revision] = await db
+			.insert(revisions)
+			.values({
+				entityType: 'scene',
+				entityId: sceneId,
+				bodyMd: 'x',
+				wordCount: 1,
+				reason: 'autosave'
+			})
+			.returning({ id: revisions.id });
+		const [row] = await db
+			.insert(reviewSuggestions)
+			.values({
+				storyId,
+				sceneId,
+				assistant: true,
+				baseRevisionId: revision.id,
+				rangeStart: 0,
+				rangeEnd: 3,
+				replacement: 'A'
+			})
+			.returning({ id: reviewSuggestions.id });
+		return row.id;
+	}
+
+	it('wants a suggestion id, and one that exists', async () => {
+		await expectStatus(rereadPost({}), 400);
+		await expectStatus(rereadPost({ suggestionId: 'nope' }), 400);
+		await expectStatus(rereadPost({ suggestionId: '11111111-1111-4111-8111-111111111111' }), 404);
+	});
+
+	it('is for the story owner only, with the Assistant on', async () => {
+		const suggestionId = await suggestion();
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'Oz', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await expectStatus(rereadPost({ suggestionId }, other.id), 404);
+
+		// An edit that is not an accepted pattern edit is skipped without a request.
+		const skipped = await rereadPost({ suggestionId });
+		expect(await skipped.json()).toEqual({ skipped: 'gone' });
+
+		await configure(false);
+		await expectStatus(rereadPost({ suggestionId }), 403);
 	});
 });
 

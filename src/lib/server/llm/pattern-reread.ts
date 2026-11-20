@@ -1,6 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '../auth';
-import { reviewComments, reviewSuggestions } from '../db/schema';
+import { reviewComments, reviewSuggestions, reviewThreads } from '../db/schema';
 import { acceptedPatternEdit } from '../review';
 import { paragraphWindow } from '#lib/paragraphs';
 import { assembleReviewReplyContext, buildSystemMessage } from './context/assemble';
@@ -48,14 +48,17 @@ export async function rereadPatternEdit(
 	if (reread.size > REREAD_MEMORY) reread.delete(reread.values().next().value!);
 	if (!edit.spot) return { skipped: 'not-found' };
 	const [note] = await db
-		.select({ body: reviewComments.bodyMd })
+		.select({ body: reviewComments.bodyMd, resolvedAt: reviewThreads.resolvedAt })
 		.from(reviewComments)
+		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
 		.where(
 			and(eq(reviewComments.threadId, edit.patternThreadId), eq(reviewComments.assistant, true))
 		)
 		.orderBy(asc(reviewComments.createdAt))
 		.limit(1);
 	if (!note) return { skipped: 'gone' };
+	// A resolved note takes no more edits, so there is nothing to ask for.
+	if (note.resolvedAt) return { skipped: 'done' };
 
 	const window = paragraphWindow(edit.bodyMd, edit.spot.start, edit.spot.end, NEIGHBOURS);
 	const task: ChatMessage = {

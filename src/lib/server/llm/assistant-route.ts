@@ -112,8 +112,8 @@ export async function requireChat(
 }
 
 // Streams a gateway turn back as Server-Sent Events. The reply accumulates
-// and persists to the stored conversation only when the stream ends cleanly;
-// an aborted or failed turn stores nothing. Proposals (split cards) and a
+// and persists to the stored conversation only when the stream ends cleanly,
+// before the done frame is sent; an aborted or failed turn stores nothing. Proposals (split cards) and a
 // cut-short note ride the stream and persist with the reply.
 export function assistantSseResponse(options: {
 	request: Request;
@@ -164,12 +164,16 @@ export function assistantSseResponse(options: {
 					messages: options.messages,
 					signal: requestSignal(request)
 				})) {
-					controller.enqueue(frame(event));
+					// done goes out only once the reply is stored, so a panel that
+					// reads it can count the reply as part of the chat.
+					if (event.type !== 'done') controller.enqueue(frame(event));
 					if (event.type === 'token') reply += event.text;
 					else if (event.type === 'proposal') proposals.push(event.proposal);
 					else if (event.type === 'stopped') stopped = event.reason;
 					if (event.type === 'done') {
-						if (reply.trim() || proposals.length > 0) {
+						// A reply cut short with no text is kept, empty, for its note;
+						// the panel shows a line in its place.
+						if (reply.trim() || proposals.length > 0 || stopped) {
 							const meta = {
 								...(proposals.length > 0 ? { proposals } : {}),
 								...(stopped ? { stopped } : {})
@@ -181,6 +185,7 @@ export function assistantSseResponse(options: {
 								meta: Object.keys(meta).length > 0 ? meta : null
 							});
 						}
+						controller.enqueue(frame(event));
 						break;
 					}
 					if (event.type === 'error') break;

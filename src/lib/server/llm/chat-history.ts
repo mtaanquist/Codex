@@ -345,6 +345,20 @@ export function fitChatTurns(
 	return kept;
 }
 
+// A reply that was stopped or failed is not stored, so the transcript can hold
+// two user turns in a row. Some OpenAI-compatible servers refuse turns that do
+// not alternate, so back-to-back turns of one role go out as one.
+export function mergeAdjacentTurns(turns: ChatMessage[]): ChatMessage[] {
+	const merged: ChatMessage[] = [];
+	for (const turn of turns) {
+		const last = merged[merged.length - 1];
+		if (last && last.role === turn.role && (turn.role === 'user' || turn.role === 'assistant')) {
+			merged[merged.length - 1] = { ...last, content: `${last.content}\n\n${turn.content}` };
+		} else merged.push(turn);
+	}
+	return merged;
+}
+
 export function isForeignKeyViolation(err: unknown): boolean {
 	for (let e = err as { code?: unknown; cause?: unknown } | undefined; e; e = e.cause as typeof e) {
 		if (e.code === '23503') return true;

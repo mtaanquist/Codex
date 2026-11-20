@@ -1,5 +1,6 @@
-import { error, type RequestHandler } from '@sveltejs/kit';
+import { error, isHttpError, type RequestHandler } from '@sveltejs/kit';
 import { db } from '#lib/server/db';
+import { errorFields, logEvent } from '#lib/server/log';
 import {
 	assistantSseResponse,
 	readAssistantPayload,
@@ -10,6 +11,7 @@ import {
 } from '#lib/server/llm/assistant-route';
 import {
 	CHAT_MISSING,
+	CHAT_STORED_HEADER,
 	attachmentKey,
 	chatTitle,
 	readAttachments,
@@ -26,6 +28,7 @@ import {
 	appendChat,
 	dropChatIfEmpty,
 	getChat,
+	mergeAdjacentTurns,
 	setChatSettings,
 	type ChatScope
 } from '#lib/server/llm/chat-history';
@@ -177,7 +180,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	} catch (err) {
 		if (chat.created) await dropChatIfEmpty(db, chatId).catch(() => {});
-		throw err;
+		if (isHttpError(err)) throw err;
+		// An unexpected failure here is before the message was stored; say so,
+		// so the panel puts it back in the chat box rather than count it sent.
+		logEvent('error', 'request.error', {
+			method: request.method,
+			path: '/api/assistant/chat',
+			status: 500,
+			...errorFields(err)
+		});
+		return Response.json(
+			{ message: 'Something went wrong before your message was stored. Try again in a moment.' },
+			{ status: 500, headers: { [CHAT_STORED_HEADER]: '0' } }
+		);
 	}
 
 	// The assembled world rides as a system message after the gateway's persona
@@ -216,8 +231,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				]
 			: fitted.messages;
 	const messages: ChatMessage[] = context
-		? [buildSystemMessage(context, { tools: true }), ...fittedMessages]
-		: fittedMessages;
+		? [buildSystemMessage(context, { tools: true }), ...mergeAdjacentTurns(fittedMessages)]
+		: mergeAdjacentTurns(fittedMessages);
 
 	return assistantSseResponse({
 		request,

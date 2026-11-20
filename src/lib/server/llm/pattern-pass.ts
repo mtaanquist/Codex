@@ -369,9 +369,19 @@ async function surveyUnit(
 				return surveyUnit(db, req, { ...unit, whole: false }, entry, open, failures, save, deps);
 			}
 		} else if (unit.chapters) {
-			const partial = (entry.partial ??= { parts: 0, found: [] });
+			const partial = (entry.partial ??= { parts: 0, found: [], sceneIds: [] });
+			// A part is done when every scene in it was surveyed, so a chapter the
+			// writer added, removed or moved since does not shift the count. State
+			// saved before the scene ids were kept only has the count.
+			const surveyed = new Set(
+				partial.sceneIds ??
+					unit.chapters
+						.slice(0, partial.parts)
+						.flat()
+						.map((scene) => scene.id)
+			);
 			for (const [index, part] of unit.chapters.entries()) {
-				if (index < partial.parts) continue;
+				if (part.every((scene) => surveyed.has(scene.id))) continue;
 				const known = widestFirst(partial.found)
 					.slice(0, KNOWN_CARRIED)
 					.map((p) => ({ name: p.name, description: p.description }));
@@ -384,7 +394,9 @@ async function surveyUnit(
 						message: `The search for repeated habits skipped "${part[0]?.chapterTitle ?? 'a chapter'}": ${err instanceof Error ? err.message : String(err)}`
 					});
 				}
+				for (const scene of part) surveyed.add(scene.id);
 				partial.parts = index + 1;
+				partial.sceneIds = [...surveyed];
 				await save();
 			}
 			found = partial.found;
@@ -431,7 +443,11 @@ async function ensureNote(
 ): Promise<boolean> {
 	if (pattern.threadId) return true;
 	const order = unit.scenes.map((s) => s.id);
-	const first = [...pattern.sceneIds].sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+	// A scene deleted since the survey is not a place to leave the note.
+	const first = pattern.sceneIds
+		.filter((id) => order.includes(id))
+		.sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+	if (!first) return false;
 	const more =
 		pattern.sceneIds.length > APPLY_SCENES_PER_PATTERN
 			? `\n\nFixes are suggested in the first ${APPLY_SCENES_PER_PATTERN} of those scenes.`
@@ -563,7 +579,9 @@ export async function runPatternPass(
 				if (!pattern.threadId) continue;
 			}
 			const order = unit.scenes.map((s) => s.id);
-			const fixIn = [...pattern.sceneIds]
+			// Scenes deleted since the survey do not take up places in the cut.
+			const fixIn = pattern.sceneIds
+				.filter((id) => byId.has(id))
 				.sort((a, b) => order.indexOf(a) - order.indexOf(b))
 				.slice(0, APPLY_SCENES_PER_PATTERN);
 			for (const sceneId of fixIn) {

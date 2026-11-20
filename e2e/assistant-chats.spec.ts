@@ -272,7 +272,7 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 	await composer.fill('Who lit the fire?');
 	await composer.press('Enter');
 	await expect.poll(() => ids.length).toBe(1);
-	await expect(panel.locator('.chat-scroll')).toContainText('something went wrong');
+	await expect(panel.locator('.chat-scroll')).toContainText('may not have been sent');
 	await composer.fill('And why?');
 	await composer.press('Enter');
 	await expect(panel.locator('.chat-scroll')).toContainText('Nobody knows.');
@@ -284,7 +284,7 @@ test('a question after a stopped first send lands in the same chat', async ({ pa
 // messages, and a new chat starts on the default again.
 test('the model chip sets the model for one chat', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Model');
-	await page.route('**/api/assistant/models', (route) =>
+	await page.route('**/api/assistant/models*', (route) =>
 		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
 	);
 	const settings: unknown[] = [];
@@ -377,6 +377,53 @@ test('context added from the picker goes with the next message', async ({ page }
 	expect(posted[1].at(-1)?.attachments).toBeUndefined();
 });
 
+// A line that only looks like a command stays in the chat box, a space in
+// front sends it as a message, and a new typed filter highlights its first match.
+test('a message starting with a slash is not lost, and the typed menu follows the filter', async ({
+	page
+}) => {
+	const { panel } = await freshStoryPanel(page, 'Slash');
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+
+	await composer.fill('/r/fantasy says this trope is overdone');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'I do not know the command "/r/fantasy"'
+	);
+	await expect(composer).toHaveValue('/r/fantasy says this trope is overdone');
+
+	// Words after a command that takes none are kept too, and it does not run.
+	await composer.fill('/new idea for chapter three');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'/new takes nothing after it'
+	);
+	await expect(composer).toHaveValue('/new idea for chapter three');
+	await expect(panel.locator('.chat-scroll')).toContainText('I do not know the command');
+
+	const posted: { content: string }[][] = [];
+	await page.route('**/api/assistant/chat', (route) => {
+		posted.push(route.request().postDataJSON().messages);
+		return route.fulfill({ status: 429, contentType: 'application/json', body: '{}' });
+	});
+	await composer.fill(' /r/fantasy says this trope is overdone');
+	await composer.press('Enter');
+	await expect.poll(() => posted.length).toBe(1);
+	expect(posted[0].at(-1)?.content).toBe('/r/fantasy says this trope is overdone');
+	// Turned away, it comes back with the space that keeps it a message.
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message was not sent.'
+	);
+	await expect(composer).toHaveValue(' /r/fantasy says this trope is overdone');
+
+	// Arrow down the full list, then narrow it: the highlight is the first match.
+	await composer.fill('/');
+	await composer.press('ArrowDown');
+	await composer.pressSequentially('h');
+	await expect(composer).toHaveValue('/h');
+	await expect(composer).toHaveAttribute('aria-activedescendant', /-history$/);
+});
+
 test('the command menu and Tab keep a draft, and a refused send comes back', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Draft');
 	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
@@ -414,13 +461,49 @@ test('the command menu and Tab keep a draft, and a refused send comes back', asy
 	await expect(composer).toHaveValue('Where does it end?');
 	await expect(panel.locator('.msg.user')).toHaveCount(0);
 
-	// So does one that never reaches the server.
+	// So does one the server could not store.
+	await page.unroute('**/api/assistant/chat');
+	await page.route('**/api/assistant/chat', (route) =>
+		route.fulfill({
+			status: 500,
+			contentType: 'application/json',
+			headers: { 'x-chat-stored': '0' },
+			body: JSON.stringify({ message: 'Something went wrong before your message was stored.' })
+		})
+	);
+	await composer.fill('What about the start?');
+	await composer.press('Enter');
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message was not sent. Something went wrong before'
+	);
+	await expect(composer).toHaveValue('What about the start?');
+	await expect(panel.locator('.msg.user')).toHaveCount(0);
+
+	// So does one that never reaches the server. Its first message may have
+	// started the chat, so deleting the chat asks first.
 	await page.unroute('**/api/assistant/chat');
 	await page.route('**/api/assistant/chat', (route) => route.abort('internetdisconnected'));
 	await composer.fill('And the middle?');
 	await composer.press('Enter');
 	await expect(composer).toHaveValue('And the middle?');
 	await expect(panel.locator('.msg.user')).toHaveCount(0);
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText(
+		'Your message may not have been sent.'
+	);
+	const deletes: string[] = [];
+	await page.route('**/api/assistant/chats/*', (route) => {
+		if (route.request().method() !== 'DELETE') return route.continue();
+		deletes.push(route.request().url());
+		return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+	});
+	await composer.fill('/delete');
+	await composer.press('Enter');
+	await expect(page.getByRole('alertdialog')).toContainText('Delete this chat?');
+	expect(deletes).toHaveLength(0);
+	await confirmPrompt(page, 'Delete chat');
+	await expect.poll(() => deletes.length).toBe(1);
+	await expect(panel.locator('.msg.assistant-msg').last()).toContainText("I've read your codex");
+	await page.unroute('**/api/assistant/chats/*');
 
 	// A /rewrite that cannot go ahead keeps the line.
 	await composer.fill('/rewrite cut the adverbs');
@@ -451,7 +534,7 @@ test('a failed model save reverts the chip, and a suggestion keeps the draft', a
 	await expect(panel.locator('.msg.user')).toHaveCount(1);
 	await expect(composer).toHaveValue('My own question');
 
-	await page.route('**/api/assistant/models', (route) =>
+	await page.route('**/api/assistant/models*', (route) =>
 		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
 	);
 	await page.route('**/api/assistant/chats/*', (route) =>
@@ -471,7 +554,7 @@ test('a failed model save reverts the chip, and a suggestion keeps the draft', a
 // command menu's headings and options do not share ids.
 test('a catch-up keeps the model picked for a new chat', async ({ page }) => {
 	const { panel } = await freshStoryPanel(page, 'Recap model');
-	await page.route('**/api/assistant/models', (route) =>
+	await page.route('**/api/assistant/models*', (route) =>
 		route.fulfill({ json: { models: ['big-model', 'small-model'], complete: true } })
 	);
 	const recapId = '00000000-0000-4000-8000-000000000002';
@@ -638,6 +721,10 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await composer.press('Enter');
 	await expect(chat).toContainText('Commands you can type here');
 
+	// The highlighted command is read out as it is typed.
+	await composer.fill('/cont');
+	await expect(panel.locator('.composer [aria-live="polite"]')).toContainText('/context');
+
 	await composer.fill('Where is the boat?');
 	await composer.press('Enter');
 	await expect.poll(() => sent.length).toBe(1);
@@ -645,7 +732,89 @@ test('help text is not sent back, and waits while a reply is on its way', async 
 	await composer.fill('/who');
 	await composer.press('Enter');
 	await expect(composer).toHaveValue('/who');
+	// Words after it would be answered with a message, so that line waits too.
+	await composer.fill('/context chapter three');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('/context chapter three');
+	await expect(chat).not.toContainText('takes nothing after it');
+	// Adding context only opens a list, so it does not wait; closing the list
+	// goes back to the chat box it was opened from.
+	await composer.fill('/context');
+	await composer.press('Enter');
+	await expect(composer).toHaveValue('');
+	const search = panel.getByRole('combobox', { name: 'Search for context to add' });
+	await expect(search).toBeFocused();
+	await search.press('Escape');
+	await expect(composer).toBeFocused();
 	release();
 	await expect(chat).toContainText('At the quay.');
 	await expect(chat).not.toContainText('Name who to look up');
+});
+
+// A stored reply that was cut short before any text shows a line in its
+// place, which is not offered as text to insert and is not sent back with the
+// next question.
+test('a stored reply cut short with no text shows a line that is not sent back', async ({
+	page
+}) => {
+	await gotoReady(page, '/');
+	const name = `Cut short ${Date.now()}`;
+	await pickFromLibraryMenu(page, 'New universe');
+	await page.getByLabel('New universe').fill(name);
+	await page.getByRole('button', { name: 'Create universe' }).click();
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${name} - settings`);
+
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	let universeId: string;
+	try {
+		const { rows } = await pool.query<{ id: string; owner_id: string }>(
+			'select id, owner_id from universes where name = $1',
+			[name]
+		);
+		universeId = rows[0].id;
+		const chat = await pool.query<{ id: string }>(
+			`insert into assistant_chats (universe_id, user_id, title) values ($1, $2, 'First') returning id`,
+			[universeId, rows[0].owner_id]
+		);
+		const turns: [string, string, string | null, string][] = [
+			['user', 'First', null, '2026-11-01T10:00:00Z'],
+			['assistant', '', JSON.stringify({ stopped: 'context' }), '2026-11-01T10:00:01Z']
+		];
+		for (const [role, content, meta, at] of turns) {
+			await pool.query(
+				`insert into assistant_chat_messages (chat_id, universe_id, user_id, role, content, meta, created_at)
+				 values ($1, $2, $3, $4, $5, $6, $7)`,
+				[chat.rows[0].id, universeId, rows[0].owner_id, role, content, meta, at]
+			);
+		}
+	} finally {
+		await pool.end();
+	}
+
+	await gotoReady(page, `/universes/${universeId}/insights`);
+	const panel = page.locator('.assistant');
+	const cut = panel.locator('.msg.assistant-msg').last();
+	await expect(cut).toContainText('The Assistant did not return a response.');
+	await expect(cut.locator('.msg-insert')).toHaveCount(0);
+
+	const sent: { role: string; content: string }[][] = [];
+	await page.route('**/api/assistant/chat', async (route) => {
+		const body = route.request().postDataJSON() as {
+			chatId?: string;
+			messages: { role: string; content: string }[];
+		};
+		sent.push(body.messages);
+		await route.fulfill({
+			status: 200,
+			headers: { 'content-type': 'text/event-stream', 'x-chat-id': body.chatId ?? '' },
+			body:
+				`data: ${JSON.stringify({ type: 'token', text: 'Here.' })}\n\n` +
+				`data: ${JSON.stringify({ type: 'done' })}\n\n`
+		});
+	});
+	const composer = page.getByPlaceholder('Ask about this universe', { exact: false });
+	await composer.fill('Second');
+	await composer.press('Enter');
+	await expect(panel.locator('.chat-scroll')).toContainText('Here.');
+	expect(sent[0].map((m) => m.content)).toEqual(['First', 'Second']);
 });

@@ -4,6 +4,8 @@ import {
 	matchSlash,
 	slashName,
 	slashArgs,
+	isSlashCommand,
+	hasStrayArgs,
 	commandsForScope,
 	SLASH_COMMANDS,
 	matchCommands,
@@ -107,5 +109,35 @@ describe('matchCommands', () => {
 
 	it('lists every command for an empty query', () => {
 		expect(matchCommands('')).toEqual(SLASH_COMMANDS);
+	});
+});
+
+describe('isSlashCommand', () => {
+	it('knows the commands and their older names, whatever follows', () => {
+		expect(isSlashCommand('/write a storm scene')).toBe(true);
+		expect(isSlashCommand('/Help')).toBe(true);
+		expect(isSlashCommand('/clear')).toBe(true);
+		expect(isSlashCommand('/catch-up')).toBe(true);
+	});
+
+	it('is false for a line that only looks like a command', () => {
+		expect(isSlashCommand('/r/fantasy says this is overdone')).toBe(false);
+		expect(isSlashCommand('/reveiw')).toBe(false);
+		expect(isSlashCommand('/')).toBe(false);
+	});
+});
+
+describe('hasStrayArgs', () => {
+	it('is true for words after a command that takes none', () => {
+		expect(hasStrayArgs('/help me tighten this paragraph')).toBe(true);
+		expect(hasStrayArgs('/new idea for chapter 3')).toBe(true);
+		expect(hasStrayArgs('/clear the air between them')).toBe(true);
+	});
+
+	it('is false for a bare command and for one that takes words', () => {
+		expect(hasStrayArgs('/help')).toBe(false);
+		expect(hasStrayArgs('/new  ')).toBe(false);
+		expect(hasStrayArgs('/write a storm scene')).toBe(false);
+		expect(hasStrayArgs('/who Mira')).toBe(false);
 	});
 });

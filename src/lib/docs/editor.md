@@ -144,6 +144,8 @@ The row at the bottom of the chat box holds the + for adding context, the comman
 - `/model` picks the model for this chat.
 - `/help` lists these commands.
 
+To send a message that itself starts with "/", put a space in front of it.
+
 On the universe Plan page the chat works across all the stories, so it offers the commands that fit there: `/context`, `/continuity-review`, `/enrich`, `/who`, `/find`, `/new`, `/history`, `/delete`, `/model`, and `/help`. Its chats are separate from the chats in each story.
 
 To choose which model answers your messages in this chat, select the model name at the bottom of the chat box. Pick one from the list your endpoint offers, or "Default" to use the model set for the story or on your account page. On Claude models you can also set the effort: higher effort gives more considered answers but takes longer and costs more. The choice belongs to this chat only; a new chat starts on the default again. Catch me up, `/write` and `/rewrite` keep using the models set for them on your account page.

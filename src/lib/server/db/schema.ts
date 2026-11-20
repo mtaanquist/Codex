@@ -1483,6 +1483,8 @@ export type PatternUnitState = {
 	// from the next part rather than paying for the earlier ones again.
 	partial?: {
 		parts: number;
+		// The scenes surveyed so far. Absent in state saved before it was kept.
+		sceneIds?: string[];
 		found: { name: string; description: string; sceneIds: string[]; examples: string[] }[];
 	};
 };

@@ -190,6 +190,20 @@ describe('resolveAttachments', () => {
 		).toEqual([]);
 	});
 
+	it('names each item as it is now, not as the browser sent it', async () => {
+		await db.update(scenes).set({ title: 'The broken gate' }).where(eq(scenes.id, sceneId));
+		const resolved = await resolveAttachments(
+			db,
+			userId,
+			[
+				{ kind: 'scene', id: sceneId, label: 'The gate' },
+				{ kind: 'entity', id: characterId, label: 'someone\nelse' }
+			],
+			BIG
+		);
+		expect(resolved.map((item) => item.attachment.label)).toEqual(['The broken gate', 'Mira']);
+	});
+
 	it('cuts what does not fit and says so', async () => {
 		await db
 			.update(scenes)
@@ -275,6 +289,14 @@ describe('searchContext', () => {
 		expect((await searchContext(db, userId, '')).map((item) => item.label)).toEqual(['Salt Road']);
 		expect(await searchContext(db, userId, 'gate')).toEqual([]);
 		expect(await storyContents(db, userId, storyId)).toBeNull();
+	});
+
+	it('finds a chapter with no title by the name it is shown under', async () => {
+		await db.insert(chapters).values({ storyId, position: 2, title: '' });
+		const found = await searchContext(db, userId, 'chapter 2');
+		expect(found.filter((item) => item.kind === 'chapter').map((item) => item.label)).toEqual([
+			'Chapter 2'
+		]);
 	});
 
 	it('matches % and _ literally', async () => {

@@ -195,6 +195,26 @@ export function matchCommands(query: string, universe = false): SlashCommand[] {
 		: scoped;
 }
 
+// Older names the panel still runs, kept out of the menu.
+const SLASH_ALIASES = ['clear', 'catch-up'];
+
+/** True when a typed "/name ..." line names a command the panel can run. */
+export function isSlashCommand(raw: string): boolean {
+	const name = slashName(raw);
+	return SLASH_COMMANDS.some((command) => command.name === name) || SLASH_ALIASES.includes(name);
+}
+
+/**
+ * True when a typed line gives words to a command that takes none ("/help me
+ * with this"): it is more likely a message than a command, so the panel keeps it.
+ */
+export function hasStrayArgs(raw: string): boolean {
+	if (slashArgs(raw) === '') return false;
+	const name = slashName(raw);
+	if (SLASH_ALIASES.includes(name)) return true;
+	return !SLASH_COMMANDS.find((command) => command.name === name)?.args;
+}
+
 /** The commands the composer's "/word" matches; empty when it holds no slash query. */
 export function matchSlash(input: string, universe = false): SlashCommand[] {
 	const query = slashQuery(input);

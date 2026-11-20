@@ -6,6 +6,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { refreshAll } from '$app/navigation';
+	import { flashActivity } from '#lib/activity.svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Icon from './Icon.svelte';
@@ -390,9 +391,20 @@
 	// scene the merge trashed.
 	async function openChangedScene(sceneId: string) {
 		if (orderedScenes.some((scene) => scene.id === sceneId)) chosenSceneId = sceneId;
-		await refreshAll();
-		chosenSceneId = sceneId;
-		editorNonce++;
+		// The editor remounts even when the reload fails, so it never keeps
+		// (and later saves) the text from before the merge or duplicate.
+		try {
+			await refreshAll();
+		} catch {
+			flashActivity(
+				'failed',
+				'Could not reload the story',
+				'The change was made. Reload the page to see it.'
+			);
+		} finally {
+			chosenSceneId = sceneId;
+			editorNonce++;
+		}
 	}
 
 	// Copies a scene in full directly after itself; the new scene becomes the one
@@ -445,7 +457,7 @@
 	// done holds what this pass accepted or skipped (a skip leaves the edit
 	// pending); followUps are the edits a re-read staged. currentId keeps the
 	// step on screen steady while the queue changes around it.
-	const patternCounts = $derived(pendingPatternCounts(suggestions));
+	const patternCounts = $derived(pendingPatternCounts(liveSuggestions));
 	let pass = $state<{
 		threadId: string;
 		followUps: SvelteSet<string>;
@@ -459,7 +471,7 @@
 	const passOpen = $derived(
 		pass
 			? patternQueue(
-					suggestions,
+					liveSuggestions,
 					pass.threadId,
 					orderedScenes.map((scene) => scene.id)
 				).filter((s) => !pass!.done.has(s.id))
@@ -474,7 +486,7 @@
 
 	function startPass(threadId: string) {
 		const queue = patternQueue(
-			suggestions,
+			liveSuggestions,
 			threadId,
 			orderedScenes.map((scene) => scene.id)
 		);

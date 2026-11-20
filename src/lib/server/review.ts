@@ -33,7 +33,7 @@ import { isForeignKeyViolation } from './db-errors.ts';
 
 // The body caps live here, in the functions every caller goes through
 // (author actions, guest actions, assistant tools), not per route.
-const MAX_COMMENT_LENGTH = 5000;
+export const MAX_COMMENT_LENGTH = 5000;
 const REVIEWER_COOKIE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const REVIEWER_COOKIE = 'reviewer';
@@ -687,7 +687,7 @@ export async function createSuggestion(
 	}
 	if (input.patternThreadId) {
 		const [note] = await db
-			.select({ id: reviewThreads.id })
+			.select({ id: reviewThreads.id, resolvedAt: reviewThreads.resolvedAt })
 			.from(reviewThreads)
 			.where(
 				and(
@@ -697,6 +697,9 @@ export async function createSuggestion(
 				)
 			);
 		if (!note) return { ok: false, reason: 'That pattern note does not exist.' };
+		// A request still running when the writer resolves the note stages
+		// nothing more on it.
+		if (note.resolvedAt) return { ok: false, reason: 'That pattern note is resolved.' };
 	}
 	const [scene] = await db
 		.select({ id: scenes.id, bodyMd: scenes.bodyMd })
