@@ -21,6 +21,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
+import { textHash } from '../../src/lib/text-hash';
 import { ensureBuiltInRelationTypes, ensureTestDatabase } from './test-db';
 
 // Authorization lives in the route handlers, so these tests call the real
@@ -400,6 +401,44 @@ describe('scene routes refuse another user', () => {
 			sceneSplitRoute.POST,
 			event(A, { params: { id: s.sceneA1.id }, body: { offset } })
 		);
+	});
+});
+
+// Payload checks on the split route, here because this file already calls the
+// real handler: the owner is refused on a bad baseHash, and a tab that sends
+// only an offset (no baseHash) still splits.
+describe('scene split route checks its payload', () => {
+	const offset = 'Alpha walks in. '.length;
+	const split = (body: unknown) =>
+		event(A, { params: { id: s.sceneA1.id }, body: body as Record<string, unknown> });
+
+	it('refuses a baseHash that is not a short string', async () => {
+		await expectRefused(sceneSplitRoute.POST, split({ offset, baseHash: 12 }), 400);
+		await expectRefused(sceneSplitRoute.POST, split({ offset, baseHash: null }), 400);
+		await expectRefused(sceneSplitRoute.POST, split({ offset, baseHash: 'x'.repeat(33) }), 400);
+	});
+
+	it('refuses a request with neither an offset nor a passage', async () => {
+		await expectRefused(sceneSplitRoute.POST, split({ offset: '3' }), 400);
+		await expectRefused(sceneSplitRoute.POST, split({}), 400);
+	});
+
+	it('refuses a baseHash of text the scene no longer holds', async () => {
+		const before = await snapshot();
+		const status = await statusOf(
+			sceneSplitRoute.POST,
+			split({ offset, baseHash: textHash('older text') })
+		);
+		expect(status).toBeGreaterThanOrEqual(400);
+		expect(await snapshot()).toEqual(before);
+	});
+
+	it('splits on an offset alone, and on an offset with the matching baseHash', async () => {
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, s.sceneA1.id));
+		await expectAllowed(sceneSplitRoute.POST, split({ offset, baseHash: textHash(scene.bodyMd) }));
+		const [first] = await db.select().from(scenes).where(eq(scenes.id, s.sceneA1.id));
+		expect(first.bodyMd.length).toBeLessThan(scene.bodyMd.length);
+		await expectAllowed(sceneSplitRoute.POST, split({ offset: 5 }));
 	});
 });
 

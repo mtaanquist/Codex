@@ -45,6 +45,13 @@ const oneClock = [
 		selector:
 			"TaggedTemplateExpression[tag.name='sql'] NewExpression[callee.name='Date'][arguments.length=0]",
 		message: appClockStamp
+	},
+	{
+		// A selector cannot follow a variable into a later .set() or .values(),
+		// so server code does not hold the app clock in one at all.
+		selector: "VariableDeclarator > NewExpression.init[callee.name='Date'][arguments.length=0]",
+		message:
+			'Do not keep new Date() in a variable in server code. For a stored time use sql`now()` or dbNow(); to compare, write new Date() where it is compared.'
 	}
 ];
 
@@ -103,7 +110,7 @@ export default defineConfig(
 	{
 		// A later block replaces no-restricted-syntax rather than adding to it,
 		// so server code repeats the locale rules.
-		files: ['src/lib/server/**'],
+		files: ['src/lib/server/**', 'src/routes/**/*.ts', 'src/worker/**'],
 		rules: { 'no-restricted-syntax': ['error', ...fixedLocale, ...oneClock] }
 	},
 	{
