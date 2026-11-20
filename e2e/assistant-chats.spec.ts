@@ -405,10 +405,11 @@ test('a message starting with a slash is not lost, and the typed menu follows th
 	await expect(panel.locator('.chat-scroll')).toContainText('I do not know the command');
 
 	// A command that needs words and has none stays to be finished.
-	await composer.fill('/who');
+	// (Enter on a bare "/who" picks it from the menu, which leaves "/who ".)
+	await composer.fill('/who ');
 	await composer.press('Enter');
 	await expect(panel.locator('.msg.assistant-msg').last()).toContainText('Name who to look up');
-	await expect(composer).toHaveValue('/who');
+	await expect(composer).toHaveValue('/who ');
 
 	const posted: { content: string }[][] = [];
 	await page.route('**/api/assistant/chat', (route) => {
