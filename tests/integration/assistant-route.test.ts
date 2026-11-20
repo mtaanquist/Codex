@@ -3,6 +3,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { isHttpError } from '@sveltejs/kit';
 import type pg from 'pg';
 import {
+	places,
 	reviewSuggestions,
 	revisions,
 	scenes,
@@ -782,6 +783,46 @@ describe('chats over the endpoints', () => {
 			).headers.get('x-chat-attachments')
 		).toBeNull();
 		expect(last.join('\n')).not.toContain('The first half ends here.');
+	});
+
+	it('stores what an entry is as read here, not as the browser sent it', async () => {
+		const [place] = await db
+			.insert(places)
+			.values({ universeId, ownerId: userId, name: 'The Quay' })
+			.returning({ id: places.id });
+		const forged = { kind: 'entity', id: place.id, label: 'The Quay', entityType: 'character' };
+		const response = await chatPost({
+			storyId,
+			chatId,
+			messages: [{ role: 'user', content: 'Where is it?', attachments: [forged] }]
+		});
+		await response.text();
+		expect(response.headers.get('x-chat-attachments')).toBe(`entity:${place.id}`);
+		expect((await listChat(db, userId, chatId))[0].meta).toEqual({
+			attachments: [{ ...forged, entityType: 'place' }]
+		});
+	});
+
+	it('reports an attachment that was both cut to fit and renamed', async () => {
+		await pool.query(`update scenes set body_md = repeat('A long night. ', 4000) where id = $1`, [
+			sceneId
+		]);
+		const response = await chatPost({
+			storyId,
+			chatId,
+			messages: [
+				{
+					role: 'user',
+					content: 'Too long?',
+					attachments: [{ kind: 'scene', id: sceneId, label: 'An older title' }]
+				}
+			]
+		});
+		await response.text();
+		expect(response.headers.get('x-chat-attachments')).toBe(`scene:${sceneId}!=Scene%201`);
+		expect((await listChat(db, userId, chatId))[0].meta).toEqual({
+			attachments: [{ kind: 'scene', id: sceneId, label: 'Scene 1', shortened: true }]
+		});
 	});
 
 	it('drops a new chat again when a step before its first turn fails', async () => {
