@@ -1140,7 +1140,18 @@ calls the gateway, which proxies through the egress guard.
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
   helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
   than a queue, for one entity from a story (story Plan) or across its
-  universe (universe Plan); the `assistant-enrich` job runs the same call over
+  universe (universe Plan). Since #1170 the button reads full text
+  (`enrichEntityFromText`, `enrich-context.ts`): every scene that mentions
+  the entity with the scene before and after each in its own story, or, as a
+  separate choice from a story, the whole book when it fits one request.
+  The text goes first and the entity and instructions last. Text over the
+  utility model's budget (four fifths of the window less the reply; 6000
+  tokens when the window is unknown) is read in parts in reading order, each
+  told what the earlier parts found, and everything is staged once at the
+  end; a later part failing keeps what the earlier ones found. The same
+  endpoint with `estimate: true` counts the read without sending it, and
+  the editor asks before a read over 8000 tokens. The `assistant-enrich` job
+  still sends snippets (`enrichEntity`, at most 16), over
   every entity in a universe whose passages changed since its
   `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
   entity when a reindex changes its passages, so status changes and reorders

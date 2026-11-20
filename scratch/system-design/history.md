@@ -982,6 +982,43 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Find more reads whole scenes (2026-11-20)
+
+#1170. "Suggest details with the Assistant" sent at most 16 snippets of about
+80 characters, so it never saw a nickname or description that did not use the
+name. It now reads full scenes.
+
+- Decisions on the issue's open questions (comment on #1170): scenes that
+  mention the entity plus the scene before and after each is the default; the
+  whole book is a separate choice, offered only from a story and only when it
+  fits one request; the background universe pass keeps snippets, because full
+  scenes for every entity cost millions of tokens on a novel; the model stays
+  the utility model. A story can already point that at a larger model;
+  a universe cannot yet (#1266).
+- Not built: batching several entities into one book request with a cache
+  breakpoint (step 4 of the issue). It only pays off if the background pass
+  reads the book, which it does not.
+- The fallback for text that does not fit is by budget, not by chapter:
+  scenes are packed into parts in reading order and a scene longer than a
+  part is cut at paragraph breaks. Later parts are told what earlier ones
+  found as "known", which is the carried list the issue asked for.
+- `stageEntitySuggestions` stops at the first summary it sees, so merged
+  proposals put the summary last, and a summary is only asked for (and only
+  kept) from the last part. The first test run caught this: aliases found
+  after a summary were dropped.
+- A later part that fails does not lose the paid work before it: what was
+  found is staged and the response says `partial`. A failure on the first
+  part is an error as before.
+- The estimate measures the real request around the text (it builds the
+  message with the entity's fields) and stands in each scene's length for its
+  text, so nothing is loaded to count. A test holds it within a tenth of
+  what is sent, and to the same number of scenes and requests.
+- The button never used the stored request hash (only the pass does), so
+  nothing about marks or hashes changed here.
+- The whole-book choice shows after the first press on a page, because the
+  count that says whether it fits comes back with that press. Counting on
+  every entry open was the alternative and was not worth a query per click.
+
 ## Tooling issues (2026-11-20)
 
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the

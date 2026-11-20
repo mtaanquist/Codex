@@ -51,3 +51,58 @@ export function buildEnrichMessage(entity: EnrichEntity, appearances: string[]):
 	];
 	return lines.join('\n');
 }
+
+// The full-text read: whole scenes instead of snippets. The text comes first
+// and the entity and instructions last, so a provider that caches a prefix can
+// reuse the text. A long read goes in parts; each later part is told what the
+// earlier ones found so it does not repeat them.
+export function buildEnrichTextMessage(
+	entity: EnrichEntity,
+	text: string,
+	options: {
+		part?: { index: number; total: number };
+		found?: { aliases: string[]; details: { label: string; value: string }[] };
+	} = {}
+): string {
+	const aliasWord = entity.kind === 'lore' ? 'keywords' : 'aliases';
+	const kindWord = entity.kind === 'lore' ? 'lore entry' : entity.kind;
+	const aliases = [...entity.aliases, ...(options.found?.aliases ?? [])];
+	const details = [...entity.details, ...(options.found?.details ?? [])];
+	const known =
+		aliases.length || details.length
+			? [
+					aliases.length ? `Known ${aliasWord}: ${aliases.join(', ')}.` : '',
+					...details.map((d) => `Known detail - ${d.label}: ${d.value}`)
+				]
+					.filter(Boolean)
+					.join('\n')
+			: 'No aliases or details recorded yet.';
+
+	const lines = [
+		options.part
+			? `Text from the writer's story, part ${options.part.index} of ${options.part.total}:`
+			: "Text from the writer's story:",
+		'',
+		text,
+		'',
+		'---',
+		`Enrich the ${kindWord} "${entity.name}" from the text above.`,
+		known,
+		'',
+		`It may be referred to without its name: by a nickname, a title, or a description. Count a passage only when the text makes clear it is about this ${kindWord}.`,
+		'Suggest only what the text supports, never invented:',
+		`- new ${aliasWord} actually used for it that are not already listed,`,
+		'- factual quick details (a label and a short value, like "Eyes: grey" or "Role: harbourmaster") not already recorded,',
+		entity.hasSummary
+			? '- do not propose a summary.'
+			: '- a one or two sentence summary of who or what it is.',
+		'',
+		`In every string value: ${PLAIN_TEXT_FORMAT}`,
+		'Reply with only a JSON object, no prose around it, in this exact shape:',
+		'{"aliases": ["..."], "details": [{"label": "...", "value": "..."}], "summary": "..."}',
+		entity.hasSummary
+			? 'Use "summary": null. Use empty arrays where you have nothing to add.'
+			: 'Use "summary": null if you cannot summarise it. Use empty arrays where you have nothing to add.'
+	];
+	return lines.join('\n');
+}
