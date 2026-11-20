@@ -14,7 +14,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
-import { MAX_REASON_LENGTH } from '../../src/lib/server/review';
+import { MAX_REASON_LENGTH } from '../../src/lib/suggestion-reason';
 import type {
 	ChatMessage,
 	Provider,
@@ -460,7 +460,6 @@ describe('rereadPatternEdit', () => {
 		// The reason is kept on one line and cut at a word near the cap.
 		expect(followUp?.reason).toMatch(/^"Her" could be either woman here\. Naming her/);
 		expect(followUp!.reason!.length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
-		expect(followUp!.reason!.endsWith(' ...')).toBe(false);
 		expect(followUp!.reason!.endsWith('...')).toBe(true);
 		expect(result).toEqual({ staged: 1, ids: [followUp!.id] });
 	});

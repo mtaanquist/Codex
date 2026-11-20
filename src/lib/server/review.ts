@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { normaliseReason } from '#lib/suggestion-reason';
 import { textHash } from '#lib/text-hash';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql, type AnyColumn } from 'drizzle-orm';
 import type { Database } from './auth.ts';
@@ -651,17 +652,6 @@ export async function listThreads(
 }
 
 const MAX_REPLACEMENT_LENGTH = 20000;
-// The Assistant's reason for an edit is a sentence or two; a longer one is cut.
-export const MAX_REASON_LENGTH = 300;
-
-export function normaliseReason(reason: string | undefined): string | null {
-	const text = (reason ?? '').replace(/\s+/g, ' ').trim();
-	if (!text) return null;
-	if (text.length <= MAX_REASON_LENGTH) return text;
-	const cut = text.slice(0, MAX_REASON_LENGTH - 3);
-	const space = cut.lastIndexOf(' ');
-	return `${(space > MAX_REASON_LENGTH / 2 ? cut.slice(0, space) : cut).trimEnd()}...`;
-}
 
 // A reviewer proposes replacing [start, end) of the scene's current text with
 // the replacement (equal offsets insert, an empty replacement deletes). The
@@ -688,7 +678,9 @@ export async function createSuggestion(
 		// The Assistant's pattern note this edit is an instance of. It must be a
 		// standalone thread of the same story; it may sit on another scene.
 		patternThreadId?: string;
-		// The accepted edit whose re-read staged this one as a follow-up.
+		// The accepted edit whose re-read staged this one as a follow-up. Only
+		// the re-read sets it, from an edit it has checked is the owner's and in
+		// the same scene.
 		followsSuggestionId?: string;
 		// Why the Assistant suggests it, shown to the author.
 		reason?: string;

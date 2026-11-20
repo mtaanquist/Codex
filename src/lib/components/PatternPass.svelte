@@ -111,6 +111,7 @@
 		const card = cardOf(id);
 		if (!card) return;
 		card.scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' });
+		card.focus({ preventScroll: true });
 		flashId = id;
 		setTimeout(() => {
 			if (flashId === id) flashId = null;
@@ -266,6 +267,7 @@
 				<div
 					class="rv-card pp-card pp-faded"
 					class:pp-flash={flashId === edit.id}
+					tabindex="-1"
 					style="--auth: var(--cat-violet);"
 					data-edit={edit.id}
 				>
@@ -348,7 +350,7 @@
 	/* The cards around the current one: faded and without buttons, so the
 	   current one stands out. */
 	.pp-faded {
-		opacity: 0.55;
+		opacity: 0.7;
 		transition: opacity 0.2s;
 	}
 	.pp-faded:hover,

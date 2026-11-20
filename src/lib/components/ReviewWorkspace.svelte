@@ -485,8 +485,6 @@
 		done: SvelteSet<string>;
 		// The ones of done the writer skipped.
 		skipped: SvelteSet<string>;
-		// Re-reads after an accept still running.
-		rereading: number;
 		currentId: string | null;
 	} | null>(null);
 	const passNote = $derived(pass ? (threads.find((t) => t.id === pass!.threadId) ?? null) : null);
@@ -519,7 +517,6 @@
 			threadId,
 			done: new SvelteSet(),
 			skipped: new SvelteSet(),
-			rereading: 0,
 			currentId: queue[0]?.id ?? null
 		};
 		composer = null;
@@ -585,15 +582,31 @@
 	$effect(() => {
 		if (!pass) untrack(clearRereadCards);
 	});
-	$effect(() => clearRereadCards);
+	let destroyed = false;
+	$effect(() => () => {
+		destroyed = true;
+		clearRereadCards();
+	});
+	// Re-reads still running, by note. Kept outside the pass, so a pass stopped
+	// and started again on the same note still waits for the earlier ones.
+	const rereading = new SvelteMap<string, number>();
+	function countRereading(threadId: string, by: number) {
+		const left = (rereading.get(threadId) ?? 0) + by;
+		if (left > 0) rereading.set(threadId, left);
+		else rereading.delete(threadId);
+	}
 
 	async function rereadAfter(suggestionId: string) {
 		const current = pass;
 		if (!current) return;
+		const threadId = current.threadId;
 		const card = startActivity('Re-reading the last change');
 		rereadCards.add(card);
-		current.rereading += 1;
+		countRereading(threadId, 1);
 		let ok: boolean;
+		// Whether the server answered at all; a request that never got through
+		// staged nothing, so there is nothing to load.
+		let answered = false;
 		let ids: string[] = [];
 		try {
 			const response = await fetch('/api/assistant/pattern-reread', {
@@ -601,25 +614,29 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ suggestionId })
 			});
+			answered = true;
 			ok = response.ok;
 			if (ok) ids = ((await response.json()) as { ids?: string[] }).ids ?? [];
 		} catch {
 			ok = false;
 		}
-		if (pass !== current) {
-			dismissActivity(card);
+		try {
+			if (destroyed) return;
+			// A pass on this note, this one or one started again since, loads the
+			// follow-up. Refreshed after a failed answer too: a re-read that timed
+			// out may still have staged its follow-up. The count drops only after
+			// the refresh, so the end of the pass is not offered in between.
+			if (answered && pass?.threadId === threadId) await refreshAll();
+		} catch {
+			ok = false;
+		} finally {
+			countRereading(threadId, -1);
 			rereadCards.delete(card);
+		}
+		if (destroyed || pass !== current) {
+			dismissActivity(card);
 			return;
 		}
-		// Refreshed after a failure too: a re-read that timed out or failed late
-		// may still have staged its follow-up. The count drops only after the
-		// refresh, so the end of the pass is not offered in between.
-		try {
-			await refreshAll();
-		} finally {
-			current.rereading -= 1;
-		}
-		rereadCards.delete(card);
 		if (!ok) resolveActivity(card, { state: 'failed', label: 'Could not re-read the last change' });
 		else if (ids.length > 0) resolveActivity(card, { state: 'done', label: 'Follow-up added' });
 		else dismissActivity(card);
@@ -800,7 +817,7 @@
 						scene={passScene}
 						sceneOf={(id) => orderedScenes.find((scene) => scene.id === id) ?? null}
 						skipped={(id) => pass?.skipped.has(id) ?? false}
-						rereading={pass.rereading > 0}
+						rereading={rereading.has(pass.threadId)}
 						position={pass.done.size + 1}
 						total={pass.done.size + passOpen.length}
 						onAccepted={passAccepted}

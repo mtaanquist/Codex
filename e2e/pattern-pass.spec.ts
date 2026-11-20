@@ -322,7 +322,11 @@ test.describe('with the Assistant on', () => {
 			await expect(rereading).toBeVisible();
 			await pass.getByRole('button', { name: 'Stop' }).click();
 			await expect(rereading).toHaveCount(0);
+			const answered = page.waitForResponse('**/api/assistant/pattern-reread');
 			release();
+			await answered;
+			// Nothing is said about a re-read of a pass already stopped.
+			await page.waitForTimeout(300);
 			await expect(page.locator('.activity-card')).toHaveCount(0);
 		} finally {
 			await done();
@@ -390,11 +394,39 @@ test.describe('with the Assistant on', () => {
 	// A re-read that fails after staging its follow-up (a timeout, say) still
 	// brings the follow-up in.
 	test('a follow-up from a re-read that failed still shows', async ({ page }) => {
-		const { pass, current, done } = await openPass(page, Promise.resolve(), 504);
+		const { pass, done } = await openPass(page, Promise.resolve(), 504);
+		try {
+			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(
+				page.locator('.activity-card').filter({ hasText: 'Could not re-read the last change' })
+			).toBeVisible();
+			// Loaded without a second accept: the count takes in the follow-up
+			// while the second scene's edit is still the step.
+			await expect(pass.getByText('2 of 3')).toBeVisible();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await expect(pass.locator('.pp-faded').filter({ hasText: 'Follow-up' })).toHaveCount(1);
+		} finally {
+			await done();
+		}
+	});
+
+	// A pass stopped and started again while a re-read runs still waits for it
+	// before offering to resolve the note.
+	test('a restarted pass waits for a re-read from before', async ({ page }) => {
+		let release!: () => void;
+		const { pass, current, done } = await openPass(page, new Promise<void>((r) => (release = r)));
 		try {
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
 			await expect(pass.locator('.pp-para')).toContainText('looked back.');
+			await pass.getByRole('button', { name: 'Stop' }).click();
+			// The note sits on the first scene.
+			await page.locator('.scene-row').first().click();
+			const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+			await note.getByRole('button', { name: /Work through this/ }).click();
+			await expect(pass.locator('.pp-para')).toContainText('looked back.');
 			await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+			await expect(pass.getByText('The Assistant is still re-reading')).toBeVisible();
+			release();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 		} finally {
 			await done();
