@@ -36,6 +36,7 @@ export const actions: Actions = {
 		const password = formText(data, 'password');
 		const displayName = formText(data, 'displayName');
 		const inviteCode = formText(data, 'inviteCode');
+		const note = formText(data, 'note');
 		const cleanEmail = email.trim().toLowerCase();
 		const mode = await signupMode(db);
 		// Whether this sign-up waits in the approval queue. Derived from the
@@ -53,12 +54,12 @@ export const actions: Actions = {
 			return { sent: true, pendingApproval };
 		}
 
-		const result = await registerUser(db, { email, password, displayName, inviteCode }, mode);
+		const result = await registerUser(db, { email, password, displayName, inviteCode, note }, mode);
 
 		// A taken email is treated like success so the page never reveals whether
 		// an address already has an account; no second account or email is made.
 		if (!result.ok && result.reason !== 'duplicate') {
-			return fail(400, { email, displayName, inviteCode, message: result.reason });
+			return fail(400, { email, displayName, inviteCode, note, message: result.reason });
 		}
 
 		if (result.ok) {

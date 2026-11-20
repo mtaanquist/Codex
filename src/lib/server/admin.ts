@@ -108,6 +108,8 @@ export type AdminUser = {
 	role: 'admin' | 'user';
 	emailVerifiedAt: Date | null;
 	approvedAt: Date | null;
+	// What they wrote when asking for the account, if anything.
+	signupNote: string | null;
 	suspendedAt: Date | null;
 	deletionScheduledAt: Date | null;
 	publicArchiveEnabled: boolean;
@@ -129,6 +131,7 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			role: users.role,
 			emailVerifiedAt: users.emailVerifiedAt,
 			approvedAt: users.approvedAt,
+			signupNote: users.signupNote,
 			suspendedAt: users.suspendedAt,
 			deletionScheduledAt: users.deletionScheduledAt,
 			publicArchiveEnabled: users.publicArchiveEnabled,

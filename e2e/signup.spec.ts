@@ -14,6 +14,7 @@ test('sign up, then get held at the email-verification gate', async ({ page }) =
 	await page.getByLabel('Display name').fill('Signup Tester');
 	await page.getByLabel('Email').fill(EMAIL);
 	await page.getByLabel('Password').fill('a-good-password');
+	await page.getByLabel('What are you working on?').fill('A novel about a lighthouse.');
 	await page.getByRole('button', { name: 'Create account' }).click();
 
 	// The page never says whether the address was new; it always points at the
@@ -52,9 +53,11 @@ test('a wrong invite code blocks the sign-up with a clear error', async ({ page 
 	await page.getByLabel('Email').fill('mistyped-e2e@example.com');
 	await page.getByLabel('Password').fill('a-good-password');
 	await page.getByLabel('Invite code (optional)').fill('WRON-GCOD-E999');
+	await page.getByLabel('What are you working on?').fill('Short stories.');
 	await page.getByRole('button', { name: 'Create account' }).click();
 
 	await expect(page.getByRole('alert')).toContainText('invite code is not valid');
 	// The form keeps what was typed so it can be corrected.
 	await expect(page.getByLabel('Invite code (optional)')).toHaveValue('WRON-GCOD-E999');
+	await expect(page.getByLabel('What are you working on?')).toHaveValue('Short stories.');
 });

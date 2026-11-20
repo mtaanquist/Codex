@@ -84,6 +84,9 @@ export const users = pgTable('users', {
 	emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
 	// Null until admin approves.
 	approvedAt: timestamp('approved_at', { withTimezone: true }),
+	// What the person wrote under "What are you working on?" when asking for
+	// an account that waits for approval. Shown to admins beside the request.
+	signupNote: text('signup_note'),
 	// Set when an admin suspends the account; blocks sign-in without deleting.
 	suspendedAt: timestamp('suspended_at', { withTimezone: true }),
 	// Set when the user schedules deletion; a worker purges after the grace
