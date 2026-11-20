@@ -78,6 +78,7 @@
 		SLASH_COMMANDS,
 		matchSlash,
 		slashName,
+		hasStrayArgs,
 		isSlashCommand,
 		slashQuery,
 		slashArgs,
@@ -673,6 +674,14 @@
 		if (!isSlashCommand(raw)) {
 			assistantSay(
 				`I do not know the command "/${name}". Type /help to see the commands. To send a message that starts with "/", put a space in front of it.`
+			);
+			return;
+		}
+		// Words after a command that takes none: more likely a message, and
+		// running the command would throw the line away.
+		if (typed && hasStrayArgs(raw)) {
+			assistantSay(
+				`/${name} takes nothing after it, so it was not run. To send this as a message, put a space in front of the "/".`
 			);
 			return;
 		}
