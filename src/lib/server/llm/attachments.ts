@@ -6,7 +6,11 @@ import { getEntityCard } from '../plan-data.ts';
 import { noteIsLive, storyAssistantOn, storyIsLive } from '../universe-scope.ts';
 import { storySkeleton } from './context/sources.ts';
 import { tokensForChars } from './context/budgets.ts';
-import type { AttachmentKind, ChatAttachment } from '../../assistant-chat.ts';
+import {
+	MAX_ATTACHMENT_LABEL,
+	type AttachmentKind,
+	type ChatAttachment
+} from '../../assistant-chat.ts';
 
 // What the writer adds to a chat message as context: a scene, a chapter, a
 // character, place or lore entry, a note, or a story (its outline, or the
@@ -40,7 +44,11 @@ async function sceneText(db: Database, userId: string, id: string) {
 		.innerJoin(stories, eq(scenes.storyId, stories.id))
 		.where(and(eq(scenes.id, id), isNull(scenes.deletedAt), storyAllowed(userId)));
 	if (!row) return null;
-	return { title: `Scene "${sceneName(row.title)}" from ${row.story}`, text: row.body };
+	return {
+		label: sceneName(row.title),
+		title: `Scene "${sceneName(row.title)}" from ${row.story}`,
+		text: row.body
+	};
 }
 
 async function chapterText(db: Database, userId: string, id: string) {
@@ -63,6 +71,7 @@ async function chapterText(db: Database, userId: string, id: string) {
 	const parts = chapter.summary ? [`Summary: ${chapter.summary}`] : [];
 	for (const scene of rows) parts.push(`## ${sceneName(scene.title)}\n\n${scene.body}`);
 	return {
+		label: chapterName(chapter.title, Number(chapter.ordinal)),
 		title: `${chapterName(chapter.title, Number(chapter.ordinal))} from ${chapter.story}`,
 		text: parts.join('\n\n')
 	};
@@ -80,6 +89,7 @@ async function entityText(db: Database, userId: string, id: string) {
 		parts.push(`Related: ${card.related.map((r) => `${r.name} (${r.label})`).join(', ')}`);
 	}
 	return {
+		label: card.name,
 		title: `${card.kind === 'lore' ? 'Lore entry' : card.kind} "${card.name}"`,
 		text: parts.join('\n\n')
 	};
@@ -98,7 +108,8 @@ async function noteText(db: Database, userId: string, id: string) {
 			)
 		);
 	if (!row) return null;
-	return { title: `Note "${row.title?.trim() || 'Untitled note'}"`, text: row.body };
+	const label = row.title?.trim() || 'Untitled note';
+	return { label, title: `Note "${label}"`, text: row.body };
 }
 
 async function storyText(db: Database, userId: string, id: string, book: boolean) {
@@ -136,7 +147,7 @@ async function storyText(db: Database, userId: string, id: string, book: boolean
 			}
 			parts.push(`## ${sceneName(scene.title)}\n\n${scene.body}`);
 		}
-		return { title: `The whole of "${story.title}"`, text: parts.join('\n\n') };
+		return { label: story.title, title: `The whole of "${story.title}"`, text: parts.join('\n\n') };
 	}
 	const skeleton = await storySkeleton(db, id);
 	skeleton.chapters.forEach((chapter, index) => {
@@ -157,7 +168,7 @@ async function storyText(db: Database, userId: string, id: string, book: boolean
 			].join('\n')
 		);
 	}
-	return { title: `Outline of "${story.title}"`, text: parts.join('\n\n') };
+	return { label: story.title, title: `Outline of "${story.title}"`, text: parts.join('\n\n') };
 }
 
 const READERS: Record<
@@ -166,7 +177,7 @@ const READERS: Record<
 		db: Database,
 		userId: string,
 		attachment: ChatAttachment
-	) => Promise<{ title: string; text: string } | null>
+	) => Promise<{ label: string; title: string; text: string } | null>
 > = {
 	scene: (db, userId, a) => sceneText(db, userId, a.id),
 	chapter: (db, userId, a) => chapterText(db, userId, a.id),
@@ -203,7 +214,11 @@ export async function resolveAttachments(
 	const read = await Promise.all(
 		attachments.map(async (attachment) => {
 			const found = await READERS[attachment.kind](db, userId, attachment);
-			return found ? { attachment, ...found } : null;
+			if (!found) return null;
+			// The name as it is now, not the one the browser sent, so the stored
+			// chip follows a rename.
+			const label = found.label.replace(/\s+/g, ' ').trim().slice(0, MAX_ATTACHMENT_LABEL);
+			return { attachment: { ...attachment, label }, title: found.title, text: found.text };
 		})
 	);
 	const kept = read.filter((item) => item !== null);
@@ -253,7 +268,9 @@ export function foldAttachments(content: string, resolved: ResolvedAttachment[])
 // the Assistant knows what was in front of it and can look them up again.
 export function noteAttachments(content: string, attachments: ChatAttachment[]): string {
 	if (attachments.length === 0) return content;
-	const names = attachments.map((a) => `${a.kind} "${a.label}"`).join(', ');
+	const names = attachments
+		.map((a) => `${a.kind} "${a.label.replace(/\s+/g, ' ').trim()}"`)
+		.join(', ');
 	return `${content}\n\n(The writer attached ${names} to this message. The text was sent with that message and is not repeated here.)`;
 }
 
