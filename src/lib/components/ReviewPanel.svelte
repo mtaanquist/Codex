@@ -254,7 +254,11 @@
 			<!-- The review toolbar: decisions on more than one note at a time. It
 			     only opens a list of what would change; nothing is decided here. -->
 			{#if onDecideTogether && filter !== 'resolved' && nSugg > 1}
+<<<<<<< HEAD
 				<div class="rv-toolbar" role="group" aria-label="Suggested edits">
+=======
+				<div class="rv-toolbar" role="toolbar" aria-label="Suggested edits">
+>>>>>>> origin/staging/non-assistant-polish
 					<span class="rv-toolbar-count">{nSugg} suggested edits</span>
 					<button class="btn btn-sm btn-secondary" type="button" onclick={onDecideTogether}>
 						<Icon name="check" size={13} /> Decide together...

@@ -431,6 +431,7 @@ describe('decideSuggestions (several at once)', () => {
 		expect(pending.map((s) => s.id)).toEqual([overlap]);
 	});
 
+<<<<<<< HEAD
 	it('reports the text a change was made on, so a write in between is caught', async () => {
 		const fox = await suggestWord('brown fox', 'red vixen');
 		const dog = await suggestWord('lazy dog', 'sleeping hound');
@@ -448,6 +449,8 @@ describe('decideSuggestions (several at once)', () => {
 		});
 	});
 
+=======
+>>>>>>> origin/staging/non-assistant-polish
 	it('rejects several without touching the text', async () => {
 		const fox = await suggestWord('brown fox', 'red vixen');
 		const dog = await suggestWord('lazy dog', 'sleeping hound');
