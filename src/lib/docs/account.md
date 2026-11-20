@@ -235,7 +235,8 @@ Your words are sent only to the endpoint you set here.
   the price and first-time text at Claude's higher rate. With any other
   provider, reused text is counted at the full price, because what an endpoint
   charges for it is not known. If your provider gives a discount, the cost
-  shown runs high and a spend cap stops a little early. Requests made before
+  shown can run well above what you were charged, and a spend cap can stop
+  well before the figure you set. Requests made before
   Codex kept those counts are priced with every token sent at the plain price.
   The estimate shown before a review counts each scene's first read, and the
   passes over the whole story, at the higher first-time rate.
