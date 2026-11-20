@@ -224,7 +224,12 @@ export async function resolveAttachments(
 			if (!found) return null;
 			// The name as it is now, not the one the browser sent, so the stored
 			// chip follows a rename.
-			const label = found.label.replace(/\s+/g, ' ').trim().slice(0, MAX_ATTACHMENT_LABEL);
+			// The cut can land inside an emoji; half of one cannot be stored or sent.
+			const label = found.label
+				.replace(/\s+/g, ' ')
+				.trim()
+				.slice(0, MAX_ATTACHMENT_LABEL)
+				.replace(/[\uD800-\uDBFF]$/, '');
 			// Likewise what kind of entry it is: read here, never taken on trust.
 			const stored: ChatAttachment = { ...attachment, label };
 			if (found.entityType) stored.entityType = found.entityType;

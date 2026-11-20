@@ -192,7 +192,8 @@ describe('the sent-attachments header', () => {
 			},
 			{ kind: 'scene' as const, id, label: 'Caf\u00e9 at night' }
 		];
-		const header = attachedHeader(sent).join(',');
+		const picked = sent.map((a) => ({ ...a, label: 'An older name' }));
+		const header = attachedHeader(sent, picked).join(',');
 		expect(header).toMatch(/^[\x20-\x7e]*$/);
 		const parsed = parseAttachedHeader(header);
 		expect(parsed.get(`story:${id}:book`)).toEqual({
@@ -200,6 +201,16 @@ describe('the sent-attachments header', () => {
 			label: 'Ash, Ember = Fire!'
 		});
 		expect(parsed.get(`scene:${id}`)).toEqual({ shortened: false, label: 'Caf\u00e9 at night' });
+	});
+
+	it('leaves out a name the browser already has', () => {
+		const stored = [{ kind: 'scene' as const, id, label: 'Scene 1', shortened: true }];
+		expect(attachedHeader(stored, [{ kind: 'scene', id, label: 'Scene 1' }])).toEqual([
+			`scene:${id}!`
+		]);
+		expect(attachedHeader(stored, [{ kind: 'scene', id, label: 'Old' }])).toEqual([
+			`scene:${id}!=Scene%201`
+		]);
 	});
 
 	it('reads an entry with no name, or one that does not decode, as no name', () => {

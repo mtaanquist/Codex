@@ -498,12 +498,13 @@ async function dropClosedNotes(db: Database, entry: PatternUnitState): Promise<v
 
 async function currentScene(
 	db: Database,
+	storyId: string,
 	sceneId: string
 ): Promise<{ title: string | null; bodyMd: string } | undefined> {
 	const [row] = await db
 		.select({ title: scenes.title, bodyMd: scenes.bodyMd })
 		.from(scenes)
-		.where(and(eq(scenes.id, sceneId), isNull(scenes.deletedAt)));
+		.where(and(eq(scenes.id, sceneId), eq(scenes.storyId, storyId), isNull(scenes.deletedAt)));
 	return row;
 }
 
@@ -625,7 +626,7 @@ export async function runPatternPass(
 				// The scene as it reads now, not as it read when the run started: a
 				// long run reaches a scene well after the writer may have edited it,
 				// and a fix quoted from old text would be refused when staged.
-				const current = await currentScene(db, sceneId);
+				const current = await currentScene(db, opts.storyId, sceneId);
 				if (!current) {
 					// Deleted since the run started: nothing to fix, nothing to send.
 					pattern.applied.push(sceneId);

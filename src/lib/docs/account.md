@@ -128,7 +128,7 @@ contacts a model on its own.
   text it was sent a short while ago, such as your story notes going out again
   with each message. Normally it remembers that text for 5 minutes. Choose 1
   hour if you often pause longer than that between messages. With 1 hour, new
-  text costs a little more the first time it is sent.
+  text costs about twice the normal price the first time it is sent.
 - **Context window**: how much text a model can take in one request, counted in
   tokens. Each model a role runs on gets a box under the role list.
   Discover models fills the number in when your endpoint reports one, and the
@@ -228,8 +228,8 @@ Your words are sent only to the endpoint you set here.
 - **Cached context**: with the Claude provider, repeated context (your world
   details, earlier turns) is cached by the API and billed far cheaper on reuse.
   Text sent for the first time is billed a little higher so it can be reused.
-  The cost in the list counts every token sent at the plain price, so it is
-  usually on the high side. The spend cap counts reused text at a tenth of the
+  The cost in the list counts every token sent at the plain price, so it runs
+  high when most of the text was reused and low when most of it was new. The spend cap counts reused text at a tenth of the
   price and first-time text at Claude's higher rate.
 - **Web searches**: with the Claude provider, the list shows how many web
   searches a request ran. Claude charges for each search on top of tokens; that
