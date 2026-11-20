@@ -302,6 +302,10 @@ test.describe('with the Assistant on', () => {
 				page.locator('.activity-card').filter({ hasText: 'Follow-up added' })
 			).toBeVisible();
 			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone');
+			// The re-read ending takes neither focus nor typing from the box.
+			await expect(pass.getByLabel('Your wording')).toBeFocused();
+			await page.keyboard.type(' again');
+			await expect(pass.getByLabel('Your wording')).toHaveValue('Kara alone again');
 			await pass.getByRole('button', { name: 'Accept my wording' }).click();
 			await expect(current.getByText('Follow-up')).toBeVisible();
 			await expect(pass.locator('.pp-para')).toContainText('Kara crossed the fordriver.');

@@ -102,11 +102,14 @@
 	// The button the writer pressed goes with the step, so focus moves to the
 	// new step rather than falling back to the page, unless the writer had
 	// already moved it somewhere outside the pass.
+	// Keyed on the step, or for the end of the pass on whether it is still
+	// waiting, so a re-read finishing under a step on screen moves nothing.
+	let shownKey: string | null = null;
 	$effect(() => {
 		const id = stepId;
-		// The end of the pass swaps from waiting to done without a new step.
-		void rereading;
-		if (!scroller) return;
+		const key = id ?? (rereading ? 'end:waiting' : 'end:done');
+		if (!scroller || key === shownKey) return;
+		shownKey = key;
 		void tick().then(() => {
 			const card = id ? cardOf(id) : scroller?.querySelector<HTMLElement>('.pp-end');
 			card?.scrollIntoView({ block: 'start', behavior: reduceMotion() ? 'auto' : 'smooth' });
