@@ -115,7 +115,7 @@ contacts a model on its own.
   tokens sent and received. Next to each role, Tune opens a window holding the
   rest of that role's settings, with the line beside the button saying what is
   set. The window saves when you close it.
-- **Prices**: each model you have picked for a role gets two price boxes under
+- **Prices**: each model a role runs on gets two price boxes under
   the role list, next to its context window: dollars per million tokens sent
   (in) and received (out). Most providers, Claude and ChatGPT among them, do
   not report prices to Codex, so look them up on your provider's pricing page
@@ -130,7 +130,7 @@ contacts a model on its own.
   hour if you often pause longer than that between messages. With 1 hour, new
   text costs a little more the first time it is sent.
 - **Context window**: how much text a model can take in one request, counted in
-  tokens. Each model you have picked for a role gets a box under the role list.
+  tokens. Each model a role runs on gets a box under the role list.
   Discover models fills the number in when your endpoint reports one, and the
   number shows next to the model in the lists. Type your own number to override
   it; what you type is kept the next time you discover models. Empty the box to

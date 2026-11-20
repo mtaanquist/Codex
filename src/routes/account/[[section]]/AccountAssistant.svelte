@@ -147,6 +147,14 @@
 	const modelPricing = $derived({ ...discoveredPricing, ...manualPricing });
 	// A stored per-token price back as the dollars per million tokens that were
 	// typed, without the rounding noise of the division.
+	// The form saves on every change, and half a price is refused, so a pair
+	// with one box filled waits for the other before it saves.
+	function holdHalfPrice(event: Event & { currentTarget: HTMLElement }) {
+		const filled = [...event.currentTarget.querySelectorAll('input')].filter(
+			(box) => box.value.trim() !== ''
+		);
+		if (filled.length === 1) event.stopPropagation();
+	}
 	function perMillionValue(perToken: number | undefined): string {
 		return perToken === undefined ? '' : String(Number((perToken * 1_000_000).toPrecision(12)));
 	}
@@ -168,9 +176,11 @@
 	function contextWindow(id: string): number | undefined {
 		return manualContext[id] ?? discoveredContext[id];
 	}
-	// The models with a context field: whatever is picked for a role right now.
+	// The models with a context field and price boxes: every model a role runs
+	// on right now, picked or not. With Claude a role nobody picked a model for
+	// runs on its suggested one, and that one needs a price like any other.
 	const chosenModels = $derived([
-		...new Set(Object.values(savedModels).filter((m): m is string => !!m))
+		...new Set(ROLE_META.map((role) => runningModel(role.id)).filter(Boolean))
 	]);
 	function modelLabel(id: string): string {
 		const price = modelPricing[id];
@@ -815,7 +825,7 @@
 											? String(discoveredContext[model])
 											: 'Context window in tokens'}
 									/>
-									<div class="price-pair">
+									<div class="price-pair" onchange={holdHalfPrice}>
 										<input
 											class="input"
 											type="number"

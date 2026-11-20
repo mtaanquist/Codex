@@ -163,6 +163,39 @@ test('account assistant: kill switch, identity, and endpoint persist', async ({ 
 		'https://api.anthropic.com'
 	);
 
+	// Claude reports no prices, so each model a role runs on has price boxes,
+	// the suggested ones included. One box alone waits for the other; the pair
+	// saves together and is still there after a reload.
+	const priceIn = page.getByLabel('claude-opus-5-5 price per million tokens sent, in dollars');
+	const priceOut = page.getByLabel('claude-opus-5-5 price per million tokens received, in dollars');
+	let modelSaves = 0;
+	page.on('request', (request) => {
+		if (request.url().includes('saveAssistantModels')) modelSaves += 1;
+	});
+	await priceIn.fill('4');
+	await priceIn.blur();
+	const pricesSaved = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantModels') && response.request().method() === 'POST'
+	);
+	await priceOut.fill('20');
+	await priceOut.blur();
+	expect((await pricesSaved).ok()).toBe(true);
+	expect(modelSaves).toBe(1);
+	await page.reload();
+	await expect(priceIn).toHaveValue('4');
+	await expect(priceOut).toHaveValue('20');
+	// Emptied again, so a repeated run starts from no price.
+	const pricesCleared = page.waitForResponse(
+		(response) =>
+			response.url().includes('saveAssistantModels') && response.request().method() === 'POST'
+	);
+	await priceIn.fill('');
+	await priceIn.blur();
+	await priceOut.fill('');
+	await priceOut.blur();
+	expect((await pricesCleared).ok()).toBe(true);
+
 	// A key saved for Claude empties the box, and switching away asks first and
 	// never sends that key along as the next provider's.
 	const keyField = page.getByLabel('API key', { exact: true });
