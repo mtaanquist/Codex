@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { isHttpError } from '@sveltejs/kit';
 import type pg from 'pg';
-import { scenes, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	reviewSuggestions,
+	revisions,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import type { Provider, StreamEvent } from '../../src/lib/server/llm/providers/types';
 import { ensureTestDatabase } from './test-db';
@@ -52,6 +59,7 @@ const chatRoute = await import('../../src/routes/api/assistant/chat/+server');
 const chatsRoute = await import('../../src/routes/api/assistant/chats/[id]/+server');
 const modelsRoute = await import('../../src/routes/api/assistant/models/+server');
 const contextRoute = await import('../../src/routes/api/assistant/context/+server');
+const rereadRoute = await import('../../src/routes/api/assistant/pattern-reread/+server');
 
 let userId: string;
 let universeId: string;
@@ -817,6 +825,68 @@ describe('the context picker', () => {
 	it('refuses while the Assistant is off', async () => {
 		await configure(false);
 		await expectStatus(getContext('q='), 403);
+	});
+});
+
+describe('the pattern re-read endpoint', () => {
+	function rereadPost(body: object, as = userId) {
+		const request = new Request('http://localhost/api/assistant/pattern-reread', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+		return rereadRoute.POST({
+			request,
+			locals: { user: { id: as } }
+		} as unknown as Parameters<typeof rereadRoute.POST>[0]) as Promise<Response>;
+	}
+
+	async function suggestion(): Promise<string> {
+		const [revision] = await db
+			.insert(revisions)
+			.values({
+				entityType: 'scene',
+				entityId: sceneId,
+				bodyMd: 'x',
+				wordCount: 1,
+				reason: 'autosave'
+			})
+			.returning({ id: revisions.id });
+		const [row] = await db
+			.insert(reviewSuggestions)
+			.values({
+				storyId,
+				sceneId,
+				assistant: true,
+				baseRevisionId: revision.id,
+				rangeStart: 0,
+				rangeEnd: 3,
+				replacement: 'A'
+			})
+			.returning({ id: reviewSuggestions.id });
+		return row.id;
+	}
+
+	it('wants a suggestion id, and one that exists', async () => {
+		await expectStatus(rereadPost({}), 400);
+		await expectStatus(rereadPost({ suggestionId: 'nope' }), 400);
+		await expectStatus(rereadPost({ suggestionId: '11111111-1111-4111-8111-111111111111' }), 404);
+	});
+
+	it('is for the story owner only, with the Assistant on', async () => {
+		const suggestionId = await suggestion();
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'Oz', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await expectStatus(rereadPost({ suggestionId }, other.id), 404);
+
+		// An edit that is not an accepted pattern edit is skipped without a request.
+		const skipped = await rereadPost({ suggestionId });
+		expect(await skipped.json()).toEqual({ skipped: 'gone' });
+
+		await configure(false);
+		await expectStatus(rereadPost({ suggestionId }), 403);
 	});
 });
 
