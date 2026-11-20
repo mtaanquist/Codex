@@ -1000,6 +1000,16 @@ triage.
   on a real pg-boss and compares against a second written-out list on purpose,
   so a dropped sweep or a changed cron fails. The backup schedule stays in
   `index.ts` since it depends on saved settings.
+- #1214: the stale-mark invariant test drives eleven more write paths: find
+  and replace, restoring a scene or entity revision, accepting a review
+  suggestion, saving a draft, restoring a scene from one, a new story from
+  one, creating an entity from the story page, setting and clearing a mention
+  pin, and accepting an alias suggestion. Actions that only apply in a rare
+  state (restore, unmute, pin) get a second draw so the default eight seeds
+  reach them; 24 seeds passed locally. It found one needless
+  mark: restoring a revision whose text the scene already has rewrote the
+  row, which marked the summary out of date and paid for the same summary
+  again. `restoreRevision` now leaves such a scene alone.
 - #1239: no selector can follow a variable into a later `.set()`, so the
   one-clock rule now refuses `const x = new Date()` outright in server code,
   and covers `src/routes/**/*.ts` and `src/worker/**` too. Nothing on main

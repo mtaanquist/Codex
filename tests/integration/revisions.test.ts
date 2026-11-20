@@ -285,6 +285,20 @@ describe('restoreRevision', () => {
 		expect(after[0]).toMatchObject({ reason: 'restore' });
 	});
 
+	it('leaves a scene that already has the text untouched', async () => {
+		const [before] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
+		await recordRevision(db, 'scene', sceneId, before.bodyMd, 'checkpoint', { label: 'Same' });
+		const timeline = await listRevisions(db, 'scene', sceneId);
+		const same = timeline.find((row) => row.label === 'Same')!;
+		expect(await restoreRevision(db, ownerId, same.id, 'scene', sceneId)).toMatchObject({
+			ok: true
+		});
+		const [after] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
+		// The row was not rewritten, so its summary is not marked out of date.
+		expect(after.updatedAt).toEqual(before.updatedAt);
+		expect(await listRevisions(db, 'scene', sceneId)).toHaveLength(timeline.length);
+	});
+
 	it('rejects a revision belonging to another entity', async () => {
 		await seedRevisions();
 		const [aliceRevision] = await listRevisions(db, 'character', aliceId);
