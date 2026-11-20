@@ -11,6 +11,7 @@ import {
 	openAssistantNote,
 	updateAssistantSuggestion
 } from '../../review.ts';
+import { toLf } from '#lib/line-endings';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { locateQuote } from '#lib/quote-locate';
 import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
@@ -414,7 +415,9 @@ async function proposeSceneSplit(
 ): Promise<ToolOutcome> {
 	const scene = await loadScene(ctx, input.sceneId);
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
-	const location = locateSplitBefore(scene.bodyMd, input.before);
+	// Checked the way the confirm step locates it, so a scene stored with
+	// CRLF line endings (an older import) takes a passage across a line break.
+	const location = locateSplitBefore(toLf(scene.bodyMd), toLf(input.before));
 	if (!location.ok) return { result: location.reason, staged: false };
 	return {
 		result:

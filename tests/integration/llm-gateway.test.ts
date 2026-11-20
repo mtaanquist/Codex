@@ -834,6 +834,44 @@ describe('gateway tool loop', () => {
 		expect(repeatResult?.content).toContain('already staged');
 	});
 
+	it('propose_scene_split finds a passage across a line break in a scene stored with CRLF', async () => {
+		await configure(true);
+		const { storyId, sceneId } = await seedStoryScene(
+			'The first half ends here.\r\n\r\nThe second half\r\nstarts here.'
+		);
+		const script = scriptedProvider([
+			{
+				content: '',
+				toolCalls: [
+					{
+						id: 'c1',
+						name: 'propose_scene_split',
+						arguments: JSON.stringify({
+							sceneId,
+							newSceneStart: 'The second half\nstarts',
+							rationale: 'A clean change of focus.'
+						})
+					}
+				]
+			},
+			{ content: 'I propose splitting before the second half.' }
+		]);
+		const events = await drain(
+			stream(
+				db,
+				{
+					userId,
+					storyId,
+					role: 'chat',
+					enableTools: true,
+					messages: [{ role: 'user', content: 'where should this split?' }]
+				},
+				{ provider: script.provider, http: noHttp }
+			)
+		);
+		expect(events.some((e) => e.type === 'proposal')).toBe(true);
+	});
+
 	it('propose_scene_split stages nothing and surfaces a proposal frame on the stream', async () => {
 		await configure(true);
 		const body = 'The first half ends here.\n\nThe second half starts here.';
