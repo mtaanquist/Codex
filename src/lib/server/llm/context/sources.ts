@@ -239,6 +239,8 @@ export async function storySkeleton(
 			id: scenes.id,
 			title: scenes.title,
 			summaryMd: scenes.summaryMd,
+			summaryGeneratedAt: scenes.summaryGeneratedAt,
+			updatedAt: scenes.updatedAt,
 			status: scenes.status,
 			chapterId: scenes.chapterId
 		})
@@ -247,8 +249,11 @@ export async function storySkeleton(
 		.orderBy(asc(scenes.globalPosition));
 
 	const byChapter = new Map<string, SceneSummary[]>();
+	const rowsByChapter = new Map<string, typeof sceneRows>();
 	const orphans: SceneSummary[] = [];
 	for (const scene of sceneRows) {
+		if (scene.chapterId)
+			rowsByChapter.set(scene.chapterId, [...(rowsByChapter.get(scene.chapterId) ?? []), scene]);
 		const summary: SceneSummary = {
 			id: scene.id,
 			title: scene.title,
@@ -269,10 +274,7 @@ export async function storySkeleton(
 			return {
 				id: chapter.id,
 				title: chapter.title,
-				summaryMd: chapterSummaryToSend(
-					chapter,
-					chapterScenes.map((scene) => scene.summaryMd)
-				),
+				summaryMd: chapterSummaryToSend(chapter, rowsByChapter.get(chapter.id) ?? []),
 				scenes: chapterScenes
 			};
 		}),

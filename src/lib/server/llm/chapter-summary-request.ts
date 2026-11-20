@@ -1,6 +1,7 @@
 import { buildChapterSummaryMessage } from './prompts/summary.ts';
 import { requestHash } from './request-hash.ts';
 import type { ChatMessage } from './providers/types.ts';
+import { usableSceneSummary, type SceneSummarySource } from '../summary-currency.ts';
 
 // The request a chapter's summary is written from, and the check that a stored
 // summary still matches it. Kept apart from the job (summaries.ts) so the
@@ -10,12 +11,16 @@ export type ChapterSummaryRequest = { messages: ChatMessage[]; input: string };
 
 // The request a chapter summary would be written from as things stand, with
 // its fingerprint: the chapter's title and the summaries of its live scenes in
-// reading order. Null when none of its scenes has a summary yet.
+// reading order. A scene summary the Assistant wrote before the scene last
+// changed is left out, so a chapter summary written from it reads as out of
+// date as soon as the scene is edited; the summaries pass rewrites the scene
+// summary first and the chapter from the result. Null when none of its scenes
+// has a summary to go on.
 export function chapterSummaryRequest(
 	title: string | null,
-	sceneSummaries: (string | null)[]
+	chapterScenes: SceneSummarySource[]
 ): ChapterSummaryRequest | null {
-	const summaries = sceneSummaries.map((s) => s?.trim()).filter((s): s is string => !!s);
+	const summaries = chapterScenes.map(usableSceneSummary).filter((s): s is string => !!s);
 	if (summaries.length === 0) return null;
 	const messages: ChatMessage[] = [
 		{ role: 'user', content: buildChapterSummaryMessage(title, summaries) }
@@ -45,9 +50,9 @@ export function chapterSummaryToSend(
 		summaryGeneratedAt: Date | null;
 		summaryInput: string | null;
 	},
-	sceneSummaries: (string | null)[]
+	chapterScenes: SceneSummarySource[]
 ): string | null {
 	if (!chapter.summaryGeneratedAt) return chapter.summaryMd;
-	const request = chapterSummaryRequest(chapter.title, sceneSummaries);
+	const request = chapterSummaryRequest(chapter.title, chapterScenes);
 	return generatedChapterSummaryIsCurrent(chapter, request) ? chapter.summaryMd : null;
 }

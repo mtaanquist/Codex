@@ -1104,6 +1104,21 @@ reason for most of the lock-order rules.
   that the action wrote no Assistant column. `character-arc.test.ts` also
   runs saves with a trigger that fails any write to `characters`, and a
   reindex with the mentioned characters locked.
+- Staging review round 2 (`fix/staging-review-2`). An arc or chapter summary
+  written from a scene's Assistant summary read as current after the scene
+  was rewritten, until a summaries pass ran: the request builders read
+  `scenes.summary_md` without asking whether it was current, and the removed
+  marks used to cover this. Both now take a scene summary only while it is
+  usable (`usableSceneSummary`); an arc falls back to the passage and a
+  chapter leaves the scene out. The pass rewriting the scene summary changes
+  the request again (a real change of input, unless the new summary is the
+  same text, in which case both read as current again). The invariant test
+  gained a check that does not go through the builders: from the prompts the
+  fake model was sent, nothing written from a scene's summary may read as
+  current once that scene's text or title has changed. Other readers of
+  scene summaries in the context (outline lines, neighbours, `list_scenes`,
+  attached outlines, the review survey) send a stale one as it is, as on
+  main; left for an issue.
 - Known and accepted:
   - A release that rewords a prompt puts every result of that kind out of
     date: the stored result was written from other instructions.

@@ -11,6 +11,9 @@
 //   as current;
 // - the passes then make a model call for exactly the arcs, chapter summaries
 //   and enrich reads whose request changed, and a second pass makes none;
+// - no arc or chapter summary written from a scene's summary reads as current
+//   once that scene has changed (judged from the prompts the stub was sent,
+//   not from the request builders);
 // - no save writes the columns the Assistant's jobs own;
 // - no context carries an arc that retells a story the Assistant is now
 //   turned off for.
@@ -118,6 +121,7 @@ const stubProvider: Provider = {
 		sent.push(messagesJson);
 		const prompt = req.messages.map((m) => String(m.content)).join('\n');
 		const content = replyTo(messagesJson);
+		requestOf.set(content, messagesJson);
 		writtenFrom.set(content, prompt.slice(prompt.indexOf('Summarise ')));
 		return {
 			content,
@@ -827,6 +831,9 @@ const writtenFrom = new Map<string, string>();
 // owed a refresh. Keyed by id and summary text, so a new summary starts clean.
 const dirty = new Set<string>();
 
+// The request behind each reply, as the provider received it.
+const requestOf = new Map<string, string>();
+
 // The request each entity's last enrich read sent, as the provider received
 // it. An enrich read leaves no text behind to tell it by.
 const enrichSent = new Map<string, string>();
@@ -885,14 +892,15 @@ async function chapterStates() {
 		const skeleton = await storySkeleton(db, story.id);
 		for (const chapter of rows) {
 			const sceneRows = await db
-				.select({ summaryMd: scenes.summaryMd })
+				.select({
+					summaryMd: scenes.summaryMd,
+					summaryGeneratedAt: scenes.summaryGeneratedAt,
+					updatedAt: scenes.updatedAt
+				})
 				.from(scenes)
 				.where(and(eq(scenes.chapterId, chapter.id), isNull(scenes.deletedAt)))
 				.orderBy(asc(scenes.globalPosition));
-			const request = chapterSummaryRequest(
-				chapter.title,
-				sceneRows.map((s) => s.summaryMd)
-			);
+			const request = chapterSummaryRequest(chapter.title, sceneRows);
 			out.push({
 				id: chapter.id,
 				storyId: story.id,
@@ -934,6 +942,7 @@ async function sceneStates() {
 			id: scenes.id,
 			title: scenes.title,
 			bodyMd: scenes.bodyMd,
+			chapterId: scenes.chapterId,
 			summaryMd: scenes.summaryMd,
 			summaryGeneratedAt: scenes.summaryGeneratedAt,
 			updatedAt: scenes.updatedAt
@@ -948,6 +957,7 @@ async function sceneStates() {
 		id: scene.id,
 		name: `scene summary of ${label(scene.title, scene.id)}`,
 		summaryMd: scene.summaryMd,
+		chapterId: scene.chapterId,
 		blank: !scene.bodyMd.trim(),
 		input: buildSceneSummaryMessage(scene.title, scene.bodyMd),
 		generated: scene.summaryGeneratedAt !== null,
@@ -981,13 +991,18 @@ async function enrichStates() {
 // one whose input never changed must not.
 async function checkReads(): Promise<string[]> {
 	const findings: string[] = [];
-	for (const item of [...(await arcStates()), ...(await chapterStates())]) {
+	const arcs = await arcStates();
+	const chapterList = await chapterStates();
+	for (const item of [...arcs, ...chapterList]) {
 		if (!item.summaryMd || !item.generated) continue;
 		const changed = item.now === null || replyTo(item.now) !== item.summaryMd.trim();
 		if (changed && !item.shownStale) findings.push(`shown as current: ${item.name}`);
 		if (!changed && item.shownStale) findings.push(`shown as out of date: ${item.name}`);
 	}
-	for (const scene of await sceneStates()) {
+	// Scenes whose text or title is not what their summary was written from.
+	const sceneList = await sceneStates();
+	const owedScenes: typeof sceneList = [];
+	for (const scene of sceneList) {
 		if (!scene.generated || scene.blank || !scene.summaryMd) continue;
 		const was = writtenFrom.get(scene.summaryMd.trim());
 		if (was === undefined) continue;
@@ -1001,6 +1016,49 @@ async function checkReads(): Promise<string[]> {
 			uncopied(promptTitle(was)) !== uncopied(promptTitle(scene.input));
 		if (owed && !scene.stale) findings.push(`shown as current: ${scene.name}`);
 		if (!dirty.has(key) && scene.stale) findings.push(`shown as out of date: ${scene.name}`);
+		if (owed) owedScenes.push(scene);
+	}
+
+	// Worked out from the requests the stub was sent, not from the request
+	// builders: nothing written from a scene summary reads as current once
+	// that scene has changed, whether or not a summaries pass has run since.
+	// A chapter summary was written from a changed scene's summary when its
+	// request held that text more often than the chapter's unchanged scenes
+	// account for (a duplicate carries its source's text).
+	for (const chapter of chapterList) {
+		if (!chapter.summaryMd || !chapter.generated || chapter.shownStale) continue;
+		const request = requestOf.get(chapter.summaryMd.trim());
+		if (!request) continue;
+		const lines = (JSON.parse(request) as { content: string }[])[0].content
+			.split('\n---\n')[1]
+			.split('\n')
+			.map((line) => line.replace(/^\d+\. /, ''));
+		for (const scene of owedScenes.filter((s) => s.chapterId === chapter.id)) {
+			const text = scene.summaryMd!.trim();
+			const unchanged = sceneList.filter(
+				(s) => s.chapterId === chapter.id && !owedScenes.includes(s) && s.summaryMd?.trim() === text
+			).length;
+			if (lines.filter((line) => line === text).length > unchanged)
+				findings.push(`shown as current after ${scene.name} changed: ${chapter.name}`);
+		}
+	}
+	if (owedScenes.length) {
+		const { rows } = await pool.query(
+			`select distinct m.target_id as id, m.source_id as scene from entity_mentions m
+			 join scenes s on s.id = m.source_id and s.deleted_at is null
+			 join stories st on st.id = s.story_id and st.deleted_at is null
+			 where m.source_type = 'scene' and m.source_id = any($1)
+			   and coalesce(st.llm_config ->> 'enabled', 'true') <> 'false'`,
+			[owedScenes.map((scene) => scene.id)]
+		);
+		for (const arc of arcs) {
+			if (!arc.summaryMd || arc.shownStale) continue;
+			for (const row of rows as { id: string; scene: string }[]) {
+				if (row.id !== arc.id) continue;
+				const scene = owedScenes.find((s) => s.id === row.scene)!;
+				findings.push(`shown as current after ${scene.name} changed: ${arc.name}`);
+			}
+		}
 	}
 	return findings;
 }
@@ -1145,6 +1203,7 @@ describe('Assistant results are out of date exactly when their request changed',
 		const r = rng(seed);
 		writtenFrom.clear();
 		arcStories.clear();
+		requestOf.clear();
 		dirty.clear();
 		enrichSent.clear();
 		chapterCount = 0;

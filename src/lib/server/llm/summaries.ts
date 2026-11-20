@@ -13,7 +13,7 @@ import { spentFields, type SpendMeter } from './spend.ts';
 import { jobSpendMeter } from './job-spend.ts';
 import type { ChatMessage } from './providers/types.ts';
 import { storyIsLive } from '../universe-scope.ts';
-import { summaryIsCurrent } from '../summary-currency.ts';
+import { summaryIsCurrent, type SceneSummarySource } from '../summary-currency.ts';
 import {
 	chapterSummaryRequest,
 	generatedChapterSummaryIsCurrent
@@ -245,10 +245,15 @@ export async function summariseStory(
 
 	// Every chapter's scene summaries in one read, read after the scene pass so
 	// the summaries it just wrote are included.
-	const summariesByChapter = new Map<string, (string | null)[]>();
+	const summariesByChapter = new Map<string, SceneSummarySource[]>();
 	if (chapterRows.length > 0) {
 		const sceneSummaries = await db
-			.select({ chapterId: scenes.chapterId, summaryMd: scenes.summaryMd })
+			.select({
+				chapterId: scenes.chapterId,
+				summaryMd: scenes.summaryMd,
+				summaryGeneratedAt: scenes.summaryGeneratedAt,
+				updatedAt: scenes.updatedAt
+			})
 			.from(scenes)
 			.where(
 				and(
@@ -263,7 +268,7 @@ export async function summariseStory(
 		for (const row of sceneSummaries) {
 			if (!row.chapterId) continue;
 			const list = summariesByChapter.get(row.chapterId) ?? [];
-			list.push(row.summaryMd);
+			list.push(row);
 			summariesByChapter.set(row.chapterId, list);
 		}
 	}

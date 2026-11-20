@@ -288,7 +288,9 @@ describe('the whole book', () => {
 			// The writer's own summary always goes.
 			expect(await text()).toContain('Summary: The town burns.');
 			// One the Assistant wrote goes while its fingerprint matches.
-			const request = chapterSummaryRequest('Ashfall', ['Smoke rises.'])!;
+			const request = chapterSummaryRequest('Ashfall', [
+				{ summaryMd: 'Smoke rises.', summaryGeneratedAt: null, updatedAt: new Date() }
+			])!;
 			await db
 				.update(chapters)
 				.set({ summaryGeneratedAt: new Date(), summaryInput: request.input })

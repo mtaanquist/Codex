@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	chapters,
 	characters,
 	entityMentions,
 	scenes,
@@ -40,6 +41,7 @@ const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride, saveUniver
 	await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { assembleContext } = await import('../../src/lib/server/llm/context/assemble');
+const { storySkeleton } = await import('../../src/lib/server/llm/context/sources');
 
 let lastPrompt = '';
 let lastModel = '';
@@ -633,6 +635,70 @@ describe('arc staleness', () => {
 			(await summariseStory(db, { userId: ownerId, storyId: firstStoryId }, deps)).scenes
 		).toBe(1);
 		expect(await arcStale(bram.id)).toBe(true);
+	});
+
+	it('goes stale, with the chapter summary, when a scene retold from its summary is rewritten', async () => {
+		const bram = await makeCharacter();
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId: firstStoryId, position: 1, title: 'Quay' })
+			.returning({ id: chapters.id });
+		const [scene] = await db
+			.insert(scenes)
+			.values({
+				storyId: firstStoryId,
+				chapterId: chapter.id,
+				positionInChapter: 1,
+				globalPosition: 1,
+				bodyMd: 'Bram walks the quay.'
+			})
+			.returning({ id: scenes.id });
+		await rebuildSceneMentions(db, scene.id);
+		reply = 'Bram walks.';
+		const pass = () => summariseStory(db, { userId: ownerId, storyId: firstStoryId }, deps);
+		expect(await pass()).toMatchObject({ scenes: 1, chapters: 1 });
+		reply = 'Bram lives by the sea.';
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		const outline = async () => (await storySkeleton(db, firstStoryId)).chapters[0].summaryMd;
+		const contextText = async () =>
+			(await assembleContext(db, { userId: ownerId, storyId: firstStoryId, sceneId: scene.id }))!
+				.text;
+		expect(await arcStale(bram.id)).toBe(false);
+		expect(await outline()).toBe('Bram walks.');
+		expect(await contextText()).toContain('Across the stories: Bram lives by the sea.');
+
+		// The scene summary the arc and the chapter were written from no longer
+		// tells the scene.
+		await db.update(scenes).set({ bodyMd: 'Bram drowns.' }).where(eq(scenes.id, scene.id));
+		await rebuildSceneMentions(db, scene.id);
+		expect(await arcStale(bram.id)).toBe(true);
+		expect(await outline()).toBeNull();
+		expect(await contextText()).toMatch(/Across the stories \(written before[^)]*\): Bram lives/);
+
+		// The pass rewrites the scene summary, then the chapter, once.
+		reply = 'Bram drowns off the quay.';
+		calls = 0;
+		expect(await pass()).toMatchObject({ scenes: 1, chapters: 1 });
+		expect(await pass()).toMatchObject({ scenes: 0, chapters: 0 });
+		expect(calls).toBe(2);
+		expect(await outline()).toBe('Bram drowns off the quay.');
+		expect(await arcStale(bram.id)).toBe(true);
+	});
+
+	it('stays current when the pass writes a rewritten scene the same summary', async () => {
+		const bram = await makeCharacter();
+		const sceneId = await sceneWithProse('Bram walks the quay.');
+		reply = 'Bram walks.';
+		await summariseStory(db, { userId: ownerId, storyId: firstStoryId }, deps);
+		await summariseCharacterArc(db, { userId: ownerId, characterId: bram.id }, deps);
+		await db
+			.update(scenes)
+			.set({ bodyMd: 'Bram walks the quay again.' })
+			.where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+		expect(await arcStale(bram.id)).toBe(true);
+		await summariseStory(db, { userId: ownerId, storyId: firstStoryId }, deps);
+		expect(await arcStale(bram.id)).toBe(false);
 	});
 
 	it('goes stale when a mentioning scene is deleted', async () => {

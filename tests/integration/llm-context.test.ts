@@ -230,10 +230,14 @@ describe('assembleContext', () => {
 		expect(await assemble()).toContain('They go under.');
 
 		// The Assistant's, stored with the fingerprint of what it read.
-		const request = chapterSummaryRequest('Descent', [
-			'Alice and Bram meet.',
-			'A calm walk south.'
-		]);
+		const request = chapterSummaryRequest(
+			'Descent',
+			['Alice and Bram meet.', 'A calm walk south.'].map((summaryMd) => ({
+				summaryMd,
+				summaryGeneratedAt: null,
+				updatedAt: new Date()
+			}))
+		);
 		await db
 			.update(chapters)
 			.set({ summaryGeneratedAt: new Date(), summaryInput: request!.input })

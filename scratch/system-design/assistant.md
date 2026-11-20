@@ -863,6 +863,20 @@ hashes:
   (aliases, details, whether a summary is asked for), so accepting what a
   read suggested does not buy another read of the same passages.
 
+An arc and a chapter summary read scene summaries, and an Assistant-written
+scene summary is itself only current while its scene has not changed
+(`summary_generated_at` against `updated_at`). So both builders take a scene
+summary only while it is usable (`usableSceneSummary` in
+`summary-currency.ts`: the writer's own, or the Assistant's while current).
+For an arc the passage around the first mention stands in; for a chapter the
+scene is left out. An edit to a scene therefore puts what was written from
+its summary out of date at once, without waiting for a summaries pass. The
+pass rewrites scene summaries first and chapters from the result, so it
+converges in one run, and a rewritten summary that comes out the same puts
+the arc and chapter back to current. The other readers of scene summaries
+(the outline's scene lines, neighbouring scenes, `list_scenes`, an attached
+story outline, the review survey) still send a scene summary as it is stored.
+
 So a save runs no Assistant bookkeeping and takes no Assistant lock, the same
 request is never paid for twice, and a change that is undone reads as current
 again. `arc_summary_at`, `assistant_enriched_at` and a chapter's
