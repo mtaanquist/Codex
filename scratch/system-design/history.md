@@ -993,8 +993,9 @@ name. It now reads full scenes.
   whole book is a separate choice, offered only from a story and only when it
   fits one request; the background universe pass keeps snippets, because full
   scenes for every entity cost millions of tokens on a novel; the model stays
-  the utility model. A story can already point that at a larger model;
-  a universe cannot yet (#1266).
+  the utility model. Storage and resolution allow a per-story model
+  (`stories.llm_config.models`), but no screen sets it, and a universe has
+  no setting at all; both are #1266.
 - Not built: batching several entities into one book request with a cache
   breakpoint (step 4 of the issue). It only pays off if the background pass
   reads the book, which it does not.
