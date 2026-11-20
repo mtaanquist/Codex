@@ -987,6 +987,16 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
+- #1214: the stale-mark invariant test drives eleven more write paths: find
+  and replace, restoring a scene or entity revision, accepting a review
+  suggestion, saving a draft, restoring a scene from one, a new story from
+  one, creating an entity from the story page, setting and clearing a mention
+  pin, and accepting an alias suggestion. Actions that only apply in a rare
+  state (restore, unmute, pin) get a second draw so the default eight seeds
+  reach them; 24 seeds passed locally. It found one needless
+  mark: restoring a revision whose text the scene already has rewrote the
+  row, which marked the summary out of date and paid for the same summary
+  again. `restoreRevision` now leaves such a scene alone.
 - #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
   `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
   `index.ts` runs at import and could not be tested. The test registers them
