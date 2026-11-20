@@ -99,7 +99,7 @@ const ONE_THEME_PER_NOTE =
 const PATTERN_WITH_TOOL =
 	'For a recurring pattern (an epithet habit, a pet phrase, filter verbs), use leave_pattern_note: one call with a note opening "Pattern note (<the pattern>):" and an edit for every instance you would change, each with a one-sentence reason specific to that spot. Keep some variety on purpose: leave an instance alone where it helps the rhythm or clarity, and list it under kept with the reason. A pacing or structure observation is not a pattern; use leave_comment for it.';
 const PATTERN_WITHOUT_TOOL =
-	'When a comment describes a recurring pattern, open it with "Pattern note (<the pattern>):" and give the line edits for it as separate suggest_edit calls.';
+	'When a comment describes a recurring pattern, open it with "Pattern note (<the pattern>):" and give the line edits for it as separate suggest_edit calls, each with a one-sentence reason.';
 
 // sceneTextIncluded says whether the caller put the scene's prose in the
 // request already (the scene-local tier survived the budget). A weak model
