@@ -135,6 +135,8 @@
 					use:enhance={async ({ cancel }) => {
 						busy = true;
 						failure = null;
+						// The wording as submitted, not as it reads after the save.
+						const replacement = editing ? draft : undefined;
 						if (!(await beforeAccept())) {
 							busy = false;
 							failure = 'Your latest typing could not be saved, so nothing was accepted.';
@@ -142,7 +144,6 @@
 							return;
 						}
 						const id = step!.id;
-						const replacement = editing ? draft : undefined;
 						return async ({ result, update }) => {
 							busy = false;
 							if (result.type === 'success') {

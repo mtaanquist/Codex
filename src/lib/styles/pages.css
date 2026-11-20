@@ -1137,6 +1137,13 @@
 	color: var(--text-muted);
 	margin: 3px 0 0;
 }
+/* A few lines the person wrote themselves, such as a sign-up note. */
+.user-row-note {
+	font-size: 13px;
+	margin: 6px 0 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
 .user-row-actions {
 	flex: none;
 	display: flex;

@@ -112,15 +112,28 @@ describe('rejectUser', () => {
 	});
 });
 
+describe('the sign-up note', () => {
+	it('is dropped once the account is approved', async () => {
+		const pending = await makeUser('pending@example.com');
+		await db.update(users).set({ signupNote: 'A sea novel.' }).where(eq(users.id, pending));
+		expect(await approveUser(db, pending)).toBe(true);
+		const [row] = await db.select({ note: users.signupNote }).from(users);
+		expect(row.note).toBeNull();
+	});
+});
+
 describe('listAllUsers', () => {
 	it('returns every account, newest first', async () => {
 		await makeUser('admin@example.com', { role: 'admin', approved: true, verified: true });
 		await makeUser('active@example.com', { approved: true });
-		await makeUser('pending@example.com');
+		const pending = await makeUser('pending@example.com');
+		await db.update(users).set({ signupNote: 'A sea novel.' }).where(eq(users.id, pending));
 		const all = await listAllUsers(db);
 		expect(all).toHaveLength(3);
 		// createdAt descending: the last inserted comes first.
 		expect(all[0].email).toBe('pending@example.com');
+		// The note from the sign-up form rides along for the approval list.
+		expect(all.map((u) => u.signupNote)).toEqual(['A sea novel.', null, null]);
 	});
 
 	describe('lastActiveAt', () => {

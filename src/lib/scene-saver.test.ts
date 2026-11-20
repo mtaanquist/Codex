@@ -203,6 +203,16 @@ describe('createSceneSaver', () => {
 		expect(sent[0].baseHashes).toEqual([textHash('a, accepted')]);
 	});
 
+	it('knows the text it saved and a save still on its way, and no other', async () => {
+		mockFetch([ok]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		expect(saver.knows(textHash('a'))).toBe(true);
+		expect(saver.knows(textHash('elsewhere'))).toBe(false);
+		await saver.save(save('b'));
+		expect(saver.knows(textHash('b'))).toBe(true);
+		expect(saver.knows(textHash('a'))).toBe(false);
+	});
+
 	it('does not rebase when the accept was applied to text from another window', async () => {
 		const sent = mockFetch([ok]);
 		const saver = createSceneSaver('s', 'a', () => {});

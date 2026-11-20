@@ -112,7 +112,8 @@ export default defineConfig(
 		// so server code repeats the locale rules.
 		files: [
 			'src/lib/server/**',
-			'src/routes/**/*server.ts',
+			'src/routes/**/+*server.ts',
+			'src/routes/**/*.server.ts',
 			'src/hooks.server.ts',
 			'src/worker/**'
 		],

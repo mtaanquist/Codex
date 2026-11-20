@@ -179,7 +179,10 @@ either inner edge (`PaneResizer.svelte`, first child of each `aside.pane.left`
 and `aside.pane.right` in a workspace shell): the chosen width overrides the
 token on the root element, clamped between the token's floor and a share of
 the window (left 30vw, right 40vw), and is stored in localStorage for the
-app.html pre-paint script. One width per side for every tab and page. Focus mode (`.app.focus-mode`) hides both
+app.html pre-paint script, which takes only the chosen width from the stored
+value and applies the current floor and cap. A double-click, a double-tap or
+Enter on the edge puts the default back. The settings rail follows a dragged
+left width and has no handle of its own. One width per side for every tab and page. Focus mode (`.app.focus-mode`) hides both
 sidebars with `visibility: hidden` so the prose column does not shift. Add
 `.body.no-right` when no panel has a subject, so the centre takes the space
 instead of a fixed empty column.
@@ -517,7 +520,7 @@ focus mode does not also fire), and focus returns to the opener on close
 unless something run from the dialog moved it on purpose. A backdrop click
 closes only when nothing is unsaved. Every modal uses the action
 (`CommandPalette`, `ImportStoryModal`, `ReviewModal`, `RoleTuningModal`,
-`ClearReviewsModal`,
+`ClearReviewsModal`, `ReviewDecideModal`,
 `PenNamePrompt`); `QuickNote` is a floating card, not a modal, and keeps its
 own focus return. A search modal keeps focus in its box and drives the
 results with `role="combobox"` and `aria-activedescendant` (the options are

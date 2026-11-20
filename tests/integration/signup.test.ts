@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { MIN_PASSWORD } from '../../src/lib/password';
+import { SIGNUP_NOTE_MAX } from '../../src/lib/signup-note';
 import * as schema from '../../src/lib/server/db/schema';
 import { authTokens, inviteCodes, users } from '../../src/lib/server/db/schema';
 import {
@@ -49,6 +50,35 @@ describe('registerUser', () => {
 		expect(row.role).toBe('user');
 		expect(row.emailVerifiedAt).toBeNull();
 		expect(row.approvedAt).toBeNull();
+	});
+
+	it('keeps the note of a request that waits for approval', async () => {
+		const input = { password: 'a-good-password', displayName: 'Nora' };
+		await registerUser(db, { ...input, email: 'note@example.com', note: '  A sea novel.\n ' });
+		// A line break posted as CRLF counts once, as it does in the field.
+		const atLimit = `${'x'.repeat(SIGNUP_NOTE_MAX - 2)}\r\ny`;
+		await registerUser(db, { ...input, email: 'limit@example.com', note: atLimit });
+		await registerUser(db, { ...input, email: 'blank@example.com', note: '   ' });
+		// An account that skips the queue has nobody to read a note.
+		await registerUser(db, { ...input, email: 'open@example.com', note: 'Hello' }, 'open');
+		const rows = await db.select({ email: users.email, note: users.signupNote }).from(users);
+		expect(Object.fromEntries(rows.map((row) => [row.email, row.note]))).toEqual({
+			'note@example.com': 'A sea novel.',
+			'limit@example.com': `${'x'.repeat(SIGNUP_NOTE_MAX - 2)}\ny`,
+			'blank@example.com': null,
+			'open@example.com': null
+		});
+	});
+
+	it('rejects a note over the limit without creating an account', async () => {
+		const result = await registerUser(db, {
+			email: 'long@example.com',
+			password: 'a-good-password',
+			displayName: 'Nora',
+			note: 'x'.repeat(SIGNUP_NOTE_MAX + 1)
+		});
+		expect(result).toMatchObject({ ok: false });
+		expect(await db.select().from(users)).toHaveLength(0);
 	});
 
 	it('rejects a bad email, a short password, and an empty name', async () => {

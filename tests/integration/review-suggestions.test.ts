@@ -26,6 +26,7 @@ const {
 	createReviewInvitation,
 	createSuggestion,
 	decideSuggestion,
+	decideSuggestions,
 	deleteSuggestion,
 	ensureReviewer,
 	listSuggestions
@@ -382,6 +383,88 @@ describe('decideSuggestion', () => {
 		expect(await decideSuggestion(db, strangerId, storyId, suggestionId, true)).toMatchObject({
 			ok: false
 		});
+		expect(await sceneBody()).toBe(BODY);
+	});
+});
+
+describe('decideSuggestions (several at once)', () => {
+	async function suggestWord(word: string, replacement: string) {
+		const start = BODY.indexOf(word);
+		const made = await suggest({ start, end: start + word.length }, replacement);
+		if (!made.ok) throw new Error(made.reason);
+		return made.suggestionId;
+	}
+
+	it('accepts each against the text the one before left, with one history entry each', async () => {
+		const fox = await suggestWord('brown fox', 'red vixen');
+		const dog = await suggestWord('lazy dog', 'sleeping hound');
+		const quick = await suggestWord('quick', 'slow');
+
+		const result = await decideSuggestions(db, authorId, storyId, [dog, fox, quick], true);
+		const after = 'The slow red vixen jumps over the sleeping hound.';
+		expect(result).toEqual({
+			decided: [dog, fox, quick],
+			failed: [],
+			// The editor rebases onto the final text from the text before the first.
+			accepted: { sceneId, bodyMd: after, baseHash: textHash(BODY) },
+			sceneIds: [sceneId]
+		});
+		expect(await sceneBody()).toBe(after);
+		const history = await db
+			.select({ reason: revisions.reason })
+			.from(revisions)
+			.where(and(eq(revisions.entityType, 'scene'), eq(revisions.entityId, sceneId)));
+		expect(history.filter((row) => row.reason === 'suggestion')).toHaveLength(3);
+	});
+
+	it('leaves out the one whose passage an earlier accept changed, and says so', async () => {
+		const fox = await suggestWord('brown fox', 'red vixen');
+		const overlap = await suggestWord('quick brown', 'slow grey');
+		const dog = await suggestWord('lazy dog', 'sleeping hound');
+
+		const result = await decideSuggestions(db, authorId, storyId, [fox, overlap, dog], true);
+		expect(result.decided).toEqual([fox, dog]);
+		expect(result.failed).toEqual([{ id: overlap, reason: expect.stringContaining('changed') }]);
+		expect(await sceneBody()).toBe('The quick red vixen jumps over the sleeping hound.');
+		expect(result.accepted?.bodyMd).toBe(await sceneBody());
+		const pending = (await listSuggestions(db, storyId)).filter((s) => s.status === 'pending');
+		expect(pending.map((s) => s.id)).toEqual([overlap]);
+	});
+
+	it('reports the text a change was made on, so a write in between is caught', async () => {
+		const fox = await suggestWord('brown fox', 'red vixen');
+		const dog = await suggestWord('lazy dog', 'sleeping hound');
+		// The first accept alone, then a save from elsewhere, then the second.
+		await decideSuggestions(db, authorId, storyId, [fox], true);
+		const between = `${await sceneBody()} More.`;
+		await db.update(scenes).set({ bodyMd: between }).where(eq(scenes.id, sceneId));
+		const result = await decideSuggestions(db, authorId, storyId, [dog], true);
+		// One change is its own chain: it reports the text it was made on, and
+		// the editor's save check refuses a base it never saw.
+		expect(result.accepted).toEqual({
+			sceneId,
+			bodyMd: between.replace('lazy dog', 'sleeping hound'),
+			baseHash: textHash(between)
+		});
+	});
+
+	it('rejects several without touching the text', async () => {
+		const fox = await suggestWord('brown fox', 'red vixen');
+		const dog = await suggestWord('lazy dog', 'sleeping hound');
+		const result = await decideSuggestions(db, authorId, storyId, [fox, dog, fox], false);
+		expect(result).toEqual({ decided: [fox, dog], failed: [], accepted: null, sceneIds: [] });
+		expect(await sceneBody()).toBe(BODY);
+		expect((await listSuggestions(db, storyId)).map((s) => s.status)).toEqual([
+			'rejected',
+			'rejected'
+		]);
+	});
+
+	it('decides nothing for someone who does not own the story', async () => {
+		const fox = await suggestWord('brown fox', 'red vixen');
+		const result = await decideSuggestions(db, strangerId, storyId, [fox], true);
+		expect(result.decided).toEqual([]);
+		expect(result.failed).toHaveLength(1);
 		expect(await sceneBody()).toBe(BODY);
 	});
 });

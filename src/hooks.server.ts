@@ -16,6 +16,8 @@ const PUBLIC_PATHS = new Set([
 	// The two-factor challenge runs before a session exists; it guards itself on
 	// the signed challenge cookie.
 	'/login/totp',
+	// Asking for a sign-in link by email, and using one.
+	'/login/link',
 	'/signup',
 	'/verify-email',
 	'/forgot-password',
@@ -36,7 +38,7 @@ const PUBLIC_PATHS = new Set([
 	'/healthz'
 ]);
 // Pages a signed-in user has no reason to see; bounce them home instead.
-const AUTH_PATHS = new Set(['/login', '/signup']);
+const AUTH_PATHS = new Set(['/login', '/login/link', '/signup']);
 // Reader pages are public; assets and export downloads check publication
 // state themselves, and review pages guard on the magic-link token.
 const PUBLIC_PREFIXES = ['/@', '/assets/', '/artifacts/', '/review/', '/docs/'];

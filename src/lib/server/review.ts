@@ -1153,6 +1153,72 @@ export async function decideSuggestion(
 	};
 }
 
+// The most suggestions one bulk decision takes. A scene rarely holds more
+// pending edits than this; the rest can go in a second round.
+export const BULK_DECISION_MAX = 200;
+
+export type BulkDecision = {
+	// The suggestions the decision was applied to, in the order given.
+	decided: string[];
+	// The ones it was not applied to, each with why.
+	failed: { id: string; reason: string }[];
+	// After an accept that changed one scene and nothing else wrote to it in
+	// between: the scene, its text now, and the fingerprint of its text before
+	// the first change. Null otherwise, and for a reject.
+	accepted: { sceneId: string; bodyMd: string; baseHash: string } | null;
+	// Every scene whose text an accept changed.
+	sceneIds: string[];
+};
+
+// The author's decision on several suggestions the review toolbar listed and
+// the author ticked. Each goes through decideSuggestion on its own, so each
+// accept is checked against the text as it stands after the ones before it,
+// and gets its own history entry. One that cannot be applied (its passage
+// changed, or it was decided meanwhile) is reported and the rest carry on.
+export async function decideSuggestions(
+	db: Database,
+	userId: string,
+	storyId: string,
+	suggestionIds: string[],
+	accept: boolean
+): Promise<BulkDecision> {
+	const decided: string[] = [];
+	const failed: BulkDecision['failed'] = [];
+	const changes: { sceneId: string; bodyMd: string; baseHash: string }[] = [];
+	for (const id of new Set(suggestionIds)) {
+		const result = await decideSuggestion(db, userId, storyId, id, accept);
+		if (!result.ok) {
+			failed.push({ id, reason: result.reason });
+			continue;
+		}
+		decided.push(id);
+		if (result.sceneId && result.bodyMd !== null && result.baseHash !== null) {
+			changes.push({ sceneId: result.sceneId, bodyMd: result.bodyMd, baseHash: result.baseHash });
+		}
+	}
+	// The open editor may only build on the final text when every change was
+	// made to the text the one before it left: one scene, and no other write
+	// in between.
+	const chained = changes.every(
+		(change, i) =>
+			i === 0 ||
+			(change.sceneId === changes[0].sceneId && change.baseHash === textHash(changes[i - 1].bodyMd))
+	);
+	return {
+		decided,
+		failed,
+		accepted:
+			changes.length > 0 && chained
+				? {
+						sceneId: changes[0].sceneId,
+						bodyMd: changes[changes.length - 1].bodyMd,
+						baseHash: changes[0].baseHash
+					}
+				: null,
+		sceneIds: [...new Set(changes.map((change) => change.sceneId))]
+	};
+}
+
 // Retracts a comment the viewer authored. A reply is removed on its own; the
 // thread's opening comment can only be removed when no one else has joined the
 // thread (so a retraction never takes someone else's reply with it), and then

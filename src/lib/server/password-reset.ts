@@ -2,13 +2,10 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from './auth';
 import { sessions, users } from './db/schema';
 import { hashPassword } from './password';
-import { consumeToken, reserveToken, revokeTokens } from './tokens';
+import { consumeToken, NO_USER, reserveToken, revokeTokens } from './tokens';
 import { MIN_PASSWORD } from '#lib/password';
 
 const RESET_TTL_MINUTES = 60;
-// A uuid that matches no account, used to run the same query for an unknown
-// address as for a known one.
-const NO_USER = '00000000-0000-0000-0000-000000000000';
 
 // Reserves a reset token for an existing account and returns its id for the
 // queued email, or null when no account matches. The caller shows the same
@@ -56,6 +53,8 @@ export async function resetPassword(
 		// Any sibling reset links die with this one, so a second outstanding link
 		// cannot reset the password again after recovery.
 		await revokeTokens(tx, userId, 'password_reset');
+		// A sign-in link stands in for the old password, so it dies with it.
+		await revokeTokens(tx, userId, 'sign_in');
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })

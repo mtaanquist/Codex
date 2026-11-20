@@ -3,6 +3,7 @@ import type { Database } from './auth';
 import { authTokens, sessions, stories, universes, users, userTotp } from './db/schema.ts';
 import { hashPassword } from './password.ts';
 import { isUniqueViolation } from './db-errors.ts';
+import { revokeTokens } from './tokens.ts';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
 
@@ -66,6 +67,7 @@ export async function approveUser(db: Database, userId: string): Promise<boolean
 		.update(users)
 		.set({
 			approvedAt: sql`now()`,
+			signupNote: null,
 			emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`
 		})
 		.where(and(eq(users.id, userId), isNull(users.approvedAt), ne(users.role, 'admin')))
@@ -108,6 +110,8 @@ export type AdminUser = {
 	role: 'admin' | 'user';
 	emailVerifiedAt: Date | null;
 	approvedAt: Date | null;
+	// What they wrote when asking for the account, if anything.
+	signupNote: string | null;
 	suspendedAt: Date | null;
 	deletionScheduledAt: Date | null;
 	publicArchiveEnabled: boolean;
@@ -129,6 +133,7 @@ export async function listAllUsers(db: Database): Promise<AdminUser[]> {
 			role: users.role,
 			emailVerifiedAt: users.emailVerifiedAt,
 			approvedAt: users.approvedAt,
+			signupNote: users.signupNote,
 			suspendedAt: users.suspendedAt,
 			deletionScheduledAt: users.deletionScheduledAt,
 			publicArchiveEnabled: users.publicArchiveEnabled,
@@ -195,8 +200,8 @@ export async function setUserArchive(
 }
 
 // Suspends or unsuspends an account. Suspending blocks sign-in and revokes the
-// account's live sessions then and there, so unsuspending later cannot bring an
-// old session back to life; it never touches an admin.
+// account's live sessions and unused sign-in links then and there, so
+// unsuspending later cannot bring old access back to life; it never touches an admin.
 export async function setUserSuspended(
 	db: Database,
 	userId: string,
@@ -214,6 +219,7 @@ export async function setUserSuspended(
 				.update(sessions)
 				.set({ revokedAt: sql`now()` })
 				.where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+			await revokeTokens(tx, userId, 'sign_in');
 		}
 		return true;
 	});

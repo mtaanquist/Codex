@@ -99,6 +99,8 @@ let draftCount = 0;
 
 const SEEDS = Number(process.env.STALE_SEEDS ?? 8);
 const STEPS = Number(process.env.STALE_STEPS ?? 30);
+// Seeds added after the chosen ones while some action has yet to apply.
+const EXTRA_SEEDS = 8;
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -1127,7 +1129,7 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 	const ran = new Set<string>();
 	const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
 
-	it.each(seeds)('seed %i', { timeout: 300_000 }, async (seed) => {
+	async function runSeed(seed: number) {
 		const r = rng(seed);
 		writtenFrom.clear();
 		dirty.clear();
@@ -1183,11 +1185,23 @@ describe('Assistant stale marks follow what the Assistant reads', () => {
 				);
 		}
 		if (soft.length) console.info(`seed ${seed}: not failed\n  ${soft.join('\n  ')}`);
-	});
+	}
 
-	// A write path that never applies is not being checked at all. The default
-	// seeds reach every one; a narrower run is not held to that.
-	it.skipIf(SEEDS < 8)('every action ran in some seed', () => {
-		expect(Object.keys(actions).filter((name) => !ran.has(name))).toEqual([]);
-	});
+	it.each(seeds)('seed %i', { timeout: 300_000 }, runSeed);
+
+	// A write path that never applies is not being checked at all. All picks
+	// come from one stream, so adding an action moves every seed's picks and can
+	// leave a rarely applicable one out of the default seeds; further seeds then
+	// run until each has applied. A run narrowed by STALE_SEEDS or STALE_STEPS
+	// is not held to this.
+	it.skipIf(SEEDS < 8 || STEPS < 30)(
+		'every action ran in some seed',
+		{ timeout: EXTRA_SEEDS * 300_000 },
+		async () => {
+			const missing = () => Object.keys(actions).filter((name) => !ran.has(name));
+			for (let seed = SEEDS + 1; missing().length && seed <= SEEDS + EXTRA_SEEDS; seed++)
+				await runSeed(seed);
+			expect(missing()).toEqual([]);
+		}
+	);
 });

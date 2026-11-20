@@ -13,6 +13,7 @@
 	import SidebarSearch from './SidebarSearch.svelte';
 	import StoryOutline from './StoryOutline.svelte';
 	import ClearReviewsModal from './ClearReviewsModal.svelte';
+	import ReviewDecideModal from './ReviewDecideModal.svelte';
 	import StoryRowMenu, { type RowMenuState, type RowMenuTarget } from './StoryRowMenu.svelte';
 	import ReviewSurface from './ReviewSurface.svelte';
 	import ReviewEditor from './ReviewEditor.svelte';
@@ -23,6 +24,7 @@
 	import type { MentionEntity } from '#lib/editor-mentions';
 	import type { MarkVisibility } from '#lib/editor';
 	import {
+		anchorPos,
 		patternQueue,
 		pendingPatternCounts,
 		suggestionInFilter,
@@ -155,6 +157,8 @@
 	);
 	const totalNotes = $derived(liveThreads.length + liveSuggestions.length);
 	let clearing = $state(false);
+	// The review toolbar's dialog for deciding on several edits at once.
+	let deciding = $state(false);
 	const discussions = $derived(
 		new Map(threads.filter((t) => t.suggestionId).map((t) => [t.suggestionId!, t]))
 	);
@@ -274,6 +278,12 @@
 
 	const sceneThreads = $derived(standaloneThreads.filter((t) => t.sceneId === selectedSceneId));
 	const sceneSuggestions = $derived(suggestions.filter((s) => s.sceneId === selectedSceneId));
+	// The open scene's pending edits in reading order, as the panel lists them.
+	const pendingHere = $derived(
+		sceneSuggestions
+			.filter((s) => s.status === 'pending')
+			.sort((a, b) => anchorPos(a.anchor) - anchorPos(b.anchor))
+	);
 
 	// The View dropdown for the editable centre, the same control as the Write
 	// toolbar: Edit (here), Preview and Print (the export views), and a
@@ -384,6 +394,12 @@
 	// Both actions read the stored text, so the open editor's pending save
 	// lands first; a failed save stops the action.
 	const flushEditor = () => flushEditors(editorRef ? [editorRef] : []);
+	// For a card's accept, which has no place of its own to report a failure.
+	async function flushBeforeAccept(): Promise<boolean> {
+		if (await flushEditor()) return true;
+		alert(SAVE_FAILED);
+		return false;
+	}
 	// A new scene (a duplicate) is picked only once the refresh has loaded
 	// it: picked before, the selection falls back to another scene for a
 	// moment and the editor mounts twice. One that already exists (a merge's
@@ -781,11 +797,13 @@
 						onAccepted={role === 'author'
 							? (ids, accepted) => editorRef?.applyAccepted(ids, accepted)
 							: null}
+						beforeAccept={role === 'author' ? flushBeforeAccept : null}
 						assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
 						onAssistantReply={assistantSurfaces ? assistantReply : null}
 						onClearReviews={role === 'author' && storyId && totalNotes > 0
 							? () => (clearing = true)
 							: null}
+						onDecideTogether={role === 'author' && storyId ? () => (deciding = true) : null}
 						{patternCounts}
 						onWorkThrough={role === 'author' && storyId ? startPass : null}
 					/>
@@ -845,6 +863,15 @@
 		finished={finishedNotes}
 		total={totalNotes}
 		onClose={() => (clearing = false)}
+	/>
+{/if}
+
+{#if deciding}
+	<ReviewDecideModal
+		suggestions={pendingHere}
+		beforeAccept={flushEditor}
+		onAccepted={(ids, accepted) => editorRef?.applyAccepted(ids, accepted)}
+		onClose={() => (deciding = false)}
 	/>
 {/if}
 

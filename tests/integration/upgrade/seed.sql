@@ -38,7 +38,7 @@ insert into entity_mentions (source_type, source_id, target_type, target_id, pos
 	('scene', '00000000-0000-4000-8000-0000000000e2', 'character', '00000000-0000-4000-8000-0000000000f1', 0, 'Mara sold the boat.'),
 	('scene', '00000000-0000-4000-8000-0000000000e2', 'character', '00000000-0000-4000-8000-0000000000f2', 22, 'Mara sold the boat to Tam.');
 
--- A whole-story copyedit that hit the spend cap after two scenes, saved under
+-- A whole-story review of prose and mechanics that hit the spend cap after two scenes, saved under
 -- the scope key this release used.
 insert into assistant_review_runs (job_id, user_id, state) values
 	('00000000-0000-4000-8000-0000000000aa', '00000000-0000-4000-8000-0000000000a1', '{"phase":"scenes","scope":"full:00000000-0000-4000-8000-0000000000c1","total":3,"completed":["00000000-0000-4000-8000-0000000000e1","00000000-0000-4000-8000-0000000000e2"],"reviewed":2,"failed":0,"notes":4,"failures":[],"capped":true,"spentUsd":0.5}');

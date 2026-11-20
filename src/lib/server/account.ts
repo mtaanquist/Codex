@@ -209,6 +209,8 @@ export async function changePassword(
 		// A deliberate password change also kills any outstanding reset links, so
 		// one issued before the change cannot take the account over afterwards.
 		await revokeTokens(tx, userId, 'password_reset');
+		// A sign-in link stands in for the old password, so it dies with it.
+		await revokeTokens(tx, userId, 'sign_in');
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })
@@ -282,10 +284,17 @@ export async function confirmEmailChange(db: Database, token: string): Promise<A
 		.where(eq(users.id, userId));
 	if (!user?.pendingEmail) return { ok: true };
 	try {
-		await db
-			.update(users)
-			.set({ email: user.pendingEmail, pendingEmail: null, emailVerifiedAt: sql`now()` })
-			.where(eq(users.id, userId));
+		const pendingEmail = user.pendingEmail;
+		await db.transaction(async (tx) => {
+			await tx
+				.update(users)
+				.set({ email: pendingEmail, pendingEmail: null, emailVerifiedAt: sql`now()` })
+				.where(eq(users.id, userId));
+			// Links mailed to the old address must not open the account once it
+			// has moved away from that inbox.
+			await revokeTokens(tx, userId, 'sign_in');
+			await revokeTokens(tx, userId, 'password_reset');
+		});
 		return { ok: true };
 	} catch (err) {
 		if (isUniqueViolation(err)) {
@@ -360,4 +369,6 @@ export async function revokeOtherSessions(
 				isNull(sessions.revokedAt)
 			)
 		);
+	// A sign-in link still in an inbox would open a new session afterwards.
+	await revokeTokens(db, userId, 'sign_in');
 }

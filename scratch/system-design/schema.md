@@ -52,6 +52,7 @@ users (
   created_at          timestamptz not null,
   email_verified_at   timestamptz,          -- null until the email-confirm link is clicked
   approved_at         timestamptz,          -- null until admin approves
+  signup_note         text,                 -- the sign-up form's "What are you working on?", for the approval list
   last_login_at       timestamptz           -- updated on successful sign-in; useful for stale-account cleanup
 )
 ```

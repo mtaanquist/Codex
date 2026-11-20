@@ -10,7 +10,9 @@ import {
 	clearReviews,
 	createSuggestion,
 	createThread,
+	BULK_DECISION_MAX,
 	decideSuggestion,
+	decideSuggestions,
 	deleteComment,
 	deleteSuggestion,
 	ensureSuggestionThread,
@@ -261,6 +263,41 @@ export const actions: Actions = {
 		const result = await decideSuggestion(db, locals.user!.id, story.id, suggestionId, false);
 		if (!result.ok) return fail(400, { message: result.reason });
 		return { done: true };
+	},
+	// The review toolbar: the author's decision on several suggestions at once.
+	decideSuggestions: async ({ params, request, locals }) => {
+		const { story } = await ownedStory(params.id, locals.user!.id);
+		const data = await request.formData();
+		const decision = formText(data, 'decision');
+		const ids = data.getAll('suggestionId').filter((id) => typeof id === 'string');
+		if (decision !== 'accept' && decision !== 'reject') {
+			return fail(400, { message: 'Choose to accept or reject.' });
+		}
+		if (ids.length > BULK_DECISION_MAX) {
+			return fail(400, {
+				message: `Decide on up to ${BULK_DECISION_MAX} suggestions at a time. Untick some and try again.`
+			});
+		}
+		if (ids.length === 0 || !ids.every(isUuid)) {
+			return fail(400, { message: 'Tick the suggestions to decide on.' });
+		}
+		const result = await decideSuggestions(
+			db,
+			locals.user!.id,
+			story.id,
+			ids,
+			decision === 'accept'
+		);
+		// The body changed; keep the mention index in step.
+		for (const sceneId of result.sceneIds) await queueSceneMentions(sceneId);
+		return {
+			done: true,
+			decided: result.decided,
+			failed: result.failed,
+			// The editor rebases its save check onto this text, as for one accept.
+			bodyMd: result.accepted?.bodyMd ?? null,
+			baseHash: result.accepted?.baseHash ?? null
+		};
 	},
 	// The author retracting a comment of their own.
 	deleteComment: async ({ params, request, locals }) => {

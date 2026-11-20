@@ -631,6 +631,13 @@
 			"when": 1795169784096,
 			"tag": "0089_universe-llm-config",
 			"breakpoints": true
+		},
+		{
+			"idx": 90,
+			"version": "7",
+			"when": 1795172976619,
+			"tag": "0090_signup-note",
+			"breakpoints": true
 		}
 	]
 }

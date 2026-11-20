@@ -89,6 +89,7 @@ const PUBLIC = [
 	'/',
 	'/login',
 	'/login/totp',
+	'/login/link',
 	'/signup',
 	'/verify-email',
 	'/forgot-password',
