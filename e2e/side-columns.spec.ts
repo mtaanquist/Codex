@@ -137,16 +137,21 @@ test('stored widths are re-bounded, shared with settings, and reset by double-ta
 	// The stored 1400px meets the real cap, 40% of the window.
 	expect(await width(page, '.pane.right')).toBeCloseTo(576, 0);
 
-	const tap = (name: string) =>
-		page.getByRole('separator', { name }).evaluate((el) => {
+	// Each call is one page task, so the taps of a double-tap cannot drift
+	// apart on a slow runner.
+	const tap = (times: number) =>
+		page.getByRole('separator', { name: 'Resize the left sidebar' }).evaluate((el, count) => {
 			const init = { pointerType: 'touch', pointerId: 7, button: 0, bubbles: true };
-			el.dispatchEvent(new PointerEvent('pointerdown', init));
-			el.dispatchEvent(new PointerEvent('pointerup', init));
-		});
-	// One tap alone changes nothing.
-	await tap('Resize the left sidebar');
+			for (let i = 0; i < count; i++) {
+				el.dispatchEvent(new PointerEvent('pointerdown', init));
+				el.dispatchEvent(new PointerEvent('pointerup', init));
+			}
+		}, times);
+	// One tap alone changes nothing, however long ago the last one was.
+	await tap(1);
 	expect(await width(page, '.pane.left')).toBeCloseTo(400, 0);
-	await tap('Resize the left sidebar');
+	await page.waitForTimeout(500);
+	await tap(2);
 	expect(await width(page, '.pane.left')).toBeCloseTo(264, 0);
 	expect(await page.evaluate(() => localStorage.getItem('codex-left-w'))).toBeNull();
 });

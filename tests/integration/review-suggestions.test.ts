@@ -431,6 +431,23 @@ describe('decideSuggestions (several at once)', () => {
 		expect(pending.map((s) => s.id)).toEqual([overlap]);
 	});
 
+	it('reports the text a change was made on, so a write in between is caught', async () => {
+		const fox = await suggestWord('brown fox', 'red vixen');
+		const dog = await suggestWord('lazy dog', 'sleeping hound');
+		// The first accept alone, then a save from elsewhere, then the second.
+		await decideSuggestions(db, authorId, storyId, [fox], true);
+		const between = `${await sceneBody()} More.`;
+		await db.update(scenes).set({ bodyMd: between }).where(eq(scenes.id, sceneId));
+		const result = await decideSuggestions(db, authorId, storyId, [dog], true);
+		// One change is its own chain: it reports the text it was made on, and
+		// the editor's save check refuses a base it never saw.
+		expect(result.accepted).toEqual({
+			sceneId,
+			bodyMd: between.replace('lazy dog', 'sleeping hound'),
+			baseHash: textHash(between)
+		});
+	});
+
 	it('rejects several without touching the text', async () => {
 		const fox = await suggestWord('brown fox', 'red vixen');
 		const dog = await suggestWord('lazy dog', 'sleeping hound');

@@ -26,6 +26,9 @@ export type SceneSaver = {
 	// locally. Ignored when fromHash is not a text this editor saved, so a
 	// change from another window still reports as a conflict.
 	rebase: (bodyMd: string, fromHash: string) => void;
+	// Whether hash is a text this editor saved or may have saved, the same
+	// test rebase applies.
+	knows: (hash: string) => boolean;
 };
 
 // A save that gets no answer in this time counts as a network error, so the
@@ -60,6 +63,10 @@ export function createSceneSaver(
 
 	function settle(hash: string) {
 		pending = pending.filter((h) => h !== hash);
+	}
+
+	function knows(hash: string) {
+		return hash === base || pending.includes(hash);
 	}
 
 	return {
@@ -121,12 +128,13 @@ export function createSceneSaver(
 			onConflict(null);
 		},
 		rebase(bodyMd, fromHash) {
-			if (fromHash !== base && !pending.includes(fromHash)) return;
+			if (!knows(fromHash)) return;
 			generation++;
 			base = textHash(bodyMd);
 			pending = [];
 			// A refusal caused by the accept itself is settled too.
 			onConflict(null);
-		}
+		},
+		knows
 	};
 }

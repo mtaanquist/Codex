@@ -18,8 +18,8 @@
 	{#if usable}
 		<form method="POST" action="?/use">
 			<p class="auth-lede">
-				Select the button to finish signing in. If your account uses two-factor authentication, you
-				are asked for a code next.
+				Select the button to sign in as <strong>{data.email}</strong>. If your account uses
+				two-factor authentication, you are asked for a code next.
 			</p>
 			<input type="hidden" name="token" value={data.token} />
 			<div class="auth-actions">

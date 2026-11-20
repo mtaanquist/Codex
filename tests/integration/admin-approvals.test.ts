@@ -112,6 +112,16 @@ describe('rejectUser', () => {
 	});
 });
 
+describe('the sign-up note', () => {
+	it('is dropped once the account is approved', async () => {
+		const pending = await makeUser('pending@example.com');
+		await db.update(users).set({ signupNote: 'A sea novel.' }).where(eq(users.id, pending));
+		expect(await approveUser(db, pending)).toBe(true);
+		const [row] = await db.select({ note: users.signupNote }).from(users);
+		expect(row.note).toBeNull();
+	});
+});
+
 describe('listAllUsers', () => {
 	it('returns every account, newest first', async () => {
 		await makeUser('admin@example.com', { role: 'admin', approved: true, verified: true });

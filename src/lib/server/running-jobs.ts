@@ -26,6 +26,8 @@ export type RunningAssistantJob = {
 	universeId: string | null;
 	// The story, chapter or universe name, for the card's label.
 	title: string;
+	// When the job was queued, for how long it has been going.
+	startedAt: string;
 };
 
 type JobData = {
@@ -48,8 +50,13 @@ export async function findRunningAssistantJobs(
 	db: Database,
 	userId: string
 ): Promise<RunningAssistantJob[]> {
-	const { rows } = await db.execute<{ id: string; name: string; data: JobData }>(sql`
-		select id, name, data from pgboss.job
+	const { rows } = await db.execute<{
+		id: string;
+		name: string;
+		data: JobData;
+		created_on: Date | string;
+	}>(sql`
+		select id, name, data, created_on from pgboss.job
 		where name in (
 			${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE}, ${ASSISTANT_ENRICH_QUEUE},
 			${LEGACY_ASSISTANT_REVIEW_QUEUE}, ${LEGACY_ASSISTANT_SUMMARIES_QUEUE}
@@ -71,7 +78,8 @@ export async function findRunningAssistantJobs(
 							? ('details' as const)
 							: ('enrich' as const)
 					: ('review' as const),
-		data: row.data
+		data: row.data,
+		startedAt: new Date(row.created_on).toISOString()
 	}));
 	if (found.length === 0) return [];
 
@@ -171,7 +179,8 @@ export async function findRunningAssistantJobs(
 			storyId: universeId ? null : (storyId ?? null),
 			chapterId: universeId ? null : (chapterId ?? null),
 			universeId: universeId ?? null,
-			title
+			title,
+			startedAt: job.startedAt
 		});
 	}
 	return out;

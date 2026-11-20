@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { activity, trackJob, trackedJobs } from './activity.svelte';
+import { activity, labelJob, trackJob, trackedJobs } from './activity.svelte';
 
 // trackJob polls the job-status endpoint; the replies are scripted per call.
 function scriptStatus(replies: object[]) {
@@ -32,7 +32,17 @@ describe('trackJob', () => {
 		]);
 		const run = trackJob({ jobId: 'j1', kind: 'review', scope: { storyId: 's1' }, ...labels });
 
-		expect(trackedJobs.list).toEqual([{ id: 'j1', kind: 'review', storyId: 's1' }]);
+		// What the top bar's list shows: the label without its dots, when it
+		// started, and a way to stop it.
+		expect(trackedJobs.list).toHaveLength(1);
+		expect(trackedJobs.list[0]).toMatchObject({
+			id: 'j1',
+			kind: 'review',
+			storyId: 's1',
+			label: 'Running',
+			startedAt: Date.now()
+		});
+		expect(trackedJobs.list[0].stop).toBeTypeOf('function');
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(trackedJobs.list[0].progress).toEqual({ phase: 'scenes', completed: 2, total: 5 });
 
@@ -134,19 +144,61 @@ describe('trackJob', () => {
 				});
 			})
 		);
-		const run = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		const queued = Date.now() - 600_000;
+		const run = trackJob({ jobId: 'j1', kind: 'summaries', startedAt: queued, ...labels });
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(activity.items[0].stop).toBeTypeOf('function');
+		// A job picked up after a reload keeps the time it was queued.
+		expect(trackedJobs.list[0].startedAt).toBe(queued);
 
-		activity.items[0].stop?.();
+		// Stopped from the list, which carries the same stop as the card.
+		trackedJobs.list[0].stop?.();
 		await vi.advanceTimersByTimeAsync(0);
 		expect(calls).toContain('/api/assistant/job-stop');
 		expect(activity.items[0]).toMatchObject({ state: 'running', detail: 'Stopping...' });
 		expect(activity.items[0].stop).toBeUndefined();
+		expect(trackedJobs.list[0]).toMatchObject({ stopping: true });
+		expect(trackedJobs.list[0].stop).toBeUndefined();
 
 		await vi.advanceTimersByTimeAsync(3000);
 		await run;
 		expect(activity.items[0]).toMatchObject({ state: 'done', label: 'Running: stopped' });
+	});
+
+	it('says in the list why a stop did not go through, and renames a job (#1271)', async () => {
+		let stopStatus = 503;
+		let stopped = false;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				if (url === '/api/assistant/job-stop') {
+					stopped = stopStatus === 200;
+					return new Response('{}', { status: stopStatus });
+				}
+				return new Response(JSON.stringify({ state: stopped ? 'failed' : 'running' }), {
+					status: 200
+				});
+			})
+		);
+		const run = trackJob({ jobId: 'j1', kind: 'summaries', ...labels });
+		expect(trackedJobs.list[0].label).toBe('Running');
+		labelJob('j1', 'Reviewing "Tides"...');
+		expect(trackedJobs.list[0].label).toBe('Reviewing "Tides"');
+
+		trackedJobs.list[0].stop?.();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(trackedJobs.list[0]).toMatchObject({
+			stopping: false,
+			stopError: 'Could not stop it. Try again in a moment.'
+		});
+
+		// Trying again clears the message.
+		stopStatus = 200;
+		trackedJobs.list[0].stop?.();
+		expect(trackedJobs.list[0].stopError).toBeUndefined();
+		await vi.advanceTimersByTimeAsync(3000);
+		await run;
+		expect(trackedJobs.list).toEqual([]);
 	});
 
 	it('shows a job that finished while Stop was in flight as done (#1045)', async () => {

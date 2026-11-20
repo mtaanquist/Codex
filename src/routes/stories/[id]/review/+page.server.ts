@@ -273,7 +273,12 @@ export const actions: Actions = {
 		if (decision !== 'accept' && decision !== 'reject') {
 			return fail(400, { message: 'Choose to accept or reject.' });
 		}
-		if (ids.length === 0 || ids.length > BULK_DECISION_MAX || !ids.every(isUuid)) {
+		if (ids.length > BULK_DECISION_MAX) {
+			return fail(400, {
+				message: `Decide on up to ${BULK_DECISION_MAX} suggestions at a time. Untick some and try again.`
+			});
+		}
+		if (ids.length === 0 || !ids.every(isUuid)) {
 			return fail(400, { message: 'Tick the suggestions to decide on.' });
 		}
 		const result = await decideSuggestions(

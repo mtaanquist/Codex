@@ -13,6 +13,47 @@ version, date, branch or PR where it had one.
 The narrative that sat under `## Open` in `TODO.md`, newest first, as it was
 written at the time.
 
+Small non-Assistant polish (2026-11-20, staging branch
+`staging/non-assistant-polish`, lanes #1278 to #1284): six backlog issues.
+`resolvePlanEntity` is one select with a left join per entity table instead
+of up to three round trips (#860). Side columns: a double-tap resets a width on
+touch, the pre-paint script takes only the chosen width from storage and
+rebuilds the floor and cap, and the settings rail keeps following the left
+width with no handle of its own, now tested (#1005). The sign-up form asks
+"What are you working on?" under approval mode, stored in `users.signup_note`
+(migration 0090) only for a request that waits, and shown in the admin
+approval list (#853). Sign-in by emailed link at `/login/link` (#852): a
+`sign_in` token kind (no migration; the kind column is text), 15 minutes,
+single use, sent only to an account that could sign in with its password. It
+replaces the password step only, so two-factor still follows; the shared
+steps after the first factor moved to `continueSignIn`. Considered and left
+out: letting a link confirm an unverified address, and skipping two-factor
+the way a passkey does. A confirmed email change now revokes sign-in and
+reset links mailed to the old address. The review toolbar (#851) brings bulk
+accept and reject back as a list the author ticks, not a button: it loops the
+existing `decideSuggestion`, so there is no second write path, each accept
+gets its own history entry, and the open editor is saved first. One
+transaction for the whole batch was considered and dropped: it would have
+been a new lock path for the lock-order harness and a new place for stale
+marks, for no gain a writer would see. Tooling (#1262): the stale-marks
+coverage guard runs up to 8 further seeds while an action has yet to apply
+(a separate random stream for the rare actions was tried first and only moved
+the thin margin to other actions), and the lock-order harness holds the
+revision lock of every scene and entity. The first staging review found
+an older bug the toolbar would have made worse: the open editor applied an
+accepted edit at its mark, which leaves out white space at the edges of the
+range, while the server replaced the whole range, so an edit ending in a space
+left a doubled space that the next save stored. `applyAccepted` now widens to
+the stored range, and with nothing unsaved it takes the server's text when a
+change cannot be made locally. The second review caught that fallback
+putting one scene's text into another scene's editor (an accept from a guided
+pass while a different scene is open), so the editor now ignores an accept
+whose edits are not its own scene's. The third review narrowed it again: the
+server's text is taken only when the accept was made on text this editor
+saved, a card's accept saves the open editor first (as the pass and the dialog
+do), and an insertion is not applied over unsaved typing, where its place
+cannot be checked.
+
 Codebase review round (2026-10-19, staging branch `staging/review-fixes`):
 review agents covered correctness, security, tech debt and reliability, and
 every finding was filed as an issue (#572 to #630), plus the Assistant retry
@@ -981,6 +1022,37 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   integration test covering the story-level single pass, the no-op under two
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
+
+## Background work list (2026-11-20)
+
+#1271. A slow local model can keep a review or a details read going for many
+minutes, and the corner card was the only place a running job showed; once
+dismissed, the job could not be found or stopped outside its own page.
+
+- `BackgroundWork.svelte` sits in the author bar before the notification
+  bell. It is always there (Mads: other kinds of background work may join
+  it later), showing a spinner with a count while `trackedJobs.list` is not
+  empty and a plain icon with "Nothing is running." otherwise. It opens a
+  dialog popover (same pattern as the bell) that lists
+  each job's label, how long ago it started, its progress, and Open and Stop.
+- No new store or endpoint. The list is the activity center's own
+  `trackedJobs`, which now carries the label, start time, result link and
+  stop function. `/api/assistant/jobs` returns `startedAt` (the pg-boss
+  `created_on`) so a job picked up after a reload shows its real age, not
+  the time the tab loaded. Opening the list re-reads the running jobs, so
+  one started in another tab shows without a reload.
+- The corner cards stay: they mark the moment a job starts and finishes. The
+  list is the lasting place while it runs.
+- A job started in the open tab carries its card's label, which is worded
+  for the page it was started on ("Reviewing your story"). Opening the list
+  re-reads the running jobs and `labelJob` swaps in the titled label, so two
+  stories' reviews can be told apart. A Stop that fails says so on the row
+  (`stopError`), since the card that would have said it may be gone.
+- Finished jobs are not listed. The notification bell is already the record
+  of what finished, and a second history would have to be kept in step with
+  it.
+- Deferred: jobs that are not the Assistant's (exports, imports) are not in
+  the list; they finish in seconds today.
 
 ## Models per universe and story (2026-11-20)
 

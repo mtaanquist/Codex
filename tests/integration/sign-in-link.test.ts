@@ -6,6 +6,7 @@ import type pg from 'pg';
 import { authTokens, sessions, users } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { hashPassword } from '../../src/lib/server/password';
+import { setUserSuspended } from '../../src/lib/server/admin';
 import { totpCode } from '../../src/lib/server/totp';
 import { ensureTestDatabase } from './test-db';
 import { sentToken } from './token-helpers';
@@ -32,7 +33,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { queueEmail } = await import('#lib/server/jobs');
 const { requestSignInLink, redeemSignInLink } = await import('../../src/lib/server/sign-in-link');
-const { changePassword, confirmEmailChange, requestEmailChange } =
+const { changePassword, confirmEmailChange, requestEmailChange, revokeOtherSessions } =
 	await import('../../src/lib/server/account');
 const { requestPasswordReset, resetPassword } = await import('../../src/lib/server/password-reset');
 const { beginEnrollment, confirmEnrollment, TOTP_CHALLENGE_COOKIE } =
@@ -137,6 +138,13 @@ describe('redeemSignInLink', () => {
 		expect(await redeemSignInLink(db, link)).toBeNull();
 	});
 
+	it('stays refused when the account is suspended and let back in', async () => {
+		const link = await sentLink();
+		expect(await setUserSuspended(db, userId, true)).toBe(true);
+		expect(await setUserSuspended(db, userId, false)).toBe(true);
+		expect(await redeemSignInLink(db, link)).toBeNull();
+	});
+
 	it('is not a link of another kind', async () => {
 		const reset = await sentToken(db, (await requestPasswordReset(db, EMAIL))!);
 		expect(await redeemSignInLink(db, reset)).toBeNull();
@@ -153,6 +161,16 @@ describe('a sign-in link dies when the account changes hands', () => {
 		expect((await changePassword(db, userId, session.id, PASSWORD, 'a new password')).ok).toBe(
 			true
 		);
+		expect(await redeemSignInLink(db, link)).toBeNull();
+	});
+
+	it('on signing out everywhere else', async () => {
+		const link = await sentLink();
+		const [session] = await db
+			.insert(sessions)
+			.values({ userId, tokenHash: 'h', expiresAt: new Date(Date.now() + 60_000) })
+			.returning({ id: sessions.id });
+		await revokeOtherSessions(db, userId, session.id);
 		expect(await redeemSignInLink(db, link)).toBeNull();
 	});
 
@@ -240,13 +258,18 @@ describe('the page that asks for a link', () => {
 	it('shows the button for a live link without spending it, and says when one is dead', async () => {
 		const link = await sentLink();
 		const load = (token: string) =>
-			(linkPage.load as (e: unknown) => Promise<{ token: string; message: string | null }>)({
+			(
+				linkPage.load as (
+					e: unknown
+				) => Promise<{ token: string; email: string; message: string | null }>
+			)({
 				url: new URL(`http://localhost/login/link?token=${token}`)
 			});
-		expect(await load(link)).toMatchObject({ token: link, message: null });
-		expect(await load(link)).toMatchObject({ token: link, message: null });
+		// The page names the account the button signs in to.
+		expect(await load(link)).toMatchObject({ token: link, email: EMAIL, message: null });
+		expect(await load(link)).toMatchObject({ token: link, email: EMAIL, message: null });
 		const dead = await load('not-a-real-token');
-		expect(dead.token).toBe('');
+		expect(dead).toMatchObject({ token: '', email: '' });
 		expect(dead.message).toContain('not valid');
 		expect(await redeemSignInLink(db, link)).toBe(userId);
 	});

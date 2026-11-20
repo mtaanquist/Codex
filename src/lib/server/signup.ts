@@ -44,7 +44,8 @@ export async function registerUser(
 		return { ok: false, reason: `Use a password of at least ${MIN_PASSWORD} characters.` };
 	}
 	if (!displayName) return { ok: false, reason: 'Enter a display name.' };
-	const note = input.note?.trim() ?? '';
+	// A form posts line breaks as CRLF, which the field's own limit counts as one.
+	const note = (input.note ?? '').replace(/\r\n/g, '\n').trim();
 	if (note.length > SIGNUP_NOTE_MAX) {
 		return { ok: false, reason: `Keep the note to ${SIGNUP_NOTE_MAX} characters or fewer.` };
 	}

@@ -394,6 +394,12 @@
 	// Both actions read the stored text, so the open editor's pending save
 	// lands first; a failed save stops the action.
 	const flushEditor = () => flushEditors(editorRef ? [editorRef] : []);
+	// For a card's accept, which has no place of its own to report a failure.
+	async function flushBeforeAccept(): Promise<boolean> {
+		if (await flushEditor()) return true;
+		alert(SAVE_FAILED);
+		return false;
+	}
 	// A new scene (a duplicate) is picked only once the refresh has loaded
 	// it: picked before, the selection falls back to another scene for a
 	// moment and the editor mounts twice. One that already exists (a merge's
@@ -791,6 +797,7 @@
 						onAccepted={role === 'author'
 							? (ids, accepted) => editorRef?.applyAccepted(ids, accepted)
 							: null}
+						beforeAccept={role === 'author' ? flushBeforeAccept : null}
 						assistant={assistantSurfaces ? { name: assistant?.name ?? 'Assistant' } : null}
 						onAssistantReply={assistantSurfaces ? assistantReply : null}
 						onClearReviews={role === 'author' && storyId && totalNotes > 0

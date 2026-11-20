@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
+	import { invalidateAll } from '$app/navigation';
 	import { enhance } from '#lib/enhance';
 	import { modal } from '#lib/modal';
 	import Icon from './Icon.svelte';
@@ -37,6 +38,12 @@
 	let busy = $state(false);
 	let note = $state<string | null>(null);
 
+	// A decision under way finishes before the dialog goes, so its outcome is
+	// always shown.
+	function close() {
+		if (!busy) onClose();
+	}
+
 	function edits(n: number) {
 		return n === 1 ? '1 edit' : `${n} edits`;
 	}
@@ -47,7 +54,7 @@
 	role="presentation"
 	data-over-menus
 	onclick={(event) => {
-		if (event.target === event.currentTarget && !busy) onClose();
+		if (event.target === event.currentTarget) close();
 	}}
 >
 	<div
@@ -55,7 +62,7 @@
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="review-decide-title"
-		use:modal={{ close: onClose }}
+		use:modal={{ close }}
 	>
 		<div class="modal-head">
 			<div class="modal-head-main">
@@ -64,13 +71,19 @@
 					The edits suggested on this scene. Untick any you want to leave for later.
 				</p>
 			</div>
-			<button class="icon-btn sm" type="button" aria-label="Close" onclick={onClose}>
+			<button class="icon-btn sm" type="button" aria-label="Close" onclick={close}>
 				<Icon name="close" size={14} />
 			</button>
 		</div>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<form
 			method="POST"
 			action="?/decideSuggestions"
+			onkeydown={(event) => {
+				// Enter on a tick box would otherwise submit with the first button.
+				if (event.key === 'Enter' && event.target instanceof HTMLInputElement)
+					event.preventDefault();
+			}}
 			use:enhance={async ({ formData, submitter, cancel }) => {
 				const accept = submitter?.getAttribute('value') === 'accept';
 				busy = true;
@@ -87,12 +100,14 @@
 				}
 				return async ({ result, update }) => {
 					if (result.type !== 'success') {
-						await update();
+						// A refusal changed nothing. Anything else may have stopped part
+						// of the way through, so the list is read again.
+						if (result.type !== 'failure') await invalidateAll();
 						busy = false;
 						note =
 							result.type === 'failure' && typeof result.data?.message === 'string'
 								? result.data.message
-								: 'That did not work. Nothing was changed; try again.';
+								: `That did not finish. Some edits may have been ${accept ? 'accepted' : 'rejected'}; the list shows the ones still waiting.`;
 						return;
 					}
 					const data = result.data ?? {};
@@ -106,7 +121,8 @@
 								: null
 						);
 					}
-					await update();
+					// The boxes follow the ticked state, not the form's defaults.
+					await update({ reset: false });
 					busy = false;
 					if (failed === 0) return onClose();
 					note = `${edits(decided.length)} ${accept ? 'accepted' : 'rejected'}. ${edits(failed)} could not be ${
@@ -150,8 +166,10 @@
 									/>
 									<span class="rd-edit">
 										<span class="rv-diff">
-											{#if s.original}<span class="rv-diff-del">{s.original}</span>{/if}
-											{#if s.replacement}<span class="rv-diff-ins">{s.replacement}</span>{/if}
+											{#if s.original}<span class="visually-hidden">Remove:</span>
+												<span class="rv-diff-del">{s.original}</span>{/if}
+											{#if s.replacement}<span class="visually-hidden">Add:</span>
+												<span class="rv-diff-ins">{s.replacement}</span>{/if}
 										</span>
 										<span class="choice-hint">
 											{s.reviewerName}{s.anchorLost
