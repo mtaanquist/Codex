@@ -78,9 +78,14 @@ describe('paragraph alignment markers', () => {
 	});
 });
 
-describe('renderReplyMarkdown', () => {
+// The panel renders a reply block by block, so the hostile cases run through
+// both forms.
+describe.each([
+	['renderReplyMarkdown', renderReplyMarkdown],
+	['renderReplyBlocks', (markdown: string) => renderReplyBlocks(markdown).join('')]
+])('%s', (_name, render) => {
 	it('renders the Markdown models reply with', () => {
-		const html = renderReplyMarkdown('**Bold**, *italic*, `code`.\n\n- one\n- two\n\n## Notes');
+		const html = render('**Bold**, *italic*, `code`.\n\n- one\n- two\n\n## Notes');
 		expect(html).toContain('<strong>Bold</strong>');
 		expect(html).toContain('<em>italic</em>');
 		expect(html).toContain('<code>code</code>');
@@ -89,13 +94,13 @@ describe('renderReplyMarkdown', () => {
 	});
 
 	it('escapes raw HTML', () => {
-		const html = renderReplyMarkdown('<script>alert(1)</script> <img src=x onerror=alert(1)>');
+		const html = render('<script>alert(1)</script> <img src=x onerror=alert(1)>');
 		expect(html).not.toContain('<script');
 		expect(html).not.toContain('<img');
 	});
 
 	it('renders images as their alt text so no remote URL is fetched', () => {
-		const html = renderReplyMarkdown('![the *gate*](https://example.com/leak?q=secret)');
+		const html = render('![the *gate*](https://example.com/leak?q=secret)');
 		expect(html).not.toContain('<img');
 		expect(html).not.toContain('example.com');
 		expect(html).toContain('the gate');
@@ -108,14 +113,14 @@ describe('renderReplyMarkdown', () => {
 			'![\\<svg onload=alert(1)\\>](https://example.com/a.png)'
 		];
 		for (const input of inputs) {
-			const html = renderReplyMarkdown(input);
+			const html = render(input);
 			expect(html).not.toMatch(/<(img|b|svg)[\s>]/);
 			expect(html).toContain('&lt;');
 		}
 	});
 
 	it('opens web links in a new tab without a referrer', () => {
-		const html = renderReplyMarkdown('[site](https://example.com)');
+		const html = render('[site](https://example.com)');
 		expect(html).toContain(
 			'<a href="https://example.com" target="_blank" rel="noopener noreferrer nofollow">site</a>'
 		);
@@ -123,7 +128,7 @@ describe('renderReplyMarkdown', () => {
 
 	it('drops links that are not web or mail links', () => {
 		for (const url of ['javascript:alert(1)', 'data:text/html,x', '/account', 'vbscript:x']) {
-			const html = renderReplyMarkdown(`[click](${url})`);
+			const html = render(`[click](${url})`);
 			expect(html).not.toContain('<a');
 		}
 	});

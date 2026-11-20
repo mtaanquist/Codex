@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import {
 	chapters,
@@ -419,9 +419,9 @@ async function surveyUnit(
 
 // Where a pattern's note says it shows up: the scene titles for a chapter, the
 // chapter titles for the book.
-function noteWhere(pattern: PatternState, unit: PatternUnit) {
+function noteWhere(sceneIds: string[], unit: PatternUnit) {
 	const byId = new Map(unit.scenes.map((s) => [s.id, s]));
-	const scenes = pattern.sceneIds.map((id) => byId.get(id)!).filter(Boolean);
+	const scenes = sceneIds.map((id) => byId.get(id)!).filter(Boolean);
 	if (unit.scope === 'book') {
 		const chapters = [...new Set(scenes.map((s) => s.chapterTitle ?? 'Unfiled scenes'))];
 		return { label: 'Shows up in', places: chapters };
@@ -434,9 +434,8 @@ function noteWhere(pattern: PatternState, unit: PatternUnit) {
 	};
 }
 
-// The scenes a pattern shows in that still exist, in reading order. A scene
-// deleted since the survey is no place for the note or a fix, and takes up no
-// place in the cut.
+// The scenes a pattern shows in that this attempt read, in reading order. A
+// scene deleted before it started is no place for the note or a fix.
 export function patternLiveScenes(sceneIds: string[], order: string[]): string[] {
 	return sceneIds
 		.filter((id) => order.includes(id))
@@ -450,6 +449,28 @@ export function fixLimitLine(liveScenes: number): string {
 		: '';
 }
 
+// Which of these scenes exist right now and have text. The unit's scenes were
+// read when this attempt started, and a survey can run long after that.
+async function scenesWithText(
+	db: Database,
+	storyId: string,
+	sceneIds: string[]
+): Promise<Set<string>> {
+	if (!sceneIds.length) return new Set();
+	const rows = await db
+		.select({ id: scenes.id })
+		.from(scenes)
+		.where(
+			and(
+				inArray(scenes.id, sceneIds),
+				eq(scenes.storyId, storyId),
+				isNull(scenes.deletedAt),
+				sql`${scenes.bodyMd} ~ '\\S'`
+			)
+		);
+	return new Set(rows.map((row) => row.id));
+}
+
 // The pattern's note, on the first scene where it shows. A note already open
 // with the same text (an earlier attempt of this run) is reused.
 async function ensureNote(
@@ -459,13 +480,14 @@ async function ensureNote(
 	unit: PatternUnit
 ): Promise<boolean> {
 	if (pattern.threadId) return true;
+	const present = await scenesWithText(db, storyId, pattern.sceneIds);
 	const live = patternLiveScenes(
 		pattern.sceneIds,
 		unit.scenes.map((s) => s.id)
-	);
+	).filter((id) => present.has(id));
 	const first = live[0];
 	if (!first) return false;
-	const body = patternNoteBody(pattern, noteWhere(pattern, unit)) + fixLimitLine(live.length);
+	const body = patternNoteBody(pattern, noteWhere(live, unit)) + fixLimitLine(live.length);
 	const created = await createThread(db, {
 		storyId,
 		sceneId: first,
@@ -606,16 +628,17 @@ export async function runPatternPass(
 			const fixIn = patternLiveScenes(
 				pattern.sceneIds,
 				unit.scenes.map((s) => s.id)
-			).slice(0, APPLY_SCENES_PER_PATTERN);
+			);
 			for (const sceneId of fixIn) {
 				if (pattern.applied.includes(sceneId)) continue;
+				// Only a scene that was asked about counts toward the limit, so one
+				// skipped below gives its place to the next in reading order.
+				if (pattern.applied.length >= APPLY_SCENES_PER_PATTERN) break;
 				opts.signal?.throwIfAborted();
 				if (opts.meter?.capReached) {
 					capped = true;
 					break units;
 				}
-				const listed = byId.get(sceneId);
-				if (!listed) continue;
 				// The writer may resolve or clear the note while its fixes are still
 				// being asked for; stop paying for a pattern nobody wants.
 				if (!(await noteOpen(db, pattern.threadId))) {
@@ -627,13 +650,11 @@ export async function runPatternPass(
 				// long run reaches a scene well after the writer may have edited it,
 				// and a fix quoted from old text would be refused when staged.
 				const current = await currentScene(db, opts.storyId, sceneId);
-				if (!current) {
-					// Deleted since the run started: nothing to fix, nothing to send.
-					pattern.applied.push(sceneId);
-					await save();
-					continue;
-				}
-				const scene = { ...listed, ...current };
+				// Deleted or emptied since this attempt read the scenes: nothing to
+				// send. Left unmarked, so a run continued after the scene is restored
+				// still asks about it.
+				if (!current?.bodyMd.trim()) continue;
+				const scene = { ...byId.get(sceneId)!, ...current };
 				const task: ChatMessage = {
 					role: 'user',
 					content: buildPatternApplyMessage(pattern, scene, bodyChars)

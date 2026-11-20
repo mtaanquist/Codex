@@ -1163,6 +1163,26 @@ name. It now reads full scenes.
 
 Staging branch `staging/assistant-quick-wins`.
 
+- #1275 (lows from the staging review). Pattern pass: the note checks
+  which of the pattern's scenes exist and have text when it is written, not
+  when the attempt read its scenes, so its "Shows up in" list and "first 25"
+  line leave out a scene deleted or emptied during the survey. The fix loop
+  no longer cuts the list to 25 up front; it stops once 25 scenes have been
+  asked about, so a scene skipped as deleted or empty gives its place to the
+  next one and the note's count matches the scenes that get fixes. A skipped
+  scene is not marked done: a continued run asks about it if it was restored
+  in between, and skips it again (no request) if not. An emptied
+  scene is skipped like a deleted one. Chat: `listChat` fills in the entry
+  type of an entity attachment stored before #1185 by looking the id up in
+  the three entity tables, so old chips get the right icon with no stored
+  row rewritten; an entry that is gone keeps the person icon. Tests: the
+  hostile Markdown cases run through `renderReplyBlocks` too, the chat route
+  has checks for a forged `entityType` and for a cut and renamed entry, and
+  `e2e/assistant-reply-blocks.spec.ts` covers a reply arriving in two parts
+  and a notice replacing a longer reply. Left alone: a tab loaded before
+  #1276 misreading a renamed entry in the attachments header. Only the
+  server could fix it, by keeping the old header format and sending names
+  in a second header for good, and a reload already clears it.
 - #1031 (prices for Claude): the Anthropic models list reports no prices, so
   the meter had none and a cap on Claude never applied. Each model a role
   runs on now has a typed price pair on the account page, stored per token
@@ -1185,7 +1205,7 @@ Staging branch `staging/assistant-quick-wins`.
   scene deleted since the run started is skipped with no request.
 - #1185: a stored entity attachment carries its entry type, read on the
   server and never taken from the browser, so the chip shows the right icon.
-  Attachments stored before this keep the person icon.
+  Attachments stored before this kept the person icon until #1275.
 - #1003: asked for a frame throttle on the streaming reply. A throttle would
   not have fixed the lost selection, so the bubble renders one `{@html}` per
   top-level Markdown block (`renderReplyBlocks`) and finished blocks keep
