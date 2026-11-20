@@ -1145,9 +1145,26 @@ calls the gateway, which proxies through the egress guard.
   `queues.ts`, enqueue helpers in `jobs.ts`, handlers in `src/worker/handlers.ts`,
   registered by `src/worker/index.ts`). The handlers call the gateway directly
   (`complete`/`stream`, no HTTP hop) and write through the same review/entity
-  helpers. Entity enrichment runs inline through `/api/assistant/enrich` rather
-  than a queue, for one entity from a story (story Plan) or across its
-  universe (universe Plan); the `assistant-enrich` job runs the same call over
+  helpers. Entity enrichment for one entity, from a story (story Plan) or
+  across its universe (universe Plan), is queued by `/api/assistant/enrich`
+  as an `assistant-enrich` job that carries `read` (handler `entityDetails`,
+  job kind `details` in the activity center), because a slow model can take
+  minutes. Since #1170 the button reads full text
+  (`enrichEntityFromText`, `enrich-context.ts`): every scene that mentions
+  the entity with the scene before and after each in its own story, or, as a
+  separate choice from a story, the whole book when it fits one request.
+  The text goes first and the entity and instructions last. Text over the
+  utility model's budget (four fifths of the window less the reply; 6000
+  tokens when the window is unknown) is read in parts in reading order, each
+  told what the earlier parts found. Each part's finds are staged as it is
+  read, so a later part failing or the job being stopped keeps them. There
+  is no ceiling on parts: the count shown first, the spend cap (checked
+  between parts, keyed by the job) and Stop bound it. A read that fails
+  before finding anything is retried; one that found something is not, and
+  its notice says what it left. The same
+  endpoint with `estimate: true` counts the read without sending it, and
+  the editor asks before a read over 8000 tokens. The `assistant-enrich` job
+  still sends snippets (`enrichEntity`, at most 16), over
   every entity in a universe whose passages changed since its
   `assistant_enriched_at` watermark (`/enrich`; the mention index marks an
   entity when a reindex changes its passages, so status changes and reorders

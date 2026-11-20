@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { refreshAll } from '$app/navigation';
 	import { EditorView } from '@codemirror/view';
 	import { EditorState } from '@codemirror/state';
@@ -17,8 +17,8 @@
 	} from './EntityRelationships.svelte';
 	import { createAutosave, keepaliveFits, saveFailure } from '#lib/autosave';
 	import type { SaveStatus } from '#lib/autosave';
-	import { apiErrorMessage, pluralSuffix } from '#lib/format';
-	import { startArcJob } from '#lib/assistant-actions';
+	import { apiErrorMessage, formatNumber, pluralSuffix } from '#lib/format';
+	import { startArcJob, startDetailsJob } from '#lib/assistant-actions';
 	import { renderReplyMarkdown } from '#lib/markdown';
 
 	let {
@@ -133,31 +133,95 @@
 	let enriching = $state(false);
 	let enrichNote = $state('');
 
-	async function runEnrich() {
+	// What a read would send, from the server's count. The scenes read is the
+	// button's own; the whole book is offered only when it fits the model.
+	type ReadEstimate = { scenes: number; requests: number; estTokens: number; estCostUsd?: number };
+	type EnrichEstimate = {
+		scenes: ReadEstimate;
+		book?: ReadEstimate;
+		confirm: boolean;
+	};
+	type EnrichMode = 'scenes' | 'book';
+	// The read waiting for a yes, with its estimate.
+	let enrichAsk = $state<{ mode: EnrichMode; read: ReadEstimate } | null>(null);
+	// Set once an estimate says the whole book fits, so the choice can be shown.
+	let bookRead = $state<ReadEstimate | null>(null);
+	const enrichScope = () =>
+		storyId ? { storyId, entityId: entity.id } : { universeId: universeRef, entityId: entity.id };
+
+	async function postEnrich(body: Record<string, unknown>) {
+		return await fetch('/api/assistant/enrich', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ ...enrichScope(), ...body })
+		});
+	}
+
+	function readPhrase(read: ReadEstimate) {
+		const size = `${read.scenes} scene${read.scenes === 1 ? '' : 's'}, about ${formatNumber(read.estTokens)} tokens`;
+		if (read.estCostUsd === undefined) return size;
+		return read.estCostUsd < 0.01
+			? `${size} (less than $0.01)`
+			: `${size} (about $${read.estCostUsd.toFixed(2)})`;
+	}
+
+	// The button: count first, then read at once when it is small, or ask.
+	async function startEnrich() {
 		if (enriching || !(storyId || universeRef)) return;
 		enriching = true;
 		enrichNote = '';
+		enrichAsk = null;
+		let estimate: EnrichEstimate | null = null;
 		try {
-			const response = await fetch('/api/assistant/enrich', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(
-					storyId
-						? { storyId, entityId: entity.id }
-						: { universeId: universeRef, entityId: entity.id }
-				)
-			});
-			if (!response.ok) {
-				enrichNote = await apiErrorMessage(response, 'The Assistant could not suggest anything.');
-				return;
-			}
-			const body = (await response.json()) as { suggestions: AssistantSuggestion[] };
-			const fresh = body.suggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
-			suggestions = [...suggestions, ...fresh];
-			if (fresh.length === 0)
-				enrichNote = `Nothing new to suggest from this ${storyId ? 'story' : 'universe'}.`;
+			const response = await postEnrich({ estimate: true });
+			if (response.ok) estimate = (await response.json()) as EnrichEstimate;
+			else enrichNote = await apiErrorMessage(response, 'The Assistant could not count the read.');
 		} catch {
 			enrichNote = 'Something went wrong reaching the Assistant.';
+		}
+		// Without a count nothing is read: the size could not be shown first.
+		if (!estimate) {
+			enriching = false;
+			return;
+		}
+		bookRead = estimate.book ?? null;
+		if (estimate.scenes.scenes === 0) {
+			enrichNote = `No scene in this ${storyId ? 'story' : 'universe'} mentions this entry yet.`;
+			enriching = false;
+			return;
+		}
+		if (estimate.confirm) {
+			enrichAsk = { mode: 'scenes', read: estimate.scenes };
+			enriching = false;
+			return;
+		}
+		await runEnrich('scenes');
+	}
+
+	// Queues the read and follows it in the activity card. It runs in the
+	// background, so the writer can leave the page; when it settles while this
+	// entry is still open, the page data reloads and the new suggestions show.
+	async function runEnrich(mode: EnrichMode) {
+		enriching = true;
+		enrichNote = '';
+		enrichAsk = null;
+		try {
+			await startDetailsJob({
+				entityId: entity.id,
+				request: storyId ? { storyId } : { universeId: universeRef ?? '' },
+				scope: storyId ? { storyId } : { universeId: entity.universeId ?? universeRef ?? '' },
+				mode,
+				name
+			});
+			if (!mounted) return;
+			await refreshAll();
+			await tick();
+			const fresh = assistantSuggestions.filter((s) => !suggestions.some((p) => p.id === s.id));
+			suggestions = [...suggestions, ...fresh];
+			if (fresh.length === 0) {
+				enrichNote = 'No new suggestions. Your notifications say how the read went.';
+			}
+			if (mode === 'book') bookRead = null;
 		} finally {
 			enriching = false;
 		}
@@ -443,13 +507,42 @@
 
 	{#if assistantEnabled && (storyId || universeRef)}
 		<div class="assist-enrich">
-			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={runEnrich}>
-				{enriching ? 'Thinking...' : 'Suggest details with the Assistant'}
+			<button class="btn btn-secondary" type="button" disabled={enriching} onclick={startEnrich}>
+				{enriching ? 'Reading...' : 'Suggest details with the Assistant'}
 			</button>
 			{#if enrichNote}
 				<span class="assist-note">{enrichNote}</span>
 			{/if}
+			{#if bookRead && !enriching && !enrichAsk}
+				<button
+					class="btn btn-secondary"
+					type="button"
+					onclick={() => (enrichAsk = { mode: 'book', read: bookRead! })}
+				>
+					Read the whole book
+				</button>
+			{/if}
 		</div>
+		{#if enrichAsk}
+			<div class="assist-ask">
+				<p class="field-hint">
+					{enrichAsk.mode === 'book'
+						? `The Assistant will read the whole book: ${readPhrase(enrichAsk.read)}.`
+						: `The Assistant will read the scenes that mention this entry and the ones next to them: ${readPhrase(enrichAsk.read)}.`}
+					{#if enrichAsk.read.requests > 1}
+						It is too long to read at once, so it is read in {enrichAsk.read.requests} parts.
+					{/if}
+				</p>
+				<span class="assist-ask-actions">
+					<button class="btn btn-primary" type="button" onclick={() => runEnrich(enrichAsk!.mode)}>
+						Read
+					</button>
+					<button class="btn btn-secondary" type="button" onclick={() => (enrichAsk = null)}>
+						Cancel
+					</button>
+				</span>
+			</div>
+		{/if}
 	{/if}
 
 	{#if shownSuggestions.length > 0}
@@ -688,6 +781,14 @@
 		font-size: 13.5px;
 		line-height: 1.55;
 		color: var(--text);
+	}
+	.assist-ask {
+		margin: 8px 0 0;
+	}
+	.assist-ask-actions {
+		display: flex;
+		gap: 8px;
+		margin-top: 6px;
 	}
 	.assist-note {
 		font-size: 12.5px;

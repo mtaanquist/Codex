@@ -85,6 +85,7 @@ const proseReplaceRoute = await import('../../src/routes/api/universes/[id]/pros
 const cardRoute = await import('../../src/routes/api/entities/[id=uuid]/card/+server');
 const reviewRoute = await import('../../src/routes/api/assistant/review/+server');
 const recapRoute = await import('../../src/routes/api/assistant/recap/+server');
+const enrichRoute = await import('../../src/routes/api/assistant/enrich/+server');
 const adminPage = await import('../../src/routes/admin/[[section]]/+page.server');
 
 type TestUser = { id: string; email: string; role: 'user' | 'admin' };
@@ -736,6 +737,17 @@ describe('assistant routes refuse another user', () => {
 			recapRoute.POST,
 			event(B, { body: { storyId: s.storyA.id, sceneId: s.sceneA1.id } })
 		);
+	});
+
+	it('POST /api/assistant/enrich, the read and the estimate', async () => {
+		for (const scope of [{ storyId: s.storyA.id }, { universeId: s.universeA.id }]) {
+			for (const extra of [{}, { estimate: true }, { mode: 'book' }]) {
+				await expectRefused(
+					enrichRoute.POST,
+					event(B, { body: { ...scope, ...extra, entityId: s.charA1.id } })
+				);
+			}
+		}
 	});
 });
 

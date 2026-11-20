@@ -233,14 +233,43 @@ export async function startArcJob(opts: {
 	});
 }
 
+// Queues a full-text read of one entry (the "Suggest details" button) and
+// waits for it to finish, tracked in the activity center. Resolves when the
+// job settles, so the caller can reload the page data to show the suggestions.
+// request is how the endpoint is told the scope (a universe by id or slug).
+export async function startDetailsJob(opts: {
+	entityId: string;
+	request: { storyId: string } | { universeId: string };
+	scope: { storyId: string } | { universeId: string };
+	mode: 'scenes' | 'book';
+	name: string;
+}): Promise<void> {
+	await launchJob({
+		url: '/api/assistant/enrich',
+		payload: { ...opts.request, entityId: opts.entityId, mode: opts.mode },
+		kind: 'details',
+		failLabel: `Could not suggest details for ${opts.name}`,
+		startFallback: 'Could not start the read.',
+		track: { ...jobLabels('details', 'full', opts.name), scope: opts.scope }
+	});
+}
+
 // The activity card's three labels for a job. label names what the job is over
 // ("your story", or a quoted title for a job picked up after a reload); a
 // summary pass started from the panel needs none.
 function jobLabels(
-	kind: 'review' | 'summaries' | 'enrich' | 'arc',
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details',
 	mode: 'full' | 'continuity',
 	label?: string
 ): { runningLabel: string; doneLabel: string; failedLabel: string } {
+	if (kind === 'details') {
+		return {
+			runningLabel: `Reading your story for details about ${label}...`,
+			// A finished read may have found nothing new; the notification says.
+			doneLabel: `Finished reading for details about ${label}`,
+			failedLabel: `Could not suggest details for ${label}`
+		};
+	}
 	if (kind === 'arc') {
 		return {
 			runningLabel: `Writing the arc for ${label}...`,
@@ -283,7 +312,7 @@ function jobLabels(
 // A job the server still has queued or running (GET /api/assistant/jobs).
 export type RunningJob = JobScope & {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich' | 'arc';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
 	mode: 'full' | 'continuity';
 	title: string;
 };

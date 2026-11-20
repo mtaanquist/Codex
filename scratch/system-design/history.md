@@ -982,6 +982,67 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Find more reads whole scenes (2026-11-20)
+
+#1170. "Suggest details with the Assistant" sent at most 16 snippets of about
+80 characters, so it never saw a nickname or description that did not use the
+name. It now reads full scenes.
+
+- Decisions on the issue's open questions (comment on #1170): scenes that
+  mention the entity plus the scene before and after each is the default; the
+  whole book is a separate choice, offered only from a story and only when it
+  fits one request; the background universe pass keeps snippets, because full
+  scenes for every entity cost millions of tokens on a novel; the model stays
+  the utility model. Storage and resolution allow a per-story model
+  (`stories.llm_config.models`), but no screen sets it, and a universe has
+  no setting at all; both are #1266.
+- Not built: batching several entities into one book request with a cache
+  breakpoint (step 4 of the issue). It only pays off if the background pass
+  reads the book, which it does not.
+- The fallback for text that does not fit is by budget, not by chapter:
+  scenes are packed into parts in reading order and a scene longer than a
+  part is cut at paragraph breaks. Later parts are told what earlier ones
+  found as "known", which is the carried list the issue asked for.
+- `stageEntitySuggestions` stops at the first summary it sees, so merged
+  proposals put the summary last, and a summary is only asked for (and only
+  kept) from the last part. The first test run caught this: aliases found
+  after a summary were dropped.
+- A later part that fails does not lose the paid work before it: each
+  part's finds are staged as it is read and the response says `partial`. A
+  failure before anything is found is an error as before.
+- The estimate measures the real request around the text (it builds the
+  message with the entity's fields) and stands in each scene's length for its
+  text, so nothing is loaded to count. A test holds it within a tenth of
+  what is sent. The request count can be one short when a single scene is
+  longer than a part, because the read cuts at paragraph breaks.
+- The button never used the stored request hash (only the pass does), so
+  nothing about marks or hashes changed here.
+- Review of the PR (one medium, nine low). The medium: a read was one web
+  request with no ceiling on parts, staged only at the end. It now makes at
+  most 8 requests and refuses a longer text up front (the count says
+  `tooLong` and the editor explains), and stages per part. The background
+  spend cap still does not apply to the button, as for every inline surface;
+  the count and the ceiling bound it instead. Lows fixed: a failed count no
+  longer starts an unconfirmed read; at story scope the entity must belong
+  to the story's universe; a cut-off later part passes its advice on; costs
+  under a cent say so; tests now pin the mute and trash filters and the
+  cut-off path.
+- Moved to a background job before merge. Mads's local model takes minutes
+  per reply, and a web request held that long gets dropped. The read is now
+  an `assistant-enrich` job carrying `read` (one unfinished read per entity
+  by singleton key), handled by `entityDetails` like a character arc:
+  activity card, Stop, a notice at the end. That removed the 8-request
+  ceiling and `tooLong` (the job has the spend cap and Stop instead) and put
+  the read under the background spend cap. The editor waits on the job,
+  then reloads the page data and adds the new rows; if the writer has left,
+  the notice links back to the entry. The estimate stays a plain request.
+  The job stores the entity's name for the card rather than looking it up
+  across three tables. Not covered by a test: the route's queue call for
+  the owner (the handler, the running-jobs list and the editor flow are).
+- The whole-book choice shows after the first press on a page, because the
+  count that says whether it fits comes back with that press. Counting on
+  every entry open was the alternative and was not worth a query per click.
+
 ## Assistant quick wins (2026-11-20)
 
 Staging branch `staging/assistant-quick-wins`.

@@ -92,6 +92,18 @@ afterAll(async () => {
 });
 
 describe('findRunningAssistantJobs', () => {
+	it('lists a details read as its own kind, named for the entry', async () => {
+		const id = await send(ASSISTANT_ENRICH_QUEUE, {
+			userId,
+			universeId,
+			read: { entityId: randomUUID(), name: 'The Lantern Guild', storyId, mode: 'scenes' }
+		});
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs).toMatchObject([
+			{ id, kind: 'details', universeId, storyId: null, title: 'The Lantern Guild' }
+		]);
+	});
+
 	it('lists a character arc as its own kind, named for the character', async () => {
 		const [character] = await db
 			.insert(characters)

@@ -241,12 +241,12 @@ describe('assistant jobs skip trashed work', () => {
 	});
 });
 
-describe('assistant notices link by id', () => {
-	async function hrefs(userId: string): Promise<string[]> {
-		const rows = await db.select().from(notifications).where(eq(notifications.userId, userId));
-		return rows.map((row) => (row.payload as { href: string }).href);
-	}
+async function hrefs(userId: string): Promise<string[]> {
+	const rows = await db.select().from(notifications).where(eq(notifications.userId, userId));
+	return rows.map((row) => (row.payload as { href: string }).href);
+}
 
+describe('assistant notices link by id', () => {
 	it('links a story review and summaries to the story id, not its slug', async () => {
 		const { owner, story } = await seedStory();
 		const { handlers } = harness({
@@ -701,6 +701,159 @@ describe('assistant notices link by id', () => {
 		]);
 
 		expect(await hrefs(owner.id)).toEqual([`/universes/${universe.id}/plan`]);
+	});
+});
+
+describe('a details read for one entry', () => {
+	async function seedRead() {
+		const { owner, universe, story } = await seedStory();
+		const [character] = await db
+			.insert(characters)
+			.values({ universeId: universe.id, ownerId: owner.id, name: 'Bram' })
+			.returning({ id: characters.id });
+		const data = {
+			userId: owner.id,
+			universeId: universe.id,
+			read: { entityId: character.id, name: 'Bram', storyId: story.id, mode: 'scenes' as const }
+		};
+		return { owner, universe, story, character, data };
+	}
+	const found = (n: number) =>
+		Array.from({ length: n }, (_, i) => ({
+			id: randomUUID(),
+			field: 'alias' as const,
+			label: null,
+			value: `alias ${i}`
+		}));
+
+	it('reads the story it names, as the job, and links to the entry in that story', async () => {
+		const { owner, story, character, data } = await seedRead();
+		let seen: unknown;
+		const { handlers, completed } = harness({
+			enrichEntityFromText: async (_db, opts) => {
+				seen = opts;
+				return { suggestions: found(2), scenes: 4, requests: 1 };
+			},
+			enrichUniverse: neverCalled,
+			summariseCharacterArc: neverCalled
+		});
+		const queued = job(data);
+
+		await handlers.assistantEnrich([queued]);
+
+		expect(seen).toMatchObject({
+			userId: owner.id,
+			scope: { storyId: story.id },
+			entityId: character.id,
+			mode: 'scenes',
+			jobId: queued.id
+		});
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant left 2 suggestions for Bram. Open the entry to accept or reject them.'
+		]);
+		expect(await hrefs(owner.id)).toEqual([`/stories/${story.id}/plan?entity=${character.id}`]);
+		expect(completed).toEqual([]);
+	});
+
+	it('reads across the universe when no story is named', async () => {
+		const { owner, universe, character, data } = await seedRead();
+		let scope: unknown;
+		const { handlers } = harness({
+			enrichEntityFromText: async (_db, opts) => {
+				scope = opts.scope;
+				return { suggestions: [], scenes: 3, requests: 1 };
+			}
+		});
+
+		await handlers.assistantEnrich([
+			job({ ...data, read: { entityId: character.id, name: 'Bram', mode: 'scenes' as const } })
+		]);
+
+		expect(scope).toEqual({ universeId: universe.id });
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant read 3 scenes and found nothing new to suggest for Bram.'
+		]);
+		expect(await hrefs(owner.id)).toEqual([
+			`/universes/${universe.id}/plan?entity=${character.id}`
+		]);
+	});
+
+	it('says what a read that stopped partway or at the spend cap left behind', async () => {
+		const { owner, data } = await seedRead();
+		const results = [
+			{ suggestions: found(1), scenes: 9, requests: 2, partial: true },
+			{
+				suggestions: found(1),
+				scenes: 9,
+				requests: 2,
+				partial: true,
+				partialNote: 'Raise Longest reply.'
+			},
+			{ suggestions: found(3), scenes: 9, requests: 2, capped: true, spentUsd: 1.25 }
+		];
+		const { handlers } = harness({ enrichEntityFromText: async () => results.shift()! });
+
+		for (let i = 0; i < 3; i++) await handlers.assistantEnrich([job(data)]);
+
+		expect((await titles(owner.id)).sort()).toEqual(
+			[
+				'The Assistant stopped partway through reading for details about Bram, with 1 suggestion left on the entry. To read the rest, select "Suggest details with the Assistant" on the entry again.',
+				'The Assistant stopped partway through reading for details about Bram, with 1 suggestion left on the entry. Raise Longest reply.',
+				'The Assistant stopped reading for details about Bram at about $1.25, with 3 suggestions left on the entry. Raise the cap in settings, then select "Suggest details with the Assistant" on the entry again.'
+			].sort()
+		);
+	});
+
+	it("says nothing for an entry that is gone or not the writer's", async () => {
+		const { owner, data } = await seedRead();
+		const { handlers } = harness({
+			enrichEntityFromText: async () => ({
+				suggestions: [],
+				scenes: 0,
+				requests: 0,
+				missing: true
+			})
+		});
+		await handlers.assistantEnrich([job(data)]);
+		expect(await titles(owner.id)).toEqual([]);
+	});
+
+	it('retries a read that failed before finding anything, and reports on the last attempt', async () => {
+		const { owner, data } = await seedRead();
+		const { handlers } = harness(
+			{
+				enrichEntityFromText: async () => {
+					throw new Error('endpoint down');
+				}
+			},
+			{ state: 'active', startedOn: STARTED }
+		);
+
+		await expect(handlers.assistantEnrich([job(data)])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([]);
+
+		const last = { ...job(data), retryCount: 2 };
+		await expect(handlers.assistantEnrich([last])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not read for details about Bram. Check the endpoint in your settings.'
+		]);
+	});
+
+	it('ends without retrying when the reply was cut off, settled as failed', async () => {
+		const { owner, data } = await seedRead();
+		const { handlers, completed } = harness({
+			enrichEntityFromText: async () => {
+				throw new ReplyCutOffError('Raise Longest reply.');
+			}
+		});
+		const queued = job(data);
+
+		await handlers.assistantEnrich([queued]);
+
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not read for details about Bram. Raise Longest reply.'
+		]);
 	});
 });
 

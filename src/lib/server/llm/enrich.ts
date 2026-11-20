@@ -11,8 +11,20 @@ import {
 	type GatewayDeps
 } from './gateway.ts';
 import { spentFields, type SpendMeter } from './spend.ts';
+import { estimateTokens } from './context/budgets.ts';
 import { jobSpendMeter } from './job-spend.ts';
-import { buildEnrichMessage } from './prompts/enrich.ts';
+import { buildEnrichMessage, buildEnrichTextMessage } from './prompts/enrich.ts';
+import {
+	ENRICH_TEXT_REPLY_TOKENS,
+	enrichTextBudget,
+	entityExcerpts,
+	estimateEnrich,
+	formatExcerpts,
+	splitExcerptParts,
+	type EnrichEstimate,
+	type EnrichMode,
+	type EnrichTextMode
+} from './enrich-context.ts';
 import { entityAppearances, type PlanAppearance } from '../plan-data.ts';
 import {
 	ENTITY_TYPES,
@@ -140,6 +152,263 @@ export async function enrichEntity(
 	deps: GatewayDeps = {}
 ): Promise<EntitySuggestion[]> {
 	return (await enrichRead(db, opts, deps)).suggestions;
+}
+
+// Proposals from a later part of a long read added to those found so far. An
+// alias or a detail label already found is kept as first found, and so is the
+// summary, which goes last: staging stops at a summary. Exported for unit
+// testing.
+export function mergeProposals(
+	found: ProposedSuggestion[],
+	more: ProposedSuggestion[]
+): ProposedSuggestion[] {
+	const key = (p: ProposedSuggestion) =>
+		p.field === 'summary'
+			? 'summary'
+			: `${p.field}:${(p.field === 'detail' ? p.label : p.value).toLowerCase()}`;
+	const seen = new Set(found.map(key));
+	const merged = [...found];
+	for (const proposal of more) {
+		if (seen.has(key(proposal))) continue;
+		seen.add(key(proposal));
+		merged.push(proposal);
+	}
+	return [
+		...merged.filter((p) => p.field !== 'summary'),
+		...merged.filter((p) => p.field === 'summary')
+	];
+}
+
+export type EnrichTextResult = {
+	suggestions: EntitySuggestion[];
+	// Scenes read and requests made.
+	scenes: number;
+	requests: number;
+	// Set when a later part failed or the request was stopped: the suggestions
+	// are from the parts read before it. partialNote says what to do about it
+	// when there is something the writer can do.
+	partial?: boolean;
+	partialNote?: string;
+	// Set when the spend cap stopped the read between parts, with what it had
+	// spent.
+	capped?: boolean;
+	spentUsd?: number;
+	// Set when the entity is not the user's, or not in the scope's universe.
+	missing?: boolean;
+};
+
+// The entity a read or an estimate is about, when it is the user's and in the
+// universe the scope reads from; null otherwise.
+export async function enrichTarget(
+	db: Database,
+	opts: { userId: string; scope: EnrichScope; entityId: string }
+): Promise<{ kind: 'character' | 'place' | 'lore'; name: string; universeId: string } | null> {
+	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
+		universeId: table.universeId,
+		name: entityNameColumn(table)
+	}));
+	if (!entity) return null;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return null;
+	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
+	return { kind, name: entity.name, universeId: entity.universeId };
+}
+
+// Whether the entity belongs to the universe the scope reads from: the named
+// universe, or the story's own.
+async function entityInScope(
+	db: Database,
+	userId: string,
+	scope: EnrichScope,
+	universeId: string
+): Promise<boolean> {
+	if ('universeId' in scope) return scope.universeId === universeId;
+	const [story] = await db
+		.select({ universeId: stories.universeId })
+		.from(stories)
+		.where(and(eq(stories.id, scope.storyId), eq(stories.ownerId, userId)));
+	return story?.universeId === universeId;
+}
+
+// The button's read, run as a background job: the full text of the scenes that
+// mention the entity with the scene before and after each, or the whole book.
+// Text that does not fit one request is read in parts in reading order, each
+// told what the earlier ones found. Each part's finds are staged as it is
+// read, so a later part that fails, or a job that is stopped, keeps what the
+// earlier parts found. With a job id the spend cap applies between parts.
+export async function enrichEntityFromText(
+	db: Database,
+	opts: EnrichOptions & { mode: EnrichTextMode; jobId?: string },
+	deps: GatewayDeps = {}
+): Promise<EnrichTextResult> {
+	const none = { suggestions: [], scenes: 0, requests: 0 };
+	const missing = { ...none, missing: true };
+	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
+		universeId: table.universeId,
+		name: entityNameColumn(table),
+		aliases: entityAliasColumn(table),
+		details: table.details,
+		summaryMd: table.summaryMd
+	}));
+	if (!entity) return missing;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return missing;
+	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
+
+	const excerpts = await entityExcerpts(db, { ...opts, kind });
+	if (excerpts.length === 0) return none;
+	const budget = await enrichTextBudget(db, opts.userId, opts.scope);
+	const parts = splitExcerptParts(excerpts, budget.partTokens);
+	// Keyed by the job, so a retry carries on from what it already spent.
+	const meter =
+		opts.meter ??
+		(await jobSpendMeter(db, {
+			userId: opts.userId,
+			storyId: 'storyId' in opts.scope ? opts.scope.storyId : undefined,
+			jobId: opts.jobId
+		}));
+	const withStory = new Set(excerpts.map((scene) => scene.storyId)).size > 1;
+	const summaryClosed = await summarySuggestionClosed(db, {
+		ownerId: opts.userId,
+		kind,
+		entityId: opts.entityId,
+		summaryMd: entity.summaryMd
+	});
+	const fields = {
+		kind,
+		name: entity.name,
+		aliases: entity.aliases ?? [],
+		details: entity.details ?? [],
+		summaryMd: entity.summaryMd
+	};
+
+	let found: ProposedSuggestion[] = [];
+	const suggestions: EntitySuggestion[] = [];
+	let requests = 0;
+	let failure: unknown;
+	let capped = false;
+	for (const [index, part] of parts.entries()) {
+		if (opts.signal?.aborted) {
+			failure = opts.signal.reason ?? new Error('stopped');
+			break;
+		}
+		if (meter.capReached) {
+			capped = true;
+			break;
+		}
+		const last = index === parts.length - 1;
+		const content = buildEnrichTextMessage(
+			// The summary is asked for once, from the last part, which also has
+			// what the earlier parts found.
+			{ ...fields, hasSummary: summaryClosed || !last },
+			formatExcerpts(part, withStory),
+			{
+				...(parts.length > 1 ? { part: { index: index + 1, total: parts.length } } : {}),
+				found: {
+					aliases: found.flatMap((p) => (p.field === 'alias' ? [p.value] : [])),
+					details: found.flatMap((p) =>
+						p.field === 'detail' ? [{ label: p.label, value: p.value }] : []
+					)
+				}
+			}
+		);
+		try {
+			const result = await completeDetailed(
+				db,
+				{
+					userId: opts.userId,
+					storyId: 'storyId' in opts.scope ? opts.scope.storyId : undefined,
+					role: 'utility',
+					enableTools: false,
+					messages: [{ role: 'user', content }],
+					maxTokens: ENRICH_TEXT_REPLY_TOKENS,
+					meter,
+					signal: opts.signal
+				},
+				deps
+			);
+			requests += 1;
+			if (result.cutOff) {
+				throw new ReplyCutOffError(
+					'The suggestions were cut off at the reply limit. Raise Longest reply for Background work in its Tune window under Account, Assistant.'
+				);
+			}
+			// A summary offered against the instruction (an earlier part, or one
+			// the writer already has or turned down) is dropped.
+			const proposals = parseEnrichResponse(result.content).filter(
+				(p) => p.field !== 'summary' || (last && !summaryClosed)
+			);
+			const before = found.length;
+			found = mergeProposals(found, proposals);
+			// Only what this part added; the summary comes from the last part
+			// alone, so it is last here too, where staging stops.
+			const fresh = found.slice(before);
+			if (fresh.length) {
+				suggestions.push(
+					...(await stageEntitySuggestions(db, {
+						ownerId: opts.userId,
+						kind,
+						entityId: opts.entityId,
+						proposals: fresh
+					}))
+				);
+			}
+		} catch (err) {
+			failure = err;
+			break;
+		}
+	}
+	await meter.flush();
+	// With nothing found there is nothing to show for the read, so the caller
+	// gets the error itself.
+	if (failure && found.length === 0) throw failure;
+	if (failure) {
+		logEvent('error', 'assistant.enrich_text_partial', {
+			entityId: opts.entityId,
+			requests,
+			parts: parts.length,
+			...errorFields(failure)
+		});
+	}
+	return {
+		suggestions,
+		scenes: new Set(excerpts.map((scene) => scene.id)).size,
+		requests,
+		...(failure ? { partial: true } : {}),
+		// A cut-off reply is something the writer can fix in the settings.
+		...(failure instanceof ReplyCutOffError ? { partialNote: failure.message } : {}),
+		...(capped ? { capped: true, ...spentFields(meter) } : {})
+	};
+}
+
+export type { EnrichMode };
+
+// What the button's reads would send for this entity, counted without sending
+// anything; null when the entity is not the user's or not in the scope.
+export async function estimateEntityEnrich(
+	db: Database,
+	opts: { userId: string; scope: EnrichScope; entityId: string }
+): Promise<EnrichEstimate | null> {
+	const entity = await resolveOwnedEntity(db, opts.userId, opts.entityId, (table) => ({
+		universeId: table.universeId,
+		name: entityNameColumn(table),
+		aliases: entityAliasColumn(table),
+		details: table.details,
+		summaryMd: table.summaryMd
+	}));
+	if (!entity) return null;
+	if (!(await entityInScope(db, opts.userId, opts.scope, entity.universeId))) return null;
+	const kind = entity.type === 'lore_entry' ? ('lore' as const) : entity.type;
+	const task = buildEnrichTextMessage(
+		{
+			kind,
+			name: entity.name,
+			aliases: entity.aliases ?? [],
+			details: entity.details ?? [],
+			summaryMd: entity.summaryMd,
+			hasSummary: false
+		},
+		''
+	);
+	return await estimateEnrich(db, { ...opts, kind, taskTokens: estimateTokens(task) });
 }
 
 // The request an enrich read of this entity would send as things stand, with
