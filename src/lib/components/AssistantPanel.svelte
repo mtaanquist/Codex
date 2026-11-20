@@ -61,6 +61,8 @@
 		MAX_ATTACHMENTS,
 		type AttachmentKind,
 		CHAT_MISSING,
+		CHAT_STORED_HEADER,
+		NO_REPLY_TEXT,
 		CHAT_WINDOW_TURNS,
 		chatTitle,
 		newChatId,
@@ -428,7 +430,10 @@
 				olderSummarised = false;
 				return 'gone';
 			}
-			if (response.status >= 400 && response.status < 500) {
+			if (
+				(response.status >= 400 && response.status < 500) ||
+				response.headers.get(CHAT_STORED_HEADER) === '0'
+			) {
 				appendToReply(failure || 'The Assistant could not take that request.');
 				markUnsaved(true);
 				return 'refused';
@@ -459,28 +464,28 @@
 				}
 			}
 			const reply = messages[messages.length - 1];
-			// The same test the server applies before it stores a reply. An error
-			// after done means storing it failed.
+			// The server sends done once it has stored the reply, and stores one
+			// that has text, a proposal or a cut-short note.
 			const stored =
 				finished &&
 				!streamError &&
 				reply?.role === 'assistant' &&
-				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0);
+				(reply.content.trim() !== '' || (reply.proposals?.length ?? 0) > 0 || !!reply.stopped);
+			if (stored && reply.content.trim() === '') reply.content = NO_REPLY_TEXT;
 			if (startedIn && stored) adopt(startedIn);
 			if (reply?.role === 'assistant' && !stored) {
 				// Not stored, so not sent back. Text that broke off can still be
 				// inserted; an error in its place cannot.
 				reply.unsaved = true;
 				if (reply.content.trim() === '') {
-					reply.content = streamError || 'The Assistant did not return a response.';
+					reply.content = streamError || NO_REPLY_TEXT;
 					reply.notice = true;
 				} else reply.failed = streamError || 'The connection closed before the reply finished.';
 			}
 		} catch {
 			const reply = messages[messages.length - 1];
 			if (finished && reply?.role === 'assistant' && reply.content.trim() !== '') {
-				// A Stop or a dropped connection after done lands while the server
-				// stores the reply, which it still does.
+				// A Stop or a dropped connection after done: the reply is stored.
 				if (startedIn) adopt(startedIn);
 			} else if (controller.signal.aborted) {
 				// A writer's own Stop keeps what arrived to insert, but the server
@@ -583,7 +588,11 @@
 				...messages.slice(0, -2),
 				{
 					role: 'assistant',
-					content: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
+					// With no answer at all, the message may still have arrived.
+					content:
+						outcome === 'unreached'
+							? 'Your message may not have been sent. It is back in the chat box; check the chat before you send it again.'
+							: `Your message was not sent. ${reply?.content ?? ''} It is back in the chat box.`,
 					unsaved: true,
 					notice: true
 				}
@@ -1243,11 +1252,9 @@
 	let deleting = $state(false);
 	async function deleteChat() {
 		if (deleting || busy || switching) return;
-		if (!chatId) {
-			// A stopped first send may have stored its question; it goes too.
-			if (nextChatMayExist) {
-				void fetch(`/api/assistant/chats/${nextChatId}`, { method: 'DELETE' }).catch(() => {});
-			}
+		// A new chat with nothing stored has nothing to delete. A stopped first
+		// send may have stored its question, so that one is asked about too.
+		if (!chatId && !nextChatMayExist) {
 			newChat();
 			return;
 		}
@@ -1260,12 +1267,15 @@
 		// The menu item that asked is gone by now, so focus goes back to the
 		// composer rather than being lost.
 		composer?.focus();
-		if (!ok || deleting || busy || switching || !chatId) return;
+		if (!ok || deleting || busy || switching) return;
+		const unopened = chatId === null;
+		if (unopened && !nextChatMayExist) return;
 		deleting = true;
-		const id = chatId;
+		const id = chatId ?? nextChatId;
 		try {
 			const response = await fetch(`/api/assistant/chats/${id}`, { method: 'DELETE' });
-			if (!response.ok) {
+			// The stopped send may have stored nothing, and then there is no chat.
+			if (!response.ok && !(unopened && response.status === 404)) {
 				flashActivity('failed', 'Could not delete the chat', 'Try again in a moment.');
 				return;
 			}
@@ -1603,6 +1613,7 @@
 				<div class="composer-pop">
 					<AssistantModelMenu
 						info={modelInfo}
+						storyId={'storyId' in scope ? scope.storyId : null}
 						settings={chatSettings}
 						onChange={changeSettings}
 						close={() => (modelOpen = false)}

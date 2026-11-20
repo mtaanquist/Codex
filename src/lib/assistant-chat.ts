@@ -79,7 +79,7 @@ export type ChatAttachment = {
 };
 
 export const MAX_ATTACHMENTS = 8;
-const MAX_ATTACHMENT_LABEL = 120;
+export const MAX_ATTACHMENT_LABEL = 120;
 
 // Request input is untrusted: malformed entries are dropped, duplicates
 // collapse, and the list is capped.
@@ -124,6 +124,13 @@ export type ChatSummary = { id: string; title: string; updatedAt: string };
 // The message a request gets when the chat it names is gone; the panel
 // matches it to tell a deleted chat from a story or universe that is gone.
 export const CHAT_MISSING = 'That chat does not exist.';
+
+// What stands in for a reply that was cut short before any text arrived.
+export const NO_REPLY_TEXT = 'The Assistant did not return a response.';
+
+// On a failed chat request: "0" says the message was not stored, so the panel
+// can put it back in the chat box.
+export const CHAT_STORED_HEADER = 'x-chat-stored';
 
 // An id for a chat the panel is about to start. crypto.randomUUID only exists
 // on secure pages, and a self-hosted instance may be served over plain http,

@@ -358,6 +358,46 @@ describe('assistantSseResponse', () => {
 			{ role: 'assistant', content: 'What I read so far.', meta: { stopped: 'budget' } }
 		]);
 	});
+
+	it('stores a reply that was cut short before any text, so its note survives a reload', async () => {
+		providerSlot.current = streamingProvider(async function* () {
+			yield { type: 'stopped', reason: 'context' };
+			yield { type: 'done' };
+		});
+		const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
+		expect(parseFrames(await response.text())).toEqual([
+			{ type: 'stopped', reason: 'context' },
+			{ type: 'done' }
+		]);
+		expect(await listChat(db, userId, chatId)).toEqual([
+			{
+				role: 'assistant',
+				content: 'The Assistant did not return a response.',
+				meta: { stopped: 'context' }
+			}
+		]);
+	});
+
+	it('sends done only once the reply is stored', async () => {
+		providerSlot.current = streamingProvider(async function* () {
+			yield { type: 'token', text: 'Kept.' };
+			yield { type: 'done' };
+		});
+		const response = sse(new Request('http://localhost/api/assistant/chat', { method: 'POST' }));
+		const reader = response.body!.getReader();
+		const decoder = new TextDecoder();
+		let text = '';
+		while (!text.includes('"done"')) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			text += decoder.decode(value, { stream: true });
+		}
+		expect(text).toContain('"done"');
+		expect(await listChat(db, userId, chatId)).toEqual([
+			{ role: 'assistant', content: 'Kept.', meta: null }
+		]);
+		await reader.cancel();
+	});
 });
 
 describe('assistant gates', () => {
@@ -754,14 +794,29 @@ describe('chats over the endpoints', () => {
 			[userId]
 		);
 		const before = (await listChats(db, userId, { storyId })).length;
-		await expect(
-			chatPost({
-				storyId,
-				newChatId: '22222222-2222-4222-8222-222222222222',
-				messages: [{ role: 'user', content: 'Hi.' }]
-			})
-		).rejects.toThrow();
+		const response = await chatPost({
+			storyId,
+			newChatId: '22222222-2222-4222-8222-222222222222',
+			messages: [{ role: 'user', content: 'Hi.' }]
+		});
+		expect(response.status).toBe(500);
 		expect(await listChats(db, userId, { storyId })).toHaveLength(before);
+	});
+
+	it('says the message was not stored when a step before storing it fails', async () => {
+		await pool.query(
+			`update users set llm_config = llm_config || '{"apiKeyEnc":"not-a-secret"}'::jsonb where id = $1`,
+			[userId]
+		);
+		const response = await chatPost({
+			storyId,
+			chatId,
+			messages: [{ role: 'user', content: 'Hi.' }]
+		});
+		expect(response.status).toBe(500);
+		expect(response.headers.get('x-chat-stored')).toBe('0');
+		expect((await response.json()).message).toMatch(/before your message was stored/);
+		expect(await listChat(db, userId, chatId)).toEqual([]);
 	});
 
 	it("refuses to save the model on another writer's chat", async () => {
@@ -805,9 +860,10 @@ describe('chats over the endpoints', () => {
 });
 
 describe('the model list', () => {
-	function getModels() {
+	function getModels(query = '', as = userId) {
 		return modelsRoute.GET({
-			locals: { user: { id: userId } }
+			url: new URL(`http://localhost/api/assistant/models${query}`),
+			locals: { user: { id: as } }
 		} as unknown as Parameters<typeof modelsRoute.GET>[0]) as Promise<Response>;
 	}
 
@@ -837,6 +893,32 @@ describe('the model list', () => {
 	it('refuses while the Assistant is off', async () => {
 		await configure(false);
 		await expectStatus(getModels(), 403);
+	});
+
+	it("offers a model set for the story the panel is on, to that story's writer only", async () => {
+		providerSlot.current = {
+			...streamingProvider(async function* () {}),
+			async listModels() {
+				throw new Error('no listing');
+			}
+		};
+		await saveStoryLlmOverride(db, storyId, { models: { chat: 'story-model' } });
+		expect((await (await getModels(`?storyId=${storyId}`)).json()).models).toEqual(['story-model']);
+		expect((await (await getModels()).json()).models).toEqual(['chat-model']);
+		const [other] = await db
+			.insert(users)
+			.values({ email: 'o@example.com', displayName: 'O', passwordHash: 'x', role: 'user' })
+			.returning({ id: users.id });
+		await saveAccountLlmConfig(db, other.id, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { chat: 'chat-model' },
+			toolCallBudget: 8
+		});
+		await expectStatus(getModels(`?storyId=${storyId}`, other.id), 404);
 	});
 });
 

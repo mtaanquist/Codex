@@ -190,6 +190,20 @@ describe('resolveAttachments', () => {
 		).toEqual([]);
 	});
 
+	it('names each item as it is now, not as the browser sent it', async () => {
+		await db.update(scenes).set({ title: 'The broken gate' }).where(eq(scenes.id, sceneId));
+		const resolved = await resolveAttachments(
+			db,
+			userId,
+			[
+				{ kind: 'scene', id: sceneId, label: 'The gate' },
+				{ kind: 'entity', id: characterId, label: 'someone\nelse' }
+			],
+			BIG
+		);
+		expect(resolved.map((item) => item.attachment.label)).toEqual(['The broken gate', 'Mira']);
+	});
+
 	it('cuts what does not fit and says so', async () => {
 		await db
 			.update(scenes)
