@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assistantDrafts,
 	chapters,
 	characters,
 	entityCategories,
@@ -36,6 +37,7 @@ import { trashStory } from '../../src/lib/server/story-lifecycle';
 import { purgeStory } from '../../src/lib/server/story-delete';
 import { saveEntity } from '../../src/lib/server/entity-save';
 import { saveStoryLlmOverride } from '../../src/lib/server/llm/config';
+import { addDraftAsScene, fillSceneFromDraft } from '../../src/lib/server/scene-drafts';
 import { replaceProse } from '../../src/lib/server/prose-replace';
 import {
 	findInStory,
@@ -250,6 +252,7 @@ async function seedFor(...ops: Op[]) {
 
 // What the prepare steps left for their operation.
 const made = {
+	sceneDraftId: '',
 	draftId: '',
 	suggestionId: '',
 	revisionId: '',
@@ -272,7 +275,42 @@ const ok = (result: unknown) => {
 	return result;
 };
 
+// A scene draft the Assistant wrote, ready to keep. Fill needs its scene empty.
+async function stageSceneDraft(sceneId: string, emptyScene: boolean) {
+	if (emptyScene) {
+		await db.update(scenes).set({ bodyMd: '', wordCount: 0 }).where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+	}
+	const [row] = await db
+		.insert(assistantDrafts)
+		.values({
+			userId: S.user,
+			storyId: S.story,
+			sceneId,
+			brief: 'b',
+			targetWords: 500,
+			textMd: 'Aldric came back.',
+			status: 'ready'
+		})
+		.returning({ id: assistantDrafts.id });
+	return row.id;
+}
+
 const OPS: Op[] = [
+	{
+		name: 'fill a scene from its draft',
+		prepare: async () => {
+			made.sceneDraftId = await stageSceneDraft(S.D, true);
+		},
+		run: async (db) => ok(await fillSceneFromDraft(db, S.user, made.sceneDraftId))
+	},
+	{
+		name: 'add a draft as a new scene',
+		prepare: async () => {
+			made.sceneDraftId = await stageSceneDraft(S.B, false);
+		},
+		run: async (db) => ok(await addDraftAsScene(db, S.user, made.sceneDraftId))
+	},
 	{
 		name: 'save scene text',
 		run: async (db) =>

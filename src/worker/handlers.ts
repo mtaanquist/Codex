@@ -505,13 +505,15 @@ export function createHandlers(deps: WorkerDeps) {
 	// early, why.
 	async function chapterDraft(job: JobWithMetadata<AssistantChapterDraftData>) {
 		const { userId, storyId, chapterId, draftIds, brief } = job.data;
-		const href = chapterDraftHref(storyId, chapterId);
 		const [chapter] = await db
 			.select({ title: schema.chapters.title })
 			.from(schema.chapters)
 			.innerJoin(schema.stories, eq(schema.chapters.storyId, schema.stories.id))
 			.where(and(eq(schema.chapters.id, chapterId), eq(schema.stories.ownerId, userId)));
 		const name = chapter?.title ? `the chapter "${chapter.title}"` : 'your chapter';
+		// A chapter deleted meanwhile leaves its scenes, and their drafts, in the
+		// story.
+		const href = chapter ? chapterDraftHref(storyId, chapterId) : `/stories/${storyId}`;
 		const settleFailed = () => boss.complete(ASSISTANT_DRAFT_QUEUE, job, { failed: true });
 		// What a run that ended on a fault leaves, for its notice.
 		const kept = (drafted: number) =>

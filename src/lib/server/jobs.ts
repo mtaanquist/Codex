@@ -417,6 +417,8 @@ export async function queueAssistantDetails(input: {
 // first, see scene-drafts.ts). The singleton key holds one unfinished draft
 // per scene.
 export async function queueAssistantDraft(input: {
+	// The id the job takes: the draft's row already carries it.
+	jobId: string;
 	userId: string;
 	storyId: string;
 	sceneId: string;
@@ -424,7 +426,9 @@ export async function queueAssistantDraft(input: {
 }): Promise<string | 'coalesced' | null> {
 	try {
 		const boss = await getBoss();
-		const jobId = await boss.send(ASSISTANT_DRAFT_QUEUE, input, {
+		const { jobId: id, ...data } = input;
+		const jobId = await boss.send(ASSISTANT_DRAFT_QUEUE, data, {
+			id,
 			singletonKey: `draft:${input.sceneId}`,
 			...assistantSendOptions(input.userId)
 		});
@@ -443,6 +447,7 @@ export async function queueAssistantDraft(input: {
 // staged first, see scene-drafts.ts), on the scene draft queue. The singleton
 // key holds one unfinished chapter draft per chapter.
 export async function queueAssistantChapterDraft(input: {
+	jobId: string;
 	userId: string;
 	storyId: string;
 	chapterId: string;
@@ -451,7 +456,9 @@ export async function queueAssistantChapterDraft(input: {
 }): Promise<string | 'coalesced' | null> {
 	try {
 		const boss = await getBoss();
-		const jobId = await boss.send(ASSISTANT_DRAFT_QUEUE, input, {
+		const { jobId: id, ...data } = input;
+		const jobId = await boss.send(ASSISTANT_DRAFT_QUEUE, data, {
+			id,
 			singletonKey: `draft-chapter:${input.chapterId}`,
 			...assistantSendOptions(input.userId)
 		});
@@ -468,15 +475,16 @@ export async function queueAssistantChapterDraft(input: {
 
 // What the queue says about a scene draft's job, for settling a draft whose
 // job ended without settling it (see scene-drafts.ts). 'stopped' is the
-// writer's Stop. A lookup that fails reads as running, so a draft still being
+// writer's Stop; 'missing' is a job the queue does not have (never queued, or
+// long archived). A lookup that fails reads as running, so a draft still being
 // written is never settled on a guess.
 export async function assistantDraftJobState(
 	id: string
-): Promise<'running' | 'stopped' | 'done' | 'failed'> {
+): Promise<'running' | 'stopped' | 'done' | 'failed' | 'missing'> {
 	try {
 		const boss = await getBoss();
 		const job = await boss.getJobById(ASSISTANT_DRAFT_QUEUE, id);
-		if (!job) return 'done';
+		if (!job) return 'missing';
 		if (job.state === 'cancelled') return 'stopped';
 		if (job.state === 'failed') return 'failed';
 		if (job.state === 'completed') {

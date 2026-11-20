@@ -15,8 +15,10 @@ import { clampDraftWords, MAX_DRAFT_BRIEF_CHARS, MAX_DRAFT_POV_CHARS } from '#li
 // "Draft this scene" on the scene's menu); nothing else queues one, and it is
 // not a tool the model can call. The draft is written by a background job into
 // its own staged row and reaches a scene only when the writer accepts it (see
-// the [id] route). Refused when the Assistant is off for the account or the
-// story.
+// the [id] route). Asking for one, and counting one, are refused when the
+// Assistant is off for the account or the story. Reading a staged draft back
+// sends nothing to the provider and needs only its owner, so a draft already
+// written can still be found and decided after a mute.
 
 const NO_MODEL = 'No model is chosen for Write. Pick one under Account, Assistant.';
 
@@ -24,10 +26,9 @@ const NO_MODEL = 'No model is chosen for Write. Pick one under Account, Assistan
 // null when there is none.
 export const GET: RequestHandler = async ({ url, locals }) => {
 	if (!locals.user) error(401, 'Sign in to read a draft.');
-	const story = await requireAssistantStory(locals.user.id, url.searchParams.get('storyId'));
 	const sceneId = url.searchParams.get('sceneId') ?? '';
 	const scene = isUuid(sceneId) ? await ownedScene(db, locals.user.id, sceneId) : null;
-	if (!scene || scene.storyId !== story.id) error(404, 'Scene not found');
+	if (!scene) error(404, 'Scene not found');
 	return Response.json({
 		draft: await sceneDraftFor(db, locals.user.id, scene.id, assistantDraftJobState)
 	});

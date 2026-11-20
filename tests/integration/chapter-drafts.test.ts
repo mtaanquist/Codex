@@ -40,10 +40,11 @@ vi.mock('#lib/server/db', async () => {
 // Queueing would start pg-boss. The queue hands back a job id; the job itself
 // is run by hand through runChapterDraft.
 const jobs = vi.hoisted(() => ({
-	queueAssistantDraft: vi.fn<(job: unknown) => Promise<string | 'coalesced' | null>>(),
-	queueAssistantChapterDraft: vi.fn<(job: unknown) => Promise<string | 'coalesced' | null>>(),
+	queueAssistantDraft: vi.fn<(job: { jobId: string }) => Promise<string | 'coalesced' | null>>(),
+	queueAssistantChapterDraft:
+		vi.fn<(job: { jobId: string }) => Promise<string | 'coalesced' | null>>(),
 	assistantDraftJobState:
-		vi.fn<(id: string) => Promise<'running' | 'stopped' | 'done' | 'failed'>>(),
+		vi.fn<(id: string) => Promise<'running' | 'stopped' | 'done' | 'failed' | 'missing'>>(),
 	getAssistantJobState: vi.fn(async () => 'running'),
 	reviewJobState: vi.fn(),
 	queueSceneMentions: vi.fn(async () => undefined),
@@ -74,7 +75,8 @@ const {
 	CHAPTER_HAS_NO_SCENES
 } = await import('../../src/lib/server/scene-drafts');
 const { saveSceneBody } = await import('../../src/lib/server/scene-save');
-const { trashScene } = await import('../../src/lib/server/scene-lifecycle');
+const { deleteChapter, trashScene } = await import('../../src/lib/server/scene-lifecycle');
+const { mergeScenes } = await import('../../src/lib/server/scene-split-merge');
 const chapterRoute = await import('../../src/routes/api/assistant/draft/chapter/+server');
 const decideRoute = await import('../../src/routes/api/assistant/draft/[id=uuid]/+server');
 const statusRoute = await import('../../src/routes/api/assistant/job-status/+server');
@@ -82,6 +84,7 @@ const statusRoute = await import('../../src/routes/api/assistant/job-status/+ser
 // Every prompt the stub was sent. Each request is answered "Draft N."; a hook
 // runs while request N is being written, and may throw.
 let prompts: string[] = [];
+let maxTokensSent: (number | undefined)[] = [];
 let calls = 0;
 let whileWriting: ((call: number) => Promise<void>) | null = null;
 let cutOff = false;
@@ -91,6 +94,7 @@ const stubProvider: Provider = {
 	},
 	async respond(req) {
 		prompts.push(req.messages.map((m) => m.content).join('\n'));
+		maxTokensSent.push(req.maxTokens);
 		const call = ++calls;
 		await whileWriting?.(call);
 		return {
@@ -140,13 +144,14 @@ beforeAll(async () => {
 
 beforeEach(async () => {
 	prompts = [];
+	maxTokensSent = [];
 	calls = 0;
 	whileWriting = null;
 	cutOff = false;
 	vi.clearAllMocks();
-	let n = 0;
-	jobs.queueAssistantChapterDraft.mockImplementation(async () => `job-${++n}`);
-	jobs.queueAssistantDraft.mockImplementation(async () => `job-${++n}`);
+	// The queue takes the id the drafts' rows already carry.
+	jobs.queueAssistantChapterDraft.mockImplementation(async (job) => job.jobId);
+	jobs.queueAssistantDraft.mockImplementation(async (job) => job.jobId);
 	jobs.assistantDraftJobState.mockResolvedValue('running');
 	resetRateLimits();
 	await pool.query('truncate table users cascade');
@@ -267,7 +272,11 @@ const draftRows = () =>
 		.from(assistantDrafts)
 		.where(eq(assistantDrafts.chapterId, chapterId))
 		.orderBy(asc(assistantDrafts.position));
-const statuses = async () => (await draftRows()).map((row) => row.status);
+const statuses = async (started?: { draftIds: string[] }) => {
+	if (!started) return (await draftRows()).map((row) => row.status);
+	const rows = await db.select().from(assistantDrafts);
+	return started.draftIds.map((id) => rows.find((row) => row.id === id)?.status);
+};
 const sceneRow = async (id: string) => (await db.select().from(scenes).where(eq(scenes.id, id)))[0];
 const storyScenes = () =>
 	db.select().from(scenes).where(eq(scenes.storyId, storyId)).orderBy(asc(scenes.globalPosition));
@@ -407,6 +416,27 @@ describe('the chapter estimate', () => {
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
 	});
 
+	it('counts every scene at the limit sent when the model may think', async () => {
+		await saveAccountLlmConfig(db, ownerId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			provider: 'anthropic',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { coauthor: 'write-model' }
+		});
+		const result = await chapterDraftEstimate(db, input());
+		expect(result.ok && result.estimate).toMatchObject({
+			scenes: 3,
+			estCompletionTokens: 3 * 16_384,
+			estCompletionUpTo: true
+		});
+		const started = await request();
+		await run(started);
+		expect(maxTokensSent).toEqual([16_384, 16_384, 16_384]);
+	});
+
 	it('prices the whole run and holds it against the cap', async () => {
 		await configure({ spendCapUsd: 20 });
 		// 1400 expected tokens out a scene at $0.01 is $14 a scene.
@@ -434,14 +464,15 @@ describe('asking for a chapter draft', () => {
 		expect(
 			rows.map((row) => [row.sceneId, row.position, row.brief, row.status, row.jobId])
 		).toEqual([
-			[quay, 0, 'Quay brief.', 'pending', 'job-1'],
-			[crossing, 1, 'Crossing brief.', 'pending', 'job-1'],
-			[bank, 2, '', 'pending', 'job-1']
+			[quay, 0, 'Quay brief.', 'pending', result.jobId],
+			[crossing, 1, 'Crossing brief.', 'pending', result.jobId],
+			[bank, 2, '', 'pending', result.jobId]
 		]);
-		expect(result).toMatchObject({ jobId: 'job-1', skipped: [] });
+		expect(result).toMatchObject({ jobId: expect.any(String), skipped: [] });
 		expect(result.draftIds).toEqual(rows.map((row) => row.id));
 		expect(jobs.queueAssistantChapterDraft).toHaveBeenCalledTimes(1);
 		expect(jobs.queueAssistantChapterDraft).toHaveBeenCalledWith({
+			jobId: result.jobId,
 			userId: ownerId,
 			storyId,
 			chapterId,
@@ -590,10 +621,13 @@ describe('the endpoint', () => {
 		expect((await read(owner)).body.run).toBeNull();
 
 		const started = await call(chapterRoute.POST, event(owner, { body: body() }));
-		expect(started).toMatchObject({ status: 200, body: { ok: true, jobId: 'job-1', skipped: [] } });
+		expect(started).toMatchObject({
+			status: 200,
+			body: { ok: true, jobId: expect.any(String), skipped: [] }
+		});
 		expect((await read(owner)).body.run).toMatchObject({
 			chapterId,
-			jobId: 'job-1',
+			jobId: started.body.jobId,
 			scenes: [
 				{ sceneId: quay, status: 'pending' },
 				{ sceneId: crossing, status: 'pending' }
@@ -620,7 +654,8 @@ describe('the endpoint', () => {
 			);
 			expect(result.status).toBe(403);
 		}
-		expect((await read({ id: ownerId })).status).toBe(403);
+		// Reading staged drafts back sends nothing, so it is not gated.
+		expect(await read({ id: ownerId })).toEqual({ status: 200, body: { run: null } });
 
 		await saveStoryLlmOverride(db, storyId, {});
 		await configure({ enabled: false });
@@ -629,6 +664,22 @@ describe('the endpoint', () => {
 		);
 		expect(jobs.queueAssistantChapterDraft).not.toHaveBeenCalled();
 		expect(await db.select().from(assistantDrafts)).toEqual([]);
+	});
+
+	it('still lists drafts written before the story was muted', async () => {
+		const started = await request();
+		await run(started);
+		await saveStoryLlmOverride(db, storyId, { enabled: false });
+		const listed = await read({ id: ownerId });
+		expect(listed.status).toBe(200);
+		expect(listed.body.run).toMatchObject({
+			scenes: [{ status: 'ready' }, { status: 'ready' }, { status: 'ready' }]
+		});
+		const kept = await call(
+			decideRoute.POST,
+			event({ id: ownerId }, { params: { id: started.draftIds[0] }, body: { action: 'fill' } })
+		);
+		expect(kept.status).toBe(200);
 	});
 
 	it('refuses an estimate over the cap with the reason', async () => {
@@ -932,6 +983,82 @@ describe('the job', () => {
 			total: 3
 		});
 		expect(await statuses()).toEqual(['ready', 'failed', 'discarded']);
+	});
+
+	it('carries on when the chapter is deleted during the run, and keeps every draft', async () => {
+		const started = await request();
+		whileWriting = async (n) => {
+			if (n === 2) {
+				// The chapter heading goes; its scenes stay, unfiled.
+				expect(await deleteChapter(db, ownerId, chapterId)).toBe(true);
+				// The first scene's draft, already written, is still there.
+				expect(await statuses(started)).toEqual(['ready', 'running', 'pending']);
+				expect(await chapterDraftProgress(db, ownerId, started.jobId)).toEqual({
+					completed: 1,
+					total: 3
+				});
+			}
+		};
+		const result = await run(started);
+		expect(result).toMatchObject({ outcome: 'done', drafted: 3, total: 3, gone: 0 });
+		expect(result.outcome === 'done' && result.ended).toBeUndefined();
+		expect(await statuses(started)).toEqual(['ready', 'ready', 'ready']);
+
+		// Each is reached from its scene and kept like any scene draft.
+		expect(await sceneDraftFor(db, ownerId, crossing)).toMatchObject({
+			id: started.draftIds[1],
+			status: 'ready',
+			sceneEmpty: true
+		});
+		expect(await fillSceneFromDraft(db, ownerId, started.draftIds[1])).toEqual({
+			ok: true,
+			sceneId: crossing
+		});
+		expect(await discardSceneDraft(db, ownerId, started.draftIds[2])).toEqual({
+			ok: true,
+			stopJobId: null
+		});
+	});
+
+	it('keeps the ready drafts of a chapter deleted after the run', async () => {
+		const started = await request();
+		await run(started);
+		await deleteChapter(db, ownerId, chapterId);
+		expect(await statuses(started)).toEqual(['ready', 'ready', 'ready']);
+		expect((await sceneDraftFor(db, ownerId, quay))?.textMd).toBe('Draft 1. The river ran on.');
+	});
+
+	it('still drafts a scene moved to another chapter during the run', async () => {
+		const started = await request();
+		whileWriting = async (n) => {
+			if (n === 1) {
+				await db.update(scenes).set({ chapterId: emptyChapterId }).where(eq(scenes.id, crossing));
+			}
+		};
+		const result = await run(started);
+		expect(result).toMatchObject({ outcome: 'done', drafted: 3, total: 3 });
+		// It is found from its scene, and no longer in the first chapter's list.
+		expect((await sceneDraftFor(db, ownerId, crossing))?.status).toBe('ready');
+		const listed = await chapterDraftFor(db, { userId: ownerId, storyId, chapterId });
+		expect(listed!.scenes.map((scene) => scene.sceneId)).toEqual([quay, bank]);
+	});
+
+	it('ends cleanly when two of its scenes are merged during the run', async () => {
+		const started = await request();
+		whileWriting = async (n) => {
+			if (n === 1) {
+				const merged = await mergeScenes(db, ownerId, storyId, [crossing, bank]);
+				expect(merged.ok).toBe(true);
+			}
+		};
+		const result = await run(started);
+		expect(result.outcome).toBe('done');
+		// Nothing is left waiting, and no draft is ready for a scene that is gone.
+		const live = new Set((await storyScenes()).filter((s) => !s.deletedAt).map((s) => s.id));
+		for (const row of await db.select().from(assistantDrafts)) {
+			expect(['ready', 'discarded']).toContain(row.status);
+			if (row.status === 'ready') expect(live.has(row.sceneId!)).toBe(true);
+		}
 	});
 
 	it('counts drafts that stopped at the length limit', async () => {

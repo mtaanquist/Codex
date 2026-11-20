@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
@@ -19,7 +20,9 @@ import { isUuid } from '#lib/slug';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 import {
+	CHAPTER_CAP_ADVICE,
 	defaultDraftWords,
+	SCENE_CAP_ADVICE,
 	type ChapterDraftDefaults,
 	type ChapterDraftEstimate,
 	type ChapterDraftView,
@@ -72,7 +75,14 @@ const OPEN = ['pending', 'running', 'ready'] as const;
 
 // What the queue says about a draft's job: still going, stopped by the writer,
 // or settled either way.
-export type DraftJobState = (jobId: string) => Promise<'running' | 'stopped' | 'done' | 'failed'>;
+export type DraftJobState = (
+	jobId: string
+) => Promise<'running' | 'stopped' | 'done' | 'failed' | 'missing'>;
+
+// A draft's row is written just before its job is queued, so for a moment the
+// queue does not know the job. Only after this long is a job the queue cannot
+// find taken as one that was never queued.
+const QUEUE_GRACE_MS = 60_000;
 
 // A draft whose job ended without settling the draft: stopped (the worker
 // notices a Stop only at its next heartbeat, and never for a job still
@@ -82,13 +92,16 @@ export type DraftJobState = (jobId: string) => Promise<'running' | 'stopped' | '
 // dropped, since it only settles a draft that is still unsettled.
 async function settleOrphan(
 	db: Database,
-	draft: { id: string; status: string; jobId: string | null },
+	draft: { id: string; status: string; jobId: string | null; createdAt: Date },
 	jobState: DraftJobState | undefined
 ): Promise<boolean> {
 	if (draft.status !== 'pending' && draft.status !== 'running') return false;
-	if (!jobState || !draft.jobId) return false;
-	const state = await jobState(draft.jobId);
-	if (state === 'running') return false;
+	if (!jobState) return false;
+	const young = Date.now() - draft.createdAt.getTime() < QUEUE_GRACE_MS;
+	// Every row is written with its job's id. One without (from before that)
+	// has nothing to write it once the grace has passed.
+	const state = draft.jobId ? await jobState(draft.jobId) : 'missing';
+	if (state === 'running' || (state === 'missing' && young)) return false;
 	const rows = await db
 		.update(assistantDrafts)
 		.set(
@@ -149,11 +162,14 @@ export async function sceneDraftFor(
 		createdAt: draft.createdAt.toISOString(),
 		sceneEmpty: scene.bodyMd.trim() === '',
 		sceneTitle: title?.title ?? null,
-		inChapterRun: draft.chapterId !== null
+		// position marks a draft of a chapter run; it outlives the chapter.
+		inChapterRun: draft.position !== null
 	};
 }
 
+// jobId is the id the queued job must take: it is already on the draft's row.
 export type QueueSceneDraft = (job: {
+	jobId: string;
 	userId: string;
 	storyId: string;
 	sceneId: string;
@@ -175,7 +191,7 @@ export async function requestSceneDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This draft is estimated at about $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. Ask for a shorter scene, or raise the cap in your Assistant settings.`
+			reason: `This draft is estimated at ${estimate.estCompletionUpTo ? 'up to' : 'about'} $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
 		};
 	}
 
@@ -187,7 +203,8 @@ export async function requestSceneDraft(
 		.select({
 			id: assistantDrafts.id,
 			status: assistantDrafts.status,
-			jobId: assistantDrafts.jobId
+			jobId: assistantDrafts.jobId,
+			createdAt: assistantDrafts.createdAt
 		})
 		.from(assistantDrafts)
 		.where(and(mine, inArray(assistantDrafts.status, OPEN)));
@@ -200,6 +217,10 @@ export async function requestSceneDraft(
 		.set({ status: 'discarded' })
 		.where(and(mine, eq(assistantDrafts.status, 'failed')));
 
+	// The job's id is chosen here and written with the row, so a row never
+	// waits without one: if the request dies before the job is queued, reading
+	// the draft finds no such job and settles it (see settleOrphan).
+	const jobId = randomUUID();
 	let draftId: string;
 	try {
 		const [row] = await db
@@ -208,6 +229,7 @@ export async function requestSceneDraft(
 				userId: input.userId,
 				storyId: input.storyId,
 				sceneId: input.sceneId,
+				jobId,
 				brief: input.brief,
 				targetWords: input.targetWords,
 				pov: input.pov?.trim() || null
@@ -220,16 +242,17 @@ export async function requestSceneDraft(
 		throw err;
 	}
 
-	const jobId = await deps.queue({
+	const queued = await deps.queue({
+		jobId,
 		userId: input.userId,
 		storyId: input.storyId,
 		sceneId: input.sceneId,
 		draftId
 	});
-	if (!jobId || jobId === 'coalesced') {
+	if (!queued || queued === 'coalesced') {
 		// Nothing will write it, so it must not hold the scene.
 		await db.delete(assistantDrafts).where(eq(assistantDrafts.id, draftId));
-		return jobId === 'coalesced'
+		return queued === 'coalesced'
 			? ALREADY_DRAFTING
 			: {
 					ok: false,
@@ -237,7 +260,6 @@ export async function requestSceneDraft(
 					reason: 'Could not start the draft. Try again in a moment.'
 				};
 	}
-	await db.update(assistantDrafts).set({ jobId }).where(eq(assistantDrafts.id, draftId));
 	return { ok: true, draftId, jobId };
 }
 
@@ -307,13 +329,14 @@ export async function fillSceneFromDraft(
 		const text = acceptedText(edited, ready.textMd);
 		if (!text) return EMPTY;
 
-		// The base fingerprint is of the text read under the lock, so the save
-		// goes through only over exactly that (empty) text.
+		// The base fingerprint is of an empty scene (or of the blank lines read
+		// under the lock), never of prose: the save itself refuses to go over
+		// any text, whatever the check above let through.
 		const saved = await saveSceneBody(tx, sceneId, {
 			title: scene.title,
 			bodyMd: text,
 			anchors: null,
-			baseHashes: [textHash(scene.bodyMd)],
+			baseHashes: [...new Set([textHash(''), textHash(scene.bodyMd.trim() ? '' : scene.bodyMd)])],
 			overwrite: false
 		});
 		// The save refuses before it writes anything, so nothing is half applied.
@@ -394,7 +417,34 @@ export async function discardSceneDraft(
 	const unsettled = draft.status === 'pending' || draft.status === 'running';
 	// One scene of a chapter draft: its job has other scenes to write, and
 	// passes over this one now that it is discarded.
-	return { ok: true, stopJobId: unsettled && draft.chapterId === null ? draft.jobId : null };
+	return { ok: true, stopJobId: unsettled && draft.position === null ? draft.jobId : null };
+}
+
+/**
+ * Saves the writer's edits to a draft that is waiting to be decided, so they
+ * outlive the panel. Only the draft row changes, and only while it is ready:
+ * a draft already kept or discarded is left as it was.
+ */
+export async function saveDraftText(
+	db: Database,
+	userId: string,
+	draftId: string,
+	text: string
+): Promise<{ ok: true } | ActionFailure> {
+	if (!isUuid(draftId)) return NOT_FOUND;
+	const rows = await db
+		.update(assistantDrafts)
+		.set({ textMd: text })
+		.where(
+			and(
+				eq(assistantDrafts.id, draftId),
+				eq(assistantDrafts.userId, userId),
+				eq(assistantDrafts.status, 'ready')
+			)
+		)
+		.returning({ id: assistantDrafts.id });
+	if (rows.length > 0) return { ok: true };
+	return (await ownedDraft(db, userId, draftId)) ? NOT_READY : NOT_FOUND;
 }
 
 // ---- A chapter, drafted scene by scene ----
@@ -473,7 +523,8 @@ async function undecidedScenes(
 			id: assistantDrafts.id,
 			sceneId: assistantDrafts.sceneId,
 			status: assistantDrafts.status,
-			jobId: assistantDrafts.jobId
+			jobId: assistantDrafts.jobId,
+			createdAt: assistantDrafts.createdAt
 		})
 		.from(assistantDrafts)
 		.where(
@@ -607,6 +658,7 @@ export async function chapterDraftEstimate(
 }
 
 export type QueueChapterDraft = (job: {
+	jobId: string;
 	userId: string;
 	storyId: string;
 	chapterId: string;
@@ -642,11 +694,13 @@ export async function requestChapterDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This chapter draft is estimated at about $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. Choose fewer scenes or a shorter length, or raise the cap in your Assistant settings.`
+			reason: `This chapter draft is estimated at ${estimate.estCompletionUpTo ? 'up to' : 'about'} $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
 		};
 	}
 
 	const sceneIds = plan.scenes.map((scene) => scene.sceneId);
+	// Written with the rows, as for a single draft (see requestSceneDraft).
+	const jobId = randomUUID();
 	let draftIds: string[];
 	try {
 		draftIds = await db.transaction(async (tx) => {
@@ -669,6 +723,7 @@ export async function requestChapterDraft(
 						storyId: input.storyId,
 						chapterId: input.chapterId,
 						sceneId: scene.sceneId,
+						jobId,
 						position: index,
 						brief: scene.brief,
 						targetWords: input.targetWords,
@@ -684,17 +739,18 @@ export async function requestChapterDraft(
 		throw err;
 	}
 
-	const jobId = await deps.queue({
+	const queued = await deps.queue({
+		jobId,
 		userId: input.userId,
 		storyId: input.storyId,
 		chapterId: input.chapterId,
 		draftIds,
 		brief: input.brief.trim()
 	});
-	if (!jobId || jobId === 'coalesced') {
+	if (!queued || queued === 'coalesced') {
 		// Nothing will write them, so they must not hold their scenes.
 		await db.delete(assistantDrafts).where(inArray(assistantDrafts.id, draftIds));
-		return jobId === 'coalesced'
+		return queued === 'coalesced'
 			? ALREADY_DRAFTING_CHAPTER
 			: {
 					ok: false,
@@ -702,7 +758,6 @@ export async function requestChapterDraft(
 					reason: 'Could not start the draft. Try again in a moment.'
 				};
 	}
-	await db.update(assistantDrafts).set({ jobId }).where(inArray(assistantDrafts.id, draftIds));
 	return { ok: true, jobId, draftIds, skipped: plan.skipped };
 }
 
@@ -786,7 +841,8 @@ export async function chapterDraftProgress(
 			and(
 				eq(assistantDrafts.jobId, jobId),
 				eq(assistantDrafts.userId, userId),
-				isNotNull(assistantDrafts.chapterId)
+				// Set on a chapter run's drafts, and kept if the chapter is deleted.
+				isNotNull(assistantDrafts.position)
 			)
 		);
 	if (rows.length === 0) return null;

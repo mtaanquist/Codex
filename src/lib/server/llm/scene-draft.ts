@@ -25,12 +25,12 @@ import {
 import { contextBudgetTokens, PERSONA_TOKENS } from './context/budgets.ts';
 import {
 	assistantLayout,
+	DEFAULT_SPEND_WARN_USD,
 	modelContextWindow,
 	pickModel,
-	resolveLlmConfig,
-	roleMaxTokens
+	resolveLlmConfig
 } from './config.ts';
-import { completeDetailed, NoModelError, type GatewayDeps } from './gateway.ts';
+import { completeDetailed, NoModelError, requestReplyLimit, type GatewayDeps } from './gateway.ts';
 import { jobSpendMeter } from './job-spend.ts';
 import { buildSceneDraftMessage } from './prompts/scene-draft.ts';
 import { adapterKind } from './providers/presets.ts';
@@ -192,13 +192,16 @@ async function sceneDraftRequest(db: Database, input: SceneDraftInput, chapter?:
 		precedingProse: true,
 		budgetTokens: contextBudgetTokens(contextWindow)
 	});
+	const hasProse = scene.bodyMd.trim() !== '';
 	const task: ChatMessage = {
 		role: 'user',
 		content: buildSceneDraftMessage({
 			brief: input.brief,
 			targetWords: input.targetWords,
 			pov: input.pov,
-			existingProse: scene.bodyMd.trim() ? bodyTail(scene.bodyMd) : null,
+			// The context shows the scene's own text; it is sent once.
+			continues: hasProse,
+			existingProse: hasProse && !context ? bodyTail(scene.bodyMd) : null,
 			following: await followingScene(db, scene, chapter?.plans),
 			chapterBrief: chapter?.chapterBrief,
 			previousDraft: chapter?.previousDraft ? draftTail(chapter.previousDraft) : null
@@ -212,8 +215,8 @@ async function sceneDraftRequest(db: Database, input: SceneDraftInput, chapter?:
 		model,
 		messages,
 		maxTokens,
-		// A reply length the writer set for the role wins in the gateway.
-		replyLimit: roleMaxTokens(config, 'coauthor') ?? maxTokens
+		// The limit the gateway sends for this request, resolved the same way.
+		limit: requestReplyLimit(config, 'coauthor', maxTokens, contextWindow)
 	};
 }
 
@@ -247,8 +250,12 @@ function priceDraft(
 ): SceneDraftEstimate {
 	const { config, model } = request;
 	const expected = draftExpectedTokens(targetWords);
-	const limited = request.replyLimit < expected;
-	const estCompletionTokens = (limited ? request.replyLimit : expected) * sceneCount;
+	const { maxTokens: limit, thinks, setByWriter } = request.limit;
+	const limited = limit < expected;
+	// Thinking is billed at the reply rate and counts toward the limit, so a
+	// model that may think can spend the whole limit: the figure is then the
+	// most the reply can cost, not what the scene's words alone would.
+	const estCompletionTokens = (thinks || limited ? limit : expected) * sceneCount;
 	const price = config.modelPricing?.[model];
 	// Claude bills text it has not seen before above the plain price, to cache it.
 	const firstReadRate =
@@ -261,10 +268,18 @@ function priceDraft(
 		model,
 		estTokens,
 		estCompletionTokens,
+		...(thinks ? { estCompletionUpTo: true } : {}),
 		...(estCostUsd !== undefined ? { estCostUsd } : {}),
 		...(capUsd ? { capUsd } : {}),
+		capEnforceable: Boolean(price),
+		warnUsd: config.spendWarnUsd ?? DEFAULT_SPEND_WARN_USD,
 		overCap: Boolean(capUsd) && estCostUsd !== undefined && estCostUsd > capUsd!,
-		...(limited ? { limitedToWords: wordsForTokens(request.replyLimit) } : {})
+		...(limited
+			? {
+					limitedToWords: wordsForTokens(limit),
+					limitedBy: setByWriter ? ('setting' as const) : ('window' as const)
+				}
+			: {})
 	};
 }
 
@@ -446,11 +461,14 @@ export async function runSceneDraft(
 
 	// A draft cut off at the limit is kept: it is paid for, and most of a scene
 	// is still worth reading. The note says it may end early.
-	await settleDraft(db, draftId, {
+	const kept = await settleDraft(db, draftId, {
 		status: 'ready',
 		textMd: text,
 		note: result.cutOff ? DRAFT_CUT_OFF_NOTE : null
 	});
+	// Discarded (or settled as an orphan) while it was being written: there is
+	// no draft to tell the writer about.
+	if (!kept) return { outcome: 'missing' };
 	return {
 		outcome: 'ready',
 		words: wordCount(text),

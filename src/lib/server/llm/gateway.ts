@@ -281,6 +281,27 @@ export function surfaceMaxTokens(
 	return thinks ? Math.max(requested, fallback) : requested;
 }
 
+// The reply limit a request for this role goes out with, and why: a figure the
+// writer set for the role wins over the surface's own (a local model that
+// answers in 300 tokens or one that needs 8000 is theirs to know, and the
+// surfaces cannot), else the surface's figure, raised to the thinking default
+// when the role may think. An estimate reads the same resolution, so what it
+// counts is what is sent.
+export function requestReplyLimit(
+	config: ResolvedConfig,
+	role: AssistantRole,
+	requested: number | undefined,
+	contextWindow?: number
+): { maxTokens: number; thinks: boolean; setByWriter: boolean } {
+	const thinks = roleMayThink(adapterKind(config.provider) === 'anthropic', config.tuning[role]);
+	const set = roleMaxTokens(config, role);
+	return {
+		maxTokens: set ?? surfaceMaxTokens(role, requested, thinks, contextWindow),
+		thinks,
+		setByWriter: set !== undefined
+	};
+}
+
 type Prepared = {
 	conn: Connection;
 	model: string;
@@ -451,20 +472,7 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 		extraParams: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
 		cacheTtl: resolved.config.cacheTtl,
-		// A figure the writer set for the role wins over the surface's own: a
-		// local model that answers in 300 tokens or one that needs 8000 is theirs
-		// to know, and the surfaces cannot.
-		maxTokens:
-			roleMaxTokens(resolved.config, req.role) ??
-			surfaceMaxTokens(
-				req.role,
-				req.maxTokens,
-				roleMayThink(
-					adapterKind(resolved.config.provider) === 'anthropic',
-					resolved.config.tuning[req.role]
-				),
-				contextWindow
-			),
+		maxTokens: requestReplyLimit(resolved.config, req.role, req.maxTokens, contextWindow).maxTokens,
 		contextWindow,
 		sleep: deps.sleep ?? realSleep
 	};
