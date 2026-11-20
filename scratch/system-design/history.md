@@ -987,6 +987,19 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
 Staging branch `staging/tooling-issues`, the open "tooling" issues after the
 triage.
 
+- #1237: the transcript replay now says what it used to skip. When the endpoint
+  reported no counts, no spend may be recorded (before, the check returned
+  early), which pins the known gap that an OpenAI-style stream cut off before
+  its closing usage frame goes uncounted; the adapter does not guess. The
+  retry or fail label is only checked on the buffered path, because nothing
+  retries a live stream, so the unused flag on the stream side was removed
+  and the file header says so. The unused `# stream: buffered` header is gone.
+- #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
+  `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
+  `index.ts` runs at import and could not be tested. The test registers them
+  on a real pg-boss and compares against a second written-out list on purpose,
+  so a dropped sweep or a changed cron fails. The backup schedule stays in
+  `index.ts` since it depends on saved settings.
 - #1214: the stale-mark invariant test drives eleven more write paths: find
   and replace, restoring a scene or entity revision, accepting a review
   suggestion, saving a draft, restoring a scene from one, a new story from
@@ -997,12 +1010,6 @@ triage.
   mark: restoring a revision whose text the scene already has rewrote the
   row, which marked the summary out of date and paid for the same summary
   again. `restoreRevision` now leaves such a scene alone.
-- #859: the worker's fixed sweeps moved from inline `boss.schedule` calls into
-  `src/worker/schedules.ts` (`WORKER_SCHEDULES`, `registerSchedules`), because
-  `index.ts` runs at import and could not be tested. The test registers them
-  on a real pg-boss and compares against a second written-out list on purpose,
-  so a dropped sweep or a changed cron fails. The backup schedule stays in
-  `index.ts` since it depends on saved settings.
 - #1239: no selector can follow a variable into a later `.set()`, so the
   one-clock rule now refuses `const x = new Date()` outright in server code,
   and covers `src/routes/**/*.ts` and `src/worker/**` too. Nothing on main
