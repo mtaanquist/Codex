@@ -1171,7 +1171,7 @@ Staging branch `staging/assistant-quick-wins`.
   asked about, so a scene skipped as deleted or empty gives its place to the
   next one and the note's count matches the scenes that get fixes. A skipped
   scene is not marked done: a continued run asks about it if it was restored
-  in between, and skips it again (one query, no request) if not. An emptied
+  in between, and skips it again (no request) if not. An emptied
   scene is skipped like a deleted one. Chat: `listChat` fills in the entry
   type of an entity attachment stored before #1185 by looking the id up in
   the three entity tables, so old chips get the right icon with no stored

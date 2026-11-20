@@ -798,7 +798,12 @@ describe('chats over the endpoints', () => {
 		});
 		await response.text();
 		expect(response.headers.get('x-chat-attachments')).toBe(`entity:${place.id}`);
-		expect((await listChat(db, userId, chatId))[0].meta).toEqual({
+		// Straight from the table: listChat fills in a missing type when it reads.
+		const stored = await pool.query(
+			`select meta from assistant_chat_messages where chat_id = $1 order by created_at limit 1`,
+			[chatId]
+		);
+		expect(stored.rows[0].meta).toEqual({
 			attachments: [{ ...forged, entityType: 'place' }]
 		});
 	});
