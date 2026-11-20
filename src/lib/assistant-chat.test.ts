@@ -3,7 +3,9 @@ import {
 	CHAT_TITLE_MAX,
 	chatTitle,
 	newChatId,
+	attachedHeader,
 	attachmentKey,
+	parseAttachedHeader,
 	chatEffort,
 	attachmentLabel,
 	MAX_ATTACHMENTS,
@@ -157,5 +159,36 @@ describe('chatEffort', () => {
 	it('shows none where the model takes none', () => {
 		expect(chatEffort({ model: 'claude-haiku-4-5' }, info)).toBeNull();
 		expect(chatEffort({}, { model: 'local', effort: null, claude: false })).toBeNull();
+	});
+});
+
+describe('the sent-attachments header', () => {
+	const id = '11111111-1111-4111-8111-111111111111';
+
+	it('round-trips keys, the shortened mark and names with any punctuation', () => {
+		const sent = [
+			{
+				kind: 'story' as const,
+				id,
+				depth: 'book' as const,
+				label: 'Ash, Ember = Fire!',
+				shortened: true
+			},
+			{ kind: 'scene' as const, id, label: 'Caf\u00e9 at night' }
+		];
+		const header = attachedHeader(sent).join(',');
+		expect(header).toMatch(/^[\x20-\x7e]*$/);
+		const parsed = parseAttachedHeader(header);
+		expect(parsed.get(`story:${id}:book`)).toEqual({
+			shortened: true,
+			label: 'Ash, Ember = Fire!'
+		});
+		expect(parsed.get(`scene:${id}`)).toEqual({ shortened: false, label: 'Caf\u00e9 at night' });
+	});
+
+	it('reads an entry with no name, or one that does not decode, as no name', () => {
+		const parsed = parseAttachedHeader(`scene:${id}!,note:${id}=%E0%A4%A`);
+		expect(parsed.get(`scene:${id}`)).toEqual({ shortened: true });
+		expect(parsed.get(`note:${id}`)).toEqual({ shortened: false });
 	});
 });

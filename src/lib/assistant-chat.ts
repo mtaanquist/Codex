@@ -111,6 +111,39 @@ export function attachmentKey(a: Pick<ChatAttachment, 'kind' | 'id' | 'depth'>):
 	return a.depth ? `${a.kind}:${a.id}:${a.depth}` : `${a.kind}:${a.id}`;
 }
 
+// What the chat endpoint says it sent of the newest message's attachments
+// (the x-chat-attachments header): each one's key, "!" when it was cut to fit,
+// then "=" and the name it was stored under, URI-encoded.
+export function attachedHeader(attachments: ChatAttachment[]): string[] {
+	return attachments.map(
+		(a) => `${attachmentKey(a)}${a.shortened ? '!' : ''}=${encodeURIComponent(a.label)}`
+	);
+}
+
+export function parseAttachedHeader(
+	header: string
+): Map<string, { shortened: boolean; label?: string }> {
+	const out = new Map<string, { shortened: boolean; label?: string }>();
+	for (const entry of header.split(',')) {
+		if (!entry) continue;
+		const at = entry.indexOf('=');
+		const head = at === -1 ? entry : entry.slice(0, at);
+		let label: string | undefined;
+		if (at !== -1) {
+			try {
+				label = decodeURIComponent(entry.slice(at + 1));
+			} catch {
+				// A name that does not decode leaves the chip as it was.
+			}
+		}
+		out.set(head.replace(/!$/, ''), {
+			shortened: head.endsWith('!'),
+			...(label !== undefined ? { label } : {})
+		});
+	}
+	return out;
+}
+
 // A chip's text: the label, with what a story brings along.
 export function attachmentLabel(attachment: ChatAttachment): string {
 	const label = attachment.label || 'Untitled';

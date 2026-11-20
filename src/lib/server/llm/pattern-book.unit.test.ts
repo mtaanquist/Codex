@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	APPLY_SCENES_PER_PATTERN,
+	fixLimitLine,
+	patternLiveScenes,
 	BOOK_PATTERN_CAP,
 	bookPatternUnit,
 	maxApplyRequests,
@@ -93,5 +95,18 @@ describe('maxApplyRequests', () => {
 		const book = (n: number) => bookPatternUnit(scenes(n), new Map(), true);
 		expect(maxApplyRequests([book(3)])).toBe(BOOK_PATTERN_CAP * 3);
 		expect(maxApplyRequests([book(200)])).toBe(BOOK_PATTERN_CAP * APPLY_SCENES_PER_PATTERN);
+	});
+});
+
+describe('the scenes a pattern still shows in', () => {
+	it('drops scenes deleted since the survey and keeps reading order', () => {
+		expect(patternLiveScenes(['c', 'gone', 'a'], ['a', 'b', 'c'])).toEqual(['a', 'c']);
+	});
+
+	it('mentions the fix limit only when more live scenes than that remain', () => {
+		expect(fixLimitLine(APPLY_SCENES_PER_PATTERN)).toBe('');
+		expect(fixLimitLine(APPLY_SCENES_PER_PATTERN + 1)).toContain(
+			`the first ${APPLY_SCENES_PER_PATTERN} of those scenes`
+		);
 	});
 });
