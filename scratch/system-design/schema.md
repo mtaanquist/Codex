@@ -180,6 +180,8 @@ chapters (
   position      int not null,
   title         text,
   summary_md    text,
+  summary_generated_at timestamptz,                -- set when the Assistant wrote summary_md; null for the writer's own
+  summary_input text,                               -- fingerprint of the request the Assistant wrote it from
   metadata      jsonb not null default '{}',
   updated_at    timestamptz not null
 )

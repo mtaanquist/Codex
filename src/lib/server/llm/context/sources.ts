@@ -3,6 +3,7 @@ import type { Database } from '../../auth.ts';
 import {
 	chapters,
 	characterStoryNotes,
+	entityMentions,
 	loreEntries,
 	loreStoryNotes,
 	notes,
@@ -16,6 +17,8 @@ import { storyEntityLists, type MemberKind } from '../../membership.ts';
 import { listEntityRelationships } from '../../relationships.ts';
 import type { EntityDetail } from '#lib/entity-snapshot';
 import { storyAssistantOn } from '../../universe-scope.ts';
+import { arcIsCurrent, arcRequests } from '../arc-request.ts';
+import { chapterSummaryToSend } from '../chapter-summary-request.ts';
 
 // The deterministic "what is in scope" queries that feed context assembly. Each
 // returns plain typed data; the rendering and budgeting live in assemble.ts.
@@ -222,7 +225,13 @@ export async function storySkeleton(
 	storyId: string
 ): Promise<{ chapters: ChapterSkeleton[]; orphans: SceneSummary[] }> {
 	const chapterRows = await db
-		.select({ id: chapters.id, title: chapters.title, summaryMd: chapters.summaryMd })
+		.select({
+			id: chapters.id,
+			title: chapters.title,
+			summaryMd: chapters.summaryMd,
+			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			summaryInput: chapters.summaryInput
+		})
 		.from(chapters)
 		.where(eq(chapters.storyId, storyId))
 		.orderBy(asc(chapters.position));
@@ -256,12 +265,18 @@ export async function storySkeleton(
 		}
 	}
 	return {
-		chapters: chapterRows.map((chapter) => ({
-			id: chapter.id,
-			title: chapter.title,
-			summaryMd: chapter.summaryMd,
-			scenes: byChapter.get(chapter.id) ?? []
-		})),
+		chapters: chapterRows.map((chapter) => {
+			const chapterScenes = byChapter.get(chapter.id) ?? [];
+			return {
+				id: chapter.id,
+				title: chapter.title,
+				summaryMd: chapterSummaryToSend(
+					chapter,
+					chapterScenes.map((scene) => scene.summaryMd)
+				),
+				scenes: chapterScenes
+			};
+		}),
 		orphans
 	};
 }
@@ -367,6 +382,8 @@ export type ScopeEntity = {
 	// A character's arc across the universe's stories, when the Assistant has
 	// written one.
 	arcSummaryMd?: string | null;
+	// The arc was written from scenes that have changed since.
+	arcOutOfDate?: boolean;
 };
 
 // Characters and places that are declared members of, or mentioned in, this
@@ -428,7 +445,8 @@ async function buildScopeEntities(
 				summaryMd: table.summaryMd,
 				details: table.details,
 				aliases: table.aliases,
-				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`
+				arcSummaryMd: 'arcSummaryMd' in table ? table.arcSummaryMd : sql<null>`null`,
+				arcSummaryInput: 'arcSummaryInput' in table ? table.arcSummaryInput : sql<null>`null`
 			})
 			.from(table)
 			.where(inArray(table.id, ids))
@@ -436,6 +454,36 @@ async function buildScopeEntities(
 	};
 	const characterRows = await detailRows('character', characterIds);
 	const placeRows = await detailRows('place', placeIds);
+	// Only the characters that make the cap below have their arc checked.
+	const shown = characterRows.slice(0, MAX_SCOPE_ENTITIES).filter((c) => c.arcSummaryMd);
+	const arcs = await arcRequests(db, universeId, shown);
+	const outOfDate = new Set(
+		shown.filter((c) => !arcIsCurrent(c, arcs.get(c.id) ?? null)).map((c) => c.id)
+	);
+	// An out-of-date arc may retell a story the Assistant has since been turned
+	// off for, and that story's text must not be sent. Which stories an arc
+	// read is not stored, so one whose character appears in such a story is
+	// left out.
+	const withheld = outOfDate.size
+		? await db
+				.selectDistinct({ id: entityMentions.targetId })
+				.from(entityMentions)
+				.innerJoin(scenes, eq(scenes.id, entityMentions.sourceId))
+				.innerJoin(stories, eq(stories.id, scenes.storyId))
+				.where(
+					and(
+						eq(entityMentions.sourceType, 'scene'),
+						eq(entityMentions.targetType, 'character'),
+						inArray(entityMentions.targetId, [...outOfDate]),
+						eq(stories.universeId, universeId),
+						sql`not ${storyAssistantOn()}`
+					)
+				)
+		: [];
+	for (const row of withheld) {
+		outOfDate.delete(row.id);
+		characterRows.find((c) => c.id === row.id)!.arcSummaryMd = null;
+	}
 
 	// The per-story overlay note only exists with a story in focus; the
 	// universe surface has no such overlay, so it skips these queries.
@@ -469,7 +517,10 @@ async function buildScopeEntities(
 	]);
 
 	const entities: ScopeEntity[] = [
-		...characterRows.map((c) => buildEntity('character', c, noteFor)),
+		...characterRows.map((c) => ({
+			...buildEntity('character', c, noteFor),
+			arcOutOfDate: outOfDate.has(c.id)
+		})),
 		...placeRows.map((p) => buildEntity('place', p, noteFor))
 	].slice(0, MAX_SCOPE_ENTITIES);
 

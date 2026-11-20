@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
+import { chapterSummaryRequest } from '../../src/lib/server/llm/chapter-summary-request';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
@@ -258,6 +259,54 @@ describe('resolveAttachments', () => {
 });
 
 describe('the whole book', () => {
+	it("sends a chapter's summary unless the Assistant wrote it and it is out of date", async () => {
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId, position: 9, title: 'Ashfall', summaryMd: 'The town burns.' })
+			.returning({ id: chapters.id });
+		const [scene] = await db
+			.insert(scenes)
+			.values({
+				storyId,
+				chapterId: chapter.id,
+				positionInChapter: 1,
+				globalPosition: 90,
+				bodyMd: 'Smoke over the roofs.',
+				summaryMd: 'Smoke rises.'
+			})
+			.returning({ id: scenes.id });
+		const text = async () =>
+			(
+				await resolveAttachments(
+					db,
+					userId,
+					[{ kind: 'chapter', id: chapter.id, label: 'Ashfall' }],
+					BIG
+				)
+			)[0].text;
+		try {
+			// The writer's own summary always goes.
+			expect(await text()).toContain('Summary: The town burns.');
+			// One the Assistant wrote goes while its fingerprint matches.
+			const request = chapterSummaryRequest('Ashfall', ['Smoke rises.'])!;
+			await db
+				.update(chapters)
+				.set({ summaryGeneratedAt: new Date(), summaryInput: request.input })
+				.where(eq(chapters.id, chapter.id));
+			expect(await text()).toContain('Summary: The town burns.');
+			await db.update(scenes).set({ summaryMd: 'Rain falls.' }).where(eq(scenes.id, scene.id));
+			expect(await text()).not.toContain('Summary:');
+			expect(await text()).toContain('Smoke over the roofs.');
+			// And not when it was stored without one.
+			await db.update(chapters).set({ summaryInput: null }).where(eq(chapters.id, chapter.id));
+			await db.update(scenes).set({ summaryMd: 'Smoke rises.' }).where(eq(scenes.id, scene.id));
+			expect(await text()).not.toContain('Summary:');
+		} finally {
+			await db.delete(scenes).where(eq(scenes.id, scene.id));
+			await db.delete(chapters).where(eq(chapters.id, chapter.id));
+		}
+	});
+
 	it('heads each chapter, names an untitled one by its place, and keeps loose scenes apart', async () => {
 		const [untitled] = await db
 			.insert(chapters)

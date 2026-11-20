@@ -2,7 +2,6 @@ import { and, eq, isNull, like } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { stories, universes } from './db/schema.ts';
-import { markMentionsStale } from './scene-lifecycle.ts';
 import { isUuid, slugify } from '../slug.ts';
 
 // Suffix room: a deduped slug must still fit the column conventions.
@@ -43,13 +42,8 @@ export async function uniqueSlug(
  * slug meanwhile; it then comes back under a fresh one picked from its name,
  * the same as a rename. Retries once if a concurrent write takes that pick.
  *
- * A restored story's scenes are older than the arcs and enrich marks written
- * while it was in the trash, so what they mention is marked for a fresh look
- * in the same transaction: restored content never looks current to the
- * Assistant. A universe needs no mark: nothing in it was read while it was in
- * the trash, and mention rebuilds kept marking what changed meanwhile. Each
- * attempt is its own transaction, since a unique violation aborts the one it
- * hits. The row is locked before the entities, as everywhere else.
+ * Nothing is done here for the Assistant: what it wrote from the scenes as
+ * they were without this story reads as out of date by its fingerprint.
  */
 export async function untrash(db: Database, table: 'universes' | 'stories', id: string) {
 	const [row] =
@@ -63,11 +57,11 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 					.from(stories)
 					.where(eq(stories.id, id));
 	if (!row) return;
-	const revive = (tx: Database, slug?: string) => {
+	const revive = (slug?: string) => {
 		const values = slug ? { deletedAt: null, slug } : { deletedAt: null };
 		return table === 'universes'
-			? tx.update(universes).set(values).where(eq(universes.id, id))
-			: tx.update(stories).set(values).where(eq(stories.id, id));
+			? db.update(universes).set(values).where(eq(universes.id, id))
+			: db.update(stories).set(values).where(eq(stories.id, id));
 	};
 	const fallback = table === 'universes' ? 'universe' : 'story';
 	const fresh = () => uniqueSlug(db, table, row.ownerId, row.name, fallback);
@@ -75,10 +69,7 @@ export async function untrash(db: Database, table: 'universes' | 'stories', id: 
 	for (const [i, pick] of attempts.entries()) {
 		try {
 			const slug = pick && (await pick());
-			await db.transaction(async (tx) => {
-				await revive(tx, slug);
-				if (table === 'stories') await markMentionsStale(tx, { storyId: id }, { enrich: true });
-			});
+			await revive(slug);
 			return;
 		} catch (err) {
 			if (!isUniqueViolation(err) || i === attempts.length - 1) throw err;

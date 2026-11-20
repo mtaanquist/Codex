@@ -60,7 +60,7 @@ import {
 	ReplyRefusedError
 } from '../lib/server/llm/gateway.ts';
 import { EndpointReplyError } from '../lib/server/llm/providers/types.ts';
-import { ArcStoryMutedError, summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
+import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
 import { purgeJobSpend } from '../lib/server/llm/job-spend.ts';
 import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
@@ -228,11 +228,7 @@ export function createHandlers(deps: WorkerDeps) {
 					? `The Assistant did not write the arc for ${character.name}: this job reached the spend cap at ${spentPhrase(result.spentUsd ?? 0)}. Raise the cap in settings, then ${ARC_AGAIN}.`
 					: result.outcome === 'empty'
 						? `The Assistant found no scenes that mention ${character.name}, so there is no arc to write yet.`
-						: result.outcome === 'unchanged'
-							? `The arc for ${character.name} is up to date. Nothing it reads has changed since it was written.`
-							: result.outcome === 'changed'
-								? `Something the arc for ${character.name} reads changed while the Assistant was checking it, so the arc is still out of date. To bring it up to date, ${ARC_AGAIN}.`
-								: `The Assistant wrote the arc for ${character.name}.`;
+						: `The Assistant wrote the arc for ${character.name}.`;
 		} catch (error) {
 			logEvent('error', 'assistant.arc_failed', { characterId, ...errorFields(error) });
 			if (
@@ -274,16 +270,14 @@ export function createHandlers(deps: WorkerDeps) {
 				return;
 			}
 			if (!job.signal?.aborted && job.retryCount < job.retryLimit) {
-				// pg-boss runs it again, and a retry usually writes the arc (one
-				// muted story is left out, a passing endpoint fault has cleared),
-				// so say nothing until the last attempt. notifyWriter would not hold
+				// pg-boss runs it again, and a retry usually writes the arc (a
+				// passing endpoint fault has cleared), so say nothing until the last
+				// attempt. notifyWriter would not hold
 				// this back: a thrown job is still active when it runs.
 				throw error;
 			}
 			if (job.signal?.aborted) {
 				title = `Writing the arc for ${character.name} was stopped before it finished.`;
-			} else if (error instanceof ArcStoryMutedError) {
-				title = `A story was muted while the Assistant was writing the arc for ${character.name}, so the arc was not saved. Select Write arc to try again.`;
 			} else {
 				title = `The Assistant could not write the arc for ${character.name}. Check the endpoint in your settings.`;
 			}

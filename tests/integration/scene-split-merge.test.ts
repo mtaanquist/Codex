@@ -161,7 +161,7 @@ describe('splitScene', () => {
 		]);
 	});
 
-	it('marks the chapter summary out of date when the new scene joins the chapter', async () => {
+	it('writes nothing to the chapter when the new scene joins it', async () => {
 		const chapter = await makeChapter();
 		const [scene] = await db
 			.insert(scenes)
@@ -173,10 +173,11 @@ describe('splitScene', () => {
 				bodyMd: 'One half. Other half.'
 			})
 			.returning();
+		const [before] = await db.select().from(chapters).where(eq(chapters.id, chapter.id));
 		const result = await splitScene(db, ownerId, scene.id, 'One half. '.length);
 		expect(result.ok).toBe(true);
 		const [after] = await db.select().from(chapters).where(eq(chapters.id, chapter.id));
-		expect(after.summaryGeneratedAt!.getTime()).toBeLessThan(after.updatedAt.getTime());
+		expect(after).toEqual(before);
 	});
 
 	it('moves markers with their text and clamps one straddling the cut', async () => {
@@ -553,7 +554,7 @@ describe('duplicateScene', () => {
 		expect(await db.select().from(scenes).where(eq(scenes.storyId, storyId))).toHaveLength(1);
 	});
 
-	it('marks the chapter summary out of date when the copy joins the chapter', async () => {
+	it('writes nothing to the chapter when the copy joins it', async () => {
 		const stamp = new Date('2026-11-01T10:00:00Z');
 		const [chapter] = await db
 			.insert(chapters)
@@ -572,7 +573,7 @@ describe('duplicateScene', () => {
 		const result = await duplicateScene(db, ownerId, scene.id);
 		expect(result.ok).toBe(true);
 		const [after] = await db.select().from(chapters).where(eq(chapters.id, chapter.id));
-		expect(after.summaryGeneratedAt!.getTime()).toBeLessThan(after.updatedAt.getTime());
+		expect(after).toEqual(chapter);
 	});
 
 	it('refuses a foreign scene and a missing scene', async () => {

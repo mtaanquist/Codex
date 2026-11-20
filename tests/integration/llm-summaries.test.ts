@@ -460,6 +460,7 @@ async function readChapter(id: string) {
 		.select({
 			summaryMd: chapters.summaryMd,
 			summaryGeneratedAt: chapters.summaryGeneratedAt,
+			summaryInput: chapters.summaryInput,
 			updatedAt: chapters.updatedAt
 		})
 		.from(chapters)
@@ -467,20 +468,22 @@ async function readChapter(id: string) {
 	return row;
 }
 
-// The stamp is the updated_at the summary was built from, not a clock reading,
-// so a server clock that disagrees with the database's does not make a fresh
-// summary read as stale (or a stale one as fresh).
+// A scene summary's stamp is the updated_at it was built from, not a clock
+// reading, so a server clock that disagrees with the database's does not make
+// a fresh summary read as stale (or a stale one as fresh). A chapter summary
+// is stored with the fingerprint of its request instead.
 describe('summary stamp', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 	});
 
-	it('stamps each summary with the updated_at it was built from', async () => {
+	it('stamps a scene summary with the updated_at it was built from, and a chapter summary with its fingerprint', async () => {
 		await summariseStory(db, { userId: ownerId, storyId }, deps);
 		const a = await readScene(sceneAId);
 		expect(a.summaryGeneratedAt!.getTime()).toBe(a.updatedAt.getTime());
 		const chapter = await readChapter(chapterId);
-		expect(chapter.summaryGeneratedAt!.getTime()).toBe(chapter.updatedAt.getTime());
+		expect(chapter.summaryGeneratedAt).not.toBeNull();
+		expect(chapter.summaryInput).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it('stays current when the app clock runs behind the database', async () => {
@@ -494,7 +497,8 @@ describe('summary stamp', () => {
 });
 
 // A scene's own summary is current through the trash and back, so the scene
-// pass does not touch its chapter; the chapter is marked instead.
+// pass does not touch its chapter; the chapter's request no longer matches the
+// fingerprint its summary was stored with.
 describe('chapter summary after a change of scenes', () => {
 	beforeEach(async () => {
 		await summariseStory(db, { userId: ownerId, storyId }, deps);
@@ -520,13 +524,50 @@ describe('chapter summary after a change of scenes', () => {
 		expect(prompts.at(-1)).toContain('SUMMARY-1');
 	});
 
-	it('refreshes the chapter summary after a merge', async () => {
-		const merged = await mergeScenes(db, ownerId, storyId, [sceneBId, sceneCId]);
-		expect(merged.ok).toBe(true);
-		// B keeps the writer's own summary, so only the chapter is due.
+	it('refreshes the chapter summary after a merge that changes what it reads, and not otherwise', async () => {
+		// C has no summary and B keeps the writer's own, so the chapter reads the same.
+		expect((await mergeScenes(db, ownerId, storyId, [sceneBId, sceneCId])).ok).toBe(true);
 		expect(await summariseStory(db, { userId: ownerId, storyId }, deps)).toMatchObject({
 			scenes: 0,
-			chapters: 1
+			chapters: 0
+		});
+		expect((await mergeScenes(db, ownerId, storyId, [sceneAId, sceneBId])).ok).toBe(true);
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+	});
+
+	it('refreshes the chapter summary after a rename, and not after a save that changes nothing', async () => {
+		await db.update(chapters).set({ title: 'Descent' }).where(eq(chapters.id, chapterId));
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(0);
+		await db.update(chapters).set({ title: 'The Descent' }).where(eq(chapters.id, chapterId));
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+		expect(prompts.at(-1)).toContain('The Descent');
+	});
+
+	it('refreshes once a chapter summary stored without a fingerprint', async () => {
+		// As an earlier release left it, stamped current or marked out of date.
+		for (const stamp of ['updated_at', `updated_at - interval '1 millisecond'`]) {
+			await pool.query(
+				`update chapters set summary_generated_at = ${stamp}, summary_input = null where id = $1`,
+				[chapterId]
+			);
+			expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+			expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(0);
+		}
+	});
+
+	it('keeps a chapter summary the writer types while the model is writing one', async () => {
+		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
+		duringCall = async () => {
+			await pool.query(
+				`update chapters set summary_md = 'Mine.', summary_generated_at = null where id = $1`,
+				[chapterId]
+			);
+		};
+		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
+		expect(result).toMatchObject({ chapters: 0, changed: 1 });
+		expect(await readChapter(chapterId)).toMatchObject({
+			summaryMd: 'Mine.',
+			summaryGeneratedAt: null
 		});
 	});
 
@@ -562,15 +603,17 @@ describe('chapter summary after a change of scenes', () => {
 		});
 	});
 
-	it('does not mark a chapter current when a scene is restored while it is being written', async () => {
+	it('stores a chapter summary as out of date when a scene is restored while it is being written', async () => {
 		expect(await trashScene(db, ownerId, sceneAId)).toBe(true);
 		duringCall = async () => {
 			await restoreScene(db, ownerId, sceneAId);
 		};
-		const result = await summariseStory(db, { userId: ownerId, storyId }, deps);
-		expect(result).toMatchObject({ chapters: 0, changed: 1 });
+		// Written from the chapter without the scene, and stored as such.
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
 		duringCall = null;
 		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(1);
+		expect(prompts.at(-1)).toContain('SUMMARY-1');
+		expect((await summariseStory(db, { userId: ownerId, storyId }, deps)).chapters).toBe(0);
 	});
 });
 

@@ -7,7 +7,6 @@ import { and, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import type { Database } from './auth.ts';
 import { stories, universes } from './db/schema.ts';
 import { untrash } from './slugs.ts';
-import { markMentionsStale } from './scene-lifecycle.ts';
 import { purgeStory } from './story-delete.ts';
 import { UNIVERSE_TRASH_DAYS } from './universe-lifecycle.ts';
 
@@ -40,15 +39,10 @@ async function ownedStoryRow(
 export async function trashStory(db: Database, userId: string, storyId: string): Promise<boolean> {
 	const story = await ownedStoryRow(db, userId, storyId);
 	if (!story) return false;
-	await db.transaction(async (tx) => {
-		await tx
-			.update(stories)
-			.set({ deletedAt: sql`now()` })
-			.where(eq(stories.id, story.id));
-		// Arcs may retell this story; its mentions stay, so a restore can mark
-		// them again.
-		await markMentionsStale(tx, { storyId: story.id });
-	});
+	await db
+		.update(stories)
+		.set({ deletedAt: sql`now()` })
+		.where(eq(stories.id, story.id));
 	return true;
 }
 

@@ -15,6 +15,11 @@ export type DraftChapter = {
 	summaryMd: string | null;
 	// As on DraftScene. Absent in drafts saved before this was recorded.
 	summaryGeneratedAt?: string | null;
+	// The fingerprint of the request an Assistant summary was written from, so
+	// a copy made from the draft is current exactly when its scenes' summaries
+	// are the ones it read. Absent in older drafts: the copy is then refreshed.
+	summaryInput?: string | null;
+	// Only in older drafts, and no longer read.
 	summaryCurrent?: boolean;
 };
 

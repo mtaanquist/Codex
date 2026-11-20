@@ -30,7 +30,7 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'upgrade-path-test-secret';
 const { saveAccountLlmConfig } = await import('../../src/lib/server/llm/config');
 const { summariseStory } = await import('../../src/lib/server/llm/summaries');
 const { enrichUniverse } = await import('../../src/lib/server/llm/enrich');
-const { arcIsStale } = await import('../../src/lib/server/llm/arc-summary');
+const { planArc } = await import('../../src/lib/server/llm/arc-summary');
 const { adoptCappedRun, legacyReviewScopeKey, reviewScopeKey } =
 	await import('../../src/lib/server/review-runs');
 const { gatherStory } = await import('../../src/lib/server/export');
@@ -210,10 +210,12 @@ describe('upgrading from the previous release', () => {
 			return Object.fromEntries(rows.map((row) => [row.id, row]));
 		};
 		const upgraded = await stamps();
-		expect(arcIsStale(upgraded[MARA])).toBe(false);
-		// Tam's scene changed after his arc and his read: the upgrade keeps both
-		// marked out of date.
-		expect(arcIsStale(upgraded[TAM])).toBe(true);
+		// Arcs from before fingerprints were stored read as out of date until the
+		// writer refreshes them; the upgrade itself asks the model nothing.
+		for (const characterId of [MARA, TAM]) {
+			const [entity] = await db.select().from(characters).where(eq(characters.id, characterId));
+			expect((await planArc(db, { kind: 'character', entity }))!.stale).toBe(true);
+		}
 
 		calls = [];
 		await enrichUniverse(db, { userId: USER, universeId: HARBOUR }, deps);

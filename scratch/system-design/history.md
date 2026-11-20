@@ -1023,6 +1023,84 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Assistant staleness by fingerprint (2026-11-20)
+
+#1197, branch `feat/assistant-staleness-by-hash`. Arcs, enrich reads and
+chapter summaries were kept honest by marks: every save that could change
+what one reads set its stored time fifty years back, inside the save's
+transaction and under row locks on the entities. Each review round found a
+write path that missed a mark or made a needless one, and the marks were the
+reason for most of the lock-order rules.
+
+- Now each result is stored with `requestHash` of the messages it was
+  written from, and "out of date" is worked out on read and in the passes by
+  building the request again and comparing. Design in `assistant.md`, "Out of
+  date by fingerprint". Arcs and enrich already stored the hash (0082);
+  chapters gained `summary_input` (0092).
+- Removed: `markMentionsStale`, `markEntitiesStale`,
+  `markChapterSummariesStale`, `markStale`, `STALE_MARK_BEFORE`, and their
+  calls in scene save (title), trash and restore of scenes and stories,
+  reorder, split, duplicate, merge, story rename, character rename, mute and
+  unmute, draft add back, the mention reindex (with its `changedTargets`
+  compare and the story share lock), and the summaries pass. The request
+  builders moved to gateway-free modules (`arc-request.ts`,
+  `chapter-summary-request.ts`, `request-hash.ts`) so the context builders
+  can use them.
+- Muting a story no longer clears every arc in the universe. An arc that
+  read the muted story is out of date by its hash; its text stays and reads
+  as current again on unmute.
+- An out-of-date arc stays in the Assistant's context with a short label
+  (written before later changes, may be out of date, the scenes are right
+  where they differ). The first cut left it out, but any scene edit plus a
+  summaries pass puts every arc of that scene's characters out of date, and
+  after an upgrade none has a fingerprint, so the Assistant would lose each
+  lead's history until the writer refreshed arcs one by one. `arcLine` in
+  `context/assemble.ts` is the one place that decides; returning null there
+  for an out-of-date arc goes back to leaving it out. Since mute no longer
+  clears arcs, an out-of-date arc of a character who appears in a muted
+  story is still left out, so a muted story's text is never sent this way.
+  That is wider than needed (which stories an arc read is not stored).
+  `ArcStoryMutedError` and the compare-and-set after the model call went
+  with it: a job stores the hash of what it sent, so anything that changed
+  meanwhile leaves the result out of date.
+- Enrich: a read is sent again when its passages change, which now includes
+  passages taken away (trash, mute; the old rule skipped these on purpose),
+  or when the entry is renamed. What is recorded on the entry (aliases,
+  details, whether a summary is asked for) is left out of the fingerprint:
+  the review found that accepting a staged alias or detail bought another
+  read of the same passages, once per accept. An accepted alias that finds
+  new passages after the reindex is read once more, for the passages.
+- Upgrades: nothing is sent automatically for arcs (one without a
+  fingerprint shows as out of date until refreshed). Chapter summaries
+  without one are rewritten once by the next summaries pass; adopting them
+  as current was rejected because a change made after the upgrade would
+  have been blessed. Enrich reads without one are adopted free when no
+  mentioning scene changed since, otherwise sent.
+- Scene summaries were left on their timestamp rule: they read only their
+  own row and never used the marks.
+- The invariant test became
+  `tests/integration/assistant-staleness-invariant.test.ts`. The fake model
+  replies with a hash of the request, so a stored arc or chapter summary
+  names the request it was written from; after each action the test checks
+  that what the app shows as out of date is exactly what changed, that the
+  passes call the model for exactly those and a second pass for none, and
+  that the action wrote no Assistant column. `character-arc.test.ts` also
+  runs saves with a trigger that fails any write to `characters`, and a
+  reindex with the mentioned characters locked.
+- Known and accepted:
+  - A release that rewords a prompt puts every result of that kind out of
+    date: the stored result was written from other instructions.
+  - The upgrade costs one call per Assistant-written chapter summary on the
+    first summaries pass.
+  - The enrich pass runs a handful of queries per mentioned entry even when
+    nothing changed, to build the request it compares.
+  - A summary is not offered again after the writer clears theirs until the
+    entry's passages change.
+- `arcRequests` picks the first mention per character and scene in the
+  database (`distinct on`), so a context build reads one row per scene, not
+  per mention, and only for the characters that make the entity cap. A test
+  pins the messages and fingerprint; it passes on the old query too.
+
 ## Assistant price and cache lows (2026-11-20)
 
 #1274, lane `fix/assistant-price-lows` on `staging/assistant-remaining`: the
