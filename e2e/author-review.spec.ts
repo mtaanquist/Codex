@@ -368,6 +368,19 @@ test('the author accepts several suggestions together and leaves one out', async
 	expect(text).toContain('ONETAIL closing.');
 	// The pending edit's replacement shows as a ghost; its original is intact.
 	expect(text).toContain('THREETAIL closing.');
+
+	// The last one is accepted from its card. The editor already holds what
+	// the server stored, so nothing is left to save and typing builds on it.
+	await page.getByRole('button', { name: 'Accept suggestion' }).click();
+	await expect(prose.locator('.cm-line').filter({ hasText: 'THREETAIL' })).toContainText(
+		'EDITTHREE'
+	);
+	await prose.press('Control+End');
+	await page.keyboard.type('LASTWORD');
+	await expect(page.locator('.saved')).toHaveText(/Saved just now/);
+	await page.reload();
+	await expect(prose).toContainText('EDITTHREE');
+	await expect(prose).toContainText('LASTWORD');
 });
 
 // A suggestion's range can end in a space, which the mark in the manuscript

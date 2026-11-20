@@ -231,11 +231,19 @@
 			// The server already holds this change, so it lands even while a
 			// merge or duplicate has typing paused; dropped, the next save
 			// would build on text the editor does not show.
-			view.dispatch({
-				changes: { from, to, insert: replacements[id] ?? suggestion.replacement },
-				effects: removeReviewMarks.of([id]),
-				annotations: landsWhilePaused.of(true)
-			});
+			// With nothing unsaved it is also not an edit to save: the editor
+			// stays clean, so a second accept right behind this one is applied
+			// the same way.
+			syncingFromServer = wasClean;
+			try {
+				view.dispatch({
+					changes: { from, to, insert: replacements[id] ?? suggestion.replacement },
+					effects: removeReviewMarks.of([id]),
+					annotations: landsWhilePaused.of(true)
+				});
+			} finally {
+				syncingFromServer = false;
+			}
 		}
 		if (!accepted) return;
 		// With nothing unsaved, and the change made on the text this editor
