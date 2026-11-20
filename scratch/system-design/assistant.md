@@ -294,7 +294,9 @@ same model id at another price), so the cap reports the model as unpriced
 rather than metering at a stale figure; typed context windows are kept.
 Claude's cache writes are
 metered at their premium (1.25x, 2x for the one-hour cache) and cache reads at
-a tenth. Those rates live in one place, `$lib/assistant-cost.ts`, shared by
+a tenth. The tenth applies only to the Claude provider; cached tokens an
+OpenAI-compatible endpoint reports are metered at the full price, since what
+such an endpoint charges for them is not known. Those rates live in one place, `$lib/assistant-cost.ts`, shared by
 the meter, the estimate, and the usage list on the account page; each
 `assistant_usage` row stores its cache shares (null on rows from before
 they were kept, which price at the plain rate). A cost figure is only ever shown or enforced when

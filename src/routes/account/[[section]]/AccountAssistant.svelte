@@ -165,7 +165,10 @@
 		return parts.length > 0 ? `${id} (${parts.join(', ')})` : id;
 	}
 	// A row's cost at the same cache rates the spend cap uses. A row with no
-	// cache shares is priced at the plain price.
+	// cache shares is priced at the plain price. Rows do not record their
+	// provider, so the saved one decides the cache read rate; a row from
+	// before a provider switch seldom has a price left to show a cost with.
+	const claudeSaved = $derived(data.assistant.provider === 'anthropic');
 	function usageCost(row: {
 		model: string;
 		promptTokens: number | null;
@@ -176,11 +179,15 @@
 	}) {
 		const price = modelPricing[row.model];
 		if (!price || (row.promptTokens === null && row.completionTokens === null)) return null;
-		return usageCostUsd(price, {
-			...row,
-			promptTokens: row.promptTokens ?? 0,
-			completionTokens: row.completionTokens ?? 0
-		});
+		return usageCostUsd(
+			price,
+			{
+				...row,
+				promptTokens: row.promptTokens ?? 0,
+				completionTokens: row.completionTokens ?? 0
+			},
+			claudeSaved
+		);
 	}
 	const usageTotalCost = $derived.by(() => {
 		let total = 0;
@@ -679,6 +686,7 @@
 				<div class="settings-actions">
 					{#if form?.scope === 'assistant-test' && 'reply' in form && form.reply}
 						<FormStatus success={`Reply: ${form.reply}`} />
+						<FormStatus error={form.message ?? null} />
 					{:else}
 						<FormStatus
 							error={(form?.scope === 'assistant-test' || form?.scope === 'assistant-endpoint') &&

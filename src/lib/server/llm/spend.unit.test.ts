@@ -25,48 +25,87 @@ describe('requestCostUsd', () => {
 		).toBeUndefined();
 	});
 
-	it('prices the cached share of the prompt at a tenth of the prompt rate', () => {
-		const cost = requestCostUsd(pricing, 'priced', {
-			promptTokens: 1000,
-			completionTokens: 0,
-			cachedPromptTokens: 800
-		});
+	it('prices the cached share of the prompt at a tenth of the prompt rate on Claude', () => {
+		const cost = requestCostUsd(
+			pricing,
+			'priced',
+			{
+				promptTokens: 1000,
+				completionTokens: 0,
+				cachedPromptTokens: 800
+			},
+			true
+		);
 		expect(cost).toBeCloseTo(200 * 0.001 + 800 * 0.001 * 0.1, 10);
 	});
 
 	it('prices cache writes above the prompt rate, the one-hour share highest', () => {
-		const cost = requestCostUsd(pricing, 'priced', {
-			promptTokens: 1000,
-			completionTokens: 0,
-			cachedPromptTokens: 500,
-			cacheWriteTokens: 400,
-			cacheWrite1hTokens: 100
-		});
+		const cost = requestCostUsd(
+			pricing,
+			'priced',
+			{
+				promptTokens: 1000,
+				completionTokens: 0,
+				cachedPromptTokens: 500,
+				cacheWriteTokens: 400,
+				cacheWrite1hTokens: 100
+			},
+			true
+		);
 		expect(cost).toBeCloseTo(0.001 * (100 + 500 * 0.1 + 300 * 1.25 + 100 * 2), 10);
 	});
 
 	it('never counts more cache writes than the prompt had left after its reads', () => {
-		const cost = requestCostUsd(pricing, 'priced', {
-			promptTokens: 100,
-			completionTokens: 0,
-			cachedPromptTokens: 60,
-			cacheWriteTokens: 500,
-			cacheWrite1hTokens: 900
-		});
+		const cost = requestCostUsd(
+			pricing,
+			'priced',
+			{
+				promptTokens: 100,
+				completionTokens: 0,
+				cachedPromptTokens: 60,
+				cacheWriteTokens: 500,
+				cacheWrite1hTokens: 900
+			},
+			true
+		);
 		expect(cost).toBeCloseTo(0.001 * (60 * 0.1 + 40 * 2), 10);
 	});
 
 	it('never counts more cached tokens than the prompt held', () => {
-		const cost = requestCostUsd(pricing, 'priced', {
-			promptTokens: 100,
-			completionTokens: 0,
-			cachedPromptTokens: 500
-		});
+		const cost = requestCostUsd(
+			pricing,
+			'priced',
+			{
+				promptTokens: 100,
+				completionTokens: 0,
+				cachedPromptTokens: 500
+			},
+			true
+		);
 		expect(cost).toBeCloseTo(100 * 0.001 * 0.1, 10);
+	});
+
+	it('gives cached tokens no discount on any other provider', () => {
+		const usage = { promptTokens: 1000, completionTokens: 0, cachedPromptTokens: 800 };
+		expect(requestCostUsd(pricing, 'priced', usage)).toBeCloseTo(1000 * 0.001, 10);
+		expect(requestCostUsd(pricing, 'priced', usage, false)).toBeCloseTo(1000 * 0.001, 10);
 	});
 });
 
 describe('SpendMeter', () => {
+	it('meters cached tokens at a tenth only for Claude', () => {
+		const usage = { promptTokens: 1000, completionTokens: 0, cachedPromptTokens: 900 };
+		const other = new SpendMeter({ pricing, capUsd: 1 });
+		other.record('priced', usage);
+		expect(other.spentUsd).toBeCloseTo(1, 10);
+		expect(other.capReached).toBe(true);
+
+		const claude = new SpendMeter({ pricing, capUsd: 1, claude: true });
+		claude.record('priced', usage);
+		expect(claude.spentUsd).toBeCloseTo(0.19, 10);
+		expect(claude.capReached).toBe(false);
+	});
+
 	it('accrues cost and reaches the cap', () => {
 		const meter = new SpendMeter({ pricing, capUsd: 0.5 });
 		meter.record('priced', { promptTokens: 100, completionTokens: 10 });
