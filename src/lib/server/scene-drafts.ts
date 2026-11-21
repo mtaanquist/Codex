@@ -9,6 +9,7 @@ import { ownedScene } from './scene-access.ts';
 import { saveSceneBody } from './scene-save.ts';
 import { lockStoryScene, makeRoomAfter } from './scene-split-merge.ts';
 import { inLiveStory, storyIsLive } from './universe-scope.ts';
+import { MAX_APP_DRAFTS_WAITING } from './mcp/constants.ts';
 import { usableSceneSummary } from './summary-currency.ts';
 import {
 	DRAFT_STOPPED_NOTE,
@@ -342,6 +343,26 @@ export async function stageAppDraft(
 		.where(and(mine, inArray(assistantDrafts.status, OPEN)))
 		.limit(1);
 	if (open) return waiting;
+	// A ceiling on what apps leave for the writer to read in one universe. A
+	// draft an app staged is ready at once and has no job; the Assistant's
+	// always has one.
+	const [{ n }] = await db
+		.select({ n: sql<number>`count(*)::int` })
+		.from(assistantDrafts)
+		.where(
+			and(
+				eq(assistantDrafts.userId, input.userId),
+				eq(assistantDrafts.status, 'ready'),
+				isNull(assistantDrafts.jobId),
+				sql`${assistantDrafts.storyId} in (select ${stories.id} from ${stories} where ${stories.universeId} = (select ${stories.universeId} from ${stories} where ${stories.id} = ${input.storyId}))`
+			)
+		);
+	if (n >= MAX_APP_DRAFTS_WAITING) {
+		return {
+			ok: false,
+			reason: `This universe already has ${n} drafts from apps waiting for the writer. Stage no more until they have kept or discarded some.`
+		};
+	}
 	try {
 		// In a transaction of its own, so a refused insert does not spoil one the
 		// caller is already in.

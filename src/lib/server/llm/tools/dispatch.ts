@@ -28,6 +28,8 @@ import { toLf } from '#lib/line-endings';
 import { clientDisplayName } from '#lib/mcp-access';
 import { PROPOSAL_KIND_LABEL, stageEntityProposal, stageSplitProposal } from '../../proposals.ts';
 import { stageAppDraft } from '../../scene-drafts.ts';
+import { MAX_STAGING_CALLS_WAITING, STAGING_LOCK_TIMEOUT_MS } from '../../mcp/constants.ts';
+import { inStagingTurn, StagingBusyError } from '../../mcp/staging-queue.ts';
 import { isUuid } from '#lib/slug';
 import { paragraphWindow } from '#lib/paragraphs';
 import { locateSplitBefore } from '#lib/scene-split-locate';
@@ -226,18 +228,28 @@ export async function dispatchToolCall(
 		if (!external || tool.kind !== 'write') return await runTool(ctx, call.name, args);
 		// An app's staging calls for one universe run one at a time. Each of them
 		// checks before it writes (a repeat, a ceiling, whose turn it is), and
-		// calls sent together would otherwise all pass the check. The lock is
-		// taken first and held to the end of the call, so it orders nothing
-		// against the locks the handlers take.
-		return await ctx.db.transaction(async (tx) => {
-			const key = `mcp-staging:${external.client.id}:${ctx.universeId}`;
-			await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
-			return await runTool({ ...ctx, db: tx }, call.name, args);
-		});
+		// calls sent together would otherwise all pass the check. They queue in
+		// memory, so a waiting call holds no connection. The advisory lock inside
+		// is the same rule kept by the database, should two processes ever serve
+		// one app; it is taken first, so it orders nothing against the locks the
+		// handlers take. No lock in the call is waited on for long: a call that
+		// cannot get one gives up and is asked to try again.
+		const key = `mcp-staging:${external.client.id}:${ctx.universeId}`;
+		return await inStagingTurn(key, MAX_STAGING_CALLS_WAITING, () =>
+			ctx.db.transaction(async (tx) => {
+				await tx.execute(sql.raw(`set local lock_timeout = ${STAGING_LOCK_TIMEOUT_MS}`));
+				await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+				return await runTool({ ...ctx, db: tx }, call.name, args);
+			})
+		);
 	} catch (err) {
 		return toolFailure(err);
 	}
 }
+
+// Postgres: a lock was not available within lock_timeout.
+const LOCK_NOT_AVAILABLE = '55P03';
+const STAGING_BUSY = 'Another call is still running. Try again.';
 
 function hasNullCharacter(value: unknown): boolean {
 	if (typeof value === 'string') return value.includes('\u0000');
@@ -251,6 +263,10 @@ function hasNullCharacter(value: unknown): boolean {
 function toolFailure(err: unknown): ToolOutcome {
 	const cause = (err as { cause?: { code?: unknown } } | null)?.cause;
 	const code = typeof cause?.code === 'string' ? cause.code : undefined;
+	// Nothing went wrong; the call came at a busy moment and staged nothing.
+	if (err instanceof StagingBusyError || code === LOCK_NOT_AVAILABLE) {
+		return { result: STAGING_BUSY, staged: false };
+	}
 	const fromDatabase =
 		code !== undefined || typeof (err as { query?: unknown })?.query === 'string';
 	return {
