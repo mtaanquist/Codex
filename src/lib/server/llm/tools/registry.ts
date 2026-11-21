@@ -11,7 +11,12 @@ export type ToolKind = 'read' | 'write';
 // A scoped tool acts on a target carried in the dispatch context (a review
 // thread, a suggestion) rather than on ids the model supplies, and is only
 // offered when a surface names it explicitly - never in the default set.
-export type ToolDef = ToolSpec & { kind: ToolKind; scoped?: boolean };
+//
+// An external tool is offered only to an outside app connected through the
+// MCP endpoint (see #lib/server/mcp/tools). The in-app Assistant never gets
+// one: it already knows the open universe and story from the page. These are
+// the listed exceptions to "one toolbox for both"; keep the list short.
+export type ToolDef = ToolSpec & { kind: ToolKind; scoped?: boolean; external?: boolean };
 
 function obj(properties: Record<string, unknown>, required: string[]): Record<string, unknown> {
 	return { type: 'object', properties, required, additionalProperties: false };
@@ -20,6 +25,22 @@ function obj(properties: Record<string, unknown>, required: string[]): Record<st
 const str = (description: string) => ({ type: 'string', description });
 
 export const TOOLS: ToolDef[] = [
+	{
+		kind: 'read',
+		external: true,
+		name: 'list_universes',
+		description:
+			"List the writer's universes with each one's id, name, description and number of stories. Every other tool needs a universe id from this list.",
+		parameters: obj({}, [])
+	},
+	{
+		kind: 'read',
+		external: true,
+		name: 'list_stories',
+		description:
+			"List the stories in this universe with each one's id, title, one-line brief and number of scenes. Use list_scenes for their chapters and scenes.",
+		parameters: obj({}, [])
+	},
 	{
 		kind: 'read',
 		name: 'list_scenes',
@@ -170,15 +191,18 @@ export const TOOLS: ToolDef[] = [
 // dropped, so fewer schemas ride on each round.
 export const MINIMAL_TOOL_NAMES = ['get_scene', 'suggest_edit', 'leave_comment'];
 
-// The specs offered to the model: the default set leaves the scoped tools
-// out; a surface that needs them names them explicitly.
+// The specs offered to the in-app model: the default set leaves the scoped
+// tools out; a surface that needs them names them explicitly. The external
+// tools are never offered here, even by name.
 export function toolSpecs(names?: string[]): ToolSpec[] {
+	const inApp = TOOLS.filter((tool) => !tool.external);
 	const picked = names
-		? TOOLS.filter((tool) => names.includes(tool.name))
-		: TOOLS.filter((tool) => !tool.scoped);
-	return picked.map(({ kind, scoped, ...spec }) => {
+		? inApp.filter((tool) => names.includes(tool.name))
+		: inApp.filter((tool) => !tool.scoped);
+	return picked.map(({ kind, scoped, external, ...spec }) => {
 		void kind;
 		void scoped;
+		void external;
 		return spec;
 	});
 }

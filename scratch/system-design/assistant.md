@@ -853,6 +853,53 @@ budget. The code invariant that makes "writes are suggestions" real:
 This is what lets the entire write surface reuse the suggestion/accept
 machinery instead of building a parallel apply-and-undo path.
 
+### The same toolbox over MCP
+
+An outside app a writer has connected (#1175; see Access for outside apps in
+`design.md`) calls the same tools at `/api/mcp`. There is one catalogue
+(`tools/registry.ts`) and one dispatcher (`tools/dispatch.ts`) for both; a
+tool is added once and reaches both sides with the same ownership checks.
+`src/lib/server/mcp/tools.ts` is the thin layer between: it picks the tools a
+connection is offered, adds the universe as a required argument (in the app
+the open page supplies it), and re-checks that universe against the connected
+writer on every call, since there is no turn to check it once for.
+`src/lib/server/mcp/server.ts` wires the tools into the official SDK
+(`@modelcontextprotocol/server`), stateless, one server per request.
+
+Rules that hold on this surface:
+
+- The user id comes from the bearer token alone. No argument can name a
+  writer, and the route never reads the session cookie.
+- A universe that is another writer's, in the trash, or missing gives one
+  answer ("No universe with that id."). Inside a verified universe, a scene
+  or entry that is another writer's, in a muted or trashed story, in another
+  universe, or missing gives the tool's one not-found answer. There is one
+  integration test per tool for this (`tests/integration/mcp-endpoint.test.ts`).
+- An entity must belong to the universe the call names. This check sits in
+  the dispatcher, so it holds in the app as well.
+- No model of the writer's is called, so there is no usage row, no spend
+  cap and no tool-call budget. Rate limits stand in: 120 calls a minute per
+  connection, 240 per writer across connections, and 600 requests of any
+  kind per writer. Each call is logged (`mcp.tool`: user, grant, client
+  host, tool, outcome; never prose).
+- Results stay under 140,000 characters, since clients cut a result off at
+  about 150,000; `get_scene` returns at most 120,000 characters of a scene
+  here and says when it cut.
+- A request with an `Origin` header other than this site's is refused; a
+  program that is not a browser sends none.
+
+Offered today: the read tools. The staging tools follow with their own
+author kind.
+
+Exceptions to "one toolbox for both", each with its reason:
+
+- `list_universes` and `list_stories` are offered over MCP only
+  (`external: true` in the registry), because the in-app Assistant already
+  knows the open universe and story from the page. The dispatcher refuses
+  them on any other surface.
+- In the app the universe comes from the open page; over MCP the same tools
+  take it as an argument. Same tool, different source for the id.
+
 ### Background jobs
 
 New pg-boss queues alongside exports and backups (names in the existing queue

@@ -1023,6 +1023,38 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 3: the endpoint and the read tools (2026-11-21)
+
+Part of #1175, branch `feat/mcp-endpoint` on `staging/mcp-endpoint`, no
+migration.
+
+- `/api/mcp` on `@modelcontextprotocol/server` 2.x, stateless, with the
+  SDK's fallback for 2025-era clients left on. One handler for the process;
+  the route resolves the bearer token and passes the connection in, and the
+  SDK builds a server per request from it.
+- The tools are the Assistant's own. `list_universes` and `list_stories`
+  are in the shared registry marked `external`, never offered in the app and
+  refused by the dispatcher there. `mcp/tools.ts` adds the required
+  `universeId` argument and runs `ownsUniverse` on every call.
+- "Not found" is uniform. Ids that are not uuids are a miss in the
+  dispatcher instead of a query error, and a handler that throws now flags
+  the outcome so the endpoint answers "The tool failed" and keeps the error
+  text in the log, not in the reply to an outside app.
+- `get_entity` and `find_appearances` now require the entity to be in the
+  context's universe. The check is in the dispatcher, so the in-app
+  Assistant gets it too; before, an id from another of the writer's own
+  universes resolved.
+- `get_scene` is capped at 120,000 characters over MCP (the in-app cap
+  stays at 200,000), and any result at 140,000, because clients cut a
+  result at about 150,000 characters.
+- Origin: a request whose `Origin` is not this site's is refused. That
+  rules out a browser-based client on another site until someone needs one;
+  the place to allow it is the check in the route.
+- Rate limits are in-memory like the others, so the single-replica note in
+  SELF-HOSTING applies. Numbers are in `mcp/constants.ts`.
+- Deferred: the staging tools and their author kind (lane 4), prompts,
+  reading a long scene in parts.
+
 ## MCP endpoint, lane 2: the OAuth server (2026-11-21)
 
 Part of #1175, branch `feat/mcp-oauth` on `staging/mcp-endpoint`, migration

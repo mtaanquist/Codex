@@ -35,3 +35,15 @@ export const MAX_URI_LENGTH = 2000;
 export const REGISTER_PER_HOUR = 30;
 // Token and revoke requests one address may make per minute.
 export const TOKEN_PER_MINUTE = 120;
+
+// Tool calls one connected app may make per minute, and one writer across all
+// their apps, so connecting several does not multiply the first number.
+export const READ_CALLS_PER_MINUTE = 120;
+export const READ_CALLS_PER_MINUTE_PER_USER = 240;
+// Every request to the endpoint, of any kind, per writer per minute.
+export const REQUESTS_PER_MINUTE = 600;
+
+// Clients cut a tool result off at about 150,000 characters, so results stay
+// under that with room for the JSON around a scene's text.
+export const TOOL_RESULT_MAX_CHARS = 140_000;
+export const SCENE_BODY_MAX_CHARS = 120_000;
