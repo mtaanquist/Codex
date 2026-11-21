@@ -915,7 +915,9 @@ describe('the job', () => {
 		});
 		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(5.9, 6);
 		expect(prompts).toEqual([]);
-		expect(await statuses()).toEqual(['discarded', 'discarded', 'discarded']);
+		// Nothing was drafted: the first scene's card says why.
+		expect(await statuses()).toEqual(['failed', 'discarded', 'discarded']);
+		expect((await draftRows())[0].note).toBe(result.outcome === 'done' && result.cappedNote);
 	});
 
 	it('ends as capped, keeping the scenes before, when a billed attempt leaves no room to resend', async () => {
@@ -933,12 +935,21 @@ describe('the job', () => {
 			if (n === 2) {
 				throw withBilledUsage(new Error('Endpoint returned 502: the stream dropped'), {
 					promptTokens: 1000,
-					completionTokens: 1700
+					completionTokens: 1700,
+					// Counted from what had streamed, so the figure is marked.
+					estimated: true
 				});
 			}
 		};
 		const result = await run(started);
-		expect(result).toMatchObject({ outcome: 'done', drafted: 1, total: 2, ended: 'capped' });
+		expect(result).toMatchObject({
+			outcome: 'done',
+			drafted: 1,
+			total: 2,
+			ended: 'capped',
+			cappedNote:
+				'The next request could cost up to $1.80. This job has spent about $2.20 (estimated) and your spend cap is $3.90, so it was not sent. Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.'
+		});
 		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(2.2, 6);
 		expect(prompts).toHaveLength(2);
 		expect(await statuses()).toEqual(['ready', 'discarded']);
@@ -955,7 +966,38 @@ describe('the job', () => {
 		const result = await run(started);
 		expect(result).toMatchObject({ drafted: 0, total: 3, ended: 'capped', spentUsd: 5 });
 		expect(prompts).toEqual([]);
-		expect(await statuses()).toEqual(['discarded', 'discarded', 'discarded']);
+		expect(await statuses()).toEqual(['failed', 'discarded', 'discarded']);
+	});
+
+	it('holds what the run spent before a cap was set against it', async () => {
+		// $0.50 a scene written, and up to $1.80 held for each before it is sent.
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const started = await request();
+		// No cap when the run starts; the writer sets one during the first scene.
+		whileWriting = async (n) => {
+			if (n === 1) await configure({ spendCapUsd: 2 });
+		};
+		const result = await run(started);
+		// $0.50 spent and $1.80 more would pass $2.
+		expect(result).toMatchObject({ drafted: 1, total: 3, ended: 'capped' });
+		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(0.5, 6);
+		expect(result.outcome === 'done' && result.cappedNote).toMatch(/spent about \$0\.50 /);
+		expect(prompts).toHaveLength(1);
+	});
+
+	it('goes on under a cap raised while it runs', async () => {
+		// $1 a scene for the prompt as billed, less as counted beforehand.
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0.001, completion: 0 } });
+		const started = await request();
+		await configure({ spendCapUsd: 0.9 });
+		// The first scene is sent under $0.90 and bills $1; meanwhile the cap
+		// is raised.
+		whileWriting = async (n) => {
+			if (n === 1) await configure({ spendCapUsd: 10 });
+		};
+		const result = await run(started);
+		expect(result).toMatchObject({ drafted: 3, total: 3 });
+		expect(result.outcome === 'done' && result.ended).toBeUndefined();
 	});
 
 	it('keeps the scenes already drafted when the writer stops it, and nothing half-written', async () => {

@@ -15,6 +15,7 @@ import { createSceneNote, listSceneNotes, listStoryNotes } from '#lib/server/not
 import { isUuid } from '#lib/slug';
 import { assistantLayout, saveStoryLlmOverride } from '#lib/server/llm/config';
 import { waitingDrafts } from '#lib/server/scene-drafts';
+import { assistantDraftJobState } from '#lib/server/jobs';
 import { loadAssistantChat } from '#lib/server/llm/chat-history';
 import { listTrashedScenes } from '#lib/server/scene-lifecycle';
 import { lastTouchedScene } from '#lib/server/scene-access';
@@ -172,7 +173,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 	// the drafts too.
 	const waiting =
 		!assistant.tabEnabled || assistant.muted
-			? await waitingDrafts(db, locals.user!.id, story.id)
+			? await waitingDrafts(db, locals.user!.id, story.id, assistantDraftJobState)
 			: [];
 	const draftsWaiting = !assistant.tabEnabled && waiting.length > 0;
 

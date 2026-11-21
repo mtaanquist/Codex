@@ -24,6 +24,7 @@ import {
 	defaultDraftWords,
 	DRAFT_CHANGED_ELSEWHERE,
 	DRAFT_DECIDED_ELSEWHERE,
+	DRAFT_NOT_WRITTEN,
 	DRAFT_EMPTY_SAVE,
 	isBlankDraft,
 	sceneCapAdvice,
@@ -45,11 +46,17 @@ const NOT_FOUND: ActionFailure = {
 	code: 'not_found',
 	reason: 'That draft is no longer there.'
 };
-const NOT_READY: ActionFailure = {
-	ok: false,
-	code: 'conflict',
-	reason: DRAFT_DECIDED_ELSEWHERE
-};
+// Why a draft that is not ready cannot be edited or kept: it was decided
+// already, or was never written (still under way, or failed).
+function notReady(status: string | undefined): ActionFailure {
+	if (status === undefined) return NOT_FOUND;
+	const decided = status === 'accepted' || status === 'discarded';
+	return {
+		ok: false,
+		code: 'conflict',
+		reason: decided ? DRAFT_DECIDED_ELSEWHERE : DRAFT_NOT_WRITTEN
+	};
+}
 const CHANGED: ActionFailure = {
 	ok: false,
 	code: 'conflict',
@@ -354,7 +361,7 @@ export async function fillSceneFromDraft(
 ): Promise<{ ok: true; sceneId: string } | ActionFailure> {
 	const draft = await ownedDraft(db, userId, draftId);
 	if (!draft || !draft.sceneId) return NOT_FOUND;
-	if (draft.status !== 'ready') return NOT_READY;
+	if (draft.status !== 'ready') return notReady(draft.status);
 	const sceneId = draft.sceneId;
 	if (!(await ownedScene(db, userId, sceneId))) return SCENE_GONE;
 
@@ -366,7 +373,7 @@ export async function fillSceneFromDraft(
 			.for('update');
 		if (!scene) return SCENE_GONE;
 		const ready = await lockReadyDraft(tx, userId, draftId);
-		if (!ready) return NOT_READY;
+		if (!ready) return notReady((await ownedDraft(tx, userId, draftId))?.status);
 		if (changedElsewhere(ready.textMd, edited, baseHashes)) return CHANGED;
 		if (scene.bodyMd.trim() !== '') return SCENE_HAS_TEXT;
 		const text = acceptedText(edited, ready.textMd);
@@ -408,7 +415,7 @@ export async function addDraftAsScene(
 ): Promise<{ ok: true; newSceneId: string } | ActionFailure> {
 	const draft = await ownedDraft(db, userId, draftId);
 	if (!draft || !draft.sceneId) return NOT_FOUND;
-	if (draft.status !== 'ready') return NOT_READY;
+	if (draft.status !== 'ready') return notReady(draft.status);
 	const sceneId = draft.sceneId;
 	const owned = await ownedScene(db, userId, sceneId);
 	if (!owned) return SCENE_GONE;
@@ -417,7 +424,7 @@ export async function addDraftAsScene(
 		const scene = await lockStoryScene(tx, owned.storyId, sceneId);
 		if (!scene) return SCENE_GONE;
 		const ready = await lockReadyDraft(tx, userId, draftId);
-		if (!ready) return NOT_READY;
+		if (!ready) return notReady((await ownedDraft(tx, userId, draftId))?.status);
 		if (changedElsewhere(ready.textMd, edited, baseHashes)) return CHANGED;
 		const text = acceptedText(edited, ready.textMd);
 		if (!text) return EMPTY;
@@ -460,7 +467,7 @@ export async function discardSceneDraft(
 		)
 		.returning({ id: assistantDrafts.id });
 	// Already accepted or discarded: nothing to do, and nothing to undo.
-	if (rows.length === 0) return NOT_READY;
+	if (rows.length === 0) return notReady('discarded');
 	const unsettled = draft.status === 'pending' || draft.status === 'running';
 	// One scene of a chapter draft: its job has other scenes to write, and
 	// passes over this one now that it is discarded.
@@ -488,7 +495,7 @@ export async function saveDraftText(
 	if (isBlankDraft(text)) return EMPTY_SAVE;
 	return await db.transaction(async (tx) => {
 		const ready = await lockReadyDraft(tx, userId, draftId);
-		if (!ready) return (await ownedDraft(tx, userId, draftId)) ? NOT_READY : NOT_FOUND;
+		if (!ready) return notReady((await ownedDraft(tx, userId, draftId))?.status);
 		if (changedElsewhere(ready.textMd, text, baseHashes)) return CHANGED;
 		if (ready.textMd !== text) {
 			await tx.update(assistantDrafts).set({ textMd: text }).where(eq(assistantDrafts.id, draftId));
@@ -566,9 +573,10 @@ function onceEach(jobState: DraftJobState | undefined): DraftJobState | undefine
 export async function hasWaitingDrafts(
 	db: Database,
 	userId: string,
-	storyId: string
+	storyId: string,
+	jobState?: DraftJobState
 ): Promise<boolean> {
-	return (await waitingDrafts(db, userId, storyId)).length > 0;
+	return (await waitingDrafts(db, userId, storyId, jobState)).length > 0;
 }
 
 /**
@@ -578,8 +586,29 @@ export async function hasWaitingDrafts(
 export async function waitingDrafts(
 	db: Database,
 	userId: string,
-	storyId: string
+	storyId: string,
+	jobState?: DraftJobState
 ): Promise<WaitingDraft[]> {
+	// A draft whose job is gone is settled first, as a read of its scene
+	// would, so it is not listed as being written for ever.
+	if (jobState) {
+		const open = await db
+			.select({
+				id: assistantDrafts.id,
+				status: assistantDrafts.status,
+				jobId: assistantDrafts.jobId
+			})
+			.from(assistantDrafts)
+			.where(
+				and(
+					eq(assistantDrafts.userId, userId),
+					eq(assistantDrafts.storyId, storyId),
+					inArray(assistantDrafts.status, ['pending', 'running'])
+				)
+			);
+		const state = onceEach(jobState);
+		for (const draft of open) await settleOrphan(db, draft, state);
+	}
 	// By the scene's own story, and only scenes still in it: a draft whose
 	// scene is in the trash, or has moved to another story, cannot be reached
 	// from this one. One row a scene, its newest: a failed draft and the one

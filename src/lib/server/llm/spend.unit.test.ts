@@ -122,6 +122,16 @@ describe('SpendMeter', () => {
 		meter.record('other');
 		expect(meter.notApplied).toBe(false);
 		expect(meter.capReached).toBe(false);
+		meter.record('priced', { promptTokens: 100, completionTokens: 10 });
+		expect(meter.spentUsd).toBe(0);
+	});
+
+	it('keeps count without a cap only when asked to', () => {
+		const meter = new SpendMeter({ pricing, meterUncapped: true });
+		meter.record('priced', { promptTokens: 100, completionTokens: 10 });
+		expect(meter.spentUsd).toBeCloseTo(0.12, 9);
+		expect(meter.capReached).toBe(false);
+		expect(meter.notApplied).toBe(false);
 	});
 
 	it('flags a run on a model with no known price', () => {

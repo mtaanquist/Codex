@@ -56,7 +56,8 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	pool: pg.Pool;
 };
 const { resetRateLimits } = await import('#lib/server/rate-limit');
-const { withBilledUsage } = await import('../../src/lib/server/llm/providers/types');
+const { EndpointReplyError, withBilledUsage } =
+	await import('../../src/lib/server/llm/providers/types');
 const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const {
@@ -923,9 +924,16 @@ describe('the endpoint', () => {
 					}
 				)
 			);
-		expect((await patch(pending.draftId)).status).toBe(409);
+		// Each refusal says only what is true of the draft.
+		expect(await patch(pending.draftId)).toMatchObject({
+			status: 409,
+			body: { message: 'This draft has not been written, so there is nothing to keep.' }
+		});
 		await discardSceneDraft(db, ownerId, pending.draftId);
-		expect((await patch(pending.draftId)).status).toBe(409);
+		expect(await patch(pending.draftId)).toMatchObject({
+			status: 409,
+			body: { message: 'This draft was already kept or discarded.' }
+		});
 		expect((await draftRow(pending.draftId)).textMd).toBe('');
 
 		const kept = await readyDraft('Kept as written.');
@@ -1361,6 +1369,38 @@ describe('the spend cap while the job runs', () => {
 		expect(prompts).toHaveLength(1);
 	});
 
+	it('keeps the real reason for a failure that would not be sent again anyway', async () => {
+		await priced(2);
+		const { draftId, jobId } = await request();
+		// Billed, with no room left, but the endpoint's answer was not a reply:
+		// the job would not be run again, so "not sent" would be untrue.
+		failures = [
+			withBilledUsage(new EndpointReplyError('The endpoint answered with an error page.'), {
+				promptTokens: 1000,
+				completionTokens: 1700
+			})
+		];
+		await expect(
+			runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps)
+		).rejects.toBeInstanceOf(EndpointReplyError);
+		expect((await draftRow(draftId)).note).toBeNull();
+	});
+
+	it('holds what was spent before a cap was set against it', async () => {
+		// No cap when the first attempt runs and fails, billed $1.70.
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const { draftId, jobId } = await request();
+		failures = [billed(1700), billed(0), billed(0)];
+		await expect(runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps)).rejects.toThrow();
+		const sent = prompts.length;
+		// The writer sets a cap; the queue runs the job again.
+		await priced(2);
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toMatchObject({ outcome: 'capped' });
+		expect(result.outcome === 'capped' && result.spentUsd).toBeCloseTo(1.7, 6);
+		expect(prompts).toHaveLength(sent);
+	});
+
 	it('still sends again after a failure that leaves room under the cap', async () => {
 		await priced(5);
 		const { draftId, jobId } = await request();
@@ -1416,7 +1456,10 @@ describe("the writer's own request parameters", () => {
 						n: 4,
 						best_of: 3,
 						options: { num_predict: 99_999, mirostat: 1 },
-						extra_body: { n: 2 }
+						extra_body: { n: 2 },
+						parameters: { max_tokens: 99_999, max_length: 99_999, max_gen_len: 99_999 },
+						// A property that happens to be called n is not a reply count.
+						response_format: { schema: { properties: { n: { type: 'number' } } } }
 					}
 				}
 			}
@@ -1424,7 +1467,13 @@ describe("the writer's own request parameters", () => {
 		const { draftId } = await request();
 		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
 		expect(maxTokensSent).toEqual([1800]);
-		expect(extraParamsSent).toEqual([{ top_p: 0.9, options: { mirostat: 1 } }]);
+		expect(extraParamsSent).toEqual([
+			{
+				top_p: 0.9,
+				options: { mirostat: 1 },
+				response_format: { schema: { properties: { n: { type: 'number' } } } }
+			}
+		]);
 	});
 });
 
@@ -1557,6 +1606,17 @@ describe('reading a draft back', () => {
 		await readyDraft();
 		await db.update(scenes).set({ bodyMd: 'Now written.' }).where(eq(scenes.id, target));
 		expect((await sceneDraftFor(db, ownerId, target))?.sceneEmpty).toBe(false);
+	});
+
+	it('settles a draft whose job is gone when the waiting drafts are listed', async () => {
+		const { draftId } = await request();
+		jobs.assistantDraftJobState.mockResolvedValue('failed');
+		// Without the queue to ask, the row is listed as it stands.
+		expect((await waitingDrafts(db, ownerId, storyId))[0].status).toBe('pending');
+		expect(await waitingDrafts(db, ownerId, storyId, jobs.assistantDraftJobState)).toEqual([
+			{ sceneId: target, sceneTitle: 'The Crossing', status: 'failed' }
+		]);
+		expect((await draftRow(draftId)).note).toBe(DRAFT_DID_NOT_FINISH);
 	});
 
 	it('settles a draft whose job ended without it', async () => {

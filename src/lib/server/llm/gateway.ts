@@ -275,29 +275,42 @@ async function respondWithRetry(
 	}
 }
 
-// Parameters that change how much a request can be billed for: other names
-// endpoints take a reply limit by, and the ones that ask for several replies
-// at once. A writer's extra parameters may carry one; on a bounded request it
-// would undo the limit the cost was counted at, so it is left out there, at
-// any depth (Ollama takes its limit as options.num_predict).
-const REPLY_SIZE_PARAMS = [
+// Parameters that change how much a request can be billed for. A writer's
+// extra parameters may carry one; on a bounded request it would undo the
+// limit the cost was counted at, so it is left out there.
+// Names endpoints take a reply limit by, left out at any depth (Ollama takes
+// its limit as options.num_predict).
+const REPLY_LIMIT_PARAMS = [
+	'max_tokens',
 	'max_completion_tokens',
 	'max_output_tokens',
 	'max_new_tokens',
+	'max_length',
+	'max_gen_len',
 	'n_predict',
-	'num_predict',
-	'n',
-	'best_of'
+	'num_predict'
 ];
+// Names that ask for several replies at once. Short enough to mean something
+// else elsewhere (a property of a response_format schema), so they are left
+// out only at the top level and in the groups endpoints read options from.
+const REPLY_COUNT_PARAMS = ['n', 'best_of'];
+const OPTION_GROUPS = ['options', 'extra_body', 'parameters'];
 export function withoutReplySizeParams<T extends Record<string, unknown> | undefined>(
-	params: T
+	params: T,
+	options = true
 ): T {
 	if (!params) return params;
 	const kept: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(params)) {
-		if (REPLY_SIZE_PARAMS.includes(key)) continue;
+		if (REPLY_LIMIT_PARAMS.includes(key)) continue;
+		if (options && REPLY_COUNT_PARAMS.includes(key)) continue;
 		const nested = value !== null && typeof value === 'object' && !Array.isArray(value);
-		const inner = nested ? withoutReplySizeParams(value as Record<string, unknown>) : value;
+		const inner = nested
+			? withoutReplySizeParams(
+					value as Record<string, unknown>,
+					options && OPTION_GROUPS.includes(key)
+				)
+			: value;
 		// A group emptied by this goes too; one the writer left empty stays.
 		if (nested && inner === undefined && Object.keys(value as object).length > 0) continue;
 		kept[key] = inner ?? value;

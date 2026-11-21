@@ -1340,7 +1340,9 @@
 	// each time the page's data is read again.
 	const listWriting = $derived(
 		muted &&
-			waitingDrafts.some((waiting) => waiting.status === 'pending' || waiting.status === 'running')
+			draftsElsewhere.some(
+				(waiting) => waiting.status === 'pending' || waiting.status === 'running'
+			)
 	);
 	$effect(() => {
 		if (!listWriting) {

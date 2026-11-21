@@ -10,19 +10,21 @@ import { SpendMeter } from './spend.ts';
 // The spend meter for one queued Assistant job. pg-boss retries a job under the
 // same id, so the meter starts from what earlier attempts of that job spent and
 // records its total as it goes. Without a job id (an inline or test caller) or
-// a cap, it is a plain meter that stores nothing.
+// a cap, it is a plain meter that stores nothing. meterUncapped keeps and
+// stores the count with no cap set as well (see SpendMeter).
 export async function jobSpendMeter(
 	db: Database,
-	opts: { userId: string; storyId?: string; jobId?: string }
+	opts: { userId: string; storyId?: string; jobId?: string; meterUncapped?: boolean }
 ): Promise<SpendMeter> {
 	const { config } = await resolveLlmConfig(db, opts.userId, opts.storyId);
 	const base = {
 		pricing: config.modelPricing,
 		capUsd: config.spendCapUsd,
-		claude: adapterKind(config.provider) === 'anthropic'
+		claude: adapterKind(config.provider) === 'anthropic',
+		meterUncapped: opts.meterUncapped
 	};
 	const jobId = opts.jobId;
-	if (!jobId || !base.capUsd) return new SpendMeter(base);
+	if (!jobId || (!base.capUsd && !opts.meterUncapped)) return new SpendMeter(base);
 	const [row] = await db
 		.select({ spentUsd: assistantJobSpend.spentUsd })
 		.from(assistantJobSpend)

@@ -1370,17 +1370,26 @@ calls the gateway, which proxies through the egress guard.
   (`limitedBy`: the writer's setting, or the model's window). It also
   reports `capEnforceable` (false with no price) and `warnUsd`, and prices
   the prompt at the cache write rate on the Claude provider. The spend meter is
-  keyed by the job. Before every send, a resend inside the gateway after a
+  keyed by the job, and for drafts it counts with no cap set as well
+  (`meterUncapped`), so a cap set or raised while the job runs is held
+  against all of it. Before every send, a resend inside the gateway after a
   transient failure included (`mayResend` on the request), the job checks
   that what it has spent plus this request at its limit, priced by the
   settings in force then, stays under the cap (`wouldPassCap`); when it
   would not, the draft ends as capped, and its note gives the figures (what
   the next request could cost, what the job has spent, the cap) and what to
-  do (`cappedNote`). The resume of a paused reply asks `mayResend` too.
+  do (`cappedNote`). A failure the worker would not run again (a refusal,
+  an answer that is not a reply) keeps its own reason even with no room
+  left. A chapter run capped before anything was drafted leaves the note on
+  the scene it stopped at, as a failed draft. The resume of a paused reply
+  asks `mayResend` too.
   Parameters in the writer's extra parameters that change what a request can
-  bill (`max_completion_tokens`, `n_predict` and the other reply-limit
-  names, `n`, `best_of`, at any depth, so `options.num_predict` as well) are
-  left off a bounded request, so they cannot undo the limit the cost was
+  bill are left off a bounded request: reply-limit names
+  (`max_completion_tokens`, `n_predict`, `max_tokens` and the like) at any
+  depth, so `options.num_predict` as well, and `n` and `best_of` at the top
+  level and inside `options`, `extra_body` and `parameters` (elsewhere, as
+  in a `response_format` schema, they are left alone). Unbounded requests
+  keep them all, so they cannot undo the limit the cost was
   counted at. A "Longest reply" equal to the draft's own figure counts as
   the draft's own. A reply cut off at the limit is kept as a ready draft
   with a note; a stop discards the draft; a failure marks it failed with the
@@ -1423,7 +1432,8 @@ calls the gateway, which proxies through the egress guard.
   whose scene is live and in the story, so one still being written can be
   seen and stopped), showing only the draft cards, a list of links to the
   drafts on other scenes (also on a muted story; one row a scene, the newest
-  draft, and read again every few seconds with the shared pacing while one
+  draft; a draft whose job is gone is settled as the list is read; and it is
+  read again every few seconds with the shared pacing while one in it
   is being written), and a line saying the
   Assistant is off for the account; nothing there can ask for a new draft,
   and the tab goes when the last draft is decided. Links from notices and lists open the
@@ -1432,13 +1442,17 @@ calls the gateway, which proxies through the egress guard.
   appears and on a double click or key repeat (`confirm-guard.ts`), unsaved
   edits live in module state by draft id and are flushed when the page is
   hidden (`draft-edits.ts`, which listens once for every edit held, with or
-  without a card, never replaces held text with a read, keeps the edit on a
+  without a card, never replaces held text with a read unless this window
+  has never typed in or saved the draft, keeps the edit on a
   401 and frees it on 403 and 404). A draft kept or discarded in another
-  window closes the card with a line saying so, and text typed there and
-  not saved stays readable until the card is closed. An open brief form is kept in
+  window closes the card with a line saying so, on a refused save as well
+  as on a decision. Text typed there and not saved stays readable until
+  that is closed, and is found again by scene if the card was away when
+  the save was refused (`strandedDraftText`). An open brief form is kept in
   `sessionStorage` until it is started, cancelled, or the writer signs out
   (`draft-forms.ts`; each field is read on its own, so an empty length does
-  not lose the brief).
+  not lose the brief, and a draft reaching the scene another way does not
+  drop it).
 - [built] Chapter drafts (#1168, step 2): the same queue and table. The
   request (`/api/assistant/draft/chapter`: defaults, `estimate: true`, or
   the request itself) stages one `assistant_drafts` row per chosen scene with
