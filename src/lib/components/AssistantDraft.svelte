@@ -11,6 +11,7 @@
 		draftEdit,
 		dropDraftEdit,
 		releaseDraftEdit,
+		strandedDraftText,
 		type DraftEdit
 	} from '#lib/draft-edits';
 	import {
@@ -121,8 +122,9 @@
 	let unread = $state(false);
 	// The draft the card showed was kept or discarded in another window. text
 	// is what the writer had typed and not saved, left for them to copy; next
-	// is the scene's newer draft, shown when they close this.
-	let gone = $state<{ text: string; next: SceneDraftView | null } | null>(null);
+	// is the scene's newer draft, shown when they close this; id is the edit
+	// that still holds the text, dropped then.
+	let gone = $state<{ text: string; id?: string; next: SceneDraftView | null } | null>(null);
 	const GONE_MESSAGE = 'This draft was already kept or discarded in another window.';
 
 	const label = $derived(sceneTitle ? `"${sceneTitle}"` : 'this scene');
@@ -193,7 +195,9 @@
 
 	function mirrorEdit() {
 		saveError = edit?.error ?? '';
+		const was = changedElsewhere;
 		changedElsewhere = edit?.conflict ?? false;
+		if (changedElsewhere && !was) void checkStillWaiting();
 		// The card's copy of the draft follows each save, so it is never older
 		// than what the box holds.
 		if (edit && draft?.status === 'ready' && draft.textMd !== edit.saved) {
@@ -205,19 +209,27 @@
 	function stillWaiting(fresh: SceneDraftView | null): boolean {
 		return fresh !== null && fresh.id === draft?.id && fresh.status === draft.status;
 	}
+	// A refused save means the text changed in another window, or the draft
+	// was kept or discarded there. The second leaves nothing to load or decide.
+	async function checkStillWaiting() {
+		const fresh = await readDraft();
+		if (!alive || fresh === undefined || !edit?.conflict || landing) return;
+		if (!stillWaiting(fresh)) await showGone(fresh);
+	}
 	function hasUnsavedText(): boolean {
 		return edit !== null && text !== edit.saved;
 	}
 	// The card's draft was decided in another window: nothing more of it is
 	// saved, and the card says so. Text the writer had not saved stays on the
-	// card, read-only, until they close it.
+	// card, read-only, until they close it, and comes back with the card if
+	// it is taken away before that.
 	async function showGone(next: SceneDraftView | null) {
-		const unsaved = hasUnsavedText() ? text : '';
-		if (draft) dropDraftEdit(draft.id);
+		if (edit) edit.onChange = undefined;
 		edit = null;
 		landing = null;
+		const stranded = strandedDraftText(sceneId, next?.id ?? null);
 		await step(() => {
-			gone = { text: unsaved, next };
+			gone = { text: stranded?.text ?? '', id: stranded?.id, next };
 			draft = null;
 			error = '';
 			view = 'gone';
@@ -227,6 +239,7 @@
 	}
 	async function closeGone() {
 		const next = gone?.next ?? null;
+		if (gone?.id) dropDraftEdit(gone.id);
 		gone = null;
 		if (next) {
 			await step(() => show(next));
@@ -360,14 +373,21 @@
 			view = 'form';
 		}
 		void readDraftSurely().then((found) => {
-			if (!alive || !found) return;
-			// A form open to try a failed draft again keeps that draft behind it;
-			// any other draft is what there is to decide.
-			if (view === 'form' && found.status === 'failed') draft ??= found;
-			else if (view === 'hidden' || view === 'form') {
-				dropDraftForm('scene', sceneId);
-				show(found);
+			if (!alive) return;
+			// Text typed into a draft that was kept or discarded in another
+			// window while this card was away: said first, so it can be copied.
+			const stranded = strandedDraftText(sceneId, found?.id ?? null);
+			if (stranded) {
+				gone = { ...stranded, next: found };
+				view = 'gone';
+				return;
 			}
+			if (!found) return;
+			// A form open to try a failed draft again keeps that draft behind it;
+			// any other draft is what there is to decide. A form the writer left
+			// half typed is kept for when this draft is decided.
+			if (view === 'form' && found.status === 'failed') draft ??= found;
+			else if (view === 'hidden' || view === 'form') show(found);
 		});
 		return () => {
 			alive = false;

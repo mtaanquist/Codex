@@ -923,9 +923,16 @@ describe('the endpoint', () => {
 					}
 				)
 			);
-		expect((await patch(pending.draftId)).status).toBe(409);
+		// Each refusal says only what is true of the draft.
+		expect(await patch(pending.draftId)).toMatchObject({
+			status: 409,
+			body: { message: 'This draft has not been written, so there is nothing to keep.' }
+		});
 		await discardSceneDraft(db, ownerId, pending.draftId);
-		expect((await patch(pending.draftId)).status).toBe(409);
+		expect(await patch(pending.draftId)).toMatchObject({
+			status: 409,
+			body: { message: 'This draft was already kept or discarded.' }
+		});
 		expect((await draftRow(pending.draftId)).textMd).toBe('');
 
 		const kept = await readyDraft('Kept as written.');
@@ -1557,6 +1564,17 @@ describe('reading a draft back', () => {
 		await readyDraft();
 		await db.update(scenes).set({ bodyMd: 'Now written.' }).where(eq(scenes.id, target));
 		expect((await sceneDraftFor(db, ownerId, target))?.sceneEmpty).toBe(false);
+	});
+
+	it('settles a draft whose job is gone when the waiting drafts are listed', async () => {
+		const { draftId } = await request();
+		jobs.assistantDraftJobState.mockResolvedValue('failed');
+		// Without the queue to ask, the row is listed as it stands.
+		expect((await waitingDrafts(db, ownerId, storyId))[0].status).toBe('pending');
+		expect(await waitingDrafts(db, ownerId, storyId, jobs.assistantDraftJobState)).toEqual([
+			{ sceneId: target, sceneTitle: 'The Crossing', status: 'failed' }
+		]);
+		expect((await draftRow(draftId)).note).toBe(DRAFT_DID_NOT_FINISH);
 	});
 
 	it('settles a draft whose job ended without it', async () => {

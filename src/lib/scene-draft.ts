@@ -126,8 +126,8 @@ export function chapterCapAdvice(mayThink: boolean): string {
 }
 
 // What an edit or a decision on a draft that is no longer waiting is told.
-export const DRAFT_DECIDED_ELSEWHERE =
-	'This draft was already kept or discarded, or is not written yet. Reload the page to see it as it is now.';
+export const DRAFT_DECIDED_ELSEWHERE = 'This draft was already kept or discarded.';
+export const DRAFT_NOT_WRITTEN = 'This draft has not been written, so there is nothing to keep.';
 
 // What an edit or a decision made from an older copy of a draft is told.
 export const DRAFT_CHANGED_ELSEWHERE = 'This draft was changed in another window.';

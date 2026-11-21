@@ -385,6 +385,78 @@ test('a draft changed or decided in another window is said so, and typing is not
 	await expect(card).toHaveCount(0);
 });
 
+// #1168: the writer types in a draft that another window has just kept or
+// discarded. The refused save says what happened, with the typing to copy,
+// whether or not the card was on screen when the answer came.
+test('typing in a draft decided in another window is kept to copy', async ({ page }) => {
+	const stamp = Date.now();
+	const sceneId = await storyWithScene(page, `Bargemen ${stamp}`, `Towpath ${stamp}`);
+	const link = `/stories/towpath-${stamp}?scene=${sceneId}&draft=show`;
+	const card = page.getByRole('group', { name: 'Scene draft' });
+	const text = card.getByLabel('Read it, and change anything you like before keeping it');
+	const copy = card.getByLabel('What you had typed here was not saved', { exact: false });
+	const gone = 'This draft was already kept or discarded in another window.';
+
+	// With the card on screen: no "changed in another window", nothing to
+	// load, and no choices left for a draft that is gone.
+	const first = await stageDraft(sceneId, 'The horse stopped.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('The horse stopped.');
+	await sql(`update assistant_drafts set status = 'discarded' where id = $1`, [first]);
+	await text.fill('The horse stopped. So did the boy.');
+	await text.blur();
+	await expect(card).toContainText(gone);
+	await expect(copy).toHaveValue('The horse stopped. So did the boy.');
+	await expect(card).not.toContainText('Reload the page');
+	await expect(card.getByRole('button', { name: 'Load the current text' })).toHaveCount(0);
+	await expect(card.getByRole('button', { name: 'Discard' })).toHaveCount(0);
+	// Taken away before it is closed, the card comes back with it.
+	await page.getByRole('tab', { name: 'Reference' }).click();
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(copy).toHaveValue('The horse stopped. So did the boy.');
+	await card.getByRole('button', { name: 'Close' }).click();
+	await expect(card).toHaveCount(0);
+	await page.getByRole('tab', { name: 'Reference' }).click();
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(card).toHaveCount(0);
+
+	// With the card gone by the time the save is answered: the writer types,
+	// then switches pane, and the refusal comes back to no card.
+	const second = await stageDraft(sceneId, 'The lock was full.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('The lock was full.');
+	await sql(`update assistant_drafts set status = 'accepted' where id = $1`, [second]);
+	await page.route('**/api/assistant/draft/*', async (route) => {
+		if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 500));
+		await route.continue();
+	});
+	const refused = page.waitForResponse((response) => response.request().method() === 'PATCH');
+	await text.fill('The lock was full. The gates would not move.');
+	await page.getByRole('tab', { name: 'Reference' }).click();
+	expect((await refused).status()).toBe(409);
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(card).toContainText(gone);
+	await expect(copy).toHaveValue('The lock was full. The gates would not move.');
+	await card.getByRole('button', { name: 'Close' }).click();
+	await expect(card).toHaveCount(0);
+	await page.unroute('**/api/assistant/draft/*');
+
+	// A brief left half typed is still there after a draft that reached the
+	// scene another way has been dealt with.
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('/draft The boy.');
+	await page.keyboard.press('Enter');
+	const brief = card.getByLabel('What happens in this scene');
+	await brief.fill('The boy leads the horse back.');
+	await stageDraft(sceneId, 'From a chapter run.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('From a chapter run.');
+	await card.getByRole('button', { name: 'Discard' }).click();
+	await expect(card).toHaveCount(0);
+	await gotoReady(page, link);
+	await expect(brief).toHaveValue('The boy leads the horse back.');
+});
+
 // #1168: on a story with the Assistant turned off, the panel lists the drafts
 // that wait on other scenes, one still being written among them.
 test('a muted story lists its waiting drafts, and one being written can be stopped', async ({

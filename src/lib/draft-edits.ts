@@ -43,6 +43,7 @@ export type DraftEdit = {
 
 type Held = {
 	edit: DraftEdit;
+	sceneId: string;
 	bases: SaveBases;
 	// Requests are numbered; an answer older than one already taken is not.
 	seq: number;
@@ -60,15 +61,22 @@ const byEdit = new WeakMap<DraftEdit, Held>();
  * The edit state for a draft, made from what the server holds the first time
  * a card shows it. After that the page's own copy stands: a read may be older
  * than a save this page made, and a change from another window shows as a
- * refused save, which the writer settles by loading the current text.
+ * refused save, which the writer settles by loading the current text. The
+ * one exception is a copy this page has never typed in or saved from: no read
+ * can be older than it, so it follows what was just read.
  */
-export function draftEdit(id: string, stored: { textMd: string }): DraftEdit {
+export function draftEdit(id: string, stored: { textMd: string; sceneId: string }): DraftEdit {
 	listen();
 	const now = held.get(id);
 	if (now) {
 		now.releasedAt = null;
 		if (now.edit.conflict) now.conflictSeen = true;
-		return now.edit;
+		const { edit } = now;
+		if (now.seq === 0 && edit.text === edit.saved && edit.saved !== stored.textMd) {
+			now.bases.reset(stored.textMd);
+			edit.text = edit.saved = stored.textMd;
+		}
+		return edit;
 	}
 	sweep();
 	const edit: DraftEdit = {
@@ -83,6 +91,7 @@ export function draftEdit(id: string, stored: { textMd: string }): DraftEdit {
 	};
 	const entry: Held = {
 		edit,
+		sceneId: stored.sceneId,
 		bases: createSaveBases(stored.textMd),
 		seq: 0,
 		applied: 0,
@@ -101,6 +110,8 @@ export function draftBaseHashes(edit: DraftEdit): string[] {
 
 async function save(id: string, entry: Held, keepalive: boolean): Promise<void> {
 	const { edit, bases } = entry;
+	// Refused, and the writer has been told: it would be refused again.
+	if (settledConflict(entry)) return;
 	const sending = edit.text;
 	// Nothing to send: the server holds this text, and no save of other text
 	// is unaccounted for.
@@ -139,7 +150,7 @@ async function save(id: string, entry: Held, keepalive: boolean): Promise<void> 
 	if (!response.ok) {
 		edit.conflict = response.status === 409;
 		const shown = edit.onChange !== undefined;
-		if (edit.conflict) entry.conflictSeen = shown;
+		if (edit.conflict && shown) entry.conflictSeen = true;
 		setError(edit, await apiErrorMessage(response, 'Could not save your changes to the draft.'));
 		// Not the writer's, or decided elsewhere: sending it again would fail
 		// the same way. With no card to say so, the edit is let go.
@@ -153,6 +164,7 @@ async function save(id: string, entry: Held, keepalive: boolean): Promise<void> 
 	bases.landed(hash);
 	edit.saved = sending;
 	edit.conflict = false;
+	entry.conflictSeen = false;
 	setError(edit, '');
 }
 
@@ -163,7 +175,9 @@ function setError(edit: DraftEdit, error: string) {
 
 /** Takes the server's text over the writer's copy (after a conflict). */
 export function adoptStored(edit: DraftEdit, stored: { textMd: string }): void {
-	byEdit.get(edit)?.bases.reset(stored.textMd);
+	const entry = byEdit.get(edit);
+	entry?.bases.reset(stored.textMd);
+	if (entry) entry.conflictSeen = false;
 	edit.text = stored.textMd;
 	edit.saved = stored.textMd;
 	edit.conflict = false;
@@ -176,6 +190,31 @@ export function releaseDraftEdit(edit: DraftEdit): void {
 	edit.autosave.flushSoon();
 	const entry = byEdit.get(edit);
 	if (entry) entry.releasedAt = Date.now();
+}
+
+/**
+ * Text typed into a draft of this scene that was never saved, when that draft
+ * is no longer the scene's (`currentId` is the one that is, if any): it was
+ * kept or discarded in another window. The card shows it to be copied, and
+ * drops the edit when the writer closes that. Nothing more of it is sent, and
+ * the browser no longer asks before the page is left.
+ */
+export function strandedDraftText(
+	sceneId: string,
+	currentId: string | null
+): { id: string; text: string } | null {
+	for (const [id, entry] of held) {
+		if (entry.sceneId !== sceneId || id === currentId) continue;
+		const { edit } = entry;
+		if (edit.text === edit.saved) {
+			forget(id);
+			continue;
+		}
+		edit.conflict = true;
+		entry.conflictSeen = true;
+		return { id, text: edit.text };
+	}
+	return null;
 }
 
 /** The draft was kept or discarded: nothing more of it is saved. */

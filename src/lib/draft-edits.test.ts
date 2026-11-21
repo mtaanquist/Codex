@@ -68,7 +68,8 @@ afterEach(() => {
 });
 
 const STORED = 'As written.';
-const stored = { textMd: STORED };
+const SCENE = 'scene-1';
+const stored = { textMd: STORED, sceneId: SCENE };
 const h = textHash;
 
 // Types into the edit and lets the pause before a save pass.
@@ -127,6 +128,17 @@ describe('saving', () => {
 		expect(sent).toHaveLength(2);
 		expect(edit.error).toBe('');
 		expect(edit.saved).toBe('Edited.');
+	});
+
+	it('tries again after a request that never reached the server', async () => {
+		answers = [offline, ok];
+		const edit = edits.draftEdit(id(), stored);
+		await type(edit, 'Edited.');
+		expect(edit.error).toMatch(/Could not save/);
+		expect(edit.autosave.hasUnsaved()).toBe(true);
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(sent).toHaveLength(2);
+		expect(edit).toMatchObject({ error: '', saved: 'Edited.' });
 	});
 
 	it('does not send a blank draft, and says how to drop one', async () => {
@@ -216,7 +228,7 @@ describe('a draft changed in another window', () => {
 		await vi.advanceTimersByTimeAsync(120_000);
 		expect(sent).toHaveLength(1);
 		// A read of the draft does not replace the writer's text until they ask.
-		expect(edits.draftEdit(key, { textMd: 'From the other window.' }).text).toBe(
+		expect(edits.draftEdit(key, { textMd: 'From the other window.', sceneId: SCENE }).text).toBe(
 			'Edited in a window that fell behind.'
 		);
 		edits.adoptStored(edit, { textMd: 'From the other window.' });
@@ -248,13 +260,109 @@ describe('a draft changed in another window', () => {
 		await vi.advanceTimersByTimeAsync(600_000);
 		edits.draftEdit(id(), stored);
 		// The next card gets the text, with the conflict to show.
-		const again = edits.draftEdit(key, { textMd: 'From the other window.' });
+		const again = edits.draftEdit(key, { textMd: 'From the other window.', sceneId: SCENE });
 		expect(again).toBe(edit);
 		expect(again).toMatchObject({ text: 'Typed, then the panel was closed.', conflict: true });
 		// The writer has seen it now: the page no longer asks on its account.
 		expect(leaving()).toBe(false);
 		edits.releaseDraftEdit(again);
 		expect(leaving()).toBe(false);
+	});
+});
+
+describe('a draft kept or discarded in another window', () => {
+	const gone = refused(409, 'This draft was already kept or discarded.');
+
+	it('gives the text typed and never saved to the next card of the scene, once', async () => {
+		answers = [gone];
+		const key = id();
+		const edit = edits.draftEdit(key, stored);
+		edit.text = 'Typed, then the pane was switched.';
+		edit.autosave.schedule();
+		edits.releaseDraftEdit(edit);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(leaving()).toBe(true);
+		// Another scene's card is not offered it, nor is one still showing it.
+		expect(edits.strandedDraftText('scene-2', null)).toBeNull();
+		expect(edits.strandedDraftText(SCENE, key)).toBeNull();
+		// The scene has no draft now, or a newer one.
+		expect(edits.strandedDraftText(SCENE, null)).toEqual({
+			id: key,
+			text: 'Typed, then the pane was switched.'
+		});
+		// Said on screen now: the page does not ask, and nothing more is sent.
+		expect(leaving()).toBe(false);
+		edit.autosave.schedule();
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(sent).toHaveLength(1);
+		// Still there if the card goes before it is closed; gone once it is.
+		expect(edits.strandedDraftText(SCENE, 'newer')?.text).toBe(
+			'Typed, then the pane was switched.'
+		);
+		edits.dropDraftEdit(key);
+		expect(edits.strandedDraftText(SCENE, null)).toBeNull();
+	});
+
+	it('has nothing to give when all that was typed is saved', async () => {
+		const key = id();
+		const edit = edits.draftEdit(key, stored);
+		await type(edit, 'Edited and saved.');
+		edits.releaseDraftEdit(edit);
+		expect(edits.strandedDraftText(SCENE, null)).toBeNull();
+		// And the edit is let go of.
+		expect(edits.draftEdit(key, stored)).not.toBe(edit);
+	});
+
+	it('does not ask again before leaving once a card has shown a refusal', async () => {
+		answers = [gone];
+		const key = id();
+		const edit = edits.draftEdit(key, stored);
+		edit.onChange = () => {};
+		await type(edit, 'Typed.');
+		expect(leaving()).toBe(false);
+		// The card goes, and the writer's text is flushed: not sent, not asked.
+		edits.releaseDraftEdit(edit);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(sent).toHaveLength(1);
+		expect(leaving()).toBe(false);
+	});
+});
+
+describe('a copy this window only looked at', () => {
+	it('follows what the next read finds', async () => {
+		const key = id();
+		const edit = edits.draftEdit(key, stored);
+		edits.releaseDraftEdit(edit);
+		const again = edits.draftEdit(key, { textMd: 'Edited in another window.', sceneId: SCENE });
+		expect(again).toBe(edit);
+		expect(again).toMatchObject({
+			text: 'Edited in another window.',
+			saved: 'Edited in another window.'
+		});
+		// And saves from there.
+		await type(again, 'Edited in another window. And here.');
+		expect(bodies()[0].baseHashes).toEqual([h('Edited in another window.')]);
+	});
+
+	it('does not once anything is typed, sent or saved here', async () => {
+		const other = { textMd: 'Edited in another window.', sceneId: SCENE };
+		// Typed and not sent.
+		const typedKey = id();
+		const typed = edits.draftEdit(typedKey, stored);
+		typed.text = 'Typed.';
+		expect(edits.draftEdit(typedKey, other).text).toBe('Typed.');
+		// Sent and not answered.
+		const slow = later();
+		answers = [slow.answer];
+		const key = id();
+		const unanswered = edits.draftEdit(key, stored);
+		await type(unanswered, 'Sent.');
+		unanswered.text = STORED;
+		expect(edits.draftEdit(key, other).text).toBe(STORED);
+		// Saved: a read may be older than the save.
+		slow.resolve(ok());
+		await type(unanswered, 'Saved.');
+		expect(edits.draftEdit(key, other).text).toBe('Saved.');
 	});
 });
 
@@ -306,9 +414,9 @@ describe('a card that went away and came back', () => {
 		const shown = edits.draftEdit(shownKey, stored);
 		await vi.advanceTimersByTimeAsync(600_000);
 		edits.draftEdit(id(), stored);
-		expect(edits.draftEdit(unsavedKey, { textMd: 'Server.' })).toBe(unsaved);
+		expect(edits.draftEdit(unsavedKey, { textMd: 'Server.', sceneId: SCENE })).toBe(unsaved);
 		expect(unsaved.text).toBe('Not saved yet.');
-		expect(edits.draftEdit(shownKey, { textMd: 'Server.' })).toBe(shown);
+		expect(edits.draftEdit(shownKey, { textMd: 'Server.', sceneId: SCENE })).toBe(shown);
 	});
 
 	it('stops trying, and lets go of the edit, when the draft is gone or not the writer own', async () => {
@@ -323,7 +431,7 @@ describe('a card that went away and came back', () => {
 			await vi.advanceTimersByTimeAsync(600_000);
 			expect(sent).toHaveLength(1);
 			// Freed: the next card starts from what the server holds.
-			expect(edits.draftEdit(key, { textMd: 'Server.' })).not.toBe(edit);
+			expect(edits.draftEdit(key, { textMd: 'Server.', sceneId: SCENE })).not.toBe(edit);
 		}
 		// With a card showing, the edit stays for the writer to read the reason.
 		sent = [];
@@ -347,7 +455,7 @@ describe('a card that went away and came back', () => {
 		edits.releaseDraftEdit(edit);
 		await vi.advanceTimersByTimeAsync(0);
 		expect(sent).toHaveLength(1);
-		expect(edits.draftEdit(key, { textMd: 'Server.' })).toBe(edit);
+		expect(edits.draftEdit(key, { textMd: 'Server.', sceneId: SCENE })).toBe(edit);
 		expect(edit.text).toBe('Typed, then the session ended.');
 		// Signed in again in another tab: the retry goes through.
 		await vi.advanceTimersByTimeAsync(2000);
