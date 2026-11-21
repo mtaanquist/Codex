@@ -57,7 +57,8 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
-const { withBilledUsage } = await import('../../src/lib/server/llm/providers/types');
+const { EndpointReplyError, withBilledUsage } =
+	await import('../../src/lib/server/llm/providers/types');
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
@@ -953,6 +954,28 @@ describe('the job', () => {
 		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(2.2, 6);
 		expect(prompts).toHaveLength(2);
 		expect(await statuses()).toEqual(['ready', 'discarded']);
+	});
+
+	it('keeps the real reason for a failure that would not be sent again anyway', async () => {
+		await configure({ spendCapUsd: 3.9 });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const started = await request({
+			scenes: [
+				{ sceneId: quay, brief: 'a' },
+				{ sceneId: crossing, brief: 'b' }
+			]
+		});
+		// Billed, with no room left, but the answer was not a reply: the job
+		// would not be run again, so "not sent" would be untrue.
+		whileWriting = async (n) => {
+			if (n === 2) {
+				throw withBilledUsage(new EndpointReplyError('The endpoint answered with an error page.'), {
+					promptTokens: 1000,
+					completionTokens: 1700
+				});
+			}
+		};
+		await expect(run(started)).rejects.toBeInstanceOf(EndpointReplyError);
 	});
 
 	it('asks nothing once earlier attempts of the job spent the cap', async () => {

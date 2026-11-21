@@ -70,11 +70,13 @@ export function draftEdit(id: string, stored: { textMd: string; sceneId: string 
 	const now = held.get(id);
 	if (now) {
 		now.releasedAt = null;
-		if (now.edit.conflict) now.conflictSeen = true;
 		const { edit } = now;
 		if (now.seq === 0 && edit.text === edit.saved && edit.saved !== stored.textMd) {
 			now.bases.reset(stored.textMd);
 			edit.text = edit.saved = stored.textMd;
+			edit.conflict = false;
+			edit.error = '';
+			now.conflictSeen = false;
 		}
 		return edit;
 	}
@@ -110,8 +112,9 @@ export function draftBaseHashes(edit: DraftEdit): string[] {
 
 async function save(id: string, entry: Held, keepalive: boolean): Promise<void> {
 	const { edit, bases } = entry;
-	// Refused, and the writer has been told: it would be refused again.
-	if (settledConflict(entry)) return;
+	// Refused because the draft changed elsewhere: it would be refused again
+	// until the writer loads the current text.
+	if (edit.conflict) throw new UnretryableSaveError('the draft changed elsewhere');
 	const sending = edit.text;
 	// Nothing to send: the server holds this text, and no save of other text
 	// is unaccounted for.
@@ -150,7 +153,6 @@ async function save(id: string, entry: Held, keepalive: boolean): Promise<void> 
 	if (!response.ok) {
 		edit.conflict = response.status === 409;
 		const shown = edit.onChange !== undefined;
-		if (edit.conflict && shown) entry.conflictSeen = true;
 		setError(edit, await apiErrorMessage(response, 'Could not save your changes to the draft.'));
 		// Not the writer's, or decided elsewhere: sending it again would fail
 		// the same way. With no card to say so, the edit is let go.
@@ -189,15 +191,16 @@ export function releaseDraftEdit(edit: DraftEdit): void {
 	edit.onChange = undefined;
 	edit.autosave.flushSoon();
 	const entry = byEdit.get(edit);
-	if (entry) entry.releasedAt = Date.now();
+	if (!entry) return;
+	entry.releasedAt = Date.now();
+	entry.conflictSeen = false;
 }
 
 /**
  * Text typed into a draft of this scene that was never saved, when that draft
  * is no longer the scene's (`currentId` is the one that is, if any): it was
  * kept or discarded in another window. The card shows it to be copied, and
- * drops the edit when the writer closes that. Nothing more of it is sent, and
- * the browser no longer asks before the page is left.
+ * drops the edit when the writer closes that. Nothing more of it is sent.
  */
 export function strandedDraftText(
 	sceneId: string,
@@ -211,10 +214,19 @@ export function strandedDraftText(
 			continue;
 		}
 		edit.conflict = true;
-		entry.conflictSeen = true;
 		return { id, text: edit.text };
 	}
 	return null;
+}
+
+/**
+ * The card is showing the writer that this draft changed or was decided
+ * elsewhere, or has stopped showing it. While it shows, the browser does not
+ * ask before the page is left: the reason is on screen.
+ */
+export function conflictShown(id: string, shown: boolean): void {
+	const entry = held.get(id);
+	if (entry) entry.conflictSeen = shown && entry.edit.conflict;
 }
 
 /** The draft was kept or discarded: nothing more of it is saved. */
@@ -244,10 +256,9 @@ function sweep() {
 	}
 }
 
-// An edit refused because the draft changed elsewhere, once the writer has
-// been shown that: sending it again would be refused again, and asking before
-// the page is left would ask for the rest of the page's life. The text stays
-// for the card.
+// An edit refused because the draft changed elsewhere, while a card shows the
+// writer that: asking before the page is left would ask again for something
+// already said on screen. The text stays for the card.
 function settledConflict(entry: Held): boolean {
 	return entry.edit.conflict && entry.conflictSeen;
 }

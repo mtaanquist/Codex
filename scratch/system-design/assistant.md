@@ -1387,8 +1387,8 @@ calls the gateway, which proxies through the egress guard.
   bill are left off a bounded request: reply-limit names
   (`max_completion_tokens`, `n_predict`, `max_tokens` and the like) at any
   depth, so `options.num_predict` as well, and `n` and `best_of` at the top
-  level and inside `options`, `extra_body` and `parameters` (elsewhere, as
-  in a `response_format` schema, they are left alone). Unbounded requests
+  level and inside `options`, `extra_body` and `parameters` (a
+  `response_format` subtree is never touched). Unbounded requests
   keep them all, so they cannot undo the limit the cost was
   counted at. A "Longest reply" equal to the draft's own figure counts as
   the draft's own. A reply cut off at the limit is kept as a ready draft
@@ -1448,11 +1448,14 @@ calls the gateway, which proxies through the egress guard.
   window closes the card with a line saying so, on a refused save as well
   as on a decision. Text typed there and not saved stays readable until
   that is closed, and is found again by scene if the card was away when
-  the save was refused (`strandedDraftText`). An open brief form is kept in
+  the save was refused (`strandedDraftText`). The browser asks before the
+  page is left with such text, except while a card is showing the refusal
+  (`conflictShown`). An open brief form is kept in
   `sessionStorage` until it is started, cancelled, or the writer signs out
   (`draft-forms.ts`; each field is read on its own, so an empty length does
   not lose the brief, and a draft reaching the scene another way does not
-  drop it).
+  drop it: asking again opens the form as it was left, with words typed
+  after `/draft` replacing the brief only).
 - [built] Chapter drafts (#1168, step 2): the same queue and table. The
   request (`/api/assistant/draft/chapter`: defaults, `estimate: true`, or
   the request itself) stages one `assistant_drafts` row per chosen scene with

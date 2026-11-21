@@ -1023,6 +1023,23 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 6 (2026-11-21)
+
+Small fixes from the sixth review of #1168, branch
+`fix/scene-draft-review-6` on `staging/scene-drafting`.
+
+- A brief kept behind a draft was overwritten when the writer asked again
+  without a reload: the form opened from the scene's defaults and the
+  remembering effect stored those. The form now restores what was stored
+  first.
+- "The writer has seen the refusal" was inferred from a card being attached
+  or from the stranded text being looked up. It is now set by the card
+  while the changed or gone view is on screen and cleared when it is not
+  (`conflictShown`), so the leave prompt is silent only then. A refused
+  edit stays unsaved in the queue's eyes and is not sent again.
+- Reply-size stripping skips `response_format` whole and knows a few more
+  names. `hasWaitingDrafts` had no caller left and was removed.
+
 ## Scene drafting, review round 5 (2026-11-21)
 
 Fixes from the fifth reviews of #1168, branch `fix/scene-draft-review-5` on
