@@ -24,6 +24,12 @@ export function checkProseLength(value: string): void {
 	if (value.length > MAX_PROSE_CHARS) error(413, 'that is too long to save');
 }
 
+// Postgres text cannot hold a null character, so a value carrying one is
+// refused here instead of failing in the insert.
+export function checkNoNull(value: string, what: string): void {
+	if (value.includes('\u0000')) error(400, `${what} must not contain a null character.`);
+}
+
 // A form field as a string: '' when it is missing.
 export function formText(data: FormData, key: string): string {
 	return String(data.get(key) ?? '');

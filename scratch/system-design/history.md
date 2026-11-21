@@ -1023,6 +1023,41 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 4 (2026-11-21)
+
+Fixes from the fourth reviews of #1168, branch `fix/scene-draft-review-4` on
+`staging/scene-drafting`.
+
+- Draft saves now use the scene save's rule instead of their own. Rounds 2
+  and 3 had grown an md5 `base`, a `sent` text for the page-hide save, a
+  list of versions saved over, and still called a lost answer followed by
+  more typing a change in another window. The request now carries the
+  hashes of every text sent and not answered plus the last acknowledged
+  one, and Fill and Add take the same list. The scene saver was not reused
+  as it stands: it is built around the scene PUT (title, markers, its own
+  conflict body, the editor's callbacks). Its hash bookkeeping was lifted
+  into `save-bases.ts` and both use it. A save is not skipped while a text
+  is unanswered, which also covers undoing back to the old text.
+- Not fixed, recorded in `assistant.md`: a page-hide save that puts the
+  base text back and overtakes an older save lets the older one land last.
+  The scene save has the same limit; telling them apart needs a counter,
+  not a content hash.
+- A draft decided in another window was a dead end on the card. The card
+  now reads the draft again on a 404 or 409 and before showing a ready one,
+  and closes with a plain line; unsaved text is shown read-only until the
+  writer closes it, not thrown away.
+- An empty length box made the whole stored form invalid (Svelte binds an
+  empty number input as null), which dropped a half-typed brief. Fields are
+  now read one at a time.
+- The waiting list polled by re-running an effect on the list prop, which
+  the page's own live refresh kept restarting before the wait ended, so it
+  never fired. The effect now hangs off a derived boolean.
+- Server: the discard of failed rows after the insert leaves the new rows
+  alone (a job can fail before the request returns); `n`, `best_of` and
+  nested reply limits are stripped on bounded requests; the capped note
+  gives figures instead of "reached the cap at about $0.00"; a paused
+  reply's resume asks `mayResend`.
+
 ## Scene drafting, review round 3 (2026-11-20)
 
 Fixes from the third reviews of #1168, branch `fix/scene-draft-review-3` on

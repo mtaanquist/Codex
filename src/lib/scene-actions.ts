@@ -48,12 +48,12 @@ export async function landSceneDraft(
 	draftId: string,
 	action: 'fill' | 'add',
 	text: string,
-	// The version of the draft the text was edited from.
-	base?: string
+	// Fingerprints of the texts this window has saved or may have saved.
+	baseHashes: string[]
 ) {
 	return await post<{ sceneId?: string; newSceneId?: string }>(
 		`/api/assistant/draft/${draftId}`,
-		{ action, text, base },
+		{ action, text, baseHashes },
 		'Could not add the draft.'
 	);
 }

@@ -685,13 +685,13 @@
 		draftId: string,
 		action: 'fill' | 'add',
 		text: string,
-		base: string
+		baseHashes: string[]
 	): Promise<string | null> {
 		if (typingPaused) return BUSY;
 		if (uploading()) return WAIT_UPLOADING;
 		return pauseTypingWhile(async () => {
 			if (!(await flushEditors())) return SAVE_FAILED;
-			const result = await landSceneDraftAction(draftId, action, text, base);
+			const result = await landSceneDraftAction(draftId, action, text, baseHashes);
 			if (!result.ok) return result.message;
 			const target = result.newSceneId ?? result.sceneId;
 			if (target) await openSceneKeepingPane(target);

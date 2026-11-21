@@ -19,12 +19,15 @@ function store(): Storage | null {
 	}
 }
 
-// valid says whether a stored value has the shape the form expects. One that
-// does not (written by an older version of the app, or by hand) is dropped.
+// parse makes the form from a stored value, field by field: a field that is
+// missing or not the type expected (the length box bound while empty, a value
+// from an older version of the app) takes its default, so one odd field never
+// costs the writer the brief they typed. It returns undefined only for a
+// value that is no form at all, which is then dropped.
 export function readDraftForm<T>(
 	kind: Kind,
 	id: string,
-	valid: (value: unknown) => value is T
+	parse: (value: unknown) => T | undefined
 ): T | undefined {
 	const key = `${PREFIX}${kind}.${id}`;
 	let value: unknown;
@@ -38,12 +41,22 @@ export function readDraftForm<T>(
 			value = null;
 		}
 	}
-	if (!valid(value)) {
-		dropDraftForm(kind, id);
-		return undefined;
-	}
-	memory.set(key, value);
-	return value;
+	const form = parse(value);
+	if (form === undefined) dropDraftForm(kind, id);
+	return form;
+}
+
+// A stored value as a plain object, for a parse function to read fields off.
+export function storedFields(value: unknown): Record<string, unknown> | undefined {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: undefined;
+}
+
+// A stored length in words: null when the box was empty or the value is not
+// a number, for the caller's default to stand in.
+export function storedWords(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 export function keepDraftForm(kind: Kind, id: string, value: unknown): void {

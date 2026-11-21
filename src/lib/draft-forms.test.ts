@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dropAllDraftForms, dropDraftForm, keepDraftForm, readDraftForm } from './draft-forms';
+import {
+	dropAllDraftForms,
+	dropDraftForm,
+	keepDraftForm,
+	readDraftForm,
+	storedFields,
+	storedWords
+} from './draft-forms';
 
 // A small sessionStorage, as the browser gives one.
 function fakeStorage(): Storage {
@@ -16,10 +23,15 @@ function fakeStorage(): Storage {
 	};
 }
 
-const hasBrief = (value: unknown): value is { brief: string } =>
-	typeof value === 'object' &&
-	value !== null &&
-	typeof (value as { brief?: unknown }).brief === 'string';
+// A form with a brief and a length, read field by field as the cards do.
+const hasBrief = (value: unknown) => {
+	const form = storedFields(value);
+	if (!form) return undefined;
+	return {
+		brief: typeof form.brief === 'string' ? form.brief : '',
+		...('targetWords' in form ? { targetWords: storedWords(form.targetWords) } : {})
+	};
+};
 
 afterEach(() => {
 	dropAllDraftForms();
@@ -51,16 +63,40 @@ describe('draft forms', () => {
 		expect(readDraftForm('scene', 's9', hasBrief)).toEqual({ brief: 'From before.' });
 	});
 
-	it('drops a stored form that is not the shape asked for', () => {
+	it('drops a stored value that is no form at all', () => {
 		const store = fakeStorage();
 		vi.stubGlobal('sessionStorage', store);
-		for (const raw of ['{"brief":7}', '"text"', 'null', '[1]', '{not json']) {
+		for (const raw of ['"text"', 'null', '[1]', '7', '{not json']) {
 			store.setItem('codex.draft-form.scene.s3', raw);
 			expect(readDraftForm('scene', 's3', hasBrief)).toBeUndefined();
 			expect(store.getItem('codex.draft-form.scene.s3')).toBeNull();
 		}
-		keepDraftForm('scene', 's4', { other: true });
-		expect(readDraftForm('scene', 's4', hasBrief)).toBeUndefined();
+	});
+
+	it('keeps the brief when another field is odd', () => {
+		const store = fakeStorage();
+		vi.stubGlobal('sessionStorage', store);
+		// The length box was empty when the card went: Svelte binds that as
+		// null. From memory, as on a tab switch...
+		keepDraftForm('scene', 's5', { brief: 'Half typed.', targetWords: null });
+		expect(readDraftForm('scene', 's5', hasBrief)).toEqual({
+			brief: 'Half typed.',
+			targetWords: null
+		});
+		// ...and from the store, as on a reload.
+		for (const targetWords of ['null', '"900"', '{}']) {
+			store.setItem(
+				'codex.draft-form.scene.s6',
+				`{"brief":"Half typed.","targetWords":${targetWords}}`
+			);
+			expect(readDraftForm('scene', 's6', hasBrief)).toEqual({
+				brief: 'Half typed.',
+				targetWords: null
+			});
+		}
+		expect(store.getItem('codex.draft-form.scene.s6')).not.toBeNull();
+		expect(storedWords(900)).toBe(900);
+		expect(storedWords(Number.NaN)).toBeNull();
 	});
 
 	it('clears every form on sign-out and leaves other keys alone', () => {

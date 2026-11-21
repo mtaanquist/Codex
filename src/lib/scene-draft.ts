@@ -125,6 +125,10 @@ export function chapterCapAdvice(mayThink: boolean): string {
 		: 'Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.';
 }
 
+// What an edit or a decision on a draft that is no longer waiting is told.
+export const DRAFT_DECIDED_ELSEWHERE =
+	'This draft was already kept or discarded, or is not written yet. Reload the page to see it as it is now.';
+
 // What an edit or a decision made from an older copy of a draft is told.
 export const DRAFT_CHANGED_ELSEWHERE = 'This draft was changed in another window.';
 
@@ -158,10 +162,6 @@ export type SceneDraftView = {
 	targetWords: number;
 	pov: string | null;
 	textMd: string;
-	// A fingerprint of textMd as stored. The panel sends it back with an edit
-	// or a decision, so one made from an older copy (another window) is
-	// refused instead of replacing the newer text.
-	textVersion: string;
 	note: string | null;
 	jobId: string | null;
 	createdAt: string;

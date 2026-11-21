@@ -7,14 +7,22 @@
 	import { createConfirmGuard } from '#lib/confirm-guard';
 	import {
 		adoptStored,
+		draftBaseHashes,
 		draftEdit,
 		dropDraftEdit,
 		releaseDraftEdit,
 		type DraftEdit
 	} from '#lib/draft-edits';
-	import { dropDraftForm, keepDraftForm, readDraftForm } from '#lib/draft-forms';
+	import {
+		dropDraftForm,
+		keepDraftForm,
+		readDraftForm,
+		storedFields,
+		storedWords
+	} from '#lib/draft-forms';
 	import {
 		DRAFT_CHANGED_ELSEWHERE,
+		FALLBACK_DRAFT_WORDS,
 		MAX_DRAFT_BRIEF_CHARS,
 		MAX_DRAFT_POV_CHARS,
 		MAX_DRAFT_WORDS,
@@ -55,12 +63,12 @@
 		// Keeps the draft: into the scene itself (fill) or as a new scene after
 		// it (add). The page lands pending saves first and opens the result.
 		// Resolves to a message when it did not go through.
-		// base is the version of the draft the text was edited from.
+		// baseHashes are the texts this window has saved (see save-bases).
 		onLand: (
 			draftId: string,
 			action: 'fill' | 'add',
 			text: string,
-			base: string
+			baseHashes: string[]
 		) => Promise<string | null>;
 		// Called once a draft is kept or discarded, so a list of the chapter's
 		// drafts can drop it.
@@ -72,7 +80,7 @@
 		onClose?: () => void;
 	} = $props();
 
-	type View = 'hidden' | 'loading' | 'form' | 'draft';
+	type View = 'hidden' | 'loading' | 'form' | 'draft' | 'gone';
 	let view = $state<View>('hidden');
 	let draft = $state<SceneDraftView | null>(null);
 	let card = $state<HTMLDivElement>();
@@ -81,18 +89,19 @@
 
 	// The brief form. It is remembered as it is typed (see draft-forms).
 	type OpenForm = { brief: string; targetWords: number; pov: string; sceneTitle: string | null };
-	function isOpenForm(value: unknown): value is OpenForm {
-		if (typeof value !== 'object' || value === null) return false;
-		const form = value as Record<string, unknown>;
-		return (
-			typeof form.brief === 'string' &&
-			typeof form.targetWords === 'number' &&
-			typeof form.pov === 'string' &&
-			(form.sceneTitle === null || typeof form.sceneTitle === 'string')
-		);
+	function parseOpenForm(value: unknown): OpenForm | undefined {
+		const form = storedFields(value);
+		if (!form) return undefined;
+		return {
+			brief: typeof form.brief === 'string' ? form.brief : '',
+			// Empty while the writer was retyping it: the usual length stands in.
+			targetWords: storedWords(form.targetWords) ?? FALLBACK_DRAFT_WORDS,
+			pov: typeof form.pov === 'string' ? form.pov : '',
+			sceneTitle: typeof form.sceneTitle === 'string' ? form.sceneTitle : null
+		};
 	}
 	let brief = $state('');
-	let targetWords = $state(800);
+	let targetWords = $state(FALLBACK_DRAFT_WORDS);
 	let pov = $state('');
 	let sceneTitle = $state<string | null>(null);
 	let estimate = $state<SceneDraftEstimate | null>(null);
@@ -110,9 +119,19 @@
 	let landing = $state<'fill' | 'add' | 'discard' | null>(null);
 	// The draft could not be read back; the card keeps what it has and retries.
 	let unread = $state(false);
+	// The draft the card showed was kept or discarded in another window. text
+	// is what the writer had typed and not saved, left for them to copy; next
+	// is the scene's newer draft, shown when they close this.
+	let gone = $state<{ text: string; next: SceneDraftView | null } | null>(null);
+	const GONE_MESSAGE = 'This draft was already kept or discarded in another window.';
 
 	const label = $derived(sceneTitle ? `"${sceneTitle}"` : 'this scene');
 	const running = $derived(draft?.status === 'pending' || draft?.status === 'running');
+	// The form asks ("Draft this scene"); a draft under way or written is
+	// named for what it is.
+	const heading = $derived(
+		view === 'form' || view === 'loading' ? 'Draft' : running ? 'Drafting' : 'Draft of'
+	);
 	// The job as the activity center follows it, for its Stop.
 	const job = $derived(
 		draft?.jobId ? trackedJobs.list.find((tracked) => tracked.id === draft?.jobId) : undefined
@@ -177,8 +196,44 @@
 		changedElsewhere = edit?.conflict ?? false;
 		// The card's copy of the draft follows each save, so it is never older
 		// than what the box holds.
-		if (edit && draft?.status === 'ready' && draft.textVersion !== edit.version) {
-			draft = { ...draft, textMd: edit.saved, textVersion: edit.version };
+		if (edit && draft?.status === 'ready' && draft.textMd !== edit.saved) {
+			draft = { ...draft, textMd: edit.saved };
+		}
+	}
+
+	// Whether the card's draft is still the scene's draft, waiting as it was.
+	function stillWaiting(fresh: SceneDraftView | null): boolean {
+		return fresh !== null && fresh.id === draft?.id && fresh.status === draft.status;
+	}
+	function hasUnsavedText(): boolean {
+		return edit !== null && text !== edit.saved;
+	}
+	// The card's draft was decided in another window: nothing more of it is
+	// saved, and the card says so. Text the writer had not saved stays on the
+	// card, read-only, until they close it.
+	async function showGone(next: SceneDraftView | null) {
+		const unsaved = hasUnsavedText() ? text : '';
+		if (draft) dropDraftEdit(draft.id);
+		edit = null;
+		landing = null;
+		await step(() => {
+			gone = { text: unsaved, next };
+			draft = null;
+			error = '';
+			view = 'gone';
+		});
+		onDecided?.();
+		card?.focus();
+	}
+	async function closeGone() {
+		const next = gone?.next ?? null;
+		gone = null;
+		if (next) {
+			await step(() => show(next));
+			card?.focus();
+		} else {
+			view = 'hidden';
+			onClose?.();
 		}
 	}
 	// Leaves the draft's edit state to save on its own.
@@ -262,6 +317,7 @@
 	// Opens the brief form with what the scene suggests, or with the brief of a
 	// draft that failed, to try again.
 	async function openForm(typed: string, from?: SceneDraftView) {
+		counts += 1;
 		error = '';
 		estimate = null;
 		if (from) {
@@ -298,7 +354,7 @@
 	});
 
 	onMount(() => {
-		const open = canDraft ? readDraftForm('scene', sceneId, isOpenForm) : undefined;
+		const open = canDraft ? readDraftForm('scene', sceneId, parseOpenForm) : undefined;
 		if (open) {
 			({ brief, targetWords, pov, sceneTitle } = open);
 			view = 'form';
@@ -342,14 +398,35 @@
 				briefEl?.focus();
 				return;
 			}
-			// A draft already in the box stays as the writer has it: it is brought
-			// into view, not shown again from an older copy.
-			if (view === 'draft' && draft?.status === 'ready') {
+			if (view === 'gone') {
 				await reveal();
 				card?.focus();
 				return;
 			}
-			const found = draft ?? (await readDraftSurely());
+			// A draft already in the box stays as the writer has it: it is brought
+			// into view, not shown again from an older copy. It is read again only
+			// to see that it still waits; one decided in another window meanwhile
+			// must not stand in the way of what was asked.
+			let found: SceneDraftView | null;
+			if (view === 'draft' && draft?.status === 'ready') {
+				const fresh = await readDraftSurely();
+				if (!alive) return;
+				if (stillWaiting(fresh)) {
+					await reveal();
+					card?.focus();
+					return;
+				}
+				if (hasUnsavedText()) {
+					await showGone(fresh);
+					return;
+				}
+				dropDraftEdit(draft.id);
+				edit = null;
+				draft = null;
+				view = 'hidden';
+				onDecided?.();
+				found = fresh;
+			} else found = draft ?? (await readDraftSurely());
 			if (!alive) return;
 			if (found) {
 				show(found);
@@ -377,12 +454,16 @@
 		else if (guard.allows(event)) void run();
 	}
 
-	// Counts what the draft would send before anything runs.
+	// Counts what the draft would send before anything runs. Counts are
+	// numbered: one that comes back after the form was opened again, or for a
+	// form that has changed, is the cost of something else.
+	let counts = 0;
 	async function checkCost() {
 		if (!formReady || working) return;
 		working = true;
 		error = '';
 		estimate = null;
+		const mine = ++counts;
 		const counting = JSON.stringify(formBody());
 		try {
 			const response = await fetch('/api/assistant/draft', {
@@ -392,9 +473,7 @@
 			});
 			if (response.ok) {
 				const counted = (await response.json()) as SceneDraftEstimate;
-				// The form changed while it was counted (a new "/draft ..." typed
-				// in the chat): this is the cost of something else.
-				if (JSON.stringify(formBody()) === counting) {
+				if (mine === counts && view === 'form' && JSON.stringify(formBody()) === counting) {
 					estimate = counted;
 					guard.shown();
 				}
@@ -444,17 +523,12 @@
 			error = 'Could not load the current text. Check your connection and try again.';
 			return;
 		}
-		if (!fresh || !edit || fresh.id !== draft?.id || fresh.status !== 'ready') {
+		if (!edit || !stillWaiting(fresh)) {
 			// Kept or discarded elsewhere: there is nothing to load.
-			if (fresh !== undefined) {
-				if (draft) dropDraftEdit(draft.id);
-				edit = null;
-				if (fresh) show(fresh);
-				else await close();
-			}
+			await showGone(fresh);
 			return;
 		}
-		adoptStored(edit, fresh);
+		adoptStored(edit, fresh!);
 		draft = fresh;
 		text = edit.text;
 		error = '';
@@ -473,7 +547,7 @@
 		let failed: string | null = held.conflict ? DRAFT_CHANGED_ELSEWHERE : null;
 		// Keeping the draft carries the text as it stands, in case that save did
 		// not get through.
-		failed ??= await onLand(id, action, text, held.version);
+		failed ??= await onLand(id, action, text, draftBaseHashes(held));
 		// Adding a scene opens it, which takes this card away: say so first.
 		if (!failed) {
 			dropDraftEdit(id);
@@ -488,9 +562,15 @@
 				held.error = failed;
 				mirrorEdit();
 			} else error = failed;
-			// The scene may have gained text, so Fill may no longer be offered.
+			// The scene may have gained text, so Fill may no longer be offered;
+			// or the draft was decided in another window.
 			const fresh = await readDraft();
-			if (alive && fresh && fresh.id === id) draft = { ...fresh };
+			if (!alive) return;
+			if (fresh !== undefined && !stillWaiting(fresh)) {
+				await showGone(fresh);
+				return;
+			}
+			if (fresh) draft = { ...fresh, textMd: held.saved };
 			await tick();
 			card?.focus();
 			return;
@@ -517,6 +597,13 @@
 		if (!alive) return;
 		landing = null;
 		if (!result.ok) {
+			// Kept or discarded in another window already.
+			const fresh = await readDraft();
+			if (!alive) return;
+			if (fresh !== undefined && (!fresh || fresh.id !== id)) {
+				await showGone(fresh);
+				return;
+			}
 			error = result.message;
 			await tick();
 			card?.focus();
@@ -549,12 +636,30 @@
 	>
 		<div class="assist-card-head">
 			<Icon name="sparkles" size={13} />
-			{view === 'draft' && draft?.status === 'ready' ? 'Draft of' : 'Draft'}
+			{heading}
 			{label}
 		</div>
 
 		{#if view === 'loading'}
 			<p class="assist-card-note">Loading...</p>
+		{:else if view === 'gone' && gone}
+			<p class="assist-card-note" role="status">{GONE_MESSAGE}</p>
+			{#if gone.text}
+				<div class="field">
+					<label for="draft-gone-text">
+						What you had typed here was not saved. Copy anything you want to keep.
+					</label>
+					<textarea
+						id="draft-gone-text"
+						class="textarea draft-text"
+						rows="8"
+						readonly
+						value={gone.text}></textarea>
+				</div>
+			{/if}
+			<div class="assist-card-actions">
+				<button class="btn" type="button" onclick={closeGone}>Close</button>
+			</div>
 		{:else if view === 'form'}
 			<div class="field">
 				<label for="draft-brief">What happens in this scene</label>

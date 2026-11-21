@@ -2336,6 +2336,31 @@ describe('gateway refusal and paused turns (#1083)', () => {
 		expect(seen[1].at(-1)).toEqual({ role: 'assistant', content: 'First, ', raw: blocks });
 	});
 
+	it('asks the caller before resuming a paused turn, as before a retry', async () => {
+		await configure(true);
+		const paused = { content: 'x', toolCalls: [], finishReason: 'paused' as const, raw: [] };
+		const { provider, seen } = queued([paused, { content: 'y', toolCalls: [] }]);
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, role: 'chat', messages: [], mayResend: () => false },
+				{ provider, http: noHttp }
+			)
+		).rejects.toThrow(/stopped partway/);
+		expect(seen).toHaveLength(1);
+
+		const { storyId } = await seedStoryScene('Text.');
+		const tools = queued([paused, { content: 'y', toolCalls: [] }]);
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, storyId, role: 'chat', enableTools: true, messages: [], mayResend: () => false },
+				{ provider: tools.provider, http: noHttp }
+			)
+		).rejects.toThrow(/stopped partway/);
+		expect(tools.seen).toHaveLength(1);
+	});
+
 	it('resumes a paused round of the tool loop', async () => {
 		await configure(true);
 		const { storyId } = await seedStoryScene('Text.');

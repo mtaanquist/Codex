@@ -13,6 +13,7 @@ import {
 	requestChapterDraft
 } from '#lib/server/scene-drafts';
 import { isUuid } from '#lib/slug';
+import { checkNoNull } from '#lib/server/validation';
 import { clampDraftWords, MAX_DRAFT_BRIEF_CHARS, MAX_DRAFT_POV_CHARS } from '#lib/scene-draft';
 
 // A chapter draft: the Assistant drafts the chapter's scenes one by one, each
@@ -69,6 +70,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (brief.length > MAX_DRAFT_BRIEF_CHARS) error(400, 'That brief is too long.');
 	const pov = typeof payload.pov === 'string' ? payload.pov.trim() : '';
 	if (pov.length > MAX_DRAFT_POV_CHARS) error(400, 'That point of view is too long.');
+	checkNoNull(brief, 'The brief');
+	checkNoNull(pov, 'The point of view');
 	if (payload.targetWords !== undefined && typeof payload.targetWords !== 'number') {
 		error(400, 'The length must be a number of words.');
 	}
@@ -81,6 +84,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 		const sceneBrief = typeof scene.brief === 'string' ? scene.brief.trim() : '';
 		if (sceneBrief.length > MAX_DRAFT_BRIEF_CHARS) error(400, 'A scene brief is too long.');
+		checkNoNull(sceneBrief, 'A scene brief');
 		scenes.push({ sceneId: scene.sceneId, brief: sceneBrief });
 	}
 	const input = {

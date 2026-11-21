@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { isHttpError } from '@sveltejs/kit';
 import type pg from 'pg';
@@ -13,6 +12,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
+import { textHash } from '../../src/lib/text-hash';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import {
 	WriterStopError,
@@ -133,7 +133,13 @@ let crossing: string;
 let bank: string;
 let later: string;
 
-async function configure(extra: { spendCapUsd?: number; enabled?: boolean } = {}) {
+async function configure(
+	extra: {
+		spendCapUsd?: number;
+		enabled?: boolean;
+		tuning?: { coauthor: { maxTokens: number } };
+	} = {}
+) {
 	await saveAccountLlmConfig(db, ownerId, {
 		enabled: true,
 		assistantName: '',
@@ -259,6 +265,24 @@ async function request(extra: Parameters<typeof input>[0] = {}) {
 	return result;
 }
 
+it('keeps new chapter drafts whose run has failed by the time it is queued', async () => {
+	const result = await requestChapterDraft(db, input(), {
+		queue: async (job) => {
+			await db
+				.update(assistantDrafts)
+				.set({ status: 'failed', note: 'The endpoint was down.' })
+				.where(inArray(assistantDrafts.id, job.draftIds));
+			return job.jobId;
+		}
+	});
+	if (!result.ok) throw new Error(result.reason);
+	const rows = await db
+		.select({ status: assistantDrafts.status })
+		.from(assistantDrafts)
+		.where(inArray(assistantDrafts.id, result.draftIds));
+	expect(rows.map((row) => row.status)).toEqual(['failed', 'failed', 'failed']);
+});
+
 const run = (
 	started: { draftIds: string[]; jobId: string },
 	extra: { signal?: AbortSignal; userId?: string } = {}
@@ -276,10 +300,10 @@ const run = (
 		deps
 	);
 
-// The version of a draft's stored text, as the panel sends it back.
+// The fingerprint of a draft's stored text, as the panel sends it back.
 const baseFor = async (id: string) => {
 	const [row] = await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id));
-	return createHash('md5').update(row.textMd, 'utf8').digest('hex');
+	return [textHash(row.textMd)];
 };
 const draftRows = () =>
 	db
@@ -453,6 +477,19 @@ describe('the chapter estimate', () => {
 		expect(maxTokensSent).toEqual([16_384, 16_384, 16_384]);
 	});
 
+	it('counts the mark on a carried draft too long to ride along whole', async () => {
+		// At 1500 tokens a draft is counted as 6000 characters, all of which
+		// ride along. One token more and it is cut to its last 6000, with a
+		// mark in front that it was shortened.
+		const tokensAt = async (maxTokens: number) => {
+			await configure({ tuning: { coauthor: { maxTokens } } });
+			const result = await chapterDraftEstimate(db, input());
+			if (!result.ok) throw new Error(result.reason);
+			return result.estimate.estTokens;
+		};
+		expect(await tokensAt(1501)).toBeGreaterThan(await tokensAt(1500));
+	});
+
 	it('prices the whole run and holds it against the cap', async () => {
 		await configure({ spendCapUsd: 20 });
 		// Up to 1800 tokens out a scene at $0.01 is $18 a scene.
@@ -618,6 +655,19 @@ describe('the endpoint', () => {
 			event(user, { method: 'GET', path: `/?storyId=${storyId}&chapterId=${chapter}` })
 		);
 
+	it('refuses a null character in a brief or the point of view', async () => {
+		const owner = { id: ownerId };
+		for (const odd of [
+			{ brief: 'Ilse\u0000flees.' },
+			{ pov: 'Il\u0000se' },
+			{ scenes: [{ sceneId: quay, brief: 'Qu\u0000ay.' }] }
+		]) {
+			const answer = await call(chapterRoute.POST, event(owner, { body: { ...body(), ...odd } }));
+			expect(answer.status).toBe(400);
+		}
+		expect(await db.select().from(assistantDrafts)).toEqual([]);
+	});
+
 	it('answers the defaults, the estimate and the request for the owner', async () => {
 		const owner = { id: ownerId };
 		const defaults = await call(
@@ -697,7 +747,7 @@ describe('the endpoint', () => {
 				{ id: ownerId },
 				{
 					params: { id: started.draftIds[0] },
-					body: { action: 'fill', base: await baseFor(started.draftIds[0]) }
+					body: { action: 'fill', baseHashes: await baseFor(started.draftIds[0]) }
 				}
 			)
 		);
@@ -730,7 +780,7 @@ describe('the endpoint', () => {
 				decideRoute.POST,
 				event(stranger, {
 					params: { id: started.draftIds[0] },
-					body: { action, base: await baseFor(started.draftIds[0]) }
+					body: { action, baseHashes: await baseFor(started.draftIds[0]) }
 				})
 			);
 			expect(result.status).toBe(404);
@@ -856,7 +906,13 @@ describe('the job', () => {
 			[started.jobId, ownerId]
 		);
 		const result = await run(started);
-		expect(result).toMatchObject({ drafted: 0, total: 3, ended: 'capped' });
+		expect(result).toMatchObject({
+			drafted: 0,
+			total: 3,
+			ended: 'capped',
+			cappedNote:
+				'The next request could cost up to $1.80. This job has spent about $5.90 and your spend cap is $6.00, so it was not sent. Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.'
+		});
 		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(5.9, 6);
 		expect(prompts).toEqual([]);
 		expect(await statuses()).toEqual(['discarded', 'discarded', 'discarded']);
