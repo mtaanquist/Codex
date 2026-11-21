@@ -154,12 +154,17 @@ test('a writer connects an app, disconnects it, then makes and revokes a token',
 	await tokenForm.getByLabel('Token name').fill('E2E Script');
 	await tokenForm.getByLabel('Confirm your password').fill('not-the-password');
 	await tokenForm.getByRole('button', { name: 'Create token' }).click();
-	await expect(page.getByText('That password is not right.')).toBeVisible();
+	// The refusal shows where the writer is looking, and the name is kept.
+	await expect(tokenForm.getByText('That password is not right.')).toBeInViewport();
 	await expect(page.getByLabel('Your new token')).toHaveCount(0);
+	await expect(tokenForm.getByLabel('Token name')).toHaveValue('E2E Script');
 
-	await tokenForm.getByLabel('Token name').fill('E2E Script');
 	await tokenForm.getByLabel('Confirm your password').fill('e2e-password');
 	await tokenForm.getByRole('button', { name: 'Create token' }).click();
+	// The token is shown once, so the page brings it into view.
+	await expect(page.getByLabel('Your new token')).toBeInViewport({ ratio: 1 });
+	await expect(page.getByLabel('Your new token')).toBeFocused();
+	await expect(tokenForm.getByLabel('Token name')).toHaveValue('');
 	const personal = await page.getByLabel('Your new token').inputValue();
 	expect(personal).toMatch(/^cdx_pat_/);
 	const personalBearer = { authorization: `Bearer ${personal}` };

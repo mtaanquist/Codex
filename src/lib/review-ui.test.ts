@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
 	nudgeMarkers,
 	authorColor,
+	appAuthorParts,
 	authorInitials,
+	avatarInitials,
 	authorKey,
 	roleLabel,
 	reviewMarks,
@@ -77,6 +79,32 @@ describe('authorColor / authorKey / authorInitials', () => {
 		expect(authorInitials('Jo Reeve')).toBe('JR');
 		expect(authorInitials('Mara')).toBe('MA');
 		expect(authorInitials('   ')).toBe('?');
+	});
+
+	it('names an app by its own name, with the host apart', () => {
+		expect(appAuthorParts('Writing Desk (app.example)')).toEqual({
+			name: 'Writing Desk',
+			host: 'app.example'
+		});
+		expect(appAuthorParts('My script (personal token)')).toEqual({
+			name: 'My script',
+			host: 'personal token'
+		});
+		// A name with brackets of its own keeps them.
+		expect(appAuthorParts('Desk (beta) (app.example)')).toEqual({
+			name: 'Desk (beta)',
+			host: 'app.example'
+		});
+		// An app with no name of its own is shown by its host alone.
+		expect(appAuthorParts('app.example')).toEqual({ name: 'app.example', host: null });
+	});
+
+	it('takes an apps initials from its name, not its host', () => {
+		const app = (name: string) => ({ isOwner: false, isAssistant: false, isApp: true, name });
+		expect(avatarInitials(app('Writing Desk (app.example)'))).toBe('WD');
+		expect(avatarInitials(app('W (app.example)'))).toBe('W');
+		expect(avatarInitials(app('Claude (claude.ai)'))).toBe('CL');
+		expect(avatarInitials({ isOwner: false, isAssistant: false, name: 'Jo (Reeve)' })).toBe('J(');
 	});
 });
 

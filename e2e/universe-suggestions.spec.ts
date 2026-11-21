@@ -35,7 +35,7 @@ test('a writer accepts one suggested entry and dismisses another', async ({ page
 			[
 				'character',
 				'Old Marit',
-				'The lamplighter on the quay.',
+				'The lamplighter on the quay.\nShe keeps the harbour light.',
 				'The Quay: "She lit the lantern."'
 			],
 			['place', 'Saltmere', null, null]
@@ -57,6 +57,11 @@ test('a writer accepts one suggested entry and dismisses another', async ({ page
 	const marit = page.locator('.list-row', { hasText: 'Old Marit' });
 	await expect(marit).toContainText('Character. Suggested by E2E Desk (localhost).');
 	await expect(marit).toContainText('The lamplighter on the quay.');
+	// A description in several lines keeps them.
+	await expect(marit.getByText('She keeps the harbour light.')).toHaveCSS(
+		'white-space',
+		'pre-line'
+	);
 	await expect(marit).toContainText('Seen in: The Quay');
 
 	await marit.getByRole('button', { name: 'Accept Old Marit' }).click();

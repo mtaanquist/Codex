@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { authorColor, authorInitials, roleLabel, type AuthorRef } from '#lib/review-ui';
+	import { authorColor, avatarInitials, roleLabel, type AuthorRef } from '#lib/review-ui';
 
 	let { author, size = 26 }: { author: AuthorRef; size?: number } = $props();
 
@@ -23,6 +23,6 @@
 	{#if author.isAssistant}
 		<Icon name="sparkles" size={Math.round(size * 0.56)} fill />
 	{:else}
-		{authorInitials(author.name)}
+		{avatarInitials(author)}
 	{/if}
 </span>

@@ -1023,6 +1023,44 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, review round 1: app side fixes (2026-11-21)
+
+Part of #1175, branch `fix/mcp-app-side-review` on `staging/mcp-endpoint`. No
+migration of its own: the indexes this review asked for went into 0100 with
+the tools batch.
+
+- Review cards. The name, the host and the "App" chip shared one nowrap line
+  that cut from the right, so a long name hid the two parts that say what
+  wrote the note. The name and chip are now a flex line where only the name
+  gives way (`.rv-who-line`), and the host is a line of its own that wraps
+  (`.rv-who-host`). The views still carry one label ("Name (host)", from
+  `clientDisplayName`); `appAuthorParts` in `review-ui.ts` takes it apart, so
+  the server shape did not change. Avatar initials come from the name alone.
+  The Suggestions list and the draft card put the label in wrapping text and
+  needed nothing.
+- An app's note, and its replies, render through `renderReplyMarkdown`, the
+  renderer used for the Assistant: raw HTML escaped, images as their alt
+  text, links limited to http, https and mailto. A suggested entry's
+  description keeps its line breaks (it stays plain text).
+- The personal token form is enhanced. A refusal keeps the name; a new token
+  is scrolled into view, focused and selected.
+- A split proposal that can no longer be placed tells the writer one
+  sentence, whatever the locating code said (its wording is for the program
+  that proposed).
+- `decideEntityProposal` and `decideSplitProposal` take the universe of the
+  page and filter on it in the query that finds the proposal. Before, the
+  entity decision committed and was compared afterwards, and the split had no
+  check.
+- Suggestions uses `FormStatus`; the scene link in a split row is underlined
+  in the body colour like the other prose links (`.list-title a`).
+- Help: an app's notes show its address under its name, a personal token's
+  show "personal token"; suggested edits, suggested entries, proposed splits
+  and undecided drafts are not exported (review comment threads are, through
+  `export-reviews.ts`, an app's included).
+- Not done here, to be filed: focus and an announcement after each decision
+  on the Suggestions page, disconnecting an app while the admin switch is
+  off, and a sign elsewhere that something is waiting.
+
 ## MCP endpoint, review round 1: endpoint and tools fixes (2026-11-21)
 
 Part of #1175, branch `fix/mcp-tools-review` on `staging/mcp-endpoint`,

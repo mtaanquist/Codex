@@ -571,6 +571,12 @@ Three words, three meanings; keep them straight:
 
 A thing that is both a label and a control is a chip, not a pill.
 
+An author's name on a review card is `.rv-who-line`: the name
+(`.rv-who-name`, which is the part that truncates) and the role chip
+(`.rv-role`, which never shrinks). An app's host goes on its own line under
+it (`.rv-who-host`) and wraps instead of being cut. Do not put the chip
+inside the truncating element.
+
 The remaining scoped spellings (`.role-tag`, `.nav-badge`, `.tfa-badge`,
 ...) are legacy; do not add new ones.
 

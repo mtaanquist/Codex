@@ -39,6 +39,20 @@ export function roleLabel(author: AuthorRef): string {
 	return author.isAssistant ? 'Assistant' : author.isOwner ? 'Author' : 'Reviewer';
 }
 
+// An app's label is its name with its host in brackets ("Desk (app.example)",
+// see clientDisplayName), or the host alone when it gave no name. The two
+// are shown apart on a card, so a long name cannot push the host out of view.
+export function appAuthorParts(label: string): { name: string; host: string | null } {
+	const match = /^(.*) \(([^()]*)\)$/.exec(label.trim());
+	return match ? { name: match[1], host: match[2] } : { name: label.trim(), host: null };
+}
+
+// The initials on an author's avatar. An app's come from its own name; its
+// host is not part of what it is called.
+export function avatarInitials(author: AuthorRef): string {
+	return authorInitials(author.isApp ? appAuthorParts(author.name).name : author.name);
+}
+
 export function authorInitials(name: string): string {
 	const parts = name.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) return '?';

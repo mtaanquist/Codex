@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { withQuery } from '#lib/href';
+	import FormStatus from './FormStatus.svelte';
 	import type { EntityProposalView, SplitProposalView } from '#lib/server/proposals';
 
 	// What the Assistant or a connected app proposed for this universe and the
@@ -26,12 +27,7 @@
 	};
 </script>
 
-{#if message}
-	<p class="form-error" role="alert">{message}</p>
-{/if}
-{#if done}
-	<p class="form-saved" role="status">{done}</p>
-{/if}
+<FormStatus block error={message || null} success={done || null} />
 
 <div class="admin-block">
 	<div class="admin-block-head">
@@ -57,7 +53,7 @@
 							<div class="list-title">{entry.name}</div>
 							<div class="list-sub">{KIND[entry.kind]}. Suggested by {entry.from}.</div>
 							{#if entry.description}
-								<div class="list-sub">{entry.description}</div>
+								<div class="list-sub keep-lines">{entry.description}</div>
 							{/if}
 							{#if entry.seenIn}
 								<div class="list-sub">Seen in: {entry.seenIn}</div>
@@ -146,3 +142,10 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* A description is plain text that may come in several lines. */
+	.keep-lines {
+		white-space: pre-line;
+	}
+</style>

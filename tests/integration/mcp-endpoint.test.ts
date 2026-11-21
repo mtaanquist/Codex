@@ -1934,7 +1934,9 @@ describe('suggest_entity', () => {
 		const second = await connect(alice.userId, 'Second');
 		expect((await suggest(second, { kind: 'place' })).text).toContain('already suggested');
 		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).entities;
-		expect(await decideEntityProposal(db, alice.userId, waiting.id, 'dismiss')).toMatchObject({
+		expect(
+			await decideEntityProposal(db, alice.userId, alice.universeId, waiting.id, 'dismiss')
+		).toMatchObject({
 			ok: true,
 			entityId: null
 		});
@@ -1977,13 +1979,23 @@ describe('suggest_entity', () => {
 		const [marit, saltmere] = entities;
 		// Another writer cannot decide it, by either answer.
 		for (const decision of ['accept', 'dismiss'] as const) {
-			expect((await decideEntityProposal(db, bob.userId, marit.id, decision)).ok).toBe(false);
+			expect(
+				(await decideEntityProposal(db, bob.userId, alice.universeId, marit.id, decision)).ok
+			).toBe(false);
 		}
-		expect((await decideEntityProposal(db, alice.userId, MISSING, 'accept')).ok).toBe(false);
+		expect(
+			(await decideEntityProposal(db, alice.userId, alice.universeId, MISSING, 'accept')).ok
+		).toBe(false);
 		expect(await db.select().from(characters).where(eq(characters.name, 'Old Marit'))).toEqual([]);
 
-		const accepted = await decideEntityProposal(db, alice.userId, marit.id, 'accept');
-		expect(accepted).toMatchObject({ ok: true, universeId: alice.universeId });
+		const accepted = await decideEntityProposal(
+			db,
+			alice.userId,
+			alice.universeId,
+			marit.id,
+			'accept'
+		);
+		expect(accepted).toMatchObject({ ok: true, entityId: expect.any(String) });
 		const [created] = await db.select().from(characters).where(eq(characters.name, 'Old Marit'));
 		expect(created).toMatchObject({
 			id: accepted.ok ? accepted.entityId : '',
@@ -1992,7 +2004,9 @@ describe('suggest_entity', () => {
 			summaryMd: 'The lamplighter on the quay.'
 		});
 		// Decided once.
-		expect((await decideEntityProposal(db, alice.userId, marit.id, 'accept')).ok).toBe(false);
+		expect(
+			(await decideEntityProposal(db, alice.userId, alice.universeId, marit.id, 'accept')).ok
+		).toBe(false);
 		expect(await db.select().from(characters).where(eq(characters.name, 'Old Marit'))).toHaveLength(
 			1
 		);
@@ -2001,7 +2015,13 @@ describe('suggest_entity', () => {
 		await db
 			.insert(places)
 			.values({ universeId: alice.universeId, ownerId: alice.userId, name: 'Saltmere' });
-		const late = await decideEntityProposal(db, alice.userId, saltmere.id, 'accept');
+		const late = await decideEntityProposal(
+			db,
+			alice.userId,
+			alice.universeId,
+			saltmere.id,
+			'accept'
+		);
 		expect(late).toMatchObject({ ok: false, code: 'conflict' });
 		expect(await db.select().from(places).where(eq(places.name, 'Saltmere'))).toHaveLength(1);
 	});
@@ -2009,7 +2029,13 @@ describe('suggest_entity', () => {
 	it('files an accepted lore entry under the first category', async () => {
 		await suggest(alice, { kind: 'lore', name: 'The Tide Oath' });
 		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).entities;
-		const early = await decideEntityProposal(db, alice.userId, waiting.id, 'accept');
+		const early = await decideEntityProposal(
+			db,
+			alice.userId,
+			alice.universeId,
+			waiting.id,
+			'accept'
+		);
 		expect(early).toMatchObject({ ok: false, code: 'invalid' });
 		const [category] = await db
 			.insert(entityCategories)
@@ -2020,9 +2046,26 @@ describe('suggest_entity', () => {
 				sortOrder: 0
 			})
 			.returning({ id: entityCategories.id });
-		expect((await decideEntityProposal(db, alice.userId, waiting.id, 'accept')).ok).toBe(true);
+		expect(
+			(await decideEntityProposal(db, alice.userId, alice.universeId, waiting.id, 'accept')).ok
+		).toBe(true);
 		const [entry] = await db.select().from(loreEntries);
 		expect(entry).toMatchObject({ title: 'The Tide Oath', categoryId: category.id });
+	});
+
+	it('decides nothing through another universe, even one of the writers own', async () => {
+		await suggest(alice);
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).entities;
+		for (const universeId of [alice.otherUniverseId, bob.universeId, MISSING]) {
+			for (const decision of ['accept', 'dismiss'] as const) {
+				expect(
+					(await decideEntityProposal(db, alice.userId, universeId, waiting.id, decision)).ok
+				).toBe(false);
+			}
+		}
+		// Still waiting, and nothing was added anywhere.
+		expect((await listProposals(db, alice.userId, alice.universeId)).entities).toHaveLength(1);
+		expect(await db.select().from(characters)).toHaveLength(4);
 	});
 
 	it('is the Assistants tool too, staged in its name', async () => {
@@ -2160,11 +2203,19 @@ describe('propose_scene_split', () => {
 		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).splits;
 		const before = await sceneCount(alice.storyId);
 		for (const decision of ['confirm', 'dismiss'] as const) {
-			expect((await decideSplitProposal(db, bob.userId, waiting.id, decision)).ok).toBe(false);
+			expect(
+				(await decideSplitProposal(db, bob.userId, alice.universeId, waiting.id, decision)).ok
+			).toBe(false);
 		}
 		expect(await sceneCount(alice.storyId)).toBe(before);
 
-		const confirmed = await decideSplitProposal(db, alice.userId, waiting.id, 'confirm');
+		const confirmed = await decideSplitProposal(
+			db,
+			alice.userId,
+			alice.universeId,
+			waiting.id,
+			'confirm'
+		);
 		expect(confirmed).toMatchObject({ ok: true, splitSceneId: alice.sceneId });
 		expect(await sceneCount(alice.storyId)).toBe(before + 1);
 		const [first] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
@@ -2173,7 +2224,9 @@ describe('propose_scene_split', () => {
 		const [second] = await db.select().from(scenes).where(eq(scenes.id, newSceneId));
 		expect(second.bodyMd.trim()).toBe('Dawn came swiftly over the water.');
 		// Decided once.
-		expect((await decideSplitProposal(db, alice.userId, waiting.id, 'confirm')).ok).toBe(false);
+		expect(
+			(await decideSplitProposal(db, alice.userId, alice.universeId, waiting.id, 'confirm')).ok
+		).toBe(false);
 		expect(await sceneCount(alice.storyId)).toBe(before + 1);
 	});
 
@@ -2182,11 +2235,43 @@ describe('propose_scene_split', () => {
 		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).splits;
 		await setBody(alice, 'They rowed out past the bar and slept.');
 		const before = await sceneCount(alice.storyId);
-		expect((await decideSplitProposal(db, alice.userId, waiting.id, 'confirm')).ok).toBe(false);
+		// Said to the writer, not in the words the app was given when it proposed.
+		const STALE =
+			'The scene has changed since this was proposed, so it cannot be split here. Dismiss the proposal.';
+		expect(
+			await decideSplitProposal(db, alice.userId, alice.universeId, waiting.id, 'confirm')
+		).toMatchObject({ ok: false, reason: STALE });
+		// The words are there twice, or open the scene: the same sentence.
+		for (const body of [
+			`${BODY}\n\nDawn came swiftly again.`,
+			'Dawn came swiftly over the water.'
+		]) {
+			await setBody(alice, body);
+			expect(
+				await decideSplitProposal(db, alice.userId, alice.universeId, waiting.id, 'confirm')
+			).toMatchObject({ ok: false, reason: STALE });
+		}
 		expect(await sceneCount(alice.storyId)).toBe(before);
 		expect((await listProposals(db, alice.userId, alice.universeId)).splits).toHaveLength(1);
-		expect((await decideSplitProposal(db, alice.userId, waiting.id, 'dismiss')).ok).toBe(true);
+		expect(
+			(await decideSplitProposal(db, alice.userId, alice.universeId, waiting.id, 'dismiss')).ok
+		).toBe(true);
 		expect((await listProposals(db, alice.userId, alice.universeId)).splits).toEqual([]);
+	});
+
+	it('decides nothing through another universe, even one of the writers own', async () => {
+		await propose(alice);
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).splits;
+		const before = await sceneCount(alice.storyId);
+		for (const universeId of [alice.otherUniverseId, bob.universeId, MISSING]) {
+			for (const decision of ['confirm', 'dismiss'] as const) {
+				expect(
+					(await decideSplitProposal(db, alice.userId, universeId, waiting.id, decision)).ok
+				).toBe(false);
+			}
+		}
+		expect(await sceneCount(alice.storyId)).toBe(before);
+		expect((await listProposals(db, alice.userId, alice.universeId)).splits).toHaveLength(1);
 	});
 
 	it('stays a card in the chat for the Assistant, with nothing stored', async () => {

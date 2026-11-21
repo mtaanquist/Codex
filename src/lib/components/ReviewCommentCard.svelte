@@ -6,7 +6,13 @@
 	import ReviewAvatar from './ReviewAvatar.svelte';
 	import ReviewReplyRow from './ReviewReplyRow.svelte';
 	import ReviewReplyForm from './ReviewReplyForm.svelte';
-	import { authorColor, roleLabel, threadAuthor, type ReviewThread } from '#lib/review-ui';
+	import {
+		appAuthorParts,
+		authorColor,
+		roleLabel,
+		threadAuthor,
+		type ReviewThread
+	} from '#lib/review-ui';
 	import { formatDateTime } from '#lib/format';
 	import { renderReplyMarkdown } from '#lib/markdown';
 
@@ -45,6 +51,10 @@
 	const replies = $derived(thread.comments.slice(1));
 	const open = $derived(thread.resolvedAt === null);
 	const byline = $derived(roleLabel(author));
+	// An app's name and its host, shown on lines of their own.
+	const who = $derived(
+		author.isApp ? appAuthorParts(author.name) : { name: author.name, host: null }
+	);
 	// The viewer can retract the whole thread only when every comment in it is
 	// their own, so a retraction never takes someone else's reply with it.
 	const canDeleteThread = $derived(
@@ -86,7 +96,11 @@
 	<div class="rv-card-top">
 		<ReviewAvatar {author} />
 		<div class="rv-who">
-			<div class="rv-who-name">{root.authorName} <span class="rv-role">{byline}</span></div>
+			<div class="rv-who-line">
+				<span class="rv-who-name">{who.name}</span>
+				<span class="rv-role">{byline}</span>
+			</div>
+			{#if who.host}<div class="rv-who-host">{who.host}</div>{/if}
 			<div class="rv-when">{formatDateTime(root.createdAt, page.data.timeZone)}</div>
 		</div>
 		{#if open && role === 'author'}
@@ -119,7 +133,7 @@
 		<div class="rv-scene-wide">On the whole scene</div>
 	{/if}
 
-	{#if root.isAssistant}
+	{#if root.isAssistant || root.isApp}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
 		<div class="rv-body reply-md">{@html renderReplyMarkdown(root.body)}</div>
 	{:else}
