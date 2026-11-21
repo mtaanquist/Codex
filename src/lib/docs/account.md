@@ -357,7 +357,9 @@ time, and what to do when it does not work, see
 
 To connect an app:
 
-1. Open Connected apps and turn on "Allow other apps to connect".
+1. Open Connected apps. Under "Allow other apps to connect", type your
+   password, and the code from your authenticator app if you use two-factor
+   authentication, then select "Turn on access for apps".
 2. Copy the address shown under "Address to give the app".
 3. In the app, add a custom connector (some apps call it a remote MCP server)
    and paste the address.
@@ -399,7 +401,8 @@ ask the app in your own words.
 "Apps with access" lists every connected app with what it may do and when it
 was last used. Select Disconnect to stop one at once. Turning off "Allow other
 apps to connect" disconnects them all, and so does changing or resetting your
-password. To use an app again afterwards, connect it again.
+password. Turning it off does not ask for your password; turning it on again
+does. To use an app again afterwards, connect it again.
 
 ### Personal access tokens
 
@@ -410,7 +413,8 @@ the app", so treat it like one.
 
 To make a token:
 
-1. Open Connected apps and make sure "Allow other apps to connect" is on.
+1. Open Connected apps and make sure "Allow other apps to connect" is on. If
+   it is off, turn it on with your password as described above.
 2. Under "Personal access tokens", type a name for the tool that will use it.
    Suggestions and comments left with the token are shown under this name.
 3. Leave "Leave suggestions and comments" ticked if the tool should be able to

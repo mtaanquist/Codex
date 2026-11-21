@@ -7,7 +7,7 @@ import {
 } from '../../mcp-access.ts';
 import { findClient, type FetchClientDocument, type OauthClient } from './clients.ts';
 import { mcpResource } from './metadata.ts';
-import { redirectMatches, validCodeChallenge } from './rules.ts';
+import { redirectHost, redirectMatches, validCodeChallenge } from './rules.ts';
 
 // Checks an authorization request: the address an outside app sends a writer
 // to. The same check runs when the consent page is shown and again when the
@@ -29,9 +29,12 @@ export type AuthorizeCheck =
 	// The client or its redirect address cannot be trusted, so the writer is
 	// told here and nobody is sent anywhere.
 	| { kind: 'invalid'; message: string }
-	// The client is known but the request is wrong: it is told, at its own
-	// redirect address.
-	| { kind: 'refused'; location: string }
+	// The client is known but the request is wrong. `location` is its own
+	// redirect address with the error in the query; the writer is shown the
+	// fault with a link there (`host` names it). Nobody is sent on without a
+	// click: a client registers itself, so an automatic redirect would make
+	// this page forward visitors to any address.
+	| { kind: 'refused'; location: string; host: string }
 	| {
 			kind: 'ok';
 			client: OauthClient;
@@ -89,7 +92,8 @@ export async function checkAuthorizeRequest(
 			error,
 			error_description: description,
 			state
-		})
+		}),
+		host: redirectHost(redirectUri)
 	});
 	if (field('response_type') !== 'code') {
 		return refuse('unsupported_response_type', 'response_type must be "code".');

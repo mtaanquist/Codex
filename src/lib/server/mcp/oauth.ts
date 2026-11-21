@@ -44,9 +44,23 @@ function newSecret(prefix: string): string {
 	return prefix + randomBytes(32).toString('base64url');
 }
 
-// Whether the account may use external access at all right now.
-async function accountUsable(db: Database, userId: string): Promise<boolean> {
-	const [user] = await db
+// Issuing a credential and revoking every credential of an account must not
+// overlap, or the one issued while the other runs survives it. Both take a
+// lock on the user's row first: whoever issues takes it shared (`holdUser`),
+// whoever revokes takes it for update (`lockUserForRevocation`), so a
+// revocation waits for an issue in flight and the next issue sees its result.
+// The user lock always comes before any lock on a code, token or grant row,
+// which is why the issuers look the user up by hash before locking the row
+// they came for.
+async function lockUserForRevocation(tx: Database, userId: string): Promise<void> {
+	await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+}
+
+// Whether the account may use external access at all right now. With
+// `holdUser` (inside a transaction that issues something) the row is locked
+// shared until that transaction ends.
+async function accountUsable(db: Database, userId: string, holdUser = false): Promise<boolean> {
+	const query = db
 		.select({
 			emailVerifiedAt: users.emailVerifiedAt,
 			approvedAt: users.approvedAt,
@@ -56,6 +70,7 @@ async function accountUsable(db: Database, userId: string): Promise<boolean> {
 		})
 		.from(users)
 		.where(eq(users.id, userId));
+	const [user] = await (holdUser ? query.for('share') : query);
 	return Boolean(
 		user &&
 		user.emailVerifiedAt &&
@@ -146,11 +161,19 @@ export async function exchangeCode(
 	input: { code: string; clientId: string; redirectUri: string; codeVerifier: string }
 ): Promise<TokenResult> {
 	return db.transaction(async (tx) => {
+		const codeHash = hashToken(input.code);
+		// Whose code it is, read without a lock, so the user lock comes first.
+		const [owner] = await tx
+			.select({ userId: oauthCodes.userId })
+			.from(oauthCodes)
+			.where(eq(oauthCodes.codeHash, codeHash));
+		if (!owner) return { ok: false };
+		const usable = await accountUsable(tx, owner.userId, true);
 		const [row] = await tx
 			.select({ code: oauthCodes, client: oauthClients })
 			.from(oauthCodes)
 			.innerJoin(oauthClients, eq(oauthCodes.clientId, oauthClients.id))
-			.where(eq(oauthCodes.codeHash, hashToken(input.code)))
+			.where(eq(oauthCodes.codeHash, codeHash))
 			.for('update', { of: oauthCodes });
 		if (!row) return { ok: false };
 		const { code, client } = row;
@@ -163,7 +186,7 @@ export async function exchangeCode(
 			client.clientId !== input.clientId ||
 			code.redirectUri !== input.redirectUri ||
 			!verifyPkce(input.codeVerifier, code.codeChallenge) ||
-			!(await accountUsable(tx, code.userId))
+			!usable
 		) {
 			return { ok: false };
 		}
@@ -203,14 +226,20 @@ export async function refreshTokens(
 	input: { refreshToken: string; clientId: string }
 ): Promise<TokenResult> {
 	return db.transaction(async (tx) => {
+		const isRefresh = and(
+			eq(apiTokens.tokenHash, hashToken(input.refreshToken)),
+			eq(apiTokens.kind, 'refresh')
+		);
+		// As in exchangeCode: the user lock before the token's.
+		const [owner] = await tx.select({ userId: apiTokens.userId }).from(apiTokens).where(isRefresh);
+		if (!owner) return { ok: false };
+		const usable = await accountUsable(tx, owner.userId, true);
 		const [row] = await tx
 			.select({ token: apiTokens, grant: oauthGrants, client: oauthClients })
 			.from(apiTokens)
 			.innerJoin(oauthGrants, eq(apiTokens.grantId, oauthGrants.id))
 			.innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
-			.where(
-				and(eq(apiTokens.tokenHash, hashToken(input.refreshToken)), eq(apiTokens.kind, 'refresh'))
-			)
+			.where(isRefresh)
 			.for('update', { of: apiTokens });
 		if (!row) return { ok: false };
 		const { token, grant, client } = row;
@@ -222,7 +251,7 @@ export async function refreshTokens(
 			token.expiresAt.getTime() <= Date.now() ||
 			grant.revokedAt ||
 			client.clientId !== input.clientId ||
-			!(await accountUsable(tx, token.userId))
+			!usable
 		) {
 			return { ok: false };
 		}
@@ -428,7 +457,7 @@ export async function createPersonalToken(
 		)
 	]);
 	return db.transaction(async (tx) => {
-		if (!(await accountUsable(tx, input.userId))) {
+		if (!(await accountUsable(tx, input.userId, true))) {
 			return { ok: false, reason: 'Turn on "Allow other apps to connect" first.' };
 		}
 		const existing = await tx
@@ -504,6 +533,7 @@ async function revokeGrantTokens(db: Database, grantId: string): Promise<void> {
 // another's grant by guessing its id. Returns whether a grant was revoked.
 export async function revokeGrant(db: Database, userId: string, grantId: string): Promise<boolean> {
 	return db.transaction(async (tx) => {
+		await lockUserForRevocation(tx, userId);
 		const revoked = await tx
 			.update(oauthGrants)
 			.set({ revokedAt: sql`now()` })
@@ -514,18 +544,31 @@ export async function revokeGrant(db: Database, userId: string, grantId: string)
 					isNull(oauthGrants.revokedAt)
 				)
 			)
-			.returning({ id: oauthGrants.id });
+			.returning({ id: oauthGrants.id, clientId: oauthGrants.clientId });
 		if (revoked.length === 0) return false;
 		await revokeGrantTokens(tx, grantId);
+		// A code this app was handed a moment ago would make the grant anew.
+		await tx
+			.update(oauthCodes)
+			.set({ usedAt: sql`now()` })
+			.where(
+				and(
+					eq(oauthCodes.userId, userId),
+					eq(oauthCodes.clientId, revoked[0].clientId),
+					isNull(oauthCodes.usedAt)
+				)
+			);
 		return true;
 	});
 }
 
 // Disconnects every app and kills every credential of the account: on a
 // password change or reset, on scheduling deletion, and when the writer turns
-// external access off. Pass the caller's transaction so it lands with the
-// change that caused it.
+// external access off, and when an admin suspends the account. Pass the
+// caller's transaction so it lands with the change that caused it, and so the
+// lock it takes on the user's row holds until that change is committed.
 export async function revokeAllGrants(db: Database, userId: string): Promise<void> {
+	await lockUserForRevocation(db, userId);
 	await db
 		.update(oauthGrants)
 		.set({ revokedAt: sql`now()` })

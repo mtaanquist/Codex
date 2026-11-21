@@ -43,7 +43,11 @@ export function scopeFromPermissions(permissions: readonly string[]): string {
 }
 
 // How an app is named wherever one is shown. The name is what the app calls
-// itself; the host is the part Codex checked, so the two always appear together.
+// itself and proves nothing. The host is where its answer is sent (a client
+// that registered itself: its one remote host, or this computer if it
+// registered a local address; the consent page names the one in use) or
+// where its metadata document lives, so the two always appear together. The
+// host says where the writer's permission goes, not who runs the app.
 export function clientDisplayName(client: { clientName: string; host: string }): string {
 	const name = client.clientName.trim();
 	if (!name || name.toLowerCase() === client.host.toLowerCase()) return client.host;
