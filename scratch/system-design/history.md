@@ -1060,6 +1060,14 @@ Four lows, nothing above. Migration 0101 adds one nullable column.
 - A personal token handed back at the revoke endpoint left its grant live, so
   it stayed in the list and counted toward the limit. `revokeToken` revokes
   the grant too when the token is a personal one.
+- The guided pass, found by CI on this branch (`e2e/pattern-pass.spec.ts`,
+  the first test). The refresh after a refused accept, added with the app
+  side fixes, makes the "text changed" notice appear, so a stale edit showed
+  that notice and the refusal line under it, both with the class
+  `rv-anchor-lost`. The refusal line has a class of its own now
+  (`pp-failure`, same look, `role="alert"`) and is not shown once the passage
+  is gone: the notice already says it, and there is no Accept left. The test
+  is unchanged.
 - Tests. A deterministic one holds the user row shared and checks that
   `revokeToken` waits. The raced ones (revoke against refresh, a replayed code
   against a refresh and a revoke) passed before the fix as well, since the

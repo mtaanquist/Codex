@@ -370,7 +370,8 @@
 	/* Air between the comment and the replies or reply box that follow it. */
 	margin-bottom: 12px;
 }
-.rv-anchor-lost {
+.rv-anchor-lost,
+.pp-failure {
 	display: inline-flex;
 	align-items: center;
 	gap: 5px;

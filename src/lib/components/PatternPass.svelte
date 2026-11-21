@@ -259,7 +259,9 @@
 								aria-label="Your wording"
 								bind:value={draft}></textarea>
 						{/if}
-						{#if failure}<p class="rv-anchor-lost">{failure}</p>{/if}
+						<!-- Once the passage is gone the notice above says so, and
+						     there is no Accept left for this line to be about. -->
+						{#if failure && context}<p class="pp-failure" role="alert">{failure}</p>{/if}
 						<div class="rv-actions">
 							{#if context}
 								<button
