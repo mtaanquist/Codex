@@ -18,7 +18,8 @@ import {
 	ensureSuggestionThread,
 	listSuggestions,
 	listThreads,
-	setThreadResolved
+	setThreadResolved,
+	SUGGESTION_CHANGED
 } from '#lib/server/review';
 import { gatherStory } from '#lib/server/export';
 import { storyPreferences } from '#lib/server/preferences';
@@ -240,13 +241,18 @@ export const actions: Actions = {
 		if (!isUuid(suggestionId)) return fail(400, { message: 'That suggestion does not exist.' });
 		// The guided pass's Edit sends the author's own wording to accept instead.
 		const override = data.has('replacement') ? formText(data, 'replacement') : undefined;
+		// Which replacement the writer was shown. An accept without it is not
+		// taken: the text could be one they never read.
+		const seen = formText(data, 'seen');
+		if (!seen) return fail(400, { message: SUGGESTION_CHANGED });
 		const result = await decideSuggestion(
 			db,
 			locals.user!.id,
 			story.id,
 			suggestionId,
 			true,
-			override
+			override,
+			seen
 		);
 		if (!result.ok) return fail(400, { message: result.reason });
 		// The body changed; keep the mention index in step.
@@ -281,12 +287,23 @@ export const actions: Actions = {
 		if (ids.length === 0 || !ids.every(isUuid)) {
 			return fail(400, { message: 'Tick the suggestions to decide on.' });
 		}
+		// For an accept, each one says which replacement the writer was shown.
+		let seen: Record<string, string> | undefined;
+		if (decision === 'accept') {
+			seen = Object.fromEntries(ids.map((id) => [id, formText(data, `seen:${id}`)]));
+			if (Object.values(seen).some((stamp) => !stamp)) {
+				return fail(400, {
+					message: 'Some suggestions changed. Close this, read them again, and try again.'
+				});
+			}
+		}
 		const result = await decideSuggestions(
 			db,
 			locals.user!.id,
 			story.id,
 			ids,
-			decision === 'accept'
+			decision === 'accept',
+			seen
 		);
 		// The body changed; keep the mention index in step.
 		for (const sceneId of result.sceneIds) await queueSceneMentions(sceneId);

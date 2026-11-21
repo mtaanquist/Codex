@@ -1,0 +1,6 @@
+CREATE UNIQUE INDEX "entity_proposals_pending_name_idx" ON "entity_proposals" USING btree ("universe_id",lower("name")) WHERE "entity_proposals"."status" = 'pending';--> statement-breakpoint
+CREATE INDEX "entity_proposals_client_idx" ON "entity_proposals" USING btree ("client_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "review_suggestions_client_follow_up_idx" ON "review_suggestions" USING btree ("follows_suggestion_id","client_id") WHERE "review_suggestions"."follows_suggestion_id" is not null and "review_suggestions"."client_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "scene_split_proposals_pending_idx" ON "scene_split_proposals" USING btree ("scene_id","client_id",md5("before")) WHERE "scene_split_proposals"."status" = 'pending';--> statement-breakpoint
+CREATE INDEX "scene_split_proposals_scene_idx" ON "scene_split_proposals" USING btree ("scene_id");--> statement-breakpoint
+CREATE INDEX "scene_split_proposals_client_idx" ON "scene_split_proposals" USING btree ("client_id");

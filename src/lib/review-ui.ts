@@ -108,6 +108,9 @@ export type ReviewSuggestion = {
 	mine: boolean;
 	original: string;
 	replacement: string;
+	// Sent back with an accept, so the server can tell the replacement is the
+	// one shown here.
+	stamp?: string;
 	status: 'pending' | 'accepted' | 'rejected';
 	anchor: { start: number; end: number } | null;
 	anchorLost: boolean;

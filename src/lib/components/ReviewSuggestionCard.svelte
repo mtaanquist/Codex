@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { invalidateAll } from '$app/navigation';
 	import { enhance } from '#lib/enhance';
 	import { confirmEnhance } from '#lib/confirm.svelte';
 	import Icon from './Icon.svelte';
@@ -128,12 +129,16 @@
 											? { bodyMd, baseHash }
 											: null
 									);
+								} else if (result.type === 'failure') {
+									// The suggestion may have been revised; show it as it is now.
+									await invalidateAll();
 								}
 								await update();
 							};
 						}}
 					>
 						<input type="hidden" name="suggestionId" value={suggestion.id} />
+						<input type="hidden" name="seen" value={suggestion.stamp ?? ''} />
 						<button
 							class="icon-btn sm accept"
 							type="submit"
