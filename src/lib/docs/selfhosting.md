@@ -15,6 +15,10 @@ Codex needs a machine that stays on when you want to use it, a Postgres database
 
 If none of that sounds like something you want to do, use a hosted Codex instead. Nothing in the app is held back for people who self-host, and nothing is held back for people who do not.
 
+## Connecting AI apps
+
+People with an account can connect an AI app they use, such as Claude, so it can read their writing and leave suggestions; see [Connecting an app](/docs/connecting-apps). Apps that run on the internet connect from their own servers, so they can only reach a Codex that has a public web address starting with `https://`. A Codex that only answers on your own computer or your home network cannot be reached by them. If you run Codex for others and do not want this at all, turn it off in the admin panel.
+
 ## Running it for other people
 
 A Codex you run can hold accounts for other people, each with their own writing. Whoever runs it decides who gets in: nobody, invited people only, people who ask and get approved, or anybody who signs up. If you are the one running it, that setting is in the admin panel.

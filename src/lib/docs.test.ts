@@ -12,6 +12,7 @@ describe('docTopics', () => {
 			'established-settings',
 			'publishing',
 			'reviewing',
+			'connecting-apps',
 			'account',
 			'security',
 			'shortcuts',
