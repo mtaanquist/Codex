@@ -848,7 +848,7 @@ describe('a scene draft', () => {
 			{ outcome: 'ready' as const, words: 400, cutOff: true },
 			{ outcome: 'stopped' as const },
 			{ outcome: 'off' as const },
-			{ outcome: 'capped' as const, spentUsd: 1.25 }
+			{ outcome: 'capped' as const, spentUsd: 0, note: 'NOTE.' }
 		];
 		const { handlers, completed } = harness({ runSceneDraft: async () => results.shift()! });
 		for (let i = 0; i < 4; i++) await handlers.assistantDraft([job(data)]);
@@ -857,7 +857,7 @@ describe('a scene draft', () => {
 				'The Assistant drafted the scene "The Crossing" (400 words). Open the scene to keep or discard the draft. It stopped at the length limit, so it may end mid-scene.',
 				'The draft of the scene "The Crossing" was stopped before it finished, so nothing was kept.',
 				'The Assistant is off for this story, so it did not draft the scene "The Crossing".',
-				'The Assistant did not draft the scene "The Crossing": this job reached the spend cap at about $1.25. Raise the cap in settings, then type /draft in the Assistant chat to ask again.'
+				'The Assistant did not draft the scene "The Crossing". NOTE. Then type /draft in the Assistant chat to ask again.'
 			].sort()
 		);
 		// Off and capped are settled as failed, so the activity card says so.
@@ -1037,11 +1037,11 @@ describe('a chapter draft', () => {
 		const { owner, data } = await seedRun();
 		const results = [
 			done({ drafted: 2, ended: 'stopped' }),
-			done({ drafted: 1, ended: 'capped', spentUsd: 1.25 }),
+			done({ drafted: 1, ended: 'capped', spentUsd: 1.25, cappedNote: 'NOTE.' }),
 			done({ drafted: 2, ended: 'off' }),
 			done({ drafted: 2, gone: 1, cutOff: 1 }),
 			done({ drafted: 0, ended: 'stopped' }),
-			done({ drafted: 0, ended: 'capped', spentUsd: 2 }),
+			done({ drafted: 0, ended: 'capped', spentUsd: 0, cappedNote: 'NOTE.' }),
 			done({ drafted: 0, ended: 'off' })
 		];
 		const count = results.length;
@@ -1051,11 +1051,11 @@ describe('a chapter draft', () => {
 		expect((await titles(owner.id)).sort()).toEqual(
 			[
 				`The Assistant drafted 2 of 3 scenes in the chapter "The River". You stopped it, so the rest were not drafted. ${keep}`,
-				`The Assistant drafted 1 of 3 scenes in the chapter "The River". It reached the spend cap at about $1.25, so the rest were not drafted. ${keep} To draft the rest, raise the cap in settings, then type /draft-chapter in the Assistant chat to ask again.`,
+				`The Assistant drafted 1 of 3 scenes in the chapter "The River". The next scene could have taken it past your spend cap, so the rest were not drafted. ${keep} NOTE. Then type /draft-chapter in the Assistant chat to ask again.`,
 				`The Assistant drafted 2 of 3 scenes in the chapter "The River". The Assistant is off for this story now, so the rest were not drafted. ${keep}`,
 				`The Assistant drafted 2 of 3 scenes in the chapter "The River". ${keep} 1 scene was no longer there. 1 scene stopped at the length limit, so it may end early.`,
 				'The Assistant drafted no scenes in the chapter "The River". You stopped it, so nothing was kept.',
-				'The Assistant drafted no scenes in the chapter "The River". It reached the spend cap at about $2.00, so nothing was kept. To draft the rest, raise the cap in settings, then type /draft-chapter in the Assistant chat to ask again.',
+				'The Assistant drafted no scenes in the chapter "The River". The next scene could have taken it past your spend cap, so nothing was kept. NOTE. Then type /draft-chapter in the Assistant chat to ask again.',
 				'The Assistant drafted no scenes in the chapter "The River". The Assistant is off for this story now, so nothing was kept.'
 			].sort()
 		);

@@ -9,7 +9,7 @@ import {
 	saveDraftText
 } from '#lib/server/scene-drafts';
 import { MAX_BASE_HASHES } from '#lib/save-bases';
-import { checkProseLength, readJson } from '#lib/server/validation';
+import { checkNoNull, checkProseLength, readJson } from '#lib/server/validation';
 import { rateLimitWrites } from '#lib/server/write-guard';
 
 // The writer's decision on a scene draft. 'fill' puts it into its own scene,
@@ -60,7 +60,7 @@ function baseHashesOf(value: unknown): string[] {
 // left to fail in the query.
 function checkText(text: string): void {
 	checkProseLength(text);
-	if (text.includes('\u0000')) error(400, 'text must not contain a null character.');
+	checkNoNull(text, 'text');
 }
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {

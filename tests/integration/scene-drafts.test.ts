@@ -621,6 +621,20 @@ describe('asking for a draft', () => {
 		expect((await draftRow(second.draftId)).status).toBe('discarded');
 		expect((await draftRow(third.draftId)).status).toBe('pending');
 	});
+
+	it('keeps a new draft whose job has failed by the time it is queued', async () => {
+		const result = await requestSceneDraft(db, input(), {
+			queue: async (job) => {
+				await failSceneDraft(db, job.draftId, 'The endpoint was down.');
+				return job.jobId;
+			}
+		});
+		if (!result.ok) throw new Error(result.reason);
+		expect(await draftRow(result.draftId)).toMatchObject({
+			status: 'failed',
+			note: 'The endpoint was down.'
+		});
+	});
 });
 
 describe('the endpoint', () => {
@@ -629,6 +643,20 @@ describe('the endpoint', () => {
 		sceneId: target,
 		brief: 'Ilse crosses the river.',
 		targetWords: 900
+	});
+
+	it('refuses a null character in the brief or the point of view', async () => {
+		const owner = { id: ownerId };
+		for (const odd of [{ brief: 'Ilse\u0000crosses.' }, { pov: 'Il\u0000se' }]) {
+			for (const estimate of [true, false]) {
+				const answer = await call(
+					draftRoute.POST,
+					event(owner, { body: { ...body(), ...odd, estimate } })
+				);
+				expect(answer.status).toBe(400);
+			}
+		}
+		expect(await db.select().from(assistantDrafts)).toEqual([]);
 	});
 
 	it('answers the defaults, the estimate and the request for the owner', async () => {
@@ -1133,7 +1161,7 @@ describe('the job', () => {
 			[ownerId]
 		);
 		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId: 'draft-job' }, deps);
-		expect(result).toEqual({ outcome: 'capped', spentUsd: 5 });
+		expect(result).toMatchObject({ outcome: 'capped', spentUsd: 5 });
 		expect(prompts).toEqual([]);
 		const row = await draftRow(draftId);
 		expect(row).toMatchObject({ status: 'failed', textMd: '' });
@@ -1257,6 +1285,12 @@ describe('a draft cut off at the limit', () => {
 		expect(note).not.toMatch(/Longest reply/);
 	});
 
+	it('treats a Longest reply equal to the draft own figure as the draft own', async () => {
+		const note = await cutOffNote({ tuning: { coauthor: { maxTokens: 1800 } } });
+		expect(maxTokensSent).toEqual([1800]);
+		expect(note).toBe(draftCutOffNote('draft'));
+	});
+
 	it('says to raise Longest reply when that is what set the limit', async () => {
 		const note = await cutOffNote({ tuning: { coauthor: { maxTokens: 700 } } });
 		expect(maxTokensSent).toEqual([700]);
@@ -1315,10 +1349,11 @@ describe('the spend cap while the job runs', () => {
 		expect(result.outcome === 'capped' && result.spentUsd).toBeCloseTo(1.7, 6);
 		// One request, not two: $1.70 and another $1.80 would be $3.50.
 		expect(prompts).toHaveLength(1);
-		expect(await draftRow(draftId)).toMatchObject({
-			status: 'failed',
-			note: expect.stringMatching(/spend cap/)
-		});
+		// The note gives the figures, not "reached the cap at $1.70".
+		const note =
+			'The next request could cost up to $1.80. This job has spent about $1.70 and your spend cap is $2.00, so it was not sent. Ask for a shorter scene, or raise the cap under Account, Assistant.';
+		expect(result).toMatchObject({ note });
+		expect(await draftRow(draftId)).toMatchObject({ status: 'failed', note });
 		// And the queue's own retry of the job finds it settled.
 		expect(await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps)).toEqual({
 			outcome: 'missing'
@@ -1376,7 +1411,12 @@ describe("the writer's own request parameters", () => {
 						top_p: 0.9,
 						max_completion_tokens: 99_999,
 						n_predict: 99_999,
-						max_new_tokens: 99_999
+						max_new_tokens: 99_999,
+						// Several replies at once multiply what one request bills.
+						n: 4,
+						best_of: 3,
+						options: { num_predict: 99_999, mirostat: 1 },
+						extra_body: { n: 2 }
 					}
 				}
 			}
@@ -1384,7 +1424,7 @@ describe("the writer's own request parameters", () => {
 		const { draftId } = await request();
 		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
 		expect(maxTokensSent).toEqual([1800]);
-		expect(extraParamsSent).toEqual([{ top_p: 0.9 }]);
+		expect(extraParamsSent).toEqual([{ top_p: 0.9, options: { mirostat: 1 } }]);
 	});
 });
 

@@ -1374,10 +1374,15 @@ calls the gateway, which proxies through the egress guard.
   transient failure included (`mayResend` on the request), the job checks
   that what it has spent plus this request at its limit, priced by the
   settings in force then, stays under the cap (`wouldPassCap`); when it
-  would not, the draft ends as capped. Reply-limit aliases in the writer's
-  extra parameters (`max_completion_tokens`, `n_predict` and the like) are
-  left off a bounded request, so they cannot raise the limit the cost was
-  counted at. A reply cut off at the limit is kept as a ready draft
+  would not, the draft ends as capped, and its note gives the figures (what
+  the next request could cost, what the job has spent, the cap) and what to
+  do (`cappedNote`). The resume of a paused reply asks `mayResend` too.
+  Parameters in the writer's extra parameters that change what a request can
+  bill (`max_completion_tokens`, `n_predict` and the other reply-limit
+  names, `n`, `best_of`, at any depth, so `options.num_predict` as well) are
+  left off a bounded request, so they cannot undo the limit the cost was
+  counted at. A "Longest reply" equal to the draft's own figure counts as
+  the draft's own. A reply cut off at the limit is kept as a ready draft
   with a note; a stop discards the draft; a failure marks it failed with the
   reason, to try again from the card. The cut-off notes say what would give
   more room by what set the limit (`limitSetBy`): the writer's "Longest
@@ -1393,14 +1398,22 @@ calls the gateway, which proxies through the egress guard.
   `/api/assistant/draft/[id]` takes the
   writer's choice (fill, add, discard) for a draft they own, and a PATCH
   saves their edits to a ready draft's text (the draft row only). The PATCH
-  and the two keeping choices carry `base`, the md5 of the text the window
-  last saw (`textVersion`, required on all three; text with a null
-  character is refused with 400); when the stored text differs they are refused
-  with 409 ("This draft was changed in another window.") and the card offers
-  to load the current text. Text that is already what is stored is never a
-  conflict (a save that landed with its answer lost, sent again), and a save
-  made as the page is left names the text of the save still on its way
-  (`sent`), so either may land first. A blank PATCH is refused; Discard is
+  and the two keeping choices are checked the way a scene save is: each
+  carries `baseHashes` (required, 1 to 16), the `textHash` of every text
+  this window has sent and not had answered plus the last one acknowledged,
+  and is taken when the stored text's hash is one of them or the stored text
+  is already the text sent. Otherwise it is refused with 409 ("This draft
+  was changed in another window.") and the card offers to load the current
+  text. The list is kept by `save-bases.ts`, which the scene saver uses too
+  (the saver itself is bound to the scene endpoint, its title and markers,
+  so only the bookkeeping is shared). So a save whose answer was lost and a
+  save made as the page is left beside one still out are both taken, in
+  either order. Known limit, shared with the scene save: a page-hide save
+  that puts the base text back, arriving before an older save still on its
+  way, lets the older one land after it, since a content hash cannot tell
+  the two apart. Text, a brief, a point of view or a scene line with a null
+  character is refused with 400 (`checkNoNull`). A blank PATCH is refused;
+  Discard is
   how a draft is dropped. Asking and
   counting are gated on the Assistant being on for the account and story;
   reading a staged draft back, editing it and deciding it need only its
@@ -1409,7 +1422,9 @@ calls the gateway, which proxies through the egress guard.
   (`waitingDrafts`: the writer's pending, running, ready and failed drafts
   whose scene is live and in the story, so one still being written can be
   seen and stopped), showing only the draft cards, a list of links to the
-  drafts on other scenes (also on a muted story), and a line saying the
+  drafts on other scenes (also on a muted story; one row a scene, the newest
+  draft, and read again every few seconds with the shared pacing while one
+  is being written), and a line saying the
   Assistant is off for the account; nothing there can ask for a new draft,
   and the tab goes when the last draft is decided. Links from notices and lists open the
   card without the form (`draft=show`); the scene menu's link opens the form
@@ -1417,10 +1432,13 @@ calls the gateway, which proxies through the egress guard.
   appears and on a double click or key repeat (`confirm-guard.ts`), unsaved
   edits live in module state by draft id and are flushed when the page is
   hidden (`draft-edits.ts`, which listens once for every edit held, with or
-  without a card, never takes back a version the window has saved over, and
-  stops on 401, 403 and 404), and an open brief form is kept in
+  without a card, never replaces held text with a read, keeps the edit on a
+  401 and frees it on 403 and 404). A draft kept or discarded in another
+  window closes the card with a line saying so, and text typed there and
+  not saved stays readable until the card is closed. An open brief form is kept in
   `sessionStorage` until it is started, cancelled, or the writer signs out
-  (`draft-forms.ts`).
+  (`draft-forms.ts`; each field is read on its own, so an empty length does
+  not lose the brief).
 - [built] Chapter drafts (#1168, step 2): the same queue and table. The
   request (`/api/assistant/draft/chapter`: defaults, `estimate: true`, or
   the request itself) stages one `assistant_drafts` row per chosen scene with

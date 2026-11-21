@@ -275,21 +275,33 @@ async function respondWithRetry(
 	}
 }
 
-// Other names endpoints take a reply limit by. A writer's extra parameters may
-// carry one; on a bounded request it would override the limit the cost was
-// counted at, so it is left out there.
-const REPLY_LIMIT_PARAMS = [
+// Parameters that change how much a request can be billed for: other names
+// endpoints take a reply limit by, and the ones that ask for several replies
+// at once. A writer's extra parameters may carry one; on a bounded request it
+// would undo the limit the cost was counted at, so it is left out there, at
+// any depth (Ollama takes its limit as options.num_predict).
+const REPLY_SIZE_PARAMS = [
 	'max_completion_tokens',
 	'max_output_tokens',
 	'max_new_tokens',
 	'n_predict',
-	'num_predict'
+	'num_predict',
+	'n',
+	'best_of'
 ];
-function withoutReplyLimits<T extends Record<string, unknown> | undefined>(params: T): T {
-	if (!params || !REPLY_LIMIT_PARAMS.some((key) => key in params)) return params;
-	const kept = Object.fromEntries(
-		Object.entries(params).filter(([key]) => !REPLY_LIMIT_PARAMS.includes(key))
-	);
+export function withoutReplySizeParams<T extends Record<string, unknown> | undefined>(
+	params: T
+): T {
+	if (!params) return params;
+	const kept: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(params)) {
+		if (REPLY_SIZE_PARAMS.includes(key)) continue;
+		const nested = value !== null && typeof value === 'object' && !Array.isArray(value);
+		const inner = nested ? withoutReplySizeParams(value as Record<string, unknown>) : value;
+		// A group emptied by this goes too; one the writer left empty stays.
+		if (nested && inner === undefined && Object.keys(value as object).length > 0) continue;
+		kept[key] = inner ?? value;
+	}
 	return (Object.keys(kept).length > 0 ? kept : undefined) as T;
 }
 
@@ -316,7 +328,7 @@ export function surfaceMaxTokens(
 // there the writer's figure only ever lowers the limit while the role does not
 // think: a reply that needs 800 tokens is not sent with room for 8000. An
 // estimate reads the same resolution, so what it counts is what is sent.
-// setByWriter says the limit sent is the writer's figure.
+// setByWriter says the limit sent is the writer's figure and not the surface's.
 export function requestReplyLimit(
 	config: ResolvedConfig,
 	role: AssistantRole,
@@ -327,10 +339,13 @@ export function requestReplyLimit(
 	const thinks = roleMayThink(adapterKind(config.provider) === 'anthropic', config.tuning[role]);
 	const set = roleMaxTokens(config, role);
 	let maxTokens = set ?? surfaceMaxTokens(role, requested, thinks, contextWindow);
+	let setByWriter = set !== undefined;
 	if (bounded && !thinks && set !== undefined && requested !== undefined) {
 		maxTokens = Math.min(set, requested);
+		// Equal is the surface's own figure: raising the setting changes nothing.
+		setByWriter = set < requested;
 	}
-	return { maxTokens, thinks, setByWriter: set !== undefined && maxTokens === set };
+	return { maxTokens, thinks, setByWriter };
 }
 
 type Prepared = {
@@ -501,7 +516,7 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				: undefined
 		),
 		extraParams: req.boundedReply
-			? withoutReplyLimits(roleExtraParams(resolved.config, req.role))
+			? withoutReplySizeParams(roleExtraParams(resolved.config, req.role))
 			: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
 		cacheTtl: resolved.config.cacheTtl,
@@ -653,6 +668,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		if (response.finishReason === 'paused') {
 			pauses += 1;
 			if (pauses > MAX_PAUSE_RESUMES) throw new Error(PAUSED_MESSAGE);
+			if (req.mayResend && !req.mayResend()) throw new Error(PAUSED_MESSAGE);
 			pausedText += response.content;
 			push({ role: 'assistant', content: response.content, raw: response.raw });
 			continue;
@@ -817,6 +833,9 @@ export async function completeDetailed(
 		if (response.finishReason === 'refusal') throw new ReplyRefusedError();
 		if (response.finishReason === 'paused') {
 			if (pauses >= MAX_PAUSE_RESUMES) throw new Error(PAUSED_MESSAGE);
+			// A resume is one more billed request, so the caller's ceiling is
+			// asked here as it is before a retry.
+			if (req.mayResend && !req.mayResend()) throw new Error(PAUSED_MESSAGE);
 			messages.push({ role: 'assistant', content: response.content, raw: response.raw });
 			continue;
 		}

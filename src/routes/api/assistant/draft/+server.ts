@@ -8,6 +8,7 @@ import { assistantDraftJobState, queueAssistantDraft } from '#lib/server/jobs';
 import { requestSceneDraft, sceneDraftFor } from '#lib/server/scene-drafts';
 import { ownedScene } from '#lib/server/scene-access';
 import { isUuid } from '#lib/slug';
+import { checkNoNull } from '#lib/server/validation';
 import { clampDraftWords, MAX_DRAFT_BRIEF_CHARS, MAX_DRAFT_POV_CHARS } from '#lib/scene-draft';
 
 // A scene draft: the Assistant writes one whole scene from the writer's brief.
@@ -61,6 +62,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (brief.length > MAX_DRAFT_BRIEF_CHARS) error(400, 'That brief is too long.');
 	const pov = typeof payload.pov === 'string' ? payload.pov.trim() : '';
 	if (pov.length > MAX_DRAFT_POV_CHARS) error(400, 'That point of view is too long.');
+	checkNoNull(brief, 'The brief');
+	checkNoNull(pov, 'The point of view');
 	if (payload.targetWords !== undefined && typeof payload.targetWords !== 'number') {
 		error(400, 'The length must be a number of words.');
 	}

@@ -453,7 +453,7 @@ export function createHandlers(deps: WorkerDeps) {
 				title = `The Assistant is off for this story, so it did not draft ${name}.`;
 			} else if (result.outcome === 'capped') {
 				await settleFailed();
-				title = `The Assistant did not draft ${name}: this job reached the spend cap at ${spentPhrase(result.spentUsd)}. Raise the cap in settings, then ${DRAFT_AGAIN}.`;
+				title = `The Assistant did not draft ${name}. ${result.note} Then ${DRAFT_AGAIN}.`;
 			} else {
 				title = `The Assistant drafted ${name} (${result.words} ${result.words === 1 ? 'word' : 'words'}). Open the scene to keep or discard the draft.`;
 				if (result.cutOff) title += ' It stopped at the length limit, so it may end mid-scene.';
@@ -548,14 +548,14 @@ export function createHandlers(deps: WorkerDeps) {
 							? 'The Assistant is off for this story now'
 							: ended === 'empty'
 								? 'A scene came back with no text'
-								: `It reached the spend cap at ${spentPhrase(result.spentUsd)}`;
+								: 'The next scene could have taken it past your spend cap';
 				title =
 					drafted === 0
 						? `The Assistant drafted no scenes in ${name}. ${why}, so nothing was kept.`
 						: `The Assistant drafted ${drafted} of ${sceneCount(total)} in ${name}. ${why}, so the rest were not drafted. ${KEEP_OR_DISCARD}`;
 				if (ended === 'empty' && result.emptyNote) title += ` ${result.emptyNote}`;
 				if (ended === 'capped') {
-					title += ` To draft the rest, raise the cap in settings, then ${CHAPTER_DRAFT_AGAIN}.`;
+					title += ` ${result.cappedNote} Then ${CHAPTER_DRAFT_AGAIN}.`;
 				}
 				// Nothing to show for it: the activity card says so too.
 				if (drafted === 0 && ended !== 'stopped') await settleFailed();

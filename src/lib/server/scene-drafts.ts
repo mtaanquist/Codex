@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { isUniqueViolation } from './db-errors';
@@ -280,11 +280,12 @@ export async function requestSceneDraft(
 	// place. Only once the new one stands, so the reason the old one failed is
 	// not lost to a request that did not go through; and after the insert, so
 	// the scene's row is always locked before a draft's (as a scene delete
-	// takes them).
+	// takes them). Never the new one: its job may have failed already, and the
+	// writer has not read why.
 	await db
 		.update(assistantDrafts)
 		.set({ status: 'discarded' })
-		.where(and(mine, eq(assistantDrafts.status, 'failed')));
+		.where(and(mine, eq(assistantDrafts.status, 'failed'), ne(assistantDrafts.id, draftId)));
 	return { ok: true, draftId, jobId };
 }
 
@@ -854,7 +855,8 @@ export async function requestChapterDraft(
 			and(
 				eq(assistantDrafts.userId, input.userId),
 				inArray(assistantDrafts.sceneId, sceneIds),
-				eq(assistantDrafts.status, 'failed')
+				eq(assistantDrafts.status, 'failed'),
+				notInArray(assistantDrafts.id, draftIds)
 			)
 		);
 	return { ok: true, jobId, draftIds, skipped: plan.skipped };

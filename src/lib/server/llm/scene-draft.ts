@@ -4,13 +4,16 @@ import { assistantDrafts, scenes, stories } from '../db/schema.ts';
 import { storyIsLive } from '../universe-scope.ts';
 import { usableSceneSummary } from '../summary-currency.ts';
 import { cacheWriteRate } from '../../assistant-cost.ts';
+import { spentPhrase } from '../../format.ts';
 import {
+	chapterCapAdvice,
 	defaultDraftWords,
 	draftExpectedTokens,
 	draftMaxTokens,
 	draftWantedTokens,
 	isBlankDraft,
 	PREVIOUS_DRAFT_CHARS,
+	sceneCapAdvice,
 	wordsForTokens,
 	type ChapterDraftEstimate,
 	type SceneDraftDefaults,
@@ -316,8 +319,16 @@ function wouldPassCap(meter: SpendMeter, request: DraftRequest): boolean {
 	return cost !== undefined && meter.spentUsd + cost > capUsd + 1e-9;
 }
 
-const CAPPED_NOTE =
-	'Writing this draft could have taken the job past your spend cap, so it was not written. Raise the cap in your Assistant settings to try again.';
+// What a request held back at the cap is told: what it could cost, what the
+// job has spent, the cap, and what the writer can do about it.
+function cappedNote(meter: SpendMeter, request: DraftRequest, advice: string): string {
+	const capUsd = request.config.spendCapUsd;
+	const cost = draftCostUsd(request, requestTokens(request), request.limit.maxTokens);
+	if (!capUsd || cost === undefined) {
+		return 'This job has reached your spend cap, so the draft was not written. Raise the cap under Account, Assistant.';
+	}
+	return `The next request could cost up to $${cost.toFixed(2)}. This job has spent ${spentPhrase(meter.spentUsd)} and your spend cap is $${capUsd.toFixed(2)}, so it was not sent. ${advice}`;
+}
 
 // What the draft would send and cost, counted without sending anything. Null
 // when the scene is not the user's. Throws NoModelError when no model is chosen.
@@ -409,9 +420,10 @@ export async function estimateChapterDraft(
 		// The scene before is not written yet, so it is counted as long as its
 		// reply limit allows, up to how much of it rides along. Going through the
 		// request itself counts the lines that introduce it as well, and leaves
-		// it out where the run would.
+		// it out where the run would. One character over the most that rides
+		// along, so the mark that it was shortened is counted too.
 		const carried: string | null = first
-			? 'x'.repeat(Math.min(first.limit.maxTokens * 4, PREVIOUS_DRAFT_CHARS))
+			? 'x'.repeat(Math.min(first.limit.maxTokens * 4, PREVIOUS_DRAFT_CHARS + 1))
 			: null;
 		const request = await sceneDraftRequest(
 			db,
@@ -441,8 +453,9 @@ export type SceneDraftResult =
 	| { outcome: 'missing' }
 	// The Assistant is off for the account or the story; nothing was asked.
 	| { outcome: 'off' }
-	// Earlier attempts of this job already spent the ceiling; nothing was asked.
-	| { outcome: 'capped'; spentUsd: number }
+	// The request could have taken the job past the spend cap, so it was not
+	// sent (or not sent again). `note` gives the figures and what to do.
+	| { outcome: 'capped'; spentUsd: number; note: string }
 	// The writer stopped it; the draft is discarded.
 	| { outcome: 'stopped' }
 	// The reply had no text in it. The draft is marked failed with `note`, and
@@ -524,10 +537,12 @@ export async function runSceneDraft(
 	// One request, but a job pg-boss retries sends it again: the meter carries
 	// what earlier attempts spent.
 	const meter = await jobSpendMeter(db, { userId, storyId: draft.storyId, jobId: opts.jobId });
-	if (meter.capReached || wouldPassCap(meter, request)) {
-		await settleDraft(db, draftId, { status: 'failed', note: CAPPED_NOTE });
-		return { outcome: 'capped', spentUsd: meter.spentUsd };
-	}
+	const capped = async (): Promise<SceneDraftResult> => {
+		const note = cappedNote(meter, request, sceneCapAdvice(request.limit.thinks));
+		await settleDraft(db, draftId, { status: 'failed', note });
+		return { outcome: 'capped', spentUsd: meter.spentUsd, note };
+	};
+	if (meter.capReached || wouldPassCap(meter, request)) return capped();
 
 	await db
 		.update(assistantDrafts)
@@ -563,8 +578,7 @@ export async function runSceneDraft(
 		// cap: the job ends here instead of being sent again.
 		if (wouldPassCap(meter, request)) {
 			await meter.flush();
-			await settleDraft(db, draftId, { status: 'failed', note: CAPPED_NOTE });
-			return { outcome: 'capped', spentUsd: meter.spentUsd };
+			return capped();
 		}
 		throw err;
 	} finally {
@@ -625,6 +639,8 @@ export type ChapterDraftResult =
 			// scene's reply had no text in it; `emptyNote` says what to do.
 			ended?: 'stopped' | 'capped' | 'off' | 'empty';
 			emptyNote?: string;
+			// With ended 'capped': the figures, and what the writer can do.
+			cappedNote?: string;
 			spentUsd: number;
 			capNotApplied?: string;
 	  };
@@ -723,6 +739,7 @@ export async function runChapterDraft(
 	const meter = await jobSpendMeter(db, { userId, storyId, jobId: opts.jobId });
 	let previous: { sceneId: string; text: string } | null = null;
 	let emptyNote: string | undefined;
+	let capNote: string | undefined;
 	let drafted = 0;
 	let words = 0;
 	let cutOff = 0;
@@ -765,10 +782,6 @@ export async function runChapterDraft(
 			ended = 'off';
 			break;
 		}
-		if (meter.capReached) {
-			ended = 'capped';
-			break;
-		}
 
 		const request = await sceneDraftRequest(
 			db,
@@ -792,8 +805,9 @@ export async function runChapterDraft(
 			continue;
 		}
 		// With this scene the run could pass the cap: it ends here.
-		if (wouldPassCap(meter, request)) {
+		if (meter.capReached || wouldPassCap(meter, request)) {
 			ended = 'capped';
+			capNote = cappedNote(meter, request, chapterCapAdvice(request.limit.thinks));
 			break;
 		}
 
@@ -831,6 +845,7 @@ export async function runChapterDraft(
 			// the cap.
 			if (wouldPassCap(meter, request)) {
 				ended = 'capped';
+				capNote = cappedNote(meter, request, chapterCapAdvice(request.limit.thinks));
 				break;
 			}
 			throw err;
@@ -878,6 +893,7 @@ export async function runChapterDraft(
 		gone,
 		...(ended ? { ended } : {}),
 		...(emptyNote ? { emptyNote } : {}),
+		...(capNote ? { cappedNote: capNote } : {}),
 		spentUsd: meter.spentUsd,
 		...(meter.notAppliedMessage ? { capNotApplied: meter.notAppliedMessage } : {})
 	};

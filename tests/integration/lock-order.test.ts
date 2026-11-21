@@ -993,10 +993,12 @@ describe('lock order around scenes being added', () => {
 			expect(waiting).toBe(true);
 			// The failed draft's row is free while the request waits on the scene.
 			const { rows: free } = await pool.query(
-				'select id from assistant_drafts where id = $1 for update skip locked',
+				'select id, status from assistant_drafts where id = $1 for update skip locked',
 				[failed.id]
 			);
 			expect(free).toHaveLength(1);
+			// And still failed: it is discarded only after the new rows are in.
+			expect(free[0].status).toBe('failed');
 			await holder.query('commit');
 			expect(await asking).toMatchObject({ ok: true });
 		} finally {
