@@ -1087,6 +1087,53 @@ migration 0100 (indexes only).
 - Not done here, to be filed: `get_review_note` re-anchoring the whole story
   per call, and blocked calls counting against the grant's rate bucket.
 
+## MCP endpoint, review round 1: sign-in fixes (2026-11-21)
+
+Part of #1175, branch `fix/mcp-sign-in-review` on `staging/mcp-endpoint`. No
+migration.
+
+- A self-registered client could list redirect URIs on several hosts, and the
+  consent page named the first one, not the one the answer went to. A
+  registration and a metadata document are now refused when their redirect
+  URIs name more than one remote host. Loopback addresses may sit beside the
+  one remote host, because desktop clients register both (a first cut refused
+  that mix and was relaxed before merge). The consent page names the host of
+  the redirect URI in use, which also covers rows registered before the rule:
+  a loopback redirect shows the loopback name and "The app runs on this
+  computer", never the remote host. A registered client that lists a loopback
+  address is stored under it, so Connected apps does not show a remote host a
+  local program merely listed.
+- `client_name` loses format characters (`\p{Cf}`: bidi overrides, zero-width
+  marks) as well as control characters.
+- Turning the account switch on asks for the password and, with two-factor on,
+  the code, through one `confirmIdentity` helper shared with `createToken`
+  (same throttle). Turning it off asks for nothing. While off, the section
+  shows a small form instead of the toggle.
+- "Sign out other sessions" does not revoke grants or tokens. It is about
+  browsers; an app is disconnected from its own list. Left as is on purpose.
+- Revocation against issuing: `exchangeCode`, `refreshTokens` and
+  `createPersonalToken` take the user row `for share` before anything else,
+  and `revokeAllGrants` and `revokeGrant` take it `for update`. The issuers
+  read the owner's id by hash without a lock first, then lock the user, then
+  the code or token row, so the order is always user first and there is no
+  cycle with a prior live grant. Tests race the two forty and twenty times.
+- `revokeGrant` spends that user and client's unspent codes, so a consent
+  given just before Disconnect cannot be exchanged after it.
+- A faulty authorize request for a known client and redirect used to be
+  answered by a redirect to the client with the error. It now shows "This
+  request cannot be answered" with a "Return to <host>" link carrying the same
+  error; the allow and deny actions answer 400 on such a request. The writer's
+  own Deny still redirects.
+- Suspending an account revokes its grants and tokens in the same transaction.
+- Looked at and left: a DELETE to `/api/mcp` with no Origin and no content
+  type is refused by the hook's cross-site form check with a plain 403 in
+  production, before the route, where the transport would have said 405. The
+  endpoint issues no session id, so a client following the spec has no reason
+  to send one.
+- Not done here, to be filed: a grace window for a refresh token used twice,
+  a throttle and negative cache on metadata document fetches, and per-address
+  limits for hosted clients.
+
 ## MCP endpoint, lane 9: documentation (2026-11-21)
 
 Part of #1175, branch `docs/mcp-endpoint` on `staging/mcp-endpoint`. No code
