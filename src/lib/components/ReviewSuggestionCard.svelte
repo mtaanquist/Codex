@@ -11,6 +11,7 @@
 		roleLabel,
 		authorColor,
 		suggestionAuthor,
+		appAuthorParts,
 		suggestionKind,
 		type ReviewSuggestion,
 		type ReviewThread
@@ -52,6 +53,10 @@
 	const kind = $derived(suggestionKind(suggestion));
 	const verb = $derived(kind === 'insert' ? 'Insert' : kind === 'delete' ? 'Delete' : 'Replace');
 	const byline = $derived(roleLabel(author));
+	// An app's name and its host, shown on lines of their own.
+	const who = $derived(
+		author.isApp ? appAuthorParts(author.name) : { name: author.name, host: null }
+	);
 	const pending = $derived(suggestion.status === 'pending');
 	// The author works an open suggestion straight from the card corner.
 	const canDecide = $derived(role === 'author' && pending);
@@ -95,9 +100,11 @@
 	<div class="rv-card-top">
 		<ReviewAvatar {author} />
 		<div class="rv-who">
-			<div class="rv-who-name">
-				{suggestion.reviewerName} <span class="rv-role">{byline}</span>
+			<div class="rv-who-line">
+				<span class="rv-who-name">{who.name}</span>
+				<span class="rv-role">{byline}</span>
 			</div>
+			{#if who.host}<div class="rv-who-host">{who.host}</div>{/if}
 			<div class="rv-when">{formatDateTime(suggestion.createdAt, page.data.timeZone)}</div>
 		</div>
 		{#if canDecide}

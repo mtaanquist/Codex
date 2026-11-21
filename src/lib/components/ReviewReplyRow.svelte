@@ -61,7 +61,7 @@
 				</form>
 			{/if}
 		</div>
-		{#if reply.isAssistant}
+		{#if reply.isAssistant || reply.isApp}
 			<!-- eslint-disable-next-line svelte/no-at-html-tags (reply renderer escapes raw HTML) -->
 			<div class="rv-reply-body reply-md">{@html renderReplyMarkdown(reply.body)}</div>
 		{:else}

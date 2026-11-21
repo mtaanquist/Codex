@@ -336,16 +336,18 @@ const GONE: ActionFailure = {
 	reason: 'That suggestion is no longer there.'
 };
 
-// The writer's decision on a suggested entry. Accepting creates the entry in
-// its universe as the Plan sidebar does (a lore entry files under the
-// universe's first category), with the description as its summary, and
-// returns the universe so the caller can queue the mention scan.
+// The writer's decision on a suggested entry, made on the page of the
+// universe it was suggested for: a proposal of another universe is not found,
+// and nothing is decided. Accepting creates the entry in that universe as the
+// Plan sidebar does (a lore entry files under the universe's first category),
+// with the description as its summary.
 export async function decideEntityProposal(
 	db: Database,
 	ownerId: string,
+	universeId: string,
 	proposalId: string,
 	decision: 'accept' | 'dismiss'
-): Promise<{ ok: true; entityId: string | null; universeId: string } | ActionFailure> {
+): Promise<{ ok: true; entityId: string | null } | ActionFailure> {
 	return await db.transaction(async (tx) => {
 		const [proposal] = await tx
 			.select()
@@ -354,6 +356,7 @@ export async function decideEntityProposal(
 				and(
 					eq(entityProposals.id, proposalId),
 					eq(entityProposals.ownerId, ownerId),
+					eq(entityProposals.universeId, universeId),
 					eq(entityProposals.status, 'pending')
 				)
 			)
@@ -367,7 +370,7 @@ export async function decideEntityProposal(
 				.where(eq(entityProposals.id, proposal.id));
 		if (decision === 'dismiss') {
 			await settle('dismissed', null);
-			return { ok: true, entityId: null, universeId: proposal.universeId };
+			return { ok: true, entityId: null };
 		}
 		// The name may have been taken since it was suggested.
 		if (await nameTaken(tx, proposal.universeId, proposal.name)) {
@@ -413,31 +416,48 @@ export async function decideEntityProposal(
 				.returning({ id: loreEntries.id });
 		}
 		await settle('accepted', entityId);
-		return { ok: true, entityId, universeId: proposal.universeId };
+		return { ok: true, entityId };
 	});
 }
 
-// The writer's decision on a proposed split. Confirming finds the passage in
-// the story as it now stands (it may have moved to another scene) and runs
-// the normal split; the proposal is settled only once the split has landed.
-// Returns the scenes to scan for mentions.
+// What the writer is told when the split point can no longer be placed. The
+// locating code words its failures for the program that proposed ("include
+// more surrounding text"); none of that is something the writer can act on.
+const SPLIT_STALE: ActionFailure = {
+	ok: false,
+	code: 'conflict',
+	reason:
+		'The scene has changed since this was proposed, so it cannot be split here. Dismiss the proposal.'
+};
+
+// The writer's decision on a proposed split, made on the page of the universe
+// its story is in: a proposal of another universe is not found, and nothing
+// is decided. Confirming finds the passage in the story as it now stands (it
+// may have moved to another scene) and runs the normal split; the proposal is
+// settled only once the split has landed. Returns the scenes to scan for
+// mentions.
 export async function decideSplitProposal(
 	db: Database,
 	ownerId: string,
+	universeId: string,
 	proposalId: string,
 	decision: 'confirm' | 'dismiss'
 ): Promise<{ ok: true; splitSceneId: string | null; newSceneId: string | null } | ActionFailure> {
-	const [proposal] = await db
-		.select()
+	const [found] = await db
+		.select({ proposal: sceneSplitProposals })
 		.from(sceneSplitProposals)
+		.innerJoin(stories, eq(sceneSplitProposals.storyId, stories.id))
 		.where(
 			and(
 				eq(sceneSplitProposals.id, proposalId),
 				eq(sceneSplitProposals.ownerId, ownerId),
-				eq(sceneSplitProposals.status, 'pending')
+				eq(sceneSplitProposals.status, 'pending'),
+				eq(stories.universeId, universeId),
+				eq(stories.ownerId, ownerId)
 			)
 		);
-	if (!proposal) return GONE;
+	if (!found) return GONE;
+	const { proposal } = found;
 	const settle = (status: 'confirmed' | 'dismissed') =>
 		db
 			.update(sceneSplitProposals)
@@ -451,7 +471,7 @@ export async function decideSplitProposal(
 		return { ok: true, splitSceneId: null, newSceneId: null };
 	}
 	const location = await locateSplitInStory(db, ownerId, proposal.sceneId, proposal.before);
-	if (!location.ok) return location;
+	if (!location.ok) return SPLIT_STALE;
 	// Settled first, so two confirms of one proposal cannot both split; put
 	// back if the split itself is refused.
 	const [claimed] = await settle('confirmed');

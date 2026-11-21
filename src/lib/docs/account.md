@@ -391,6 +391,10 @@ Where to find what an app left:
   one waiting draft at a time, so an app cannot leave another until you have
   decided.
 
+Suggested edits, suggested entries, proposed splits and waiting drafts are not
+part of your export. What you accepted or kept is, because it is then part of
+your writing. Review comments are exported with the story they are on.
+
 A connected app is also given ready-made prompts for the work the Assistant
 does in Codex: review, copyedit, continuity review, pattern pass, write,
 rewrite, draft, draft a chapter, catch me up, a character or place sheet, and
@@ -452,6 +456,8 @@ with a "use my account setting" option.
 The Security section has two ways to take your work with you. Export prepares a
 single zip of everything you own: every universe, story, scene, entity, note,
 and uploaded image, all as markdown. It is built in the background and appears
-ready to download a moment later (a bell notification tells you when). Delete
+ready to download a moment later (a bell notification tells you when). Review
+comments are in the zip. Suggested edits that are still waiting are not, nor
+are suggested entries, proposed scene splits or drafts you have not kept. Delete
 removes your account and everything in it. See
 [keeping your account secure](/docs/security) for both.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '#lib/enhance';
 	import { autosaveSubmit } from '#lib/autosave-form';
@@ -43,6 +44,19 @@
 			setTimeout(() => (tokenCopied = false), 1500);
 		});
 	}
+	// A new token is shown once, above the form that made it, so it is brought
+	// into view and focused. A refusal keeps what was typed.
+	let tokenField = $state<HTMLInputElement | null>(null);
+	const createTokenSubmit: Parameters<typeof enhance>[1] = () => {
+		return async ({ result, update }) => {
+			await update({ reset: result.type === 'success' });
+			if (result.type !== 'success') return;
+			await tick();
+			tokenField?.scrollIntoView({ block: 'center' });
+			tokenField?.focus();
+			tokenField?.select();
+		};
+	};
 	const lasts = (days: number) => (days === 365 ? '1 year' : `${days} days`);
 	const now = Date.now();
 
@@ -222,7 +236,7 @@
 			<div class="field" style="margin:0;">
 				<label for="new-token">Your new token</label>
 				<div class="copy-field">
-					<input id="new-token" type="text" value={newToken} readonly />
+					<input id="new-token" type="text" value={newToken} readonly bind:this={tokenField} />
 					<button type="button" onclick={copyToken}>{tokenCopied ? 'Copied' : 'Copy'}</button>
 				</div>
 				<span class="field-hint">
@@ -273,7 +287,13 @@
 	{/if}
 
 	{#if access.enabled}
-		<form method="POST" action="?/createToken" class="admin-card" autocomplete="off">
+		<form
+			method="POST"
+			action="?/createToken"
+			class="admin-card"
+			autocomplete="off"
+			use:enhance={createTokenSubmit}
+		>
 			<div class="field">
 				<label for="token-name">Token name</label>
 				<input

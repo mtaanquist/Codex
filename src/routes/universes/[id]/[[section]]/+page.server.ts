@@ -182,11 +182,17 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const id = formText(data, 'id');
 		const accept = formText(data, 'decision') === 'accept';
+		// Only one of this universe's is found; anything else decides nothing.
 		const result = isUuid(id)
-			? await decideEntityProposal(db, locals.user!.id, id, accept ? 'accept' : 'dismiss')
+			? await decideEntityProposal(
+					db,
+					locals.user!.id,
+					universe.id,
+					id,
+					accept ? 'accept' : 'dismiss'
+				)
 			: null;
-		// One of this universe's, or nothing was decided.
-		if (!result || (result.ok && result.universeId !== universe.id)) {
+		if (!result || (!result.ok && result.code === 'not_found')) {
 			return fail(404, {
 				action: 'suggestions',
 				message: 'That suggestion is no longer there.'
@@ -202,14 +208,20 @@ export const actions: Actions = {
 	},
 	// Split a scene where an app proposed, or dismiss the proposal.
 	decideSplit: async ({ request, params, locals }) => {
-		await ownedUniverse(params.id, locals.user!.id);
+		const universe = await ownedUniverse(params.id, locals.user!.id);
 		const data = await request.formData();
 		const id = formText(data, 'id');
 		const confirm = formText(data, 'decision') === 'confirm';
 		const result = isUuid(id)
-			? await decideSplitProposal(db, locals.user!.id, id, confirm ? 'confirm' : 'dismiss')
+			? await decideSplitProposal(
+					db,
+					locals.user!.id,
+					universe.id,
+					id,
+					confirm ? 'confirm' : 'dismiss'
+				)
 			: null;
-		if (!result) {
+		if (!result || (!result.ok && result.code === 'not_found')) {
 			return fail(404, {
 				action: 'suggestions',
 				message: 'That proposal is no longer there.'

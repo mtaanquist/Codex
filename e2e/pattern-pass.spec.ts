@@ -150,6 +150,8 @@ test('the author works through a pattern note across two scenes', async ({ page 
 	expect(await sceneBodies(name)).toEqual(['The elk crossed the ford.', 'Kara looked back.']);
 });
 
+const LONG_APP_NAME = 'The Writing Desk Assistant For Novelists And Playwrights And Poets';
+
 // #1175: a pattern note a connected app left. The link the app hands the writer
 // (?pass=<note id>) opens the pass on that note, and the note's card offers
 // the same way in.
@@ -167,12 +169,17 @@ test('a link from a connected app opens the pass on its note', async ({ page }) 
 		// The note and its edits as the app would have staged them.
 		for (const table of ['review_comments', 'review_suggestions']) {
 			await pool.query(
-				`update ${table} set assistant = false, client_name = 'Writing Desk',
+				`update ${table} set assistant = false, client_name = '${LONG_APP_NAME}',
 				 client_host = 'app.example'
 				 where ${table === 'review_comments' ? 'thread_id' : 'pattern_thread_id'} = $1`,
 				[threadId]
 			);
 		}
+		// A note written in markdown, as an app writes one.
+		await pool.query(
+			`update review_comments set body_md = body_md || E'\\n\\n**Worth a look.**' where thread_id = $1`,
+			[threadId]
+		);
 	} finally {
 		await pool.end();
 	}
@@ -187,6 +194,22 @@ test('a link from a connected app opens the pass on its note', async ({ page }) 
 	await pass.getByRole('button', { name: 'Stop' }).click();
 	const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
 	await expect(note).toContainText('Writing Desk');
+	// However long the name, the "App" chip and the app's address stay in
+	// view inside the card, and the name is what gets cut.
+	const chip = note.locator('.rv-card-top .rv-role');
+	await expect(chip).toHaveText('App');
+	await expect(chip).toBeInViewport({ ratio: 1 });
+	const host = note.locator('.rv-who-host');
+	await expect(host).toHaveText('app.example');
+	await expect(host).toBeInViewport({ ratio: 1 });
+	const cardBox = (await note.boundingBox())!;
+	for (const part of [chip, host]) {
+		const box = (await part.boundingBox())!;
+		expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+	}
+	// Initials come from the name, and the note's markdown is rendered.
+	await expect(note.locator('.rv-card-top .rv-av')).toHaveText('TP');
+	await expect(note.locator('.rv-body strong')).toHaveText('Worth a look.');
 	await note.getByRole('button', { name: 'Work through this (2)' }).click();
 	await pass.getByRole('button', { name: 'Accept', exact: true }).click();
 	await expect(pass.locator('.pp-para')).toContainText('looked back.');
