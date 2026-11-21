@@ -100,8 +100,15 @@ export const actions: Actions = {
 			client: check.client,
 			permissions,
 			redirectUri: check.redirectUri,
-			codeChallenge: check.codeChallenge
+			codeChallenge: check.codeChallenge,
+			sessionId: locals.session!.id
 		});
+		if (!code) {
+			return fail(403, {
+				message:
+					'Your sign-in has ended, or access for other apps was turned off. Nothing was shared. Sign in again, then go back to the app and try connecting again.'
+			});
+		}
 		logEvent('info', 'oauth.allowed', {
 			userId: user.id,
 			clientId: check.client.clientId,

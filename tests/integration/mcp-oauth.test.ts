@@ -9,6 +9,7 @@ import {
 	oauthClients,
 	oauthCodes,
 	oauthGrants,
+	sessions,
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
@@ -80,6 +81,20 @@ type Client = NonNullable<Awaited<ReturnType<typeof findClient>>>;
 let alice: string;
 let bob: string;
 let client: Client;
+// A live browser session for each writer, as the consent page has.
+const sessionOf = new Map<string, string>();
+
+async function addSession(userId: string): Promise<string> {
+	const [row] = await db
+		.insert(sessions)
+		.values({
+			userId,
+			tokenHash: `session-${userId}-${sessionOf.size}-${Date.now()}`,
+			expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+		})
+		.returning({ id: sessions.id });
+	return row.id;
+}
 
 async function addUser(email: string, extra: Partial<typeof users.$inferInsert> = {}) {
 	const [row] = await db
@@ -104,14 +119,20 @@ async function newClient(redirectUris = [REDIRECT], name = 'Writing Desk'): Prom
 	return result.client;
 }
 
-const codeFor = (userId: string, permissions: ('read' | 'suggest')[] = ['read', 'suggest']) =>
-	createAuthorizationCode(db, {
+async function codeFor(
+	userId: string,
+	permissions: ('read' | 'suggest')[] = ['read', 'suggest'],
+	from: { client: Client; redirectUri: string } = { client, redirectUri: REDIRECT }
+): Promise<string> {
+	const code = await createAuthorizationCode(db, {
 		userId,
-		client,
+		...from,
 		permissions,
-		redirectUri: REDIRECT,
 		codeChallenge: CHALLENGE
 	});
+	if (!code) throw new Error('no code was issued');
+	return code;
+}
 
 const exchange = (code: string, overrides: Record<string, string> = {}) =>
 	exchangeCode(db, {
@@ -140,6 +161,8 @@ beforeEach(async () => {
 	resetRateLimits();
 	alice = await addUser('alice@example.com');
 	bob = await addUser('bob@example.com');
+	sessionOf.clear();
+	for (const userId of [alice, bob]) sessionOf.set(userId, await addSession(userId));
 	client = await newClient();
 });
 
@@ -314,8 +337,11 @@ describe('who a token works for', () => {
 	});
 
 	it('is refused, and no code can be exchanged, while the account switch is off', async () => {
-		const carol = await addUser('carol@example.com', { mcpEnabled: false });
-		expect(await exchange(await codeFor(carol))).toEqual({ ok: false });
+		// A code from just before the switch went off is worth nothing after.
+		const carol = await addUser('carol@example.com');
+		const pending = await codeFor(carol);
+		await db.update(users).set({ mcpEnabled: false }).where(eq(users.id, carol));
+		expect(await exchange(pending)).toEqual({ ok: false });
 		const tokens = await connect(alice);
 		await db.update(users).set({ mcpEnabled: false }).where(eq(users.id, alice));
 		expect(await resolveBearer(db, tokens.accessToken)).toBeNull();
@@ -414,12 +440,9 @@ describe('disconnecting', () => {
 		const pending = await codeFor(alice);
 		const bobs = await codeFor(bob);
 		const other = await newClient(['https://other.example/cb'], 'Other');
-		const others = await createAuthorizationCode(db, {
-			userId: alice,
+		const others = await codeFor(alice, ['read'], {
 			client: other,
-			permissions: ['read'],
-			redirectUri: 'https://other.example/cb',
-			codeChallenge: CHALLENGE
+			redirectUri: 'https://other.example/cb'
 		});
 		expect(await revokeGrant(db, alice, grant.id)).toBe(true);
 		expect(await exchange(pending)).toEqual({ ok: false });
@@ -480,6 +503,147 @@ describe('disconnecting', () => {
 		}
 	});
 
+	it('issues no code to a session that has ended, or to an account with access off', async () => {
+		const from = (sessionId: string | undefined, userId = alice) =>
+			createAuthorizationCode(db, {
+				userId,
+				client,
+				permissions: ['read'],
+				redirectUri: REDIRECT,
+				codeChallenge: CHALLENGE,
+				sessionId
+			});
+		expect(await from(sessionOf.get(alice))).toMatch(/^cdx_ac_/);
+		// Another writer's session, one that is not a session at all, an expired
+		// one and a signed-out one.
+		expect(await from(sessionOf.get(bob))).toBeNull();
+		expect(await from('nope')).toBeNull();
+		const ended = await addSession(alice);
+		await db
+			.update(sessions)
+			.set({ expiresAt: new Date(Date.now() - 1000) })
+			.where(eq(sessions.id, ended));
+		expect(await from(ended)).toBeNull();
+		await db
+			.update(sessions)
+			.set({ revokedAt: new Date() })
+			.where(eq(sessions.id, sessionOf.get(alice)!));
+		expect(await from(sessionOf.get(alice))).toBeNull();
+		await setMcpAccountEnabled(db, bob, false);
+		expect(await from(sessionOf.get(bob), bob)).toBeNull();
+		expect(await db.select().from(oauthCodes)).toHaveLength(1);
+	});
+
+	it('leaves no usable code when a password change overtakes an Allow from another window', async () => {
+		// The other window's session is signed out by the change, and the change
+		// spends every code. Whichever lands first, the code is worth nothing.
+		for (let round = 0; round < 30; round++) {
+			const other = await addSession(alice);
+			const [code] = await Promise.all([
+				createAuthorizationCode(db, {
+					userId: alice,
+					client,
+					permissions: ['read'],
+					redirectUri: REDIRECT,
+					codeChallenge: CHALLENGE,
+					sessionId: other
+				}),
+				db.transaction(async (tx) => {
+					await revokeAllGrants(tx, alice);
+					await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, other));
+				})
+			]);
+			if (code) expect(await exchange(code)).toEqual({ ok: false });
+		}
+	});
+
+	it('waits for a refresh in flight before it hands a token back', async () => {
+		const tokens = await connect(alice);
+		// What a refresh holds while it runs: the writer's row, shared.
+		const holder = await pool.connect();
+		let returned = false;
+		try {
+			await holder.query('begin');
+			await holder.query('select id from users where id = $1 for share', [alice]);
+			const revoking = revokeToken(db, tokens.accessToken).then(() => (returned = true));
+			await new Promise((resolve) => setTimeout(resolve, 200));
+			expect(returned).toBe(false);
+			await holder.query('commit');
+			await revoking;
+		} finally {
+			await holder.query('rollback');
+			holder.release();
+		}
+		expect(await resolveBearer(db, tokens.accessToken)).toBeNull();
+	});
+
+	it('leaves no live token when a token is handed back while it is being refreshed', async () => {
+		for (let round = 0; round < 30; round++) {
+			const tokens = await connect(alice);
+			await Promise.all([
+				refreshTokens(db, { refreshToken: tokens.refreshToken, clientId: client.clientId }),
+				revokeToken(db, round % 2 ? tokens.accessToken : tokens.refreshToken)
+			]);
+			const { rows } = await pool.query(
+				`select count(*)::int as n from api_tokens where user_id = $1 and revoked_at is null`,
+				[alice]
+			);
+			expect(rows[0].n).toBe(0);
+		}
+	});
+
+	it('does not deadlock when a spent code is replayed during a refresh', async () => {
+		for (let round = 0; round < 30; round++) {
+			const code = await codeFor(alice);
+			const first = await exchange(code);
+			if (!first.ok) throw new Error('the exchange was refused');
+			const outcomes = await Promise.allSettled([
+				exchange(code),
+				refreshTokens(db, {
+					refreshToken: first.tokens.refreshToken,
+					clientId: client.clientId
+				}),
+				revokeToken(db, first.tokens.accessToken)
+			]);
+			expect(outcomes.map((outcome) => outcome.status)).toEqual([
+				'fulfilled',
+				'fulfilled',
+				'fulfilled'
+			]);
+		}
+	});
+
+	it('names the host the code was sent to, for a client with a local and a remote address', async () => {
+		const mixed = await newClient(['https://desk.example/cb', 'http://localhost/cb'], 'Desk');
+		expect(mixed.host).toBe('localhost');
+		const connectVia = async (redirectUri: string) => {
+			const result = await exchangeCode(db, {
+				code: await codeFor(alice, ['read'], { client: mixed, redirectUri }),
+				clientId: mixed.clientId,
+				redirectUri,
+				codeVerifier: VERIFIER
+			});
+			if (!result.ok) throw new Error('the exchange was refused');
+			return result.tokens;
+		};
+		const remote = await connectVia('https://desk.example/cb');
+		expect(await listGrants(db, alice)).toMatchObject([
+			{ clientName: 'Desk', host: 'desk.example' }
+		]);
+		expect((await resolveBearer(db, remote.accessToken))?.client).toMatchObject({
+			clientName: 'Desk',
+			host: 'desk.example'
+		});
+		// Connected again from this computer, the same connection says so.
+		const local = await connectVia('http://localhost:4321/cb');
+		expect(await listGrants(db, alice)).toMatchObject([{ clientName: 'Desk', host: 'localhost' }]);
+		expect((await resolveBearer(db, local.accessToken))?.client.host).toBe('localhost');
+		// A connection from before the host was recorded falls back to the client's.
+		await db.update(oauthGrants).set({ redirectHost: null }).where(eq(oauthGrants.userId, alice));
+		expect((await listGrants(db, alice))[0].host).toBe('localhost');
+		expect((await resolveBearer(db, local.accessToken))?.client.host).toBe('localhost');
+	});
+
 	it('disconnects every app when an admin suspends the account', async () => {
 		const tokens = await connect(alice);
 		const bobs = await connect(bob);
@@ -499,6 +663,7 @@ describe('disconnecting', () => {
 	it('leaves nothing behind when the account row goes', async () => {
 		await connect(alice);
 		await codeFor(alice);
+		await pool.query('delete from sessions where user_id = $1', [alice]);
 		await pool.query('delete from users where id = $1', [alice]);
 		expect(await db.select().from(apiTokens)).toHaveLength(0);
 		expect(await db.select().from(oauthGrants)).toHaveLength(0);
@@ -946,7 +1111,10 @@ function authorizeEvent(userId: string, query: URLSearchParams, fields?: URLSear
 	for (const [key, value] of fields ?? []) data.append(key, value);
 	return {
 		url,
-		locals: { user: { id: userId, email: 'writer@example.com' }, session: { id: 's' } },
+		locals: {
+			user: { id: userId, email: 'writer@example.com' },
+			session: { id: sessionOf.get(userId) ?? 's' }
+		},
 		request: { formData: async () => data },
 		setHeaders: vi.fn()
 	};
@@ -1112,6 +1280,17 @@ describe('the consent page', () => {
 		expect(await db.select().from(oauthCodes)).toHaveLength(0);
 	});
 
+	it('issues nothing to a window whose sign-in has ended', async () => {
+		await db
+			.update(sessions)
+			.set({ revokedAt: new Date() })
+			.where(eq(sessions.id, sessionOf.get(alice)!));
+		const result = await answer('allow', alice);
+		expect(result.status).toBe(403);
+		expect(result.continueTo).toBeUndefined();
+		expect(await db.select().from(oauthCodes)).toHaveLength(0);
+	});
+
 	it('checks the request again when it is answered', async () => {
 		const tampered = authorizeQuery({ redirect_uri: 'https://evil.example/cb' });
 		const result = await answer('allow', alice, tampered);
@@ -1253,6 +1432,17 @@ describe('personal access tokens', () => {
 		expect(await listPersonalTokens(db, alice)).toEqual([]);
 	});
 
+	it('is gone from the list when the tool hands the token back', async () => {
+		const { token } = await made(alice);
+		const kept = await made(alice, { name: 'Day Script' });
+		await revokeToken(db, token);
+		expect(await resolveBearer(db, token)).toBeNull();
+		expect((await listPersonalTokens(db, alice)).map((row) => row.name)).toEqual(['Day Script']);
+		expect((await resolveBearer(db, kept.token))?.userId).toBe(alice);
+		// The name is free again, and the token no longer counts toward the limit.
+		expect((await make(alice)).ok).toBe(true);
+	});
+
 	it('is revoked when the writer turns access off', async () => {
 		const { token } = await made(alice);
 		const bobs = await made(bob);
@@ -1297,6 +1487,7 @@ describe('personal access tokens', () => {
 		await db.update(users).set({ deletionScheduledAt: null }).where(eq(users.id, alice));
 		expect(await resolveBearer(db, token)).toBeNull();
 		await made(bob);
+		await pool.query('delete from sessions where user_id = $1', [bob]);
 		await pool.query('delete from users where id = $1', [bob]);
 		expect(await db.select().from(apiTokens).where(eq(apiTokens.userId, bob))).toHaveLength(0);
 		expect(await db.select().from(oauthGrants).where(eq(oauthGrants.userId, bob))).toHaveLength(0);

@@ -1792,6 +1792,11 @@ export const oauthGrants = pgTable(
 			.references(() => oauthClients.id, { onDelete: 'cascade' })
 			.notNull(),
 		permissions: text('permissions').array().notNull(),
+		// For a self-registered client, the host of the redirect address the
+		// last code went to: such a client may list this computer and one
+		// remote host, and the grant is shown under the one that was used.
+		// Null otherwise, and the client's own host stands.
+		redirectHost: text('redirect_host'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 		revokedAt: timestamp('revoked_at', { withTimezone: true })

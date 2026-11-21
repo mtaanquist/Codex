@@ -126,6 +126,7 @@ oauth_grants (
   user_id       uuid references users(id) on delete cascade not null,
   client_id     uuid references oauth_clients(id) on delete cascade not null,
   permissions   text[] not null,         -- 'read' | 'suggest' | 'apply'
+  redirect_host text,                    -- self-registered clients: the host the last code was sent to; null means the client's host stands
   created_at    timestamptz not null,
   last_used_at  timestamptz,
   revoked_at    timestamptz              -- one live grant per (user, client): unique where revoked_at is null
