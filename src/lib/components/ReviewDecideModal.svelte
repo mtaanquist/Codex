@@ -90,7 +90,11 @@
 				note = null;
 				if (accept) {
 					formData.delete('suggestionId');
-					for (const s of acceptable) formData.append('suggestionId', s.id);
+					for (const s of acceptable) {
+						formData.append('suggestionId', s.id);
+						// The replacement as this list shows it.
+						formData.set(`seen:${s.id}`, s.stamp ?? '');
+					}
 					if (!(await beforeAccept())) {
 						busy = false;
 						note = 'Your latest typing could not be saved, so nothing was accepted.';
@@ -100,9 +104,10 @@
 				}
 				return async ({ result, update }) => {
 					if (result.type !== 'success') {
-						// A refusal changed nothing. Anything else may have stopped part
-						// of the way through, so the list is read again.
-						if (result.type !== 'failure') await invalidateAll();
+						// Either way the list is read again: a refusal may mean an edit
+						// was revised, and anything else may have stopped part of the
+						// way through.
+						await invalidateAll();
 						busy = false;
 						note =
 							result.type === 'failure' && typeof result.data?.message === 'string'
@@ -126,7 +131,7 @@
 					busy = false;
 					if (failed === 0) return onClose();
 					note = `${edits(decided.length)} ${accept ? 'accepted' : 'rejected'}. ${edits(failed)} could not be ${
-						accept ? 'accepted because the text changed' : 'rejected'
+						accept ? 'accepted because the text or the suggestion changed' : 'rejected'
 					}.`;
 				};
 			}}

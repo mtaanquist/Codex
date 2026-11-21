@@ -1023,6 +1023,70 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, review round 1: endpoint and tools fixes (2026-11-21)
+
+Part of #1175, branch `fix/mcp-tools-review` on `staging/mcp-endpoint`,
+migration 0100 (indexes only).
+
+- Writer trust (H1). `update_suggestion` could change a pending edit's text
+  at any moment, and Accept sent only the id, so the writer could apply text
+  they never saw. The same held for the in-app Assistant's revise. Now every
+  accept form sends `seen`, a SHA-256 of the replacement as the page showed it
+  (`suggestionStamp`, carried on `SuggestionView.stamp`), and
+  `decideSuggestion` reads the suggestion `for update` inside its transaction,
+  after the scene row, compares, and applies the text it read there. It used
+  to read the replacement before the transaction; a test that races an accept
+  with a revision showed unseen text landing. A stamp was picked over a
+  revised-at column because it needs no migration and is exact: a revision
+  back to the same text is the same proposal. `textHash` was not used; it is
+  not collision resistant and the other side is a program. The page actions
+  refuse an accept without `seen`; the function takes it as optional for the
+  callers that are not a page (tests, the bulk path passes a map). The only
+  accept paths are the three forms on the review page (card, guided pass,
+  "Decide together"); nothing in the editor or the chat accepts a suggestion.
+  On a refusal the card and the list reload.
+- Over MCP `update_suggestion` also needs the writer to have written last in
+  the edit's discussion. Everywhere, a revision must change something and
+  must not repeat another pending edit of the same author
+  (`updateAssistantSuggestion`, now one transaction with the row locked).
+- Errors (M1). The write cases of the dispatcher's switch were returned
+  without `await`, so a throw skipped its catch and reached the caller: over
+  MCP the SDK answered with the error's message, which for a query is the
+  statement and its parameters. The same on main sent the throw up the in-app
+  tool loop. All cases are awaited; a database error is never quoted, to the
+  model or the app; `callMcpTool` has a catch of its own around everything
+  after the rate limit; the log line carries the tool and the error code only;
+  a null character in any string argument is refused before any query.
+- Trashed scenes (M2). `reachableStory` and `isOwnNote` join the scene and
+  require it live, so `reply_in_thread`, `update_suggestion`,
+  `get_review_note` and a `suggest_edit` linked by `patternNoteId` or
+  `followsSuggestionId` all miss on one.
+- Whose thread (M3). `reply_in_thread` took any thread of the story. It now
+  takes a note the app opened or the discussion under its own edit
+  (`isOwnThread`). A thread the writer opened is refused too: the earlier
+  test that replied in one was a convenience of the test, not a rule; an app
+  has no tool that would tell it such a thread's id.
+- Calls sent together (M4). The duplicate refusals and ceilings were check
+  then insert. An app's staging calls now take
+  `pg_advisory_xact_lock(hashtext('mcp-staging:<client>:<universe>'))` in the
+  dispatcher and run inside that transaction. Universe and client was chosen
+  over scene and client so one lock covers the scene tools and
+  `suggest_entity` alike; at 30 staging calls a minute nothing is lost. The
+  handlers that catch a unique violation insert inside a transaction of
+  their own (a savepoint here), so the refusal does not abort the call.
+  Unique indexes back the one-row rules for callers outside that lock (the
+  Assistant and an app suggesting the same name). The follow-up index covers
+  apps only: the Assistant's rows on main may already hold repeats, and its
+  re-read runs one at a time. The turn check of `reply_in_thread` moved under
+  `addComment`'s thread lock.
+- `update_suggestion` gives "No suggestion with that id." for anything that
+  is not the app's own pending suggestion (L2). `stageAppDraft` no longer
+  discards a failed draft of the writer's on that scene (L3).
+- The indexes on `client_id` and `scene_id` asked for in the app-side review
+  (L4) are in the same migration.
+- Not done here, to be filed: `get_review_note` re-anchoring the whole story
+  per call, and blocked calls counting against the grant's rate bucket.
+
 ## MCP endpoint, review round 1: sign-in fixes (2026-11-21)
 
 Part of #1175, branch `fix/mcp-sign-in-review` on `staging/mcp-endpoint`. No

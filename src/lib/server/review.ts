@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { normaliseReason } from '#lib/suggestion-reason';
 import { textHash } from '#lib/text-hash';
 import {
@@ -11,6 +11,7 @@ import {
 	inArray,
 	isNotNull,
 	isNull,
+	ne,
 	or,
 	sql,
 	type AnyColumn,
@@ -39,7 +40,7 @@ import { wordCount } from '../word-count.ts';
 import { paragraphWindow } from '../paragraphs.ts';
 import { normaliseAssistantName } from './llm/prompts/persona.ts';
 import { EMAIL_RE } from './signup.ts';
-import { isForeignKeyViolation } from './db-errors.ts';
+import { isForeignKeyViolation, isUniqueViolation } from './db-errors.ts';
 
 // Guest review: invitations, guest identity, threaded comments, and
 // suggested edits. An author invites someone to one story by magic link; the
@@ -536,16 +537,26 @@ export async function ensureSuggestionThread(
 // author's right to this story; the thread only needs to belong to it.
 export async function addComment(
 	db: Database,
-	input: { storyId: string; threadId: string; author: ThreadAuthor; body: string }
+	input: {
+		storyId: string;
+		threadId: string;
+		author: ThreadAuthor;
+		body: string;
+		// For a program: refuse when its own comment is the thread's latest, so
+		// it says one thing and then waits for someone else.
+		waitsItsTurn?: boolean;
+	}
 ): Promise<{ ok: true; commentId: string } | { ok: false; reason: string }> {
 	const body = input.body.trim();
 	if (!body) return { ok: false, reason: 'Write a comment first.' };
 	if (body.length > MAX_COMMENT_LENGTH) {
 		return { ok: false, reason: 'That comment is too long.' };
 	}
+	const { author } = input;
 	// The thread row is locked with the insert so a reply cannot land between
 	// a retraction's "everyone here is me" check and its delete; the retraction
-	// takes the same lock.
+	// takes the same lock. The turn check reads under it too, so two replies
+	// sent at once cannot both find the other's missing.
 	const inserted = await db.transaction(async (tx) => {
 		const [thread] = await tx
 			.select({ id: reviewThreads.id })
@@ -553,6 +564,17 @@ export async function addComment(
 			.where(and(eq(reviewThreads.id, input.threadId), eq(reviewThreads.storyId, input.storyId)))
 			.for('update');
 		if (!thread) return null;
+		if (input.waitsItsTurn && isMachine(author)) {
+			const [last] = await tx
+				.select({ assistant: reviewComments.assistant, clientId: reviewComments.clientId })
+				.from(reviewComments)
+				.where(eq(reviewComments.threadId, thread.id))
+				.orderBy(desc(reviewComments.createdAt))
+				.limit(1);
+			const mine =
+				last && ('assistant' in author ? last.assistant : last.clientId === author.client.id);
+			if (mine) return 'wait' as const;
+		}
 		const [comment] = await tx
 			.insert(reviewComments)
 			.values({
@@ -561,10 +583,16 @@ export async function addComment(
 				bodyMd: body
 			})
 			.returning({ id: reviewComments.id });
-		return comment.id;
+		return { id: comment.id };
 	});
 	if (!inserted) return { ok: false, reason: 'That thread does not exist.' };
-	return { ok: true, commentId: inserted };
+	if (inserted === 'wait') {
+		return {
+			ok: false,
+			reason: 'Your reply is the latest in this thread. Wait for the writer to answer.'
+		};
+	}
+	return { ok: true, commentId: inserted.id };
 }
 
 // Only the story's owner resolves or reopens a thread, and only one of that
@@ -728,6 +756,15 @@ export async function listThreads(
 
 const MAX_REPLACEMENT_LENGTH = 20000;
 
+// A fingerprint of the text a suggestion proposes. The page that shows a
+// suggestion carries it back with an accept, and the accept is refused when
+// the proposal has been revised since, so the writer never applies text they
+// have not read.
+export function suggestionStamp(replacement: string): string {
+	return createHash('sha256').update(replacement).digest('base64url');
+}
+export const SUGGESTION_CHANGED = 'This suggestion changed. Read it again.';
+
 // A reviewer proposes replacing [start, end) of the scene's current text with
 // the replacement (equal offsets insert, an empty replacement deletes). The
 // range is pinned to a base revision so the author's later edits re-anchor.
@@ -777,6 +814,8 @@ export async function clientNotesWaiting(
 		);
 	return suggestions.n + threads.n;
 }
+
+export const FOLLOW_UP_EXISTS = 'You have already staged a follow-up to that edit.';
 
 export async function createSuggestion(
 	db: Database,
@@ -871,32 +910,42 @@ export async function createSuggestion(
 		}
 	}
 
-	const rows = await db.transaction(async (tx) => {
-		await sceneRevisionLock(tx, scene.id);
-		// A save between the read above and the lock moves the text under the
-		// range, so the range is pinned only to the body it was checked on.
-		const [current] = await tx
-			.select({ bodyMd: scenes.bodyMd })
-			.from(scenes)
-			.where(eq(scenes.id, scene.id));
-		if (current?.bodyMd !== scene.bodyMd) return [];
-		const baseRevisionId = await ensureBaseRevision(tx, scene.id, scene.bodyMd);
-		return await tx
-			.insert(reviewSuggestions)
-			.values({
-				storyId: input.storyId,
-				sceneId: input.sceneId,
-				...suggestionAuthorColumns(input.author),
-				baseRevisionId,
-				rangeStart: start,
-				rangeEnd: end,
-				replacement: input.replacement,
-				patternThreadId: input.patternThreadId ?? null,
-				followsSuggestionId: input.followsSuggestionId ?? null,
-				reason: normaliseReason(input.reason)
-			})
-			.returning({ id: reviewSuggestions.id });
-	});
+	let rows: { id: string }[];
+	try {
+		rows = await db.transaction(async (tx) => {
+			await sceneRevisionLock(tx, scene.id);
+			// A save between the read above and the lock moves the text under the
+			// range, so the range is pinned only to the body it was checked on.
+			const [current] = await tx
+				.select({ bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(eq(scenes.id, scene.id));
+			if (current?.bodyMd !== scene.bodyMd) return [];
+			const baseRevisionId = await ensureBaseRevision(tx, scene.id, scene.bodyMd);
+			return await tx
+				.insert(reviewSuggestions)
+				.values({
+					storyId: input.storyId,
+					sceneId: input.sceneId,
+					...suggestionAuthorColumns(input.author),
+					baseRevisionId,
+					rangeStart: start,
+					rangeEnd: end,
+					replacement: input.replacement,
+					patternThreadId: input.patternThreadId ?? null,
+					followsSuggestionId: input.followsSuggestionId ?? null,
+					reason: normaliseReason(input.reason)
+				})
+				.returning({ id: reviewSuggestions.id });
+		});
+	} catch (err) {
+		// An app's second follow-up to one edit, sent alongside the first (see
+		// review_suggestions_client_follow_up_idx).
+		if (input.followsSuggestionId && isUniqueViolation(err)) {
+			return { ok: false, reason: FOLLOW_UP_EXISTS };
+		}
+		throw err;
+	}
 	const [row] = rows;
 	if (!row) {
 		return {
@@ -923,6 +972,9 @@ export type SuggestionView = {
 	// What the suggestion replaces, as proposed against its base text.
 	original: string;
 	replacement: string;
+	// What an accept sends back to say this replacement is the one that was
+	// read (see suggestionStamp).
+	stamp: string;
 	status: 'pending' | 'accepted' | 'rejected';
 	// Where it lands in the current text; null when the passage has since
 	// been rewritten, which also blocks accepting it.
@@ -1056,6 +1108,7 @@ export async function listSuggestions(
 			mine,
 			original: row.baseBody.slice(rangeStart, rangeEnd),
 			replacement: row.suggestion.replacement,
+			stamp: suggestionStamp(row.suggestion.replacement),
 			status: row.suggestion.status,
 			anchor,
 			anchorLost: row.suggestion.status === 'pending' && anchor === null,
@@ -1145,7 +1198,8 @@ function readableBy(author: MachineAuthor): SQL {
 	return or(isNotNull(reviewComments.authorUserId), writtenBy(reviewComments, author))!;
 }
 
-// Whether this standalone thread was opened by this program.
+// Whether this standalone thread was opened by this program, on a scene that
+// is not in the trash.
 export async function isOwnNote(
 	db: Database,
 	threadId: string,
@@ -1155,12 +1209,38 @@ export async function isOwnNote(
 		.select({ id: reviewThreads.id })
 		.from(reviewThreads)
 		.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+		.innerJoin(scenes, eq(reviewThreads.sceneId, scenes.id))
 		.where(
 			and(
 				eq(reviewThreads.id, threadId),
 				isNull(reviewThreads.suggestionId),
+				isNull(scenes.deletedAt),
 				writtenBy(reviewComments, author),
 				IS_OPENING_COMMENT
+			)
+		);
+	return Boolean(row);
+}
+
+// Whether this thread is one the program may speak in: a note it opened, or
+// the discussion under an edit it suggested. A thread the writer, a guest or
+// another program opened is not, whoever has written in it since.
+export async function isOwnThread(
+	db: Database,
+	threadId: string,
+	author: MachineAuthor
+): Promise<boolean> {
+	if (await isOwnNote(db, threadId, author)) return true;
+	const [row] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.innerJoin(reviewSuggestions, eq(reviewThreads.suggestionId, reviewSuggestions.id))
+		.innerJoin(scenes, eq(reviewThreads.sceneId, scenes.id))
+		.where(
+			and(
+				eq(reviewThreads.id, threadId),
+				isNull(scenes.deletedAt),
+				writtenBy(reviewSuggestions, author)
 			)
 		);
 	return Boolean(row);
@@ -1512,34 +1592,99 @@ export async function getOwnNote(
 // the Assistant amends what it proposed. Never touches another author's
 // suggestion or a decided one, and only the replacement: the anchored range
 // stays put.
+//
+// A revision is held to what a new suggestion is: it must change something,
+// and must not repeat another pending edit of the same author. afterWriter
+// adds the rule for a program that picks its own moment (an app): the writer
+// must have written last in the edit's discussion, as a revision answers
+// something they said. The row is locked, so an accept under way either sees
+// the revision (and is refused, see decideSuggestion) or lands first.
 export async function updateAssistantSuggestion(
 	db: Database,
-	input: { storyId: string; suggestionId: string; replacement: string; author?: MachineAuthor }
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+	input: {
+		storyId: string;
+		suggestionId: string;
+		replacement: string;
+		author?: MachineAuthor;
+		afterWriter?: boolean;
+	}
+): Promise<{ ok: true } | { ok: false; reason: string; notFound?: true }> {
 	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
 		return { ok: false, reason: 'That suggestion is too long.' };
 	}
-	const updated = await db
-		.update(reviewSuggestions)
-		.set({ replacement: input.replacement })
-		.where(
-			and(
-				eq(reviewSuggestions.id, input.suggestionId),
-				eq(reviewSuggestions.storyId, input.storyId),
-				writtenBy(reviewSuggestions, input.author ?? { assistant: true }),
-				eq(reviewSuggestions.status, 'pending')
+	const author = input.author ?? { assistant: true };
+	return await db.transaction(async (tx) => {
+		const [own] = await tx
+			.select()
+			.from(reviewSuggestions)
+			.where(
+				and(
+					eq(reviewSuggestions.id, input.suggestionId),
+					eq(reviewSuggestions.storyId, input.storyId),
+					writtenBy(reviewSuggestions, author),
+					eq(reviewSuggestions.status, 'pending')
+				)
 			)
-		)
-		.returning({ id: reviewSuggestions.id });
-	if (updated.length === 0) {
-		return {
-			ok: false,
-			reason: input.author
-				? 'You can only revise a suggestion you made, and only while it is pending.'
-				: 'Only the Assistant can revise its own suggestion, and only while it is pending.'
-		};
-	}
-	return { ok: true };
+			.for('update');
+		if (!own) {
+			return {
+				ok: false,
+				notFound: true,
+				reason: input.author
+					? 'You can only revise a suggestion you made, and only while it is pending.'
+					: 'Only the Assistant can revise its own suggestion, and only while it is pending.'
+			};
+		}
+		if (input.afterWriter) {
+			const [last] = await tx
+				.select({ authorUserId: reviewComments.authorUserId })
+				.from(reviewComments)
+				.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
+				.where(eq(reviewThreads.suggestionId, own.id))
+				.orderBy(desc(reviewComments.createdAt))
+				.limit(1);
+			if (!last?.authorUserId) {
+				return {
+					ok: false,
+					reason:
+						'Revise a suggestion only after the writer has answered in its discussion. Wait for them to write there.'
+				};
+			}
+		}
+		const [base] = await tx
+			.select({ bodyMd: revisions.bodyMd })
+			.from(revisions)
+			.where(eq(revisions.id, own.baseRevisionId));
+		if (base && base.bodyMd.slice(own.rangeStart, own.rangeEnd) === input.replacement) {
+			return { ok: false, reason: 'That suggestion changes nothing.' };
+		}
+		const [twin] = await tx
+			.select({ id: reviewSuggestions.id })
+			.from(reviewSuggestions)
+			.where(
+				and(
+					eq(reviewSuggestions.sceneId, own.sceneId),
+					writtenBy(reviewSuggestions, author),
+					eq(reviewSuggestions.status, 'pending'),
+					eq(reviewSuggestions.rangeStart, own.rangeStart),
+					eq(reviewSuggestions.rangeEnd, own.rangeEnd),
+					eq(reviewSuggestions.replacement, input.replacement),
+					ne(reviewSuggestions.id, own.id)
+				)
+			)
+			.limit(1);
+		if (twin) {
+			return {
+				ok: false,
+				reason: 'You have already staged this exact edit on this scene; do not repeat it.'
+			};
+		}
+		await tx
+			.update(reviewSuggestions)
+			.set({ replacement: input.replacement })
+			.where(eq(reviewSuggestions.id, own.id));
+		return { ok: true };
+	});
 }
 
 // The author's decision. Rejection only records it; acceptance re-anchors
@@ -1551,13 +1696,19 @@ export async function updateAssistantSuggestion(
 // override is the owner's own wording, accepted in place of the proposed
 // replacement (the guided pass's Edit). The suggestion then records the text
 // that was applied.
+//
+// seen is the stamp of the replacement the writer was shown (suggestionStamp).
+// An accept that carries one is refused when the proposal has been revised
+// since. Every accept a writer makes on a page carries one; the page's action
+// insists on it.
 export async function decideSuggestion(
 	db: Database,
 	userId: string,
 	storyId: string,
 	suggestionId: string,
 	accept: boolean,
-	override?: string
+	override?: string,
+	seen?: string
 ): Promise<
 	| { ok: true; sceneId: string | null; bodyMd: string | null; baseHash: string | null }
 	| { ok: false; reason: string }
@@ -1595,11 +1746,7 @@ export async function decideSuggestion(
 		if (override.length > MAX_REPLACEMENT_LENGTH) {
 			return { ok: false, reason: 'That suggestion is too long.' };
 		}
-		if (!override.trim() && row.suggestion.replacement !== '') {
-			return { ok: false, reason: 'Write the wording to use, or skip this change.' };
-		}
 	}
-	const replacement = accept && override !== undefined ? override : row.suggestion.replacement;
 
 	if (!accept) {
 		await db
@@ -1622,6 +1769,24 @@ export async function decideSuggestion(
 				.where(eq(scenes.id, row.scene.id))
 				.for('update');
 			if (!scene) return { ok: false, reason: 'That scene does not exist.' };
+			// The proposal is read under its own lock, after the scene's (the
+			// order a scene delete takes them in), so a revision cannot slip in
+			// between this read and the write below.
+			const [current] = await tx
+				.select({ status: reviewSuggestions.status, replacement: reviewSuggestions.replacement })
+				.from(reviewSuggestions)
+				.where(eq(reviewSuggestions.id, suggestionId))
+				.for('update');
+			if (!current || current.status !== 'pending') {
+				return { ok: false, reason: 'That suggestion was already decided.' };
+			}
+			if (seen !== undefined && suggestionStamp(current.replacement) !== seen) {
+				return { ok: false, reason: SUGGESTION_CHANGED };
+			}
+			if (override !== undefined && !override.trim() && current.replacement !== '') {
+				return { ok: false, reason: 'Write the wording to use, or skip this change.' };
+			}
+			const replacement = override !== undefined ? override : current.replacement;
 			// One anchor against the text just read under the lock, so there is
 			// nothing for a shared mapper to reuse.
 			const anchor = mapSuggestionRange(
@@ -1696,13 +1861,16 @@ export async function decideSuggestions(
 	userId: string,
 	storyId: string,
 	suggestionIds: string[],
-	accept: boolean
+	accept: boolean,
+	// For an accept: the stamp of each replacement as the writer was shown it
+	// (see decideSuggestion), by suggestion id.
+	seen?: Record<string, string>
 ): Promise<BulkDecision> {
 	const decided: string[] = [];
 	const failed: BulkDecision['failed'] = [];
 	const changes: { sceneId: string; bodyMd: string; baseHash: string }[] = [];
 	for (const id of new Set(suggestionIds)) {
-		const result = await decideSuggestion(db, userId, storyId, id, accept);
+		const result = await decideSuggestion(db, userId, storyId, id, accept, undefined, seen?.[id]);
 		if (!result.ok) {
 			failed.push({ id, reason: result.reason });
 			continue;

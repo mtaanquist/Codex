@@ -25,11 +25,13 @@ process.env.APP_SECRET = process.env.APP_SECRET || 'review-test-secret';
 const {
 	createReviewInvitation,
 	createSuggestion,
+	createThread,
 	decideSuggestion,
 	decideSuggestions,
 	deleteSuggestion,
 	ensureReviewer,
-	listSuggestions
+	listSuggestions,
+	updateAssistantSuggestion
 } = await import('../../src/lib/server/review');
 
 let pool: pg.Pool;
@@ -384,6 +386,110 @@ describe('decideSuggestion', () => {
 			ok: false
 		});
 		expect(await sceneBody()).toBe(BODY);
+	});
+});
+
+describe('accepting what the writer saw', () => {
+	const CHANGED = 'This suggestion changed. Read it again.';
+
+	async function assistantSuggests(word: string, replacement: string) {
+		const start = BODY.indexOf(word);
+		const made = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { assistant: true },
+			range: { start, end: start + word.length },
+			replacement
+		});
+		if (!made.ok) throw new Error(made.reason);
+		return made.suggestionId;
+	}
+	const stampOf = async (id: string) =>
+		(await listSuggestions(db, storyId)).find((row) => row.id === id)!.stamp;
+	const revise = (suggestionId: string, replacement: string) =>
+		updateAssistantSuggestion(db, { storyId, suggestionId, replacement });
+
+	it('refuses an accept when the replacement changed after the writer read it', async () => {
+		const id = await assistantSuggests('quick', 'swift');
+		const seen = await stampOf(id);
+		expect(await revise(id, 'DELETED EVERYTHING')).toEqual({ ok: true });
+		expect(await decideSuggestion(db, authorId, storyId, id, true, undefined, seen)).toEqual({
+			ok: false,
+			reason: CHANGED
+		});
+		expect(await sceneBody()).toBe(BODY);
+		const [row] = await listSuggestions(db, storyId);
+		expect(row).toMatchObject({ status: 'pending', replacement: 'DELETED EVERYTHING' });
+		// Read again, it can be accepted as it now stands.
+		expect(
+			await decideSuggestion(db, authorId, storyId, id, true, undefined, row.stamp)
+		).toMatchObject({ ok: true });
+		expect(await sceneBody()).toBe(BODY.replace('quick', 'DELETED EVERYTHING'));
+	});
+
+	it('gives the same text the same stamp and other text another', async () => {
+		const id = await assistantSuggests('quick', 'swift');
+		const first = await stampOf(id);
+		await revise(id, 'fast');
+		expect(await stampOf(id)).not.toBe(first);
+		await revise(id, 'swift');
+		expect(await stampOf(id)).toBe(first);
+	});
+
+	it('holds the writers own wording to the suggestion they reworded', async () => {
+		const made = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { assistant: true },
+			body: 'Pattern note (quick): overused.'
+		});
+		if (!made.ok) throw new Error(made.reason);
+		const start = BODY.indexOf('quick');
+		const staged = await createSuggestion(db, {
+			storyId,
+			sceneId,
+			author: { assistant: true },
+			range: { start, end: start + 5 },
+			replacement: 'swift',
+			patternThreadId: made.threadId
+		});
+		if (!staged.ok) throw new Error(staged.reason);
+		const seen = await stampOf(staged.suggestionId);
+		await revise(staged.suggestionId, 'fast');
+		expect(
+			await decideSuggestion(db, authorId, storyId, staged.suggestionId, true, 'brisk', seen)
+		).toEqual({ ok: false, reason: CHANGED });
+		expect(await sceneBody()).toBe(BODY);
+	});
+
+	it('accepts the ones still as read and leaves out the one that changed', async () => {
+		const quick = await assistantSuggests('quick', 'swift');
+		const dog = await assistantSuggests('lazy dog', 'sleeping hound');
+		const seen = { [quick]: await stampOf(quick), [dog]: await stampOf(dog) };
+		await revise(quick, 'DELETED EVERYTHING');
+		const result = await decideSuggestions(db, authorId, storyId, [quick, dog], true, seen);
+		expect(result.decided).toEqual([dog]);
+		expect(result.failed).toEqual([{ id: quick, reason: CHANGED }]);
+		expect(await sceneBody()).toBe(BODY.replace('lazy dog', 'sleeping hound'));
+	});
+
+	it('never applies text that arrives while the accept is under way', async () => {
+		// Whichever lands first, the scene holds the text the writer read or
+		// nothing of this suggestion at all.
+		for (let round = 0; round < 15; round++) {
+			await db.update(scenes).set({ bodyMd: BODY }).where(eq(scenes.id, sceneId));
+			const id = await assistantSuggests('quick', `swift${round}`);
+			const seen = await stampOf(id);
+			const [decided] = await Promise.all([
+				decideSuggestion(db, authorId, storyId, id, true, undefined, seen),
+				revise(id, 'UNSEEN')
+			]);
+			const body = await sceneBody();
+			expect(body).not.toContain('UNSEEN');
+			expect(body).toBe(decided.ok ? BODY.replace('quick', `swift${round}`) : BODY);
+			await pool.query('delete from review_suggestions');
+		}
 	});
 });
 

@@ -342,34 +342,32 @@ export async function stageAppDraft(
 		.where(and(mine, inArray(assistantDrafts.status, OPEN)))
 		.limit(1);
 	if (open) return waiting;
-	let draftId: string;
 	try {
-		const [row] = await db
-			.insert(assistantDrafts)
-			.values({
-				userId: input.userId,
-				storyId: input.storyId,
-				sceneId: input.sceneId,
-				brief: input.brief.trim().slice(0, MAX_DRAFT_BRIEF_CHARS),
-				targetWords: clampDraftWords(wordCount(text)),
-				textMd: text,
-				status: 'ready',
-				note: `Drafted by ${input.from}.`
-			})
-			.returning({ id: assistantDrafts.id });
-		draftId = row.id;
+		// In a transaction of its own, so a refused insert does not spoil one the
+		// caller is already in.
+		const [row] = await db.transaction((tx) =>
+			tx
+				.insert(assistantDrafts)
+				.values({
+					userId: input.userId,
+					storyId: input.storyId,
+					sceneId: input.sceneId,
+					brief: input.brief.trim().slice(0, MAX_DRAFT_BRIEF_CHARS),
+					targetWords: clampDraftWords(wordCount(text)),
+					textMd: text,
+					status: 'ready',
+					note: `Drafted by ${input.from}.`
+				})
+				.returning({ id: assistantDrafts.id })
+		);
+		// A failed draft of the writer's own on this scene is left where it is.
+		// It is theirs to try again or discard; an app does not clear it away.
+		return { ok: true, draftId: row.id };
 	} catch (err) {
 		// Another draft for the scene landed first.
 		if (isUniqueViolation(err)) return waiting;
 		throw err;
 	}
-	// As when the writer asks again: a failed draft gives way to the new one,
-	// after the insert (see requestSceneDraft).
-	await db
-		.update(assistantDrafts)
-		.set({ status: 'discarded' })
-		.where(and(mine, eq(assistantDrafts.status, 'failed'), ne(assistantDrafts.id, draftId)));
-	return { ok: true, draftId };
 }
 
 // The user's draft, whatever state it is in; null when it is not theirs.

@@ -1345,7 +1345,13 @@ export const reviewSuggestions = pgTable(
 		index('review_suggestions_follows_idx').on(table.followsSuggestionId),
 		// Every client delete checks this foreign key, and the ceiling on an
 		// app's waiting notes counts by it.
-		index('review_suggestions_client_idx').on(table.clientId)
+		index('review_suggestions_client_idx').on(table.clientId),
+		// An app stages one follow-up to an accepted edit, whatever becomes of
+		// it. The check before the insert cannot hold that for two calls sent
+		// together; this does.
+		uniqueIndex('review_suggestions_client_follow_up_idx')
+			.on(table.followsSuggestionId, table.clientId)
+			.where(sql`${table.followsSuggestionId} is not null and ${table.clientId} is not null`)
 	]
 );
 
@@ -1886,7 +1892,16 @@ export const entityProposals = pgTable(
 		decidedAt: timestamp('decided_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(table) => [index('entity_proposals_universe_idx').on(table.universeId, table.status)]
+	(table) => [
+		index('entity_proposals_universe_idx').on(table.universeId, table.status),
+		// One waiting suggestion for a name in a universe, whoever sent it, even
+		// when two arrive together.
+		uniqueIndex('entity_proposals_pending_name_idx')
+			.on(table.universeId, sql`lower(${table.name})`)
+			.where(sql`${table.status} = 'pending'`),
+		// Every client delete checks this foreign key.
+		index('entity_proposals_client_idx').on(table.clientId)
+	]
 );
 
 // A scene split a connected app proposed. An app has no chat to show a
@@ -1917,5 +1932,16 @@ export const sceneSplitProposals = pgTable(
 		decidedAt: timestamp('decided_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
-	(table) => [index('scene_split_proposals_story_idx').on(table.storyId, table.status)]
+	(table) => [
+		index('scene_split_proposals_story_idx').on(table.storyId, table.status),
+		// One waiting proposal from an app for a split point of a scene, even
+		// when two arrive together. The passage is hashed because it can be
+		// longer than an index entry may be.
+		uniqueIndex('scene_split_proposals_pending_idx')
+			.on(table.sceneId, table.clientId, sql`md5(${table.before})`)
+			.where(sql`${table.status} = 'pending'`),
+		// Every scene delete and every client delete checks these foreign keys.
+		index('scene_split_proposals_scene_idx').on(table.sceneId),
+		index('scene_split_proposals_client_idx').on(table.clientId)
+	]
 );
