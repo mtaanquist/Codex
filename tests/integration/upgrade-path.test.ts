@@ -203,7 +203,8 @@ describe('upgrading from the previous release', () => {
 				).map((row) => [row.id, row])
 			);
 		// Before any pass: the chapter summary that was current in the release
-		// is still read, the one that was out of date is not.
+		// (under the stand-in fingerprint of migration 0094) is still read, the
+		// one that was out of date is not.
 		const outline = Object.fromEntries(
 			(await storySkeleton(db, TIDE)).chapters.map((chapter) => [chapter.id, chapter.summaryMd])
 		);
@@ -241,9 +242,7 @@ describe('upgrading from the previous release', () => {
 		// The upgrade itself asks the model nothing.
 		expect((await planArc(db, { kind: 'character', entity: await row(MARA) }))!.stale).toBe(false);
 		expect((await planArc(db, { kind: 'character', entity: await row(TAM) }))!.stale).toBe(true);
-		// Which stories they read was not recorded, so the upgrade lists every
-		// story of the universe (migration 0093): muting or deleting any of
-		// them keeps an out-of-date arc from the Assistant.
+		// The stories each arc read come through as the release stored them.
 		for (const characterId of [MARA, TAM])
 			expect((await row(characterId)).arcSummaryStories).toEqual([TIDE]);
 
