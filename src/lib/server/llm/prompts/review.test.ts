@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildConfirmMessage,
+	buildContinuityBrief,
 	buildPatternApplyMessage,
+	buildPatternBrief,
 	buildPatternSurveyMessage,
 	buildRereadMessage,
 	buildReviewMessage,
@@ -14,6 +16,50 @@ import {
 	splitSurveyChunks,
 	type SurveyScene
 } from './review';
+
+// The briefs an outside agent gets over MCP say what the staged prompts say,
+// in the same sentences.
+describe('the briefs for an agent that runs a pass itself', () => {
+	const shared = (brief: string, staged: string) =>
+		brief.split('\n').filter((line) => staged.includes(line));
+
+	it('gives the continuity brief the survey looks-for list and the confirm rules', () => {
+		for (const scope of ['story', 'universe'] as const) {
+			const brief = buildContinuityBrief({ scope, storyId: 'story-1' });
+			const survey = buildSurveyMessage([], { scope });
+			const looksFor = shared(brief, survey);
+			expect(looksFor.filter((line) => line.startsWith('- ')).length).toBeGreaterThanOrEqual(3);
+			expect(looksFor).toContain(
+				'Judge only what spans scenes; spelling, grammar, and phrasing inside one scene are not this pass.'
+			);
+			const confirm = buildConfirmMessage('x', [], 100);
+			expect(shared(brief, confirm).join(' ')).toContain(
+				'If the text bears it out, stage one note'
+			);
+			expect(brief).toContain('this pass is continuity only');
+			// The JSON hand-off between Codex's own stages is not for an agent.
+			expect(brief).not.toContain('JSON');
+			expect(brief).not.toContain('discarded');
+		}
+		expect(buildContinuityBrief({ scope: 'story', storyId: 'story-1' })).toContain(
+			'the story with id story-1'
+		);
+		expect(buildContinuityBrief({ scope: 'universe' })).toContain('every story in this universe');
+	});
+
+	it('gives the pattern brief the survey looks-for list, the cap and the pattern note rule', () => {
+		const brief = buildPatternBrief({ storyId: 'story-1', chapter: 'The Ford', cap: 5 });
+		const survey = buildPatternSurveyMessage([], { scope: 'chapter', cap: 5 });
+		const lines = shared(brief, survey);
+		expect(lines.filter((line) => line.startsWith('- '))).toHaveLength(4);
+		expect(lines.join(' ')).toContain('Report at most 5, the ones that matter most.');
+		const review = buildReviewMessage({ id: 's1', title: 'T' }, [], [], false, true);
+		expect(shared(brief, review).join(' ')).toContain('use leave_pattern_note');
+		expect(brief).toContain('the chapter "The Ford" of the story with id story-1');
+		expect(brief).toContain('patternNoteId');
+		expect(brief).not.toContain('JSON');
+	});
+});
 
 describe('buildReviewMessage', () => {
 	it('names the scene and its id, and steers to the staging tools', () => {
