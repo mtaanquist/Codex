@@ -1023,6 +1023,33 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, review round 2: app side fixes (2026-11-21)
+
+Part of #1175, branch `fix/mcp-app-side-review-2` on `staging/mcp-endpoint`.
+No migration.
+
+- Turning access on. The form was a plain POST and its refusal (a wrong
+  password or code) came back under "Apps with access", below the fold on a
+  phone. The form is enhanced and keeps what was typed, the refusal has a
+  scope of its own (`access`) and shows beside the button. The e2e checks it
+  is in view at 390 px wide and at the default size.
+- The guided pass after a refused accept. Focus goes to the step's card (the
+  pressed button is disabled or replaced, which dropped it to the page). When
+  the writer is in Edit and the suggestion was revised under them, the card
+  shows "The suggestion now reads" with the new wording above their own,
+  which is kept. The refusal line already has `role="alert"` from the sign-in
+  branch.
+- An authenticator code works once, so turning access on and then making a
+  token with the same code is refused. The refusal, a hint under the token
+  form's code field and the help article say to wait for the next code.
+- Help: a password change disconnects the apps but leaves access on, so only
+  the apps need connecting again. The article said to turn access on again.
+- "Split here" on a proposal from an app. The shared locate follows a passage
+  into a sibling scene, which is right for the Assistant's chain of splits in
+  one chat. For a stored proposal the writer was shown one scene, so a
+  passage that has moved to another gets the stale sentence and nothing is
+  split.
+
 ## MCP endpoint, review round 2: endpoint and tools fixes (2026-11-21)
 
 Part of #1175, branch `fix/mcp-tools-review-2` on `staging/mcp-endpoint`,

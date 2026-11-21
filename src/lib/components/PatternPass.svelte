@@ -86,10 +86,14 @@
 		failure = null;
 	});
 
+	// The suggested wording the writer's own started from, so a revision that
+	// lands while they type can be shown beside it.
+	let draftFrom = $state('');
 	function startEdit() {
-		draft = step?.replacement ?? '';
+		draft = draftFrom = step?.replacement ?? '';
 		editing = true;
 	}
+	const revisedUnder = $derived(editing && step != null && step.replacement !== draftFrom);
 
 	// Each new step scrolls its card to the top of the list, leaving a little of
 	// the card before it in view. Only a new step does, so a writer scrolling
@@ -99,6 +103,12 @@
 		typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 	function cardOf(id: string): HTMLElement | null {
 		return scroller?.querySelector<HTMLElement>(`[data-edit="${CSS.escape(id)}"]`) ?? null;
+	}
+	// After a refused accept the pressed button may be gone or disabled, which
+	// would leave the keyboard on the page; it goes to the step's card.
+	async function refocus(id: string) {
+		await tick();
+		cardOf(id)?.focus({ preventScroll: true });
 	}
 	// The button the writer pressed goes with the step, so focus moves to the
 	// new step rather than falling back to the page, unless the writer had
@@ -223,6 +233,7 @@
 								busy = false;
 								failure = 'Your latest typing could not be saved, so nothing was accepted.';
 								cancel();
+								void refocus(step!.id);
 								return;
 							}
 							const id = step!.id;
@@ -246,11 +257,19 @@
 									await invalidateAll();
 								}
 								await update();
+								if (result.type !== 'success') await refocus(id);
 							};
 						}}
 					>
 						<input type="hidden" name="suggestionId" value={step.id} />
 						<input type="hidden" name="seen" value={step.stamp ?? ''} />
+						{#if revisedUnder}
+							<span class="rv-draft-k">The suggestion now reads</span>
+							<div class="rv-diff pp-revised">
+								{#if step.replacement}<span class="rv-diff-ins">{step.replacement}</span
+									>{:else}Remove these words.{/if}
+							</div>
+						{/if}
 						{#if editing}
 							<span class="rv-draft-k rv-draft-to">Your wording</span>
 							<textarea

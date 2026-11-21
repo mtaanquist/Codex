@@ -128,7 +128,8 @@ async function confirmIdentity(userId: string, data: FormData, scope: string) {
 		if (!(await verifyUserTotp(db, userId, code))) {
 			return fail(400, {
 				scope,
-				message: 'That code is not right. Enter the current code from your authenticator app.'
+				message:
+					'That code is not right. Enter the current code from your authenticator app. Each code works once, so if you have just used this one, wait for the next.'
 			});
 		}
 	}
@@ -942,7 +943,7 @@ export const actions: Actions = {
 		// Turning it off asks for nothing. Turning it on is what lets an app
 		// in, so a signed-in browser alone is not enough.
 		if (enabled && !(await mcpAccountEnabled(db, userId))) {
-			const refused = await confirmIdentity(userId, data, 'apps');
+			const refused = await confirmIdentity(userId, data, 'access');
 			if (refused) return refused;
 		}
 		await setMcpAccountEnabled(db, userId, enabled);

@@ -495,7 +495,10 @@ export async function decideSplitProposal(
 		return { ok: true, splitSceneId: null, newSceneId: null };
 	}
 	const location = await locateSplitInStory(db, ownerId, proposal.sceneId, proposal.before);
-	if (!location.ok) return SPLIT_STALE;
+	// The locate follows a passage into another scene of the story, which suits
+	// the Assistant's chain of splits in one chat. The writer was shown this
+	// proposal on one scene, so only that scene is split.
+	if (!location.ok || location.sceneId !== proposal.sceneId) return SPLIT_STALE;
 	// Settled first, so two confirms of one proposal cannot both split; put
 	// back if the split itself is refused.
 	const [claimed] = await settle('confirmed');

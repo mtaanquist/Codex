@@ -69,9 +69,21 @@ test('a writer connects an app, disconnects it, then makes and revokes a token',
 	await waitForHydration(page);
 	// Turning access on asks for the password; a wrong one leaves it off.
 	const accessForm = page.locator('form[action="?/setExternalAccess"]');
-	await accessForm.getByLabel('Confirm your password').fill('not-the-password');
-	await accessForm.getByRole('button', { name: 'Turn on access for apps' }).click();
-	await expect(page.getByText('That password is not right.')).toBeVisible();
+	// The refusal shows in the form, in view, on a phone as on a desk, and
+	// what was typed is kept.
+	const desk = page.viewportSize()!;
+	for (const size of [{ width: 390, height: 700 }, desk]) {
+		await page.setViewportSize(size);
+		await accessForm.getByLabel('Confirm your password').fill('not-the-password');
+		await accessForm.getByRole('button', { name: 'Turn on access for apps' }).click();
+		const refusal = accessForm.getByText('That password is not right.');
+		await expect(refusal).toBeVisible();
+		await expect(refusal).toBeInViewport({ ratio: 1 });
+		await expect(page.getByText('That password is not right.')).toHaveCount(1);
+		await expect(accessForm.getByLabel('Confirm your password')).toHaveValue('not-the-password');
+		await page.reload();
+		await waitForHydration(page);
+	}
 	await expect(page.getByLabel('Address to give the app')).toHaveCount(0);
 	await accessForm.getByLabel('Confirm your password').fill('e2e-password');
 	await accessForm.getByRole('button', { name: 'Turn on access for apps' }).click();

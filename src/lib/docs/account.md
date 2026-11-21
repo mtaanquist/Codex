@@ -426,7 +426,9 @@ To make a token:
 4. Choose how long the token lasts. It stops working after that, and you make
    a new one.
 5. Type your password, and the code from your authenticator app if you use
-   two-factor authentication, then select "Create token".
+   two-factor authentication, then select "Create token". Each code works
+   once. If you have just used one to turn access on, wait for the app to show
+   the next.
 6. Copy the token and store it somewhere safe. It is shown once and cannot be
    shown again.
 

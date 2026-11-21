@@ -57,7 +57,9 @@ Each of these shows the name of the app that left it.
 
 Open Account, then Connected apps. Under "Apps with access", select Disconnect next to the app. It stops working at once. What it already left stays for you to decide on.
 
-To disconnect every app at once, turn off "Allow other apps to connect". Changing or resetting your password also disconnects every app. To use an app again afterwards, turn access on again with your password and connect the app again.
+To disconnect every app at once, turn off "Allow other apps to connect". To use an app again afterwards, turn access on again with your password, then connect the app again.
+
+Changing or resetting your password also disconnects every app. Access stays on, so afterwards you only need to connect each app again.
 
 ## For a script or tool of your own
 

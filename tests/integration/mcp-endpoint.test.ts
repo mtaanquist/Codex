@@ -2356,6 +2356,18 @@ describe('propose_scene_split', () => {
 				await decideSplitProposal(db, alice.userId, alice.universeId, waiting.id, 'confirm')
 			).toMatchObject({ ok: false, reason: STALE });
 		}
+		// The words moved to another scene of the story: that scene is not the
+		// one the writer was shown, so it is not split in its place.
+		await setBody(alice, 'They rowed out past the bar and slept.');
+		const [moved] = await db
+			.insert(scenes)
+			.values({ storyId: alice.storyId, globalPosition: 5, title: 'Later', bodyMd: BODY })
+			.returning({ id: scenes.id });
+		expect(
+			await decideSplitProposal(db, alice.userId, alice.universeId, waiting.id, 'confirm')
+		).toMatchObject({ ok: false, reason: STALE });
+		expect((await db.select().from(scenes).where(eq(scenes.id, moved.id)))[0].bodyMd).toBe(BODY);
+		await db.delete(scenes).where(eq(scenes.id, moved.id));
 		expect(await sceneCount(alice.storyId)).toBe(before);
 		expect((await listProposals(db, alice.userId, alice.universeId)).splits).toHaveLength(1);
 		expect(
