@@ -131,6 +131,7 @@ async function connect(
 		redirectUri: 'https://app.example/callback',
 		codeChallenge: CHALLENGE
 	});
+	if (!code) throw new Error('no code was issued');
 	const result = await exchangeCode(db, {
 		code,
 		clientId: registered.client.clientId,

@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
-import { apiTokens, oauthClients, oauthCodes, oauthGrants, users } from '../db/schema.ts';
+import { apiTokens, oauthClients, oauthCodes, oauthGrants, sessions, users } from '../db/schema.ts';
+import { isUuid } from '../../slug.ts';
 import { hashToken } from '../tokens.ts';
 import {
 	BASE_PERMISSION,
@@ -23,7 +24,7 @@ import {
 	UNUSED_CLIENT_RETENTION
 } from './constants.ts';
 import type { OauthClient } from './clients.ts';
-import { verifyPkce } from './rules.ts';
+import { redirectHost, verifyPkce } from './rules.ts';
 
 // The authorization server's state: codes, grants and tokens. Every function
 // takes the database, so the integration tests run them against a real one.
@@ -52,6 +53,12 @@ function newSecret(prefix: string): string {
 // The user lock always comes before any lock on a code, token or grant row,
 // which is why the issuers look the user up by hash before locking the row
 // they came for.
+//
+// Two issuers of one account do run side by side, so whatever touches the
+// tokens that descend from one code also takes `lockFamily` first (after the
+// user lock and any code row, before any token row): a refresh and a
+// revocation of the same family then run one after the other, and neither
+// can hold a token row the other is waiting for.
 async function lockUserForRevocation(tx: Database, userId: string): Promise<void> {
 	await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
 }
@@ -81,8 +88,17 @@ async function accountUsable(db: Database, userId: string, holdUser = false): Pr
 	);
 }
 
+async function lockFamily(tx: Database, familyId: string): Promise<void> {
+	await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`oauth-family:${familyId}`}))`);
+}
+
 // ============ Authorization codes ============
 
+// Issues the code the consent page sends back to the app, or null when the
+// account may not use external access or the session that pressed Allow
+// (`sessionId`) has ended. A password change signs the other sessions out and
+// spends every code under the user lock, so a code is either issued before
+// that and spent by it, or refused after it.
 export async function createAuthorizationCode(
 	db: Database,
 	input: {
@@ -91,19 +107,39 @@ export async function createAuthorizationCode(
 		permissions: readonly McpPermission[];
 		redirectUri: string;
 		codeChallenge: string;
+		sessionId?: string;
 	}
-): Promise<string> {
-	const code = newSecret(CODE_PREFIX);
-	await db.insert(oauthCodes).values({
-		codeHash: hashToken(code),
-		userId: input.userId,
-		clientId: input.client.id,
-		permissions: [...input.permissions],
-		redirectUri: input.redirectUri,
-		codeChallenge: input.codeChallenge,
-		expiresAt: new Date(Date.now() + CODE_TTL_MS)
+): Promise<string | null> {
+	const { sessionId } = input;
+	if (sessionId !== undefined && !isUuid(sessionId)) return null;
+	return db.transaction(async (tx) => {
+		if (!(await accountUsable(tx, input.userId, true))) return null;
+		if (sessionId !== undefined) {
+			const [session] = await tx
+				.select({ id: sessions.id })
+				.from(sessions)
+				.where(
+					and(
+						eq(sessions.id, sessionId),
+						eq(sessions.userId, input.userId),
+						isNull(sessions.revokedAt),
+						gt(sessions.expiresAt, sql`now()`)
+					)
+				);
+			if (!session) return null;
+		}
+		const code = newSecret(CODE_PREFIX);
+		await tx.insert(oauthCodes).values({
+			codeHash: hashToken(code),
+			userId: input.userId,
+			clientId: input.client.id,
+			permissions: [...input.permissions],
+			redirectUri: input.redirectUri,
+			codeChallenge: input.codeChallenge,
+			expiresAt: new Date(Date.now() + CODE_TTL_MS)
+		});
+		return code;
 	});
-	return code;
 }
 
 export type TokenSet = {
@@ -146,7 +182,9 @@ async function issueTokens(
 	};
 }
 
+// Call inside a transaction that holds the user lock.
 async function revokeFamily(db: Database, familyId: string): Promise<void> {
+	await lockFamily(db, familyId);
 	await db
 		.update(apiTokens)
 		.set({ revokedAt: sql`now()` })
@@ -199,13 +237,18 @@ export async function exchangeCode(
 
 		// One live grant per writer and client: connecting again (a second
 		// device, or after the app lost its tokens) updates it in place.
+		const granted = {
+			permissions: code.permissions,
+			// Only a self-registered client is vouched for by where its code goes.
+			redirectHost: client.kind === 'dcr' ? redirectHost(code.redirectUri) : null
+		};
 		const [grant] = await tx
 			.insert(oauthGrants)
-			.values({ userId: code.userId, clientId: client.id, permissions: code.permissions })
+			.values({ userId: code.userId, clientId: client.id, ...granted })
 			.onConflictDoUpdate({
 				target: [oauthGrants.userId, oauthGrants.clientId],
 				targetWhere: isNull(oauthGrants.revokedAt),
-				set: { permissions: code.permissions }
+				set: granted
 			})
 			.returning();
 		const tokens = await issueTokens(tx, {
@@ -231,9 +274,13 @@ export async function refreshTokens(
 			eq(apiTokens.kind, 'refresh')
 		);
 		// As in exchangeCode: the user lock before the token's.
-		const [owner] = await tx.select({ userId: apiTokens.userId }).from(apiTokens).where(isRefresh);
+		const [owner] = await tx
+			.select({ userId: apiTokens.userId, familyId: apiTokens.familyId })
+			.from(apiTokens)
+			.where(isRefresh);
 		if (!owner) return { ok: false };
 		const usable = await accountUsable(tx, owner.userId, true);
+		await lockFamily(tx, owner.familyId);
 		const [row] = await tx
 			.select({ token: apiTokens, grant: oauthGrants, client: oauthClients })
 			.from(apiTokens)
@@ -281,13 +328,31 @@ export async function refreshTokens(
 }
 
 // RFC 7009: revoking either token of a pair ends that connection. Unknown
-// tokens are not an error.
+// tokens are not an error. It waits for a refresh of the same account that is
+// in flight, so the pair that refresh issues is revoked too.
 export async function revokeToken(db: Database, token: string): Promise<void> {
-	const [row] = await db
-		.select({ familyId: apiTokens.familyId })
-		.from(apiTokens)
-		.where(eq(apiTokens.tokenHash, hashToken(token)));
-	if (row) await revokeFamily(db, row.familyId);
+	await db.transaction(async (tx) => {
+		const [row] = await tx
+			.select({
+				userId: apiTokens.userId,
+				familyId: apiTokens.familyId,
+				kind: apiTokens.kind,
+				grantId: apiTokens.grantId
+			})
+			.from(apiTokens)
+			.where(eq(apiTokens.tokenHash, hashToken(token)));
+		if (!row) return;
+		await lockUserForRevocation(tx, row.userId);
+		await revokeFamily(tx, row.familyId);
+		// A personal token is its whole grant: without this it would stay in the
+		// writer's list, and count toward the limit, with nothing behind it.
+		if (row.kind === 'personal' && row.grantId) {
+			await tx
+				.update(oauthGrants)
+				.set({ revokedAt: sql`now()` })
+				.where(and(eq(oauthGrants.id, row.grantId), isNull(oauthGrants.revokedAt)));
+		}
+	});
 }
 
 // ============ Bearer resolution ============
@@ -338,7 +403,11 @@ export async function resolveBearer(db: Database, token: string): Promise<Bearer
 		userId: stored.userId,
 		tokenId: stored.id,
 		grantId: grant.id,
-		client: { id: client.id, clientName: client.clientName, host: client.host },
+		client: {
+			id: client.id,
+			clientName: client.clientName,
+			host: grant.redirectHost ?? client.host
+		},
 		permissions: parsePermissions(grant.permissions)
 	};
 }
@@ -359,7 +428,7 @@ export async function listGrants(db: Database, userId: string): Promise<GrantVie
 		.select({
 			id: oauthGrants.id,
 			clientName: oauthClients.clientName,
-			host: oauthClients.host,
+			host: sql<string>`coalesce(${oauthGrants.redirectHost}, ${oauthClients.host})`,
 			permissions: oauthGrants.permissions,
 			createdAt: oauthGrants.createdAt,
 			lastUsedAt: oauthGrants.lastUsedAt

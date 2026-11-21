@@ -1023,6 +1023,49 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, review round 2: sign-in fixes (2026-11-21)
+
+Part of #1175, branch `fix/mcp-sign-in-review-2` on `staging/mcp-endpoint`.
+Four lows, nothing above. Migration 0101 adds one nullable column.
+
+- The consent page's code was a bare insert outside the user-row lock, so an
+  Allow already in flight could leave a live code behind a password change, a
+  reset or a Disconnect. `createAuthorizationCode` is now a transaction that
+  holds the user row shared (through `accountUsable`), checks that the session
+  that pressed Allow is still live (same user, not revoked, not expired), and
+  only then inserts. It returns null when refused and the allow action answers
+  403 with a sentence that says to sign in again. The session id is optional
+  in the function so the token tests can still make a code without a browser
+  session; the route always passes it.
+- `revokeToken` (the revoke endpoint) ran outside the lock, so it could answer
+  200 while an overlapping refresh left a live pair. It is now a transaction:
+  read whose token it is, lock the user row for revocation, revoke the family.
+- Lock order inside a family. Two issuers of one account both hold the user
+  row shared, so a replayed code and a refresh (or two replays) could take
+  token rows in opposite orders. Rather than order the row locks, every path
+  that touches a family (`refreshTokens`, `revokeFamily`) first takes a
+  transaction-scoped advisory lock on `oauth-family:<id>`, after the user lock
+  and any code row and before any token row. One lock is easier to reason
+  about than an ordering across three callers, and a family is one
+  connection, so nothing useful is serialised away.
+- Which host a grant shows. A self-registered client may list this computer
+  and one remote host; it was listed and attributed as "localhost" even when
+  the code went to the remote host. `oauth_grants.redirect_host` records the
+  host of the redirect address the code went to (self-registered clients
+  only; a client named by a metadata document is vouched for by where the
+  document lives, so it stays null), and `listGrants` and `resolveBearer` use
+  it before the client's stored host. Rows from before the column, and
+  personal tokens, fall back. Connecting again from the other address updates
+  it: the grant is one connection and shows where it was last made from.
+- A personal token handed back at the revoke endpoint left its grant live, so
+  it stayed in the list and counted toward the limit. `revokeToken` revokes
+  the grant too when the token is a personal one.
+- Tests. A deterministic one holds the user row shared and checks that
+  `revokeToken` waits. The raced ones (revoke against refresh, a replayed code
+  against a refresh and a revoke) passed before the fix as well, since the
+  window is narrow; they are there as guards, not as reproductions. The test
+  events for the consent page now carry a real session row.
+
 ## MCP endpoint, review round 1: app side fixes (2026-11-21)
 
 Part of #1175, branch `fix/mcp-app-side-review` on `staging/mcp-endpoint`. No
