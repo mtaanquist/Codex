@@ -39,6 +39,10 @@ const REGISTRY: { slug: string; summary: string }[] = [
 	},
 	{ slug: 'publishing', summary: 'Turning a finished story into a public reading page.' },
 	{ slug: 'reviewing', summary: 'Asking someone to read a story and leave comments.' },
+	{
+		slug: 'connecting-apps',
+		summary: 'Letting an AI app you already use read your writing and leave suggestions.'
+	},
 	{ slug: 'account', summary: 'Your profile, public page, appearance, and editor defaults.' },
 	{ slug: 'security', summary: 'Password, two-factor, passkeys, sessions, export, and deletion.' },
 	{ slug: 'shortcuts', summary: 'The keyboard shortcuts worth knowing.' },

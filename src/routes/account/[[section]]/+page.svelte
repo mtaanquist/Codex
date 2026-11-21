@@ -96,8 +96,16 @@
 	{#snippet topbar()}
 		<AppBar
 			crumbs={[libraryCrumb(), pageCrumb('Account')]}
-			helpTopic={active === 'security' ? 'security' : 'account'}
-			helpLabel={active === 'security' ? 'account security' : 'your account'}
+			helpTopic={active === 'security'
+				? 'security'
+				: active === 'apps'
+					? 'connecting-apps'
+					: 'account'}
+			helpLabel={active === 'security'
+				? 'account security'
+				: active === 'apps'
+					? 'connecting an app'
+					: 'your account'}
 		/>
 	{/snippet}
 	{#snippet sidebar()}

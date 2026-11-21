@@ -1023,6 +1023,35 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 9: documentation (2026-11-21)
+
+Part of #1175, branch `docs/mcp-endpoint` on `staging/mcp-endpoint`. No code
+beyond the help index entry.
+
+- New help article `connecting-apps` ("Connecting an app"), written for
+  someone who has never connected anything: what it is, the steps, what an
+  app may do, where to find what it left, disconnecting, and what to do when
+  it does not connect. The Connected apps section of `account` stays as the
+  reference and links to it.
+- `docs/SELF-HOSTING.md` has a "Connected apps (MCP)" section: claude.ai and
+  Claude Desktop connect from Anthropic's servers, so the instance must be
+  reachable over public HTTPS; `ORIGIN` must be the public URL; which paths a
+  proxy must pass. The in-app self-hosting article says the same in plain
+  words.
+- `assistant.md`: the status header now says the toolbox is also served over
+  MCP. The exception list was written lane by lane and is complete as of
+  lane 7. The old note that the Assistant uses "no MCP" is in the Phase 9
+  entry of this file, further down; it describes how the Assistant's own
+  model gets its tools (in-process function calling), which is still true,
+  so it stays as written.
+- Not in this round, by decision: the pass card (MCP Apps), a
+  `decide_suggestion` tool and the `apply` permission.
+- Left for later, found while building: a count of waiting suggestions
+  outside the universe's settings, and a notification when an app stages
+  something.
+- The help link in the top bar opens the new article while Connected apps is
+  the open section of the account page.
+
 ## MCP endpoint, lane 8: personal access tokens (2026-11-21)
 
 Part of #1175, branch `feat/mcp-personal-tokens` on `staging/mcp-endpoint`.

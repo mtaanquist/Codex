@@ -351,7 +351,9 @@ for each kind of event. Emails arrive batched, so a busy hour sends one message.
 
 An AI app you already use can read your writing in Codex and leave suggestions
 for you. It can never change, delete or publish your text. Nothing can connect
-until you turn this on.
+until you turn this on. For a walk through connecting an app for the first
+time, and what to do when it does not work, see
+[Connecting an app](/docs/connecting-apps).
 
 To connect an app:
 

@@ -6,7 +6,9 @@ enrichment pass and character arcs followed on 2026-11-18, #845 and #846). The g
 co-author and continuation, the reviewer role, the admin egress panel, the
 per-story mute, and the background jobs with their activity cards are all
 merged. The "Frontend wiring map" at the end records where each surface
-landed. The design intent below still holds and the shipped code matches
+landed. The tools the Assistant calls are also offered to outside apps over
+an MCP endpoint (#1175, 2026-11-21; see "The same toolbox over MCP"), with the
+exceptions listed there. The design intent below still holds and the shipped code matches
 its shape; where the text speaks of the work in the future tense, read it
 as the rationale that produced what is now built. Numbers and prompts
 marked TODO remain placeholders to calibrate against a real prose corpus.
