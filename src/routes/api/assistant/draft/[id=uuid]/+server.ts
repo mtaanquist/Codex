@@ -26,27 +26,39 @@ import { rateLimitWrites } from '#lib/server/write-guard';
 export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 	if (!locals.user) error(401, 'Sign in to edit a draft.');
 	rateLimitWrites(locals.user.id);
-	const payload = await readJson<{ text?: unknown; base?: unknown }>(request);
+	const payload = await readJson<{ text?: unknown; base?: unknown; sent?: unknown }>(request);
 	if (typeof payload.text !== 'string') error(400, 'text must be a string.');
-	checkProseLength(payload.text);
+	checkText(payload.text);
+	if (payload.sent !== undefined && typeof payload.sent !== 'string') {
+		error(400, 'sent must be a string.');
+	}
+	if (payload.sent) checkText(payload.sent);
 	const result = await saveDraftText(
 		db,
 		locals.user.id,
 		params.id!,
 		payload.text,
-		baseOf(payload.base)
+		baseOf(payload.base),
+		payload.sent
 	);
 	if (!result.ok) throwActionError(result);
 	return Response.json({ ok: true, textVersion: result.textVersion });
 };
 
-// The version of the draft the writer's copy was made from, when sent.
-function baseOf(value: unknown): string | undefined {
-	if (value === undefined || value === null) return undefined;
+// The version of the draft the writer's copy was made from. Required: a save
+// or a decision without it could replace text saved from another window.
+function baseOf(value: unknown): string {
 	if (typeof value !== 'string' || !/^[0-9a-f]{32}$/.test(value)) {
 		error(400, 'base must be a draft version.');
 	}
 	return value;
+}
+
+// Postgres text cannot hold a null character, so it is refused here and not
+// left to fail in the query.
+function checkText(text: string): void {
+	checkProseLength(text);
+	if (text.includes('\u0000')) error(400, 'text must not contain a null character.');
 }
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
@@ -54,20 +66,21 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const userId = locals.user.id;
 	rateLimitWrites(userId);
 	const payload = await readJson<{ action?: unknown; text?: unknown; base?: unknown }>(request);
-	const base = baseOf(payload.base);
 	if (payload.text !== undefined && typeof payload.text !== 'string') {
 		error(400, 'text must be a string.');
 	}
-	if (payload.text) checkProseLength(payload.text);
+	if (payload.text) checkText(payload.text);
 	const draftId = params.id!;
 
 	if (payload.action === 'fill') {
+		const base = baseOf(payload.base);
 		const result = await fillSceneFromDraft(db, userId, draftId, payload.text, base);
 		if (!result.ok) throwActionError(result);
 		await queueSceneMentions(result.sceneId);
 		return Response.json({ ok: true, sceneId: result.sceneId });
 	}
 	if (payload.action === 'add') {
+		const base = baseOf(payload.base);
 		const result = await addDraftAsScene(db, userId, draftId, payload.text, base);
 		if (!result.ok) throwActionError(result);
 		await queueSceneMentions(result.newSceneId);

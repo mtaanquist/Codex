@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { ActionFailure } from './action-result';
 import type { Database } from './auth';
 import { isUniqueViolation } from './db-errors';
@@ -20,15 +20,17 @@ import { isUuid } from '#lib/slug';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 import {
-	CHAPTER_CAP_ADVICE,
+	chapterCapAdvice,
 	defaultDraftWords,
 	DRAFT_CHANGED_ELSEWHERE,
 	DRAFT_EMPTY_SAVE,
-	SCENE_CAP_ADVICE,
+	isBlankDraft,
+	sceneCapAdvice,
 	type ChapterDraftDefaults,
 	type ChapterDraftEstimate,
 	type ChapterDraftView,
-	type SceneDraftView
+	type SceneDraftView,
+	type WaitingDraft
 } from '#lib/scene-draft';
 
 // The writer's side of a scene draft: asking for one, reading it back, and
@@ -211,7 +213,7 @@ export async function requestSceneDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
+			reason: `This draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${sceneCapAdvice(estimate.mayThink)}`
 		};
 	}
 
@@ -231,12 +233,6 @@ export async function requestSceneDraft(
 	for (const draft of open) {
 		if (!(await settleOrphan(db, draft, deps.jobState))) return ALREADY_DRAFTING;
 	}
-	// A failed draft has been read by now; the new request takes its place.
-	await db
-		.update(assistantDrafts)
-		.set({ status: 'discarded' })
-		.where(and(mine, eq(assistantDrafts.status, 'failed')));
-
 	// The job's id is chosen here and written with the row, so a row never
 	// waits without one: if the request dies before the job is queued, reading
 	// the draft finds no such job and settles it (see settleOrphan).
@@ -280,6 +276,15 @@ export async function requestSceneDraft(
 					reason: 'Could not start the draft. Try again in a moment.'
 				};
 	}
+	// A failed draft has been read by now, and the new request takes its
+	// place. Only once the new one stands, so the reason the old one failed is
+	// not lost to a request that did not go through; and after the insert, so
+	// the scene's row is always locked before a draft's (as a scene delete
+	// takes them).
+	await db
+		.update(assistantDrafts)
+		.set({ status: 'discarded' })
+		.where(and(mine, eq(assistantDrafts.status, 'failed')));
 	return { ok: true, draftId, jobId };
 }
 
@@ -316,10 +321,18 @@ export function draftTextVersion(text: string): string {
 	return createHash('md5').update(text, 'utf8').digest('hex');
 }
 
+// Whether the stored draft is other than the window deciding it knows: not
+// the version its copy was made from, and not the text it is keeping (a save
+// of that text may have landed with its answer lost).
+function changedElsewhere(stored: string, edited: string | undefined, base?: string): boolean {
+	return Boolean(base) && draftTextVersion(stored) !== base && stored !== edited;
+}
+
 // The text the writer accepts: the draft as they edited it in the panel, or
 // the stored draft when they changed nothing.
 function acceptedText(edited: string | undefined, stored: string): string {
-	return (edited ?? stored).trim();
+	const text = (edited ?? stored).trim();
+	return isBlankDraft(text) ? '' : text;
 }
 
 /**
@@ -354,7 +367,7 @@ export async function fillSceneFromDraft(
 		if (!scene) return SCENE_GONE;
 		const ready = await lockReadyDraft(tx, userId, draftId);
 		if (!ready) return NOT_READY;
-		if (base && draftTextVersion(ready.textMd) !== base) return CHANGED;
+		if (changedElsewhere(ready.textMd, edited, base)) return CHANGED;
 		if (scene.bodyMd.trim() !== '') return SCENE_HAS_TEXT;
 		const text = acceptedText(edited, ready.textMd);
 		if (!text) return EMPTY;
@@ -405,7 +418,7 @@ export async function addDraftAsScene(
 		if (!scene) return SCENE_GONE;
 		const ready = await lockReadyDraft(tx, userId, draftId);
 		if (!ready) return NOT_READY;
-		if (base && draftTextVersion(ready.textMd) !== base) return CHANGED;
+		if (changedElsewhere(ready.textMd, edited, base)) return CHANGED;
 		const text = acceptedText(edited, ready.textMd);
 		if (!text) return EMPTY;
 
@@ -466,12 +479,15 @@ export async function saveDraftText(
 	text: string,
 	// The version of the draft these edits were made to. When the stored text
 	// has moved on (saved from another window), the save is refused.
-	base?: string
+	base?: string,
+	// The text of a save from the same window that was still on its way when
+	// this one was sent (the page was being left). Either may land first.
+	sent?: string
 ): Promise<{ ok: true; textVersion: string } | ActionFailure> {
 	if (!isUuid(draftId)) return NOT_FOUND;
 	// A draft is paid for and has no history: it is dropped by Discard, never
 	// by a save that would leave it blank.
-	if (!text.trim()) return EMPTY_SAVE;
+	if (isBlankDraft(text)) return EMPTY_SAVE;
 	const rows = await db
 		.update(assistantDrafts)
 		.set({ textMd: text })
@@ -480,7 +496,15 @@ export async function saveDraftText(
 				eq(assistantDrafts.id, draftId),
 				eq(assistantDrafts.userId, userId),
 				eq(assistantDrafts.status, 'ready'),
-				base ? sql`md5(${assistantDrafts.textMd}) = ${base}` : undefined
+				// The text already stored is a save that landed with its answer
+				// lost, sent again: not a change from elsewhere.
+				base
+					? or(
+							sql`md5(${assistantDrafts.textMd}) = ${base}`,
+							eq(assistantDrafts.textMd, text),
+							sent === undefined ? undefined : eq(assistantDrafts.textMd, sent)
+						)
+					: undefined
 			)
 		)
 		.returning({ id: assistantDrafts.id });
@@ -561,11 +585,27 @@ export async function hasWaitingDrafts(
 	userId: string,
 	storyId: string
 ): Promise<boolean> {
+	return (await waitingDrafts(db, userId, storyId)).length > 0;
+}
+
+/**
+ * The writer's undecided drafts in a story, in story order: written and
+ * waiting, failed, or still being written (shown so they can be stopped).
+ */
+export async function waitingDrafts(
+	db: Database,
+	userId: string,
+	storyId: string
+): Promise<WaitingDraft[]> {
 	// By the scene's own story, and only scenes still in it: a draft whose
 	// scene is in the trash, or has moved to another story, cannot be reached
 	// from this one.
-	const [row] = await db
-		.select({ id: assistantDrafts.id })
+	return db
+		.select({
+			sceneId: scenes.id,
+			sceneTitle: scenes.title,
+			status: assistantDrafts.status
+		})
 		.from(assistantDrafts)
 		.innerJoin(scenes, eq(scenes.id, assistantDrafts.sceneId))
 		.where(
@@ -573,11 +613,10 @@ export async function hasWaitingDrafts(
 				eq(assistantDrafts.userId, userId),
 				eq(scenes.storyId, storyId),
 				isNull(scenes.deletedAt),
-				inArray(assistantDrafts.status, ['ready', 'failed'])
+				inArray(assistantDrafts.status, ['pending', 'running', 'ready', 'failed'])
 			)
 		)
-		.limit(1);
-	return Boolean(row);
+		.orderBy(asc(scenes.globalPosition));
 }
 
 // The scenes among these with a draft the writer has not decided, after
@@ -766,7 +805,7 @@ export async function requestChapterDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This chapter draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
+			reason: `This chapter draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${chapterCapAdvice(estimate.mayThink)}`
 		};
 	}
 
@@ -775,19 +814,8 @@ export async function requestChapterDraft(
 	const jobId = randomUUID();
 	let draftIds: string[];
 	try {
-		draftIds = await db.transaction(async (tx) => {
-			// A failed draft has been read by now; the new one takes its place.
-			await tx
-				.update(assistantDrafts)
-				.set({ status: 'discarded' })
-				.where(
-					and(
-						eq(assistantDrafts.userId, input.userId),
-						inArray(assistantDrafts.sceneId, sceneIds),
-						eq(assistantDrafts.status, 'failed')
-					)
-				);
-			const rows = await tx
+		{
+			const rows = await db
 				.insert(assistantDrafts)
 				.values(
 					plan.scenes.map((scene, index) => ({
@@ -803,8 +831,8 @@ export async function requestChapterDraft(
 					}))
 				)
 				.returning({ id: assistantDrafts.id, position: assistantDrafts.position });
-			return rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((row) => row.id);
-		});
+			draftIds = rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((row) => row.id);
+		}
 	} catch (err) {
 		// A draft for one of the scenes was asked for at the same moment.
 		if (isUniqueViolation(err)) return ALREADY_DRAFTING_CHAPTER;
@@ -830,6 +858,18 @@ export async function requestChapterDraft(
 					reason: 'Could not start the draft. Try again in a moment.'
 				};
 	}
+	// The failed drafts these take the place of, as for a single draft (see
+	// requestSceneDraft): after the insert, and only once the run is queued.
+	await db
+		.update(assistantDrafts)
+		.set({ status: 'discarded' })
+		.where(
+			and(
+				eq(assistantDrafts.userId, input.userId),
+				inArray(assistantDrafts.sceneId, sceneIds),
+				eq(assistantDrafts.status, 'failed')
+			)
+		);
 	return { ok: true, jobId, draftIds, skipped: plan.skipped };
 }
 

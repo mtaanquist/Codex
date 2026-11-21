@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { adoptStored, draftEdit, dropDraftEdit } from './draft-edits';
+import { adoptStored, draftEdit, dropDraftEdit, releaseDraftEdit } from './draft-edits';
 
-type Sent = { url: string; body: { text: string; base: string }; keepalive: boolean };
+type Sent = {
+	url: string;
+	body: { text: string; base: string; sent?: string };
+	keepalive: boolean;
+};
 
 let sent: Sent[];
 // What the next requests answer; the last entry repeats.
@@ -78,10 +82,141 @@ describe('draft edits', () => {
 		await vi.advanceTimersByTimeAsync(0);
 		expect(again.saved).toBe('Edited before the panel closed.');
 		expect(again.version).toBe('v2');
-		// With nothing unsaved, the next read is taken as it is.
+		// A read that was sent before the save landed comes back with the text
+		// this window has saved over. It is not put back in the box.
+		expect(draftEdit(key, stored).text).toBe('Edited before the panel closed.');
+		expect(again.version).toBe('v2');
+		// A version this window has never held is another window's: with nothing
+		// unsaved, it is taken.
 		expect(draftEdit(key, { textMd: 'From another window.', textVersion: 'v3' }).text).toBe(
 			'From another window.'
 		);
+		// And what that replaced is now behind it too.
+		expect(
+			draftEdit(key, { textMd: 'Edited before the panel closed.', textVersion: 'v2' }).text
+		).toBe('From another window.');
+	});
+
+	it('names the save still on its way when a newer one goes out as the page is left', async () => {
+		const key = id();
+		const releases: ((response: Response) => void)[] = [];
+		answers = [() => new Promise<Response>((resolve) => releases.push(resolve))];
+		const edit = draftEdit(key, stored);
+		edit.text = 'First.';
+		edit.autosave.schedule();
+		edit.autosave.flushSoon();
+		await vi.advanceTimersByTimeAsync(0);
+		// More is typed while that save is out, and the page is left.
+		edit.text = 'First. Second.';
+		edit.autosave.schedule();
+		edit.autosave.flushOnPageHide();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sent.map((s) => s.body)).toEqual([
+			{ text: 'First.', base: 'v1' },
+			// Either may land first: the server takes this one over the base or
+			// over the text of the save beside it.
+			{ text: 'First. Second.', base: 'v1', sent: 'First.' }
+		]);
+		expect(sent[1].keepalive).toBe(true);
+		// The page lives on (the back-forward cache). The newer answer comes
+		// first, then the older one, which must not turn the state back.
+		releases[1](Response.json({ ok: true, textVersion: 'v3' }));
+		await vi.advanceTimersByTimeAsync(0);
+		releases[0](Response.json({ ok: true, textVersion: 'v2' }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(edit).toMatchObject({ saved: 'First. Second.', version: 'v3', error: '' });
+		expect(edit.autosave.hasUnsaved()).toBe(false);
+		// The same text still on its way is simply sent again.
+		edit.text = 'Third.';
+		edit.autosave.schedule();
+		edit.autosave.flushSoon();
+		await vi.advanceTimersByTimeAsync(0);
+		edit.autosave.flushOnPageHide();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sent.slice(2).map((s) => s.body)).toEqual([
+			{ text: 'Third.', base: 'v3' },
+			{ text: 'Third.', base: 'v3' }
+		]);
+	});
+
+	it('stops trying, and lets go of the edit, when the draft is gone or the writer signed out', async () => {
+		for (const status of [401, 403, 404]) {
+			sent = [];
+			answers = [refused(status, 'No.')];
+			const key = id();
+			const edit = draftEdit(key, stored);
+			edit.text = 'Edited.';
+			edit.autosave.schedule();
+			// The card has gone; the save is the module's own.
+			releaseDraftEdit(edit);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sent).toHaveLength(1);
+			await vi.advanceTimersByTimeAsync(600_000);
+			expect(sent).toHaveLength(1);
+			// Freed: the next card starts from what the server holds.
+			expect(draftEdit(key, { textMd: 'Server.', textVersion: 'v7' })).not.toBe(edit);
+		}
+		// With a card showing, the edit stays for the writer to read the reason.
+		sent = [];
+		answers = [refused(404, 'That draft is no longer there.')];
+		const key = id();
+		const edit = draftEdit(key, stored);
+		edit.onChange = () => {};
+		edit.text = 'Edited.';
+		edit.autosave.schedule();
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(sent).toHaveLength(1);
+		expect(edit.error).toBe('That draft is no longer there.');
+		expect(draftEdit(key, stored)).toBe(edit);
+	});
+
+	it('lets go of an edit with nothing unsaved a while after its card went', async () => {
+		const key = id();
+		const edit = draftEdit(key, stored);
+		releaseDraftEdit(edit);
+		await vi.advanceTimersByTimeAsync(30_000);
+		draftEdit(id(), stored);
+		expect(draftEdit(key, stored)).toBe(edit);
+		releaseDraftEdit(edit);
+		await vi.advanceTimersByTimeAsync(61_000);
+		draftEdit(id(), stored);
+		expect(draftEdit(key, stored)).not.toBe(edit);
+	});
+
+	it('sends every edit held when the page is left, and asks first, with or without a card', async () => {
+		const page = new EventTarget();
+		const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+		vi.stubGlobal('window', page);
+		vi.stubGlobal('document', doc);
+		// Edits left by other tests are held too; only these two are counted.
+		const sentFor = (key: string) => sent.filter((s) => s.url.endsWith(`/${key}`));
+		answers = [refused(503, 'Busy.')];
+		const key = id();
+		const edit = draftEdit(key, stored);
+		edit.text = 'Edited, and the save failed.';
+		edit.autosave.schedule();
+		releaseDraftEdit(edit);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sentFor(key)).toHaveLength(1);
+		// Waiting for its retry, with no card: leaving the page asks, and sends it.
+		const leaving = new Event('beforeunload', { cancelable: true });
+		page.dispatchEvent(leaving);
+		expect(leaving.defaultPrevented).toBe(true);
+		answers = [ok('v2')];
+		page.dispatchEvent(new Event('pagehide'));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sentFor(key)).toHaveLength(2);
+		expect(sentFor(key)[1].keepalive).toBe(true);
+		expect(edit.saved).toBe('Edited, and the save failed.');
+		// A tab put in the background saves what is typed without waiting.
+		const otherKey = id();
+		const other = draftEdit(otherKey, stored);
+		other.text = 'Typed, then another tab was opened.';
+		other.autosave.schedule();
+		doc.visibilityState = 'hidden';
+		doc.dispatchEvent(new Event('visibilitychange'));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(sentFor(otherKey)).toHaveLength(1);
 	});
 
 	it('flushes before the draft is kept, and resolves once the save has landed', async () => {

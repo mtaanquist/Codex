@@ -640,6 +640,15 @@
 		const chapterId = chapterDraftAsked;
 		if (!scene && !chapterId) return;
 		untrack(() => {
+			// A draft shows beside its scene, so a link that also names the
+			// whole-story view opens the scene instead.
+			if (scene && page.url.searchParams.has('view')) {
+				const url = new URL(page.url.href);
+				url.searchParams.delete('view');
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page's own address
+				void goto(url, { replace: true });
+				return;
+			}
 			if (assistantTab) {
 				if (chapterId && data.chapters.some((chapter) => chapter.id === chapterId)) {
 					assistantIntent.pending = { kind: 'draft-chapter', chapterId, showOnly: true };
@@ -662,7 +671,8 @@
 
 	// With the Assistant off for the account, its tab is only here for drafts
 	// written before. Once one is kept or discarded the page's data is read
-	// again, so the tab goes with the last of them.
+	// again, so the tab goes with the last of them and the list of the ones
+	// still waiting (shown on a muted story too) is current.
 	function draftDecidedWhileOff() {
 		void refreshAll();
 	}
@@ -1191,7 +1201,10 @@
 									name={data.assistant.name}
 									muted={data.assistant.muted || !data.assistant.tabEnabled}
 									off={!data.assistant.tabEnabled}
-									onDraftDecided={data.assistant.tabEnabled ? undefined : draftDecidedWhileOff}
+									onDraftDecided={data.assistant.tabEnabled && !data.assistant.muted
+										? undefined
+										: draftDecidedWhileOff}
+									waitingDrafts={data.assistant.waitingDrafts}
 									revisionPreview={Boolean(data.revisionPreview)}
 									suggestions={assistantSuggestions}
 									chat={data.assistantChat}

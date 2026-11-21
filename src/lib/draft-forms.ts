@@ -19,18 +19,31 @@ function store(): Storage | null {
 	}
 }
 
-export function readDraftForm<T>(kind: Kind, id: string): T | undefined {
+// valid says whether a stored value has the shape the form expects. One that
+// does not (written by an older version of the app, or by hand) is dropped.
+export function readDraftForm<T>(
+	kind: Kind,
+	id: string,
+	valid: (value: unknown) => value is T
+): T | undefined {
 	const key = `${PREFIX}${kind}.${id}`;
-	if (memory.has(key)) return memory.get(key) as T;
-	try {
-		const raw = store()?.getItem(key);
-		if (!raw) return undefined;
-		const value = JSON.parse(raw) as T;
-		memory.set(key, value);
-		return value;
-	} catch {
+	let value: unknown;
+	if (memory.has(key)) value = memory.get(key);
+	else {
+		try {
+			const raw = store()?.getItem(key);
+			if (!raw) return undefined;
+			value = JSON.parse(raw);
+		} catch {
+			value = null;
+		}
+	}
+	if (!valid(value)) {
+		dropDraftForm(kind, id);
 		return undefined;
 	}
+	memory.set(key, value);
+	return value;
 }
 
 export function keepDraftForm(kind: Kind, id: string, value: unknown): void {

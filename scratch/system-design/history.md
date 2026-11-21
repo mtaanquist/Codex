@@ -1023,6 +1023,48 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 3 (2026-11-20)
+
+Fixes from the third reviews of #1168, branch `fix/scene-draft-review-3` on
+`staging/scene-drafting`.
+
+- Asking again for a scene whose draft had a saved edit put the first-read
+  text back: the card's cached copy was shown again and the clean edit
+  adopted it. Three changes, any one of which closes it: the request only
+  reveals a ready draft that is already in the box; the card's copy follows
+  each save; and the edit state keeps the versions it has saved over and
+  never adopts one of them (which also covers a slow read that lands after
+  a save).
+- A retried save whose first answer was lost was refused as changed
+  elsewhere. Stored text equal to the text sent is success. For the save
+  made as the page is left while another is still out, chaining was tried
+  on paper and dropped: the page may be gone before the first answer, so
+  the second would never be sent. It goes out at once and names the other
+  save's text (`sent`); the server takes it over either. An md5 of that text
+  would have been tidier, but the browser has no md5.
+- The off-state tab lists the story's waiting drafts by scene, since the
+  card only shows for the open scene. Pending and running drafts count, so
+  the tab is there to stop one.
+- Page-hide and leave-warning handling moved from the card into
+  `draft-edits.ts`, registered once, so a released edit is covered. Clean
+  released edits are freed after a minute, not at once, so a late read
+  still meets the versions it must not take.
+- The cap could be passed by a resend: the gateway sent a billed, failed
+  attempt again without looking at the meter, and the job only stopped once
+  spend was already at the cap. Drafts now ask before every send whether
+  spend plus this request at its limit fits. It is a hook on the request
+  (`mayResend`) and a check in the draft job, not a gateway-wide rule: other
+  roles are unchanged and have the same gap, to be filed.
+- Round 2 made "Longest reply" unable to raise a non-thinking draft's limit,
+  which left the cut-off notes giving advice that did nothing. They are now
+  worded by what set the limit, and the headroom grows with the length.
+- A new request inserts its rows before it discards the failed ones it
+  replaces, and only after the job is queued: scene row before draft row,
+  the order a scene delete takes them, and the failure note survives a
+  request that does not go through.
+- `base` is required on the endpoint; the library functions still take it
+  as optional for callers that hold the row themselves (tests).
+
 ## Scene drafting, review round 2 (2026-11-20)
 
 Fixes from the second pair of reviews of #1168, branch

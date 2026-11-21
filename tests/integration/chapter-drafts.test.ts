@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { asc, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -56,6 +57,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	db: Database;
 	pool: pg.Pool;
 };
+const { withBilledUsage } = await import('../../src/lib/server/llm/providers/types');
 const { resetRateLimits } = await import('#lib/server/rate-limit');
 const { saveAccountLlmConfig, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
@@ -64,7 +66,7 @@ const {
 	failChapterDraft,
 	estimateSceneDraft,
 	CHAPTER_DRAFT_ENDED_NOTE,
-	EMPTY_DRAFT_CUT_OFF_NOTE
+	emptyDraftCutOffNote
 } = await import('../../src/lib/server/llm/scene-draft');
 const {
 	addDraftAsScene,
@@ -274,6 +276,11 @@ const run = (
 		deps
 	);
 
+// The version of a draft's stored text, as the panel sends it back.
+const baseFor = async (id: string) => {
+	const [row] = await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id));
+	return createHash('md5').update(row.textMd, 'utf8').digest('hex');
+};
 const draftRows = () =>
 	db
 		.select()
@@ -686,7 +693,13 @@ describe('the endpoint', () => {
 		});
 		const kept = await call(
 			decideRoute.POST,
-			event({ id: ownerId }, { params: { id: started.draftIds[0] }, body: { action: 'fill' } })
+			event(
+				{ id: ownerId },
+				{
+					params: { id: started.draftIds[0] },
+					body: { action: 'fill', base: await baseFor(started.draftIds[0]) }
+				}
+			)
 		);
 		expect(kept.status).toBe(200);
 	});
@@ -715,7 +728,10 @@ describe('the endpoint', () => {
 		for (const action of ['fill', 'add', 'discard']) {
 			const result = await call(
 				decideRoute.POST,
-				event(stranger, { params: { id: started.draftIds[0] }, body: { action } })
+				event(stranger, {
+					params: { id: started.draftIds[0] },
+					body: { action, base: await baseFor(started.draftIds[0]) }
+				})
 			);
 			expect(result.status).toBe(404);
 		}
@@ -797,14 +813,14 @@ describe('the job', () => {
 	});
 
 	it('stops at a scene boundary when the spend cap is reached, keeping what was drafted', async () => {
-		// Each request costs $0.50 (500 tokens out). The run is asked for under a
-		// cap that allows it, and the cap is lowered while it waits: it is then
-		// reached after two scenes.
+		// Each request costs $0.50 (500 tokens out) and could cost $0.54 (its
+		// limit). The run is asked for under a cap that allows it, and the cap
+		// is lowered while it waits: after two scenes a third could pass it.
 		await configure({ spendCapUsd: 5 });
 		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
 		const snapshot = await scenesSnapshot();
 		const started = await request({ targetWords: 100 });
-		await configure({ spendCapUsd: 0.9 });
+		await configure({ spendCapUsd: 1.5 });
 		const result = await run(started);
 		expect(result).toMatchObject({
 			outcome: 'done',
@@ -826,6 +842,50 @@ describe('the job', () => {
 		await configure({ spendCapUsd: 5 });
 		const again = await request({ targetWords: 100, scenes: [{ sceneId: bank, brief: '' }] });
 		expect(again.draftIds).toHaveLength(1);
+	});
+
+	it('does not send a scene that could take the run past the cap', async () => {
+		// $1.80 a scene at most; three fit under $6.00.
+		await configure({ spendCapUsd: 6 });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const started = await request();
+		// Earlier attempts of the job spent $5.90: under the cap, with no room
+		// for one more scene.
+		await pool.query(
+			`insert into assistant_job_spend (job_id, user_id, spent_usd) values ($1, $2, 5.9)`,
+			[started.jobId, ownerId]
+		);
+		const result = await run(started);
+		expect(result).toMatchObject({ drafted: 0, total: 3, ended: 'capped' });
+		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(5.9, 6);
+		expect(prompts).toEqual([]);
+		expect(await statuses()).toEqual(['discarded', 'discarded', 'discarded']);
+	});
+
+	it('ends as capped, keeping the scenes before, when a billed attempt leaves no room to resend', async () => {
+		await configure({ spendCapUsd: 3.9 });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+		const started = await request({
+			scenes: [
+				{ sceneId: quay, brief: 'a' },
+				{ sceneId: crossing, brief: 'b' }
+			]
+		});
+		// The second scene's stream drops after 1700 tokens, which are charged:
+		// $0.50 + $1.70, and another $1.80 would pass $3.90.
+		whileWriting = async (n) => {
+			if (n === 2) {
+				throw withBilledUsage(new Error('Endpoint returned 502: the stream dropped'), {
+					promptTokens: 1000,
+					completionTokens: 1700
+				});
+			}
+		};
+		const result = await run(started);
+		expect(result).toMatchObject({ outcome: 'done', drafted: 1, total: 2, ended: 'capped' });
+		expect(result.outcome === 'done' && result.spentUsd).toBeCloseTo(2.2, 6);
+		expect(prompts).toHaveLength(2);
+		expect(await statuses()).toEqual(['ready', 'discarded']);
 	});
 
 	it('asks nothing once earlier attempts of the job spent the cap', async () => {
@@ -1154,6 +1214,60 @@ describe('what a scene is told came before it', () => {
 	});
 });
 
+describe('a failed draft when the chapter is asked for again', () => {
+	async function failedFirst() {
+		const started = await request();
+		await failChapterDraft(db, ownerId, started.draftIds, 'The endpoint was down.');
+		return started.draftIds[0];
+	}
+	const rowOf = async (id: string) =>
+		(await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id)))[0];
+
+	it('gives way once the new run stands', async () => {
+		const failed = await failedFirst();
+		await request();
+		expect((await rowOf(failed)).status).toBe('discarded');
+	});
+
+	it('keeps its reason when the new run does not go through', async () => {
+		const failed = await failedFirst();
+		jobs.queueAssistantChapterDraft.mockResolvedValueOnce(null);
+		const refused = await requestChapterDraft(db, input(), queueDeps());
+		expect(refused.ok).toBe(false);
+		expect(await rowOf(failed)).toMatchObject({
+			status: 'failed',
+			note: 'The endpoint was down.'
+		});
+	});
+});
+
+describe("another user's drafts on scenes the caller owns", () => {
+	it('are not listed for the chapter', async () => {
+		await db.insert(assistantDrafts).values({
+			userId: strangerId,
+			storyId,
+			chapterId,
+			sceneId: quay,
+			position: 0,
+			brief: 'Not yours.',
+			targetWords: 500,
+			textMd: 'Written for someone else.',
+			status: 'ready'
+		});
+		expect(
+			await chapterDraftFor(
+				db,
+				{ userId: ownerId, storyId, chapterId },
+				jobs.assistantDraftJobState
+			)
+		).toBeNull();
+		// And the scene is free for the owner's own run.
+		const started = await request();
+		expect(started.draftIds).toHaveLength(3);
+		expect(started.skipped).toEqual([]);
+	});
+});
+
 describe('a scene that comes back with no text', () => {
 	it('ends the run there with one request for it, keeping the scenes before', async () => {
 		emptyCall = 2;
@@ -1165,13 +1279,13 @@ describe('a scene that comes back with no text', () => {
 			drafted: 1,
 			total: 3,
 			ended: 'empty',
-			emptyNote: EMPTY_DRAFT_CUT_OFF_NOTE
+			emptyNote: emptyDraftCutOffNote('draft')
 		});
 		// Scene one, and scene two once: not sent again, and scene three not at all.
 		expect(prompts).toHaveLength(2);
 		const rows = await draftRows();
 		expect(rows.map((row) => row.status)).toEqual(['ready', 'failed', 'discarded']);
-		expect(rows[1].note).toBe(EMPTY_DRAFT_CUT_OFF_NOTE);
+		expect(rows[1].note).toBe(emptyDraftCutOffNote('draft'));
 		// A second run of the job has nothing left to ask.
 		expect(await run(started)).toEqual({ outcome: 'missing' });
 		expect(prompts).toHaveLength(2);

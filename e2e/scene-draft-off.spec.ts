@@ -27,6 +27,10 @@ test('with the Assistant off, a waiting draft can still be kept and nothing can 
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page).toHaveURL(/scene=/);
 	const sceneId = new URL(page.url()).searchParams.get('scene')!;
+	// A second scene, with no draft of its own.
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).not.toHaveURL(new RegExp(`scene=${sceneId}`));
+	const otherId = new URL(page.url()).searchParams.get('scene')!;
 
 	// No Assistant tab while there is nothing of the Assistant's here.
 	const tab = page.getByRole('tab', { name: 'Assistant' });
@@ -47,9 +51,23 @@ test('with the Assistant off, a waiting draft can still be kept and nothing can 
 		await pool.end();
 	}
 
-	await gotoReady(page, `/stories/sluice-${stamp}?scene=${sceneId}&draft=show`);
+	// On a scene without the draft, the tab lists where the draft is.
+	await gotoReady(page, `/stories/sluice-${stamp}?scene=${otherId}`);
+	await tab.click();
 	await expect(page.getByText('The Assistant is off for your account.')).toBeVisible();
 	const card = page.getByRole('group', { name: 'Scene draft' });
+	await expect(card).toHaveCount(0);
+	const elsewhere = page.getByRole('list', { name: 'Drafts on other scenes' });
+	await expect(elsewhere.getByRole('listitem')).toHaveCount(1);
+	await expect(elsewhere).toContainText('Ready');
+	await elsewhere.getByRole('link').click();
+	await expect(page).toHaveURL(new RegExp(`scene=${sceneId}`));
+	await expect(card).toBeVisible();
+	// The open scene's draft is the card, not a line in the list.
+	await expect(elsewhere).toHaveCount(0);
+
+	await gotoReady(page, `/stories/sluice-${stamp}?scene=${sceneId}&draft=show`);
+	await expect(page.getByText('The Assistant is off for your account.')).toBeVisible();
 	await expect(
 		card.getByLabel('Read it, and change anything you like before keeping it')
 	).toHaveValue('The gate held. Then it did not.');
@@ -66,6 +84,8 @@ test('with the Assistant off, a waiting draft can still be kept and nothing can 
 
 	await card.getByRole('button', { name: 'Fill this scene' }).click();
 	await expect(page.locator('.cm-content')).toContainText('The gate held.');
-	// The last draft is decided, so the tab goes.
+	// The last draft is decided, so the tab goes, and the keyboard is in the
+	// scene, not lost with the card.
 	await expect(tab).toHaveCount(0);
+	await expect(page.locator('.cm-content')).toBeFocused();
 });

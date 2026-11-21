@@ -16,6 +16,11 @@ function fakeStorage(): Storage {
 	};
 }
 
+const hasBrief = (value: unknown): value is { brief: string } =>
+	typeof value === 'object' &&
+	value !== null &&
+	typeof (value as { brief?: unknown }).brief === 'string';
+
 afterEach(() => {
 	dropAllDraftForms();
 	vi.unstubAllGlobals();
@@ -26,12 +31,12 @@ describe('draft forms', () => {
 		vi.stubGlobal('sessionStorage', fakeStorage());
 		keepDraftForm('scene', 's1', { brief: 'The ferry.' });
 		keepDraftForm('chapter', 's1', { brief: 'The flight.' });
-		expect(readDraftForm('scene', 's1')).toEqual({ brief: 'The ferry.' });
-		expect(readDraftForm('chapter', 's1')).toEqual({ brief: 'The flight.' });
-		expect(readDraftForm('scene', 's2')).toBeUndefined();
+		expect(readDraftForm('scene', 's1', hasBrief)).toEqual({ brief: 'The ferry.' });
+		expect(readDraftForm('chapter', 's1', hasBrief)).toEqual({ brief: 'The flight.' });
+		expect(readDraftForm('scene', 's2', hasBrief)).toBeUndefined();
 		dropDraftForm('scene', 's1');
-		expect(readDraftForm('scene', 's1')).toBeUndefined();
-		expect(readDraftForm('chapter', 's1')).toEqual({ brief: 'The flight.' });
+		expect(readDraftForm('scene', 's1', hasBrief)).toBeUndefined();
+		expect(readDraftForm('chapter', 's1', hasBrief)).toEqual({ brief: 'The flight.' });
 	});
 
 	it('writes through to the session store, which is what a reload reads', () => {
@@ -43,7 +48,19 @@ describe('draft forms', () => {
 		});
 		// Seeded as a reload would find it, with nothing in memory.
 		store.setItem('codex.draft-form.scene.s9', JSON.stringify({ brief: 'From before.' }));
-		expect(readDraftForm('scene', 's9')).toEqual({ brief: 'From before.' });
+		expect(readDraftForm('scene', 's9', hasBrief)).toEqual({ brief: 'From before.' });
+	});
+
+	it('drops a stored form that is not the shape asked for', () => {
+		const store = fakeStorage();
+		vi.stubGlobal('sessionStorage', store);
+		for (const raw of ['{"brief":7}', '"text"', 'null', '[1]', '{not json']) {
+			store.setItem('codex.draft-form.scene.s3', raw);
+			expect(readDraftForm('scene', 's3', hasBrief)).toBeUndefined();
+			expect(store.getItem('codex.draft-form.scene.s3')).toBeNull();
+		}
+		keepDraftForm('scene', 's4', { other: true });
+		expect(readDraftForm('scene', 's4', hasBrief)).toBeUndefined();
 	});
 
 	it('clears every form on sign-out and leaves other keys alone', () => {
@@ -53,8 +70,8 @@ describe('draft forms', () => {
 		keepDraftForm('scene', 's1', { brief: 'a' });
 		keepDraftForm('chapter', 'c1', { brief: 'b' });
 		dropAllDraftForms();
-		expect(readDraftForm('scene', 's1')).toBeUndefined();
-		expect(readDraftForm('chapter', 'c1')).toBeUndefined();
+		expect(readDraftForm('scene', 's1', hasBrief)).toBeUndefined();
+		expect(readDraftForm('chapter', 'c1', hasBrief)).toBeUndefined();
 		expect(store.length).toBe(1);
 		expect(store.getItem('something-else')).toBe('1');
 	});
@@ -75,9 +92,9 @@ describe('draft forms', () => {
 			clear: () => {}
 		});
 		keepDraftForm('scene', 's1', { brief: 'kept in memory' });
-		expect(readDraftForm('scene', 's1')).toEqual({ brief: 'kept in memory' });
+		expect(readDraftForm('scene', 's1', hasBrief)).toEqual({ brief: 'kept in memory' });
 		dropDraftForm('scene', 's1');
-		expect(readDraftForm('scene', 's1')).toBeUndefined();
-		expect(readDraftForm('scene', 'never')).toBeUndefined();
+		expect(readDraftForm('scene', 's1', hasBrief)).toBeUndefined();
+		expect(readDraftForm('scene', 'never', hasBrief)).toBeUndefined();
 	});
 });
