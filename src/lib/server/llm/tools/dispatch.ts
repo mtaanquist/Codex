@@ -1,6 +1,7 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
-import { scenes, stories } from '../../db/schema.ts';
+import { scenes, stories, universes } from '../../db/schema.ts';
+import { resolveOwnedEntity } from '../../entity-lookups.ts';
 import { ownedUniverseRow, storyAssistantOn, storyIsLive } from '../../universe-scope.ts';
 import { entityAppearances, getEntityCard } from '../../plan-data.ts';
 import { searchAll } from '../../search.ts';
@@ -13,6 +14,7 @@ import {
 	updateAssistantSuggestion
 } from '../../review.ts';
 import { toLf } from '#lib/line-endings';
+import { isUuid } from '#lib/slug';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { locateQuote } from '#lib/quote-locate';
 import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
@@ -73,6 +75,11 @@ export type ToolContext = {
 	// The turn's model context window in tokens, when known; it bounds how much
 	// of a scene get_scene may return (see sceneBodyCap).
 	contextWindow?: number;
+	// Set when the call comes from an outside app through the MCP endpoint,
+	// which is the only surface the external tools run on. It carries the most
+	// characters of a scene's text get_scene may return there, where no model
+	// window is known and the client caps the size of a result.
+	external?: { sceneBodyCap: number };
 };
 
 export type ToolOutcome = {
@@ -87,6 +94,9 @@ export type ToolOutcome = {
 	// How many notes the call staged, when one call stages several (a pattern
 	// note with its edits); counts in place of note.
 	noteCount?: number;
+	// True when the handler threw. The result then carries the error's own
+	// message, which is fine for the writer's model and not for an outside app.
+	failed?: boolean;
 	// A staged action the surface should show alongside the reply (a proposal
 	// card with a confirm button); the gateway forwards it on the stream.
 	surface?: { type: 'proposal'; proposal: SplitProposal };
@@ -106,7 +116,9 @@ const SCENE_BODY_WINDOW_SHARE = 0.25;
 const MIN_SCENE_BODY = 8_000;
 const MAX_APPEARANCES = 20;
 
-function sceneBodyCap(contextWindow?: number): number {
+function sceneBodyCap(ctx: ToolContext): number {
+	if (ctx.external) return Math.min(MAX_SCENE_BODY, ctx.external.sceneBodyCap);
+	const { contextWindow } = ctx;
 	if (!contextWindow) return MAX_SCENE_BODY;
 	const share = Math.floor(contextWindow * SCENE_BODY_WINDOW_SHARE * CHARS_PER_TOKEN);
 	return Math.min(MAX_SCENE_BODY, Math.max(MIN_SCENE_BODY, share));
@@ -143,7 +155,9 @@ export async function dispatchToolCall(
 	call: ProviderToolCall
 ): Promise<ToolOutcome> {
 	const tool = findTool(call.name);
-	if (!tool) return { result: `Unknown tool: ${call.name}.`, staged: false };
+	if (!tool || (tool.external && !ctx.external)) {
+		return { result: `Unknown tool: ${call.name}.`, staged: false };
+	}
 	if (ctx.allowedTools && !ctx.allowedTools.includes(call.name)) {
 		return {
 			result: `The tool ${call.name} is not available in this turn. Use one of the offered tools.`,
@@ -158,6 +172,10 @@ export async function dispatchToolCall(
 	}
 	try {
 		switch (call.name) {
+			case 'list_universes':
+				return { result: await listUniverses(ctx), staged: false };
+			case 'list_stories':
+				return { result: await listStories(ctx), staged: false };
 			case 'list_scenes':
 				return { result: await listScenes(ctx), staged: false };
 			case 'get_scene':
@@ -214,7 +232,8 @@ export async function dispatchToolCall(
 	} catch (err) {
 		return {
 			result: `Tool error: ${err instanceof Error ? err.message : 'failed'}.`,
-			staged: false
+			staged: false,
+			failed: true
 		};
 	}
 }
@@ -236,6 +255,8 @@ function asList(value: unknown): Record<string, unknown>[] {
 // change to the right story even when the pass was launched from another.
 async function loadScene(ctx: ToolContext, sceneId: string) {
 	if (ctx.scope?.storyOnly && !ctx.storyId) return null;
+	// An id that is not one at all is a miss like any other, not a query error.
+	if (!isUuid(sceneId)) return null;
 	const [row] = await ctx.db
 		.select({
 			id: scenes.id,
@@ -259,6 +280,84 @@ async function loadScene(ctx: ToolContext, sceneId: string) {
 			)
 		);
 	return row ?? null;
+}
+
+// The writer's live universes. The one tool that needs no universe: it is how
+// an outside app finds the ids the others take.
+async function listUniverses(ctx: ToolContext): Promise<string> {
+	const rows = await ctx.db
+		.select({
+			id: universes.id,
+			name: universes.name,
+			description: universes.descriptionMd,
+			establishedSetting: universes.establishedSetting
+		})
+		.from(universes)
+		.where(and(eq(universes.ownerId, ctx.userId), isNull(universes.deletedAt)))
+		.orderBy(asc(universes.name), asc(universes.createdAt));
+	// Stories the other tools can reach: live, and not muted.
+	const counts = await ctx.db
+		.select({ universeId: stories.universeId, n: count() })
+		.from(stories)
+		.where(and(eq(stories.ownerId, ctx.userId), isNull(stories.deletedAt), storyAssistantOn()))
+		.groupBy(stories.universeId);
+	const storyCount = new Map(counts.map((row) => [row.universeId, row.n]));
+	return JSON.stringify({
+		universes: rows.map((row) => ({ ...row, storyCount: storyCount.get(row.id) ?? 0 }))
+	});
+}
+
+// The stories of the universe, in series order. A muted story is left out,
+// as it is from every other tool.
+async function listStories(ctx: ToolContext): Promise<string> {
+	const rows = await ctx.db
+		.select({
+			id: stories.id,
+			title: stories.title,
+			brief: stories.brief,
+			positionInSeries: stories.positionInSeries
+		})
+		.from(stories)
+		.where(
+			and(
+				eq(stories.universeId, ctx.universeId),
+				eq(stories.ownerId, ctx.userId),
+				isNull(stories.deletedAt),
+				storyAssistantOn()
+			)
+		)
+		.orderBy(asc(stories.positionInSeries), asc(stories.createdAt));
+	const counts = rows.length
+		? await ctx.db
+				.select({ storyId: scenes.storyId, n: count() })
+				.from(scenes)
+				.where(
+					and(
+						inArray(
+							scenes.storyId,
+							rows.map((row) => row.id)
+						),
+						isNull(scenes.deletedAt)
+					)
+				)
+				.groupBy(scenes.storyId)
+		: [];
+	const sceneCount = new Map(counts.map((row) => [row.storyId, row.n]));
+	return JSON.stringify({
+		stories: rows.map((row) => ({ ...row, sceneCount: sceneCount.get(row.id) ?? 0 }))
+	});
+}
+
+// An entity card, but only for an entity of the context's universe. The card
+// lookup is scoped to the owner alone, and an id from another of the writer's
+// universes must read as a miss here like any other.
+async function loadEntityCard(ctx: ToolContext, entityId: string) {
+	if (!isUuid(entityId)) return null;
+	const entity = await resolveOwnedEntity(ctx.db, ctx.userId, entityId, (table) => ({
+		universeId: table.universeId
+	}));
+	if (entity?.universeId !== ctx.universeId) return null;
+	return getEntityCard(ctx.db, ctx.userId, entityId);
 }
 
 // The chapter and scene skeleton for every story in the universe (or only the
@@ -294,7 +393,7 @@ async function listScenes(ctx: ToolContext): Promise<string> {
 async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {
 	const scene = await loadScene(ctx, sceneId);
 	if (!scene) return 'No scene with that id in this story.';
-	const cap = sceneBodyCap(ctx.contextWindow);
+	const cap = sceneBodyCap(ctx);
 	const body =
 		scene.bodyMd.length > cap
 			? `${scene.bodyMd.slice(0, cap)}\n...(truncated: showing the first ${cap} of ${scene.bodyMd.length} characters)`
@@ -309,7 +408,7 @@ async function getScene(ctx: ToolContext, sceneId: string): Promise<string> {
 }
 
 async function getEntity(ctx: ToolContext, entityId: string): Promise<string> {
-	const card = await getEntityCard(ctx.db, ctx.userId, entityId);
+	const card = await loadEntityCard(ctx, entityId);
 	if (!card) return 'No entity with that id.';
 	return JSON.stringify({
 		id: card.id,
@@ -324,7 +423,7 @@ async function getEntity(ctx: ToolContext, entityId: string): Promise<string> {
 }
 
 async function findAppearances(ctx: ToolContext, entityId: string): Promise<string> {
-	const card = await getEntityCard(ctx.db, ctx.userId, entityId);
+	const card = await loadEntityCard(ctx, entityId);
 	if (!card) return 'No entity with that id.';
 	const appearances = await entityAppearances(
 		ctx.db,

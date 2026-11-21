@@ -41,10 +41,11 @@ const PUBLIC_PATHS = new Set([
 	'/healthz'
 ]);
 // Routes that other programs call with their own credential, or with none:
+// the MCP endpoint (bearer token only, checked by the route itself) and
 // the OAuth endpoints an outside app talks to before and after a writer allows
 // it. The session cookie is not read for these at all, so a browser session
 // can never stand in for the credential they ask for.
-const NO_SESSION_PATHS = new Set(['/oauth/register', '/oauth/token', '/oauth/revoke']);
+const NO_SESSION_PATHS = new Set(['/api/mcp', '/oauth/register', '/oauth/token', '/oauth/revoke']);
 const NO_SESSION_PREFIXES = [
 	'/.well-known/oauth-authorization-server',
 	'/.well-known/oauth-protected-resource'

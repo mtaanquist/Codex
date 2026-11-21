@@ -83,6 +83,33 @@ test('a writer connects an app, sees it listed and disconnects it', async ({ pag
 	const tokens = await token.json();
 	expect(tokens).toMatchObject({ token_type: 'Bearer', scope: 'read' });
 
+	// The app uses the address with its token.
+	const mcp = (body: unknown, headers: Record<string, string>) =>
+		request.post('/api/mcp', {
+			data: body,
+			headers: { accept: 'application/json, text/event-stream', ...headers }
+		});
+	const callTool = {
+		jsonrpc: '2.0',
+		id: 1,
+		method: 'tools/call',
+		params: { name: 'list_universes', arguments: {} }
+	};
+	const bearer = { authorization: `Bearer ${tokens.access_token}` };
+	const called = await mcp(callTool, bearer);
+	expect(called.status()).toBe(200);
+	expect(await called.text()).toContain('universes');
+
+	// Without the token the endpoint says where to sign in, and the signed-in
+	// browser's own session does not count.
+	const anonymous = await mcp(callTool, {});
+	expect(anonymous.status()).toBe(401);
+	expect(anonymous.headers()['www-authenticate']).toContain(
+		'/.well-known/oauth-protected-resource/api/mcp'
+	);
+	const withSession = await page.request.post('/api/mcp', { data: callTool });
+	expect(withSession.status()).toBe(401);
+
 	await gotoReady(page, '/account/apps');
 	const row = page.locator('.list-row', { hasText: 'E2E Desk (localhost)' });
 	await expect(row).toContainText('May: read your writing.');
@@ -94,6 +121,7 @@ test('a writer connects an app, sees it listed and disconnects it', async ({ pag
 	});
 	expect(refreshed.status()).toBe(400);
 	expect((await refreshed.json()).error).toBe('invalid_grant');
+	expect((await mcp(callTool, bearer)).status()).toBe(401);
 });
 
 test('a form post from another site is still refused everywhere else', async ({ request }) => {
