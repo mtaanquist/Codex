@@ -929,8 +929,34 @@ pattern note the app opened) and `followsSuggestionId` (an accepted edit in
 such a note). A follow-up is held to the changed paragraph and one either
 side, in the same scene, one per accepted edit and app.
 
-Not offered yet: `propose_scene_split`, whose proposal is a card in the
-Assistant's chat; it needs a stored proposal the writer confirms in Codex.
+Proposals that are not notes on a scene (`src/lib/server/proposals.ts`). Two
+kinds wait in the universe's settings under Suggestions
+(`/universes/<id>/suggestions`) until the writer decides:
+
+- `suggest_entity` (both surfaces): a character, place or lore entry the
+  universe has no entry for, with an optional short description and where it
+  was seen. Stored in `entity_proposals` with who suggested it. Refused for a
+  name the universe already has as a name, alias or keyword (any kind, without
+  case), for a name already waiting, and for one the writer dismissed before;
+  one program may have 50 waiting per universe. Accept creates the entry with
+  the description as its markdown summary (a lore entry under the first
+  category) and queues the universe mention scan; the name is checked again
+  at that point.
+- `propose_scene_split` over MCP: an app has no chat to show the proposal card
+  in, so the proposal is stored in `scene_split_proposals` (the opening words
+  and the reason; five waiting per scene and app, a repeat dropped). "Split
+  here" locates the words in the story as it then stands
+  (`locateSplitInStory`) and runs the normal `splitScene`; a passage that is
+  gone leaves the proposal waiting for the writer to dismiss. In the app the
+  tool is unchanged: a card in the chat, nothing stored.
+
+`stage_scene_draft` (MCP only) hands the writer a draft the app wrote. It is
+an `assistant_drafts` row, status `ready`, with the app's label in `note`
+("Drafted by <app>."), so it shows on the scene's draft card and takes the
+existing rules: one undecided draft per writer and scene (the unique index),
+shown even with the Assistant off, and kept only by the writer (fill the
+empty scene, add as a new scene, or discard). The tool never writes to
+`scenes.body_md`.
 
 Prompts. Each Assistant command that starts work has an MCP prompt of the same
 name (`mcp/prompts.ts`): `review`, `copyedit`, `continuity-review`, `write`,
@@ -947,8 +973,9 @@ their one-line asks with the chat panel (`assistant-slash.ts`). A prompt reads
 nothing from the database: it is text around the ids and words the caller
 sent, and the tools it names do the ownership checks. The prompts that stage
 notes are offered only to a connection that may suggest. `rewrite` stages its
-result as a suggested edit when the connection may suggest. The drafting
-prompts give their result in the reply until `stage_scene_draft` exists.
+result as a suggested edit when the connection may suggest. `write`, `draft`
+and `draft-chapter` hand their result over with `stage_scene_draft` when the
+connection may suggest, and give it in the reply otherwise.
 
 Exceptions to "one toolbox for both", each with its reason:
 
@@ -965,6 +992,11 @@ Exceptions to "one toolbox for both", each with its reason:
 - `suggest_edit` takes `patternNoteId` and `followsSuggestionId` over MCP
   only. In the app the run that calls it fixes both (the pattern pass, the
   re-read), so the model is never asked for them.
+- `stage_scene_draft` is offered over MCP only. In the app a draft is asked
+  for by the writer with `/draft`, who sees its cost first and whose job
+  writes the row; the model does not start one unasked.
+- `propose_scene_split` is one tool with two outcomes: a card in the chat in
+  the app, a stored proposal over MCP, because an app has no chat in Codex.
 
 ### Background jobs
 

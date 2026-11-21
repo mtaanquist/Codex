@@ -1849,3 +1849,68 @@ export const apiTokens = pgTable(
 		index('api_tokens_expires_idx').on(table.expiresAt)
 	]
 );
+
+// A new entry the Assistant or a connected app thinks the universe is missing:
+// a character, place or lore entry. Nothing is created until the writer
+// accepts it in the universe's Suggestions; accepting creates the entry the
+// way the app creates any other and records which one (entity_id). from_name
+// is the app's label, copied when it was staged, so it reads the same after
+// the client row is pruned; the Assistant's is resolved live and stores none.
+export const entityProposals = pgTable(
+	'entity_proposals',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		universeId: uuid('universe_id')
+			.references(() => universes.id, { onDelete: 'cascade' })
+			.notNull(),
+		kind: text('kind', { enum: ['character', 'place', 'lore'] }).notNull(),
+		name: text('name').notNull(),
+		descriptionMd: text('description_md'),
+		// Where in the text it was seen, in the suggester's words.
+		seenIn: text('seen_in'),
+		assistant: boolean('assistant').notNull().default(false),
+		clientId: uuid('client_id').references(() => oauthClients.id, { onDelete: 'set null' }),
+		fromName: text('from_name'),
+		status: text('status', { enum: ['pending', 'accepted', 'dismissed'] })
+			.notNull()
+			.default('pending'),
+		entityId: uuid('entity_id'),
+		decidedAt: timestamp('decided_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('entity_proposals_universe_idx').on(table.universeId, table.status)]
+);
+
+// A scene split a connected app proposed. An app has no chat to show a
+// proposal card in, so the proposal is stored and the writer confirms or
+// dismisses it in the universe's Suggestions. Confirming locates the passage
+// again in the story as it then stands and runs the normal split.
+export const sceneSplitProposals = pgTable(
+	'scene_split_proposals',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		ownerId: uuid('owner_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id, { onDelete: 'cascade' })
+			.notNull(),
+		sceneId: uuid('scene_id')
+			.references(() => scenes.id, { onDelete: 'cascade' })
+			.notNull(),
+		// The exact words the new scene would open with.
+		before: text('before').notNull(),
+		rationale: text('rationale').notNull().default(''),
+		clientId: uuid('client_id').references(() => oauthClients.id, { onDelete: 'set null' }),
+		fromName: text('from_name'),
+		status: text('status', { enum: ['pending', 'confirmed', 'dismissed'] })
+			.notNull()
+			.default('pending'),
+		decidedAt: timestamp('decided_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('scene_split_proposals_story_idx').on(table.storyId, table.status)]
+);

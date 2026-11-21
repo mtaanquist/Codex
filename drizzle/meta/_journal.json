@@ -694,6 +694,13 @@
 			"when": 1795248150943,
 			"tag": "0098_review-client-author",
 			"breakpoints": true
+		},
+		{
+			"idx": 99,
+			"version": "7",
+			"when": 1795253180855,
+			"tag": "0099_mcp-proposals",
+			"breakpoints": true
 		}
 	]
 }

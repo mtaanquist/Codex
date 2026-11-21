@@ -610,6 +610,49 @@ Key points:
 
 This supersedes the single-row annotation placeholder that earlier drafts reserved for a reviewer role.
 
+### Proposals from the Assistant and connected apps
+
+Two things a program may propose that are not notes on a scene. Both wait in the universe's settings under Suggestions until the owner decides (`src/lib/server/proposals.ts`).
+
+```sql
+entity_proposals (
+  id             uuid primary key,
+  owner_id       uuid not null references users(id) on delete cascade,
+  universe_id    uuid not null references universes(id) on delete cascade,
+  kind           text not null,             -- 'character' | 'place' | 'lore'
+  name           text not null,
+  description_md text,                      -- becomes the entry's summary on accept
+  seen_in        text,                      -- where in the text, in the suggester's words
+  assistant      boolean not null default false,
+  client_id      uuid references oauth_clients(id) on delete set null,
+  from_name      text,                      -- the app's label, copied when staged
+  status         text not null default 'pending',  -- 'pending' | 'accepted' | 'dismissed'
+  entity_id      uuid,                      -- the entry an accept created
+  decided_at     timestamptz,
+  created_at     timestamptz not null
+)
+
+scene_split_proposals (
+  id          uuid primary key,
+  owner_id    uuid not null references users(id) on delete cascade,
+  story_id    uuid not null references stories(id) on delete cascade,
+  scene_id    uuid not null references scenes(id) on delete cascade,
+  before      text not null,                -- the exact words the new scene would open with
+  rationale   text not null default '',
+  client_id   uuid references oauth_clients(id) on delete set null,
+  from_name   text,
+  status      text not null default 'pending',  -- 'pending' | 'confirmed' | 'dismissed'
+  decided_at  timestamptz,
+  created_at  timestamptz not null
+)
+```
+
+Key points:
+
+- **Nothing is created by staging.** An accepted entity proposal inserts the character, place or lore entry the way the app does for the owner; a confirmed split runs the normal scene split after locating `before` in the story as it then stands.
+- **A dismissed entity name stays dismissed.** Dismissed rows are kept so the same name is not suggested again in that universe.
+- **Only apps store split proposals.** The in-app Assistant's split proposal is a card in its chat and has no row.
+
 ---
 
 ## Revisions (version history)

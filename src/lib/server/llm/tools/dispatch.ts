@@ -30,6 +30,9 @@ import {
 	type MachineAuthor
 } from '../../review.ts';
 import { toLf } from '#lib/line-endings';
+import { clientDisplayName } from '#lib/mcp-access';
+import { PROPOSAL_KIND_LABEL, stageEntityProposal, stageSplitProposal } from '../../proposals.ts';
+import { stageAppDraft } from '../../scene-drafts.ts';
 import { isUuid } from '#lib/slug';
 import { paragraphWindow } from '#lib/paragraphs';
 import { locateSplitBefore } from '#lib/scene-split-locate';
@@ -268,6 +271,19 @@ export async function dispatchToolCall(
 					// cached schemas have aged out; nothing else uses "before".
 					before: asString(args.newSceneStart) || asString(args.before),
 					rationale: asString(args.rationale)
+				});
+			case 'suggest_entity':
+				return suggestEntity(ctx, {
+					kind: asString(args.kind),
+					name: asString(args.name),
+					description: asString(args.description),
+					seenIn: asString(args.seenIn)
+				});
+			case 'stage_scene_draft':
+				return stageSceneDraft(ctx, {
+					sceneId: asString(args.sceneId),
+					text: asString(args.text),
+					brief: asString(args.brief)
 				});
 			case 'reply_in_thread':
 				return replyInThread(ctx, asString(args.comment), asString(args.threadId));
@@ -644,6 +660,24 @@ async function proposeSceneSplit(
 	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
 	// Checked the way the confirm step locates it, so a scene stored with
 	// CRLF line endings (an older import) takes a passage across a line break.
+	// An app has no chat to show the card in: its proposal is stored, and the
+	// writer confirms it in the universe's Suggestions.
+	if (ctx.external) {
+		const stored = await stageSplitProposal(ctx.db, {
+			ownerId: ctx.userId,
+			storyId: scene.storyId,
+			sceneId: scene.id,
+			bodyMd: scene.bodyMd,
+			before: input.before,
+			rationale: input.rationale,
+			author: { client: ctx.external.client }
+		});
+		if (!stored.ok) return { result: stored.reason, staged: false };
+		return {
+			result: `The split is proposed to the writer. Nothing has changed; the scene is split only if they confirm it here: ${suggestionsLink(ctx)}`,
+			staged: true
+		};
+	}
 	const location = locateSplitBefore(toLf(scene.bodyMd), toLf(input.before));
 	if (!location.ok) return { result: location.reason, staged: false };
 	return {
@@ -659,6 +693,58 @@ async function proposeSceneSplit(
 				rationale: input.rationale.trim()
 			}
 		}
+	};
+}
+
+// Where the writer decides on suggested entries and proposed splits.
+function suggestionsLink(ctx: ToolContext): string {
+	return `${ctx.external?.origin ?? ''}/universes/${ctx.universeId}/suggestions`;
+}
+
+// A new entry for the universe of the call, staged for the writer to accept.
+async function suggestEntity(
+	ctx: ToolContext,
+	input: { kind: string; name: string; description: string; seenIn: string }
+): Promise<ToolOutcome> {
+	const staged = await stageEntityProposal(ctx.db, {
+		ownerId: ctx.userId,
+		universeId: ctx.universeId,
+		...input,
+		author: stagingAuthor(ctx)
+	});
+	if (!staged.ok) return { result: staged.reason, staged: false };
+	const label = PROPOSAL_KIND_LABEL[input.kind as keyof typeof PROPOSAL_KIND_LABEL];
+	return {
+		result: ctx.external
+			? `Suggested the ${label} "${input.name.trim()}" to the writer. Nothing is created until they accept it here: ${suggestionsLink(ctx)}`
+			: `Suggested the ${label} "${input.name.trim()}" to the writer. Nothing is created until they accept it under Suggestions in the universe's settings.`,
+		staged: true
+	};
+}
+
+// A draft an app wrote for a scene (see stageAppDraft). Only on the MCP
+// surface: in the app the writer asks for a draft with /draft and sees its
+// cost first, and the model does not start one unasked.
+async function stageSceneDraft(
+	ctx: ToolContext,
+	input: { sceneId: string; text: string; brief: string }
+): Promise<ToolOutcome> {
+	if (!ctx.external) return { result: 'Unknown tool: stage_scene_draft.', staged: false };
+	const scene = await loadScene(ctx, input.sceneId);
+	if (!scene) return { result: 'No scene with that id in this story.', staged: false };
+	const { client, origin } = ctx.external;
+	const staged = await stageAppDraft(ctx.db, {
+		userId: ctx.userId,
+		storyId: scene.storyId,
+		sceneId: scene.id,
+		textMd: input.text,
+		brief: input.brief,
+		from: clientDisplayName({ clientName: client.name, host: client.host })
+	});
+	if (!staged.ok) return { result: staged.reason, staged: false };
+	return {
+		result: `Staged the draft. It waits on the scene, where the writer keeps or discards it; the scene's own text has not changed. The scene opens here: ${origin}/stories/${scene.storyId}?scene=${scene.id}&draft=show`,
+		staged: true
 	};
 }
 

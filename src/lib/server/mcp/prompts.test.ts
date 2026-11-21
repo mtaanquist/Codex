@@ -120,6 +120,12 @@ describe('what a prompt says', () => {
 		const write = build('write', { brief: 'The ford at dawn.' });
 		expect(write).toContain(buildCoauthorMessage('The ford at dawn.'));
 		expect(write).toContain(`the scene with id ${SCENE}`);
+		// Staged on the scene where the connection may, else given in the reply.
+		expect(write).toContain('Hand it to the writer with stage_scene_draft');
+		expect(write).toContain('that the passage is waiting on the scene');
+		const said = build('write', { brief: 'The ford at dawn.' }, READ);
+		expect(said).not.toContain('stage_scene_draft');
+		expect(said).toContain('Nothing you write here is put into Codex');
 
 		const args = { passage: 'The elf crossed.', instruction: 'Tighten it.' };
 		const asked = buildCoauthorMessage('Tighten it.', {
@@ -150,6 +156,16 @@ describe('what a prompt says', () => {
 			buildSceneDraftMessage({ brief: '', chapterBrief: 'The crossing.', targetWords: 800 })
 		);
 		expect(chapter).toContain(`the chapter "The Ford" of the story with id ${STORY}`);
+
+		// A draft is handed over with stage_scene_draft, never put in the scene.
+		expect(draft).toContain('Hand it to the writer with stage_scene_draft');
+		expect(draft).toContain('It never replaces prose the writer has.');
+		expect(chapter).toContain('Hand each one to the writer with stage_scene_draft');
+		for (const name of ['draft', 'draft-chapter']) {
+			const said = build(name, { chapter: 'The Ford', brief: 'x' }, READ);
+			expect(said).not.toContain('stage_scene_draft');
+			expect(said).toContain('Nothing you write here is put into Codex');
+		}
 	});
 
 	it('recaps, looks up and searches with the Assistants own asks', () => {

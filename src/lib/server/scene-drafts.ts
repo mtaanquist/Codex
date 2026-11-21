@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
-import type { ActionFailure } from './action-result';
-import type { Database } from './auth';
-import { isUniqueViolation } from './db-errors';
-import { assistantDrafts, chapters, scenes, stories } from './db/schema';
-import { recordRevision } from './revisions';
+import type { ActionFailure } from './action-result.ts';
+import type { Database } from './auth.ts';
+import { isUniqueViolation } from './db-errors.ts';
+import { assistantDrafts, chapters, scenes, stories } from './db/schema.ts';
+import { recordRevision } from './revisions.ts';
 import { ownedScene } from './scene-access.ts';
-import { saveSceneBody } from './scene-save';
-import { lockStoryScene, makeRoomAfter } from './scene-split-merge';
+import { saveSceneBody } from './scene-save.ts';
+import { lockStoryScene, makeRoomAfter } from './scene-split-merge.ts';
 import { inLiveStory, storyIsLive } from './universe-scope.ts';
 import { usableSceneSummary } from './summary-currency.ts';
 import {
@@ -21,7 +21,9 @@ import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 import {
 	chapterCapAdvice,
+	clampDraftWords,
 	defaultDraftWords,
+	MAX_DRAFT_BRIEF_CHARS,
 	DRAFT_CHANGED_ELSEWHERE,
 	DRAFT_DECIDED_ELSEWHERE,
 	DRAFT_NOT_WRITTEN,
@@ -294,6 +296,80 @@ export async function requestSceneDraft(
 		.set({ status: 'discarded' })
 		.where(and(mine, eq(assistantDrafts.status, 'failed'), ne(assistantDrafts.id, draftId)));
 	return { ok: true, draftId, jobId };
+}
+
+// The longest draft an app may stage, in characters: room for the longest
+// scene a draft may be asked for.
+export const APP_DRAFT_MAX_CHARS = 60_000;
+
+// A draft a connected app wrote, staged ready to read. It takes the same
+// place as one the Assistant wrote: one undecided draft a scene, shown on the
+// scene, and kept only by the writer (into the empty scene, or as a new scene
+// after it). The caller has checked the scene is the user's and reachable.
+// `from` is the app's label, kept in the draft's note so the card says who
+// wrote it.
+export async function stageAppDraft(
+	db: Database,
+	input: {
+		userId: string;
+		storyId: string;
+		sceneId: string;
+		textMd: string;
+		brief: string;
+		from: string;
+	}
+): Promise<{ ok: true; draftId: string } | { ok: false; reason: string }> {
+	const text = input.textMd.trim();
+	if (isBlankDraft(text)) return { ok: false, reason: 'Give the text of the draft.' };
+	if (text.length > APP_DRAFT_MAX_CHARS) {
+		return {
+			ok: false,
+			reason: `That draft is too long; keep it under ${APP_DRAFT_MAX_CHARS} characters.`
+		};
+	}
+	const waiting = {
+		ok: false as const,
+		reason:
+			'This scene already has a draft the writer has not decided on. Stage another once they have kept or discarded it.'
+	};
+	const mine = and(
+		eq(assistantDrafts.userId, input.userId),
+		eq(assistantDrafts.sceneId, input.sceneId)
+	);
+	const [open] = await db
+		.select({ id: assistantDrafts.id })
+		.from(assistantDrafts)
+		.where(and(mine, inArray(assistantDrafts.status, OPEN)))
+		.limit(1);
+	if (open) return waiting;
+	let draftId: string;
+	try {
+		const [row] = await db
+			.insert(assistantDrafts)
+			.values({
+				userId: input.userId,
+				storyId: input.storyId,
+				sceneId: input.sceneId,
+				brief: input.brief.trim().slice(0, MAX_DRAFT_BRIEF_CHARS),
+				targetWords: clampDraftWords(wordCount(text)),
+				textMd: text,
+				status: 'ready',
+				note: `Drafted by ${input.from}.`
+			})
+			.returning({ id: assistantDrafts.id });
+		draftId = row.id;
+	} catch (err) {
+		// Another draft for the scene landed first.
+		if (isUniqueViolation(err)) return waiting;
+		throw err;
+	}
+	// As when the writer asks again: a failed draft gives way to the new one,
+	// after the insert (see requestSceneDraft).
+	await db
+		.update(assistantDrafts)
+		.set({ status: 'discarded' })
+		.where(and(mine, eq(assistantDrafts.status, 'failed'), ne(assistantDrafts.id, draftId)));
+	return { ok: true, draftId };
 }
 
 // The user's draft, whatever state it is in; null when it is not theirs.
