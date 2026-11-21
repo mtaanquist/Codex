@@ -1332,6 +1332,9 @@ export const reviewSuggestions = pgTable(
 			.default('pending'),
 		decidedByUserId: uuid('decided_by_user_id').references(() => users.id),
 		decidedAt: timestamp('decided_at', { withTimezone: true }),
+		// When its author last revised the replacement. An app gets one revision
+		// for each thing the writer says in the edit's discussion.
+		revisedAt: timestamp('revised_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true })
 			.notNull()
 			.default(sql`clock_timestamp()`)

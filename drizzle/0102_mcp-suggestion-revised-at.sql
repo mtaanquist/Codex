@@ -1,0 +1,1 @@
+ALTER TABLE "review_suggestions" ADD COLUMN "revised_at" timestamp with time zone;

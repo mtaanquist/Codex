@@ -49,7 +49,7 @@ Nothing the app leaves changes your writing until you decide.
 - **Suggested edits and comments** are in the story's Review. Accept or reject each one, and reply to a comment if you want to talk it over; the app can read your reply the next time you ask it to look. See [Inviting a reviewer](/docs/reviewing) for how Review works.
 - **A note about a habit that repeats**, such as a pet phrase, comes with a link. Open the link to go through its edits one at a time.
 - **Suggested characters, places and lore entries**, and **proposals to split a scene in two**, are in the universe's settings under Suggestions. See [Planning your world](/docs/planning).
-- **A draft the app wrote for a scene** waits on that scene. Open the scene and select the Assistant tab on the right to read it, change it, and keep or discard it. See [Writing in the editor](/docs/editor).
+- **A draft the app wrote for a scene** waits on that scene. Open the scene and select the Assistant tab on the right to read it, change it, and keep or discard it. A universe holds up to 20 drafts from apps at a time; keep or discard some to make room for more. See [Writing in the editor](/docs/editor).
 
 Each of these shows the name of the app that left it.
 
