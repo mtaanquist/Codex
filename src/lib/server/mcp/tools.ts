@@ -50,18 +50,42 @@ export const NO_UNIVERSE_RESULT = 'No universe with that id.';
 // proposal the writer confirms in Codex.
 const NOT_YET = new Set(['propose_scene_split']);
 
-// In the app these two act on the thread or suggestion the open page fixes.
-// An app has no page, so it names the target; the dispatcher checks it against
-// the connected writer (reachableStory).
-const TARGET_ARGUMENT: Record<string, { name: string; description: string }> = {
-	reply_in_thread: {
-		name: 'threadId',
-		description: 'The id of the review thread to reply in.'
-	},
-	update_suggestion: {
-		name: 'suggestionId',
-		description: 'The id of your own pending suggestion to revise.'
-	}
+// Arguments a tool takes on this surface only. In the app the open page (or
+// the run that called the tool) fixes the thread, the suggestion, the pattern
+// note and the edit being followed up. An app has no page, so it names them;
+// the dispatcher checks each against the connected writer and the app's own
+// notes (reachableStory, appEditLink).
+type ExtraArgument = { name: string; description: string; required: boolean };
+const EXTRA_ARGUMENTS: Record<string, ExtraArgument[]> = {
+	reply_in_thread: [
+		{
+			name: 'threadId',
+			description:
+				'The id of the review thread to reply in: a note id, or the threadId of an edit from get_review_note.',
+			required: true
+		}
+	],
+	update_suggestion: [
+		{
+			name: 'suggestionId',
+			description: 'The id of your own pending suggestion to revise.',
+			required: true
+		}
+	],
+	suggest_edit: [
+		{
+			name: 'patternNoteId',
+			description:
+				'Optional: the id of a pattern note of yours to add this edit to, so the writer meets it when working through that note.',
+			required: false
+		},
+		{
+			name: 'followsSuggestionId',
+			description:
+				'Optional: the id of an accepted edit in a pattern note of yours, when this edit fixes something that change left awkward. The edit must then sit in the changed paragraph or the one before or after it, and each accepted edit takes one follow-up.',
+			required: false
+		}
+	]
 };
 
 // The tools a connection is offered: every read tool, and the staging tools
@@ -73,15 +97,21 @@ function offered(tool: ToolDef, permissions: readonly McpPermission[]): boolean 
 function inputSchema(tool: ToolDef): Record<string, unknown> {
 	if (NO_UNIVERSE.has(tool.name)) return tool.parameters;
 	const parameters = tool.parameters as { properties?: object; required?: string[] };
-	const target = TARGET_ARGUMENT[tool.name];
+	const extras = EXTRA_ARGUMENTS[tool.name] ?? [];
 	return {
 		...tool.parameters,
 		properties: {
 			universeId: UNIVERSE_ARGUMENT,
-			...(target ? { [target.name]: { type: 'string', description: target.description } } : {}),
-			...parameters.properties
+			...parameters.properties,
+			...Object.fromEntries(
+				extras.map((extra) => [extra.name, { type: 'string', description: extra.description }])
+			)
 		},
-		required: ['universeId', ...(target ? [target.name] : []), ...(parameters.required ?? [])]
+		required: [
+			'universeId',
+			...extras.filter((extra) => extra.required).map((extra) => extra.name),
+			...(parameters.required ?? [])
+		]
 	};
 }
 
@@ -110,7 +140,9 @@ export async function callMcpTool(
 	db: Database,
 	identity: BearerIdentity,
 	name: string,
-	args: Record<string, unknown>
+	args: Record<string, unknown>,
+	// Where this Codex is reached, for links in results.
+	origin: string
 ): Promise<McpToolResult> {
 	const log = (outcome: string) =>
 		logEvent('info', 'mcp.tool', {
@@ -174,7 +206,8 @@ export async function callMcpTool(
 					name: identity.client.clientName,
 					host: identity.client.host
 				},
-				maxNotesPerScene: MAX_NOTES_WAITING_PER_SCENE
+				maxNotesPerScene: MAX_NOTES_WAITING_PER_SCENE,
+				origin
 			}
 		},
 		{ id: 'mcp', name, arguments: JSON.stringify(rest) }

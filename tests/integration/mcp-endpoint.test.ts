@@ -8,6 +8,8 @@ import {
 	entityMentions,
 	oauthClients,
 	oauthGrants,
+	reviewInvitations,
+	reviewers,
 	reviewSuggestions,
 	scenes,
 	stories,
@@ -51,6 +53,7 @@ const {
 	createSuggestion,
 	createThread,
 	decideSuggestion,
+	ensureSuggestionThread,
 	listSuggestions,
 	listThreads
 } = await import('#lib/server/review');
@@ -64,7 +67,8 @@ const NO_SCENE = 'No scene with that id in this story.';
 const NO_ENTITY = 'No entity with that id.';
 const NO_THREAD = 'No thread with that id.';
 const NO_SUGGESTION = 'No suggestion with that id.';
-const APP = 'Writing Desk (app.example)';
+const APP_NAME = 'Writing Desk';
+const APP = `${APP_NAME} (app.example)`;
 const VERIFIER = 'v'.repeat(64);
 const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url');
 
@@ -393,7 +397,9 @@ describe('the protocol', () => {
 		expect(tools.map((tool) => tool.name).sort()).toEqual([
 			'find_appearances',
 			'get_entity',
+			'get_review_note',
 			'get_scene',
+			'list_review_notes',
 			'list_scenes',
 			'list_stories',
 			'list_universes',
@@ -428,11 +434,24 @@ describe('the protocol', () => {
 			'suggest_edit',
 			'update_suggestion'
 		]);
-		expect(tools).toHaveLength(12);
+		expect(tools).toHaveLength(14);
 		const required = (name: string) =>
 			tools.find((tool) => tool.name === name)!.inputSchema.required;
 		expect(required('reply_in_thread')).toEqual(['universeId', 'threadId', 'comment']);
 		expect(required('update_suggestion')).toEqual(['universeId', 'suggestionId', 'replacement']);
+		// The note and the edit a suggestion is linked to are named, not required.
+		const suggest = tools.find((tool) => tool.name === 'suggest_edit')!.inputSchema as {
+			required: string[];
+			properties: Record<string, unknown>;
+		};
+		expect(suggest.required).toEqual(['universeId', 'sceneId', 'original', 'replacement']);
+		expect(suggest.properties).toHaveProperty('patternNoteId');
+		expect(suggest.properties).toHaveProperty('followsSuggestionId');
+		// The in-app tool takes neither: there the page fixes them.
+		const inApp = TOOLS.find((tool) => tool.name === 'suggest_edit')!.parameters as {
+			properties: Record<string, unknown>;
+		};
+		expect(inApp.properties).not.toHaveProperty('patternNoteId');
 	});
 
 	it('refuses a tool it does not offer, and stages nothing', async () => {
@@ -703,6 +722,76 @@ const hiddenScenes = () => [
 	'nope'
 ];
 
+const NO_NOTE = 'No review note of yours with that id.';
+const NO_STORY = 'No story with that id.';
+const PATTERN = 'Pattern note (lanterns): the word carries every sentence.';
+// Four paragraphs, each with a word of its own to edit.
+const PARAGRAPHS = [
+	'One open lantern.',
+	'Two dark lantern.',
+	'Three far paragraph.',
+	'Four last words.'
+].join('\n\n');
+
+async function setBody(who: World, bodyMd: string) {
+	await db.update(scenes).set({ bodyMd }).where(eq(scenes.id, who.sceneId));
+}
+
+async function storyOf(sceneId: string): Promise<string> {
+	const [row] = await db.select().from(scenes).where(eq(scenes.id, sceneId));
+	return row.storyId;
+}
+
+// A pattern note the app leaves on the writer's scene; its id.
+async function patternNote(
+	who: World,
+	edits: { original: string; replacement: string }[] = [{ original: 'open', replacement: 'shut' }]
+): Promise<string> {
+	const result = await call(who, 'leave_pattern_note', {
+		universeId: who.universeId,
+		sceneId: who.sceneId,
+		comment: PATTERN,
+		edits
+	});
+	return idIn(result.text);
+}
+
+async function writerSays(who: World, threadId: string, body: string) {
+	const said = await addComment(db, {
+		storyId: who.storyId,
+		threadId,
+		author: { userId: who.userId },
+		body
+	});
+	if (!said.ok) throw new Error(said.reason);
+}
+
+async function guestSays(who: World, threadId: string, body: string) {
+	const [invitation] = await db
+		.insert(reviewInvitations)
+		.values({ storyId: who.storyId, createdBy: who.userId, tokenHash: `guest-${threadId}` })
+		.returning({ id: reviewInvitations.id });
+	const [reviewer] = await db
+		.insert(reviewers)
+		.values({ invitationId: invitation.id, displayName: 'Guest Gil' })
+		.returning({ id: reviewers.id });
+	const said = await addComment(db, {
+		storyId: who.storyId,
+		threadId,
+		author: { reviewerId: reviewer.id },
+		body
+	});
+	if (!said.ok) throw new Error(said.reason);
+}
+
+// The discussion under a suggested edit, opened as the writer's first reply
+// there would open it.
+async function discussionOf(who: World, suggestionId: string): Promise<string> {
+	const thread = await ensureSuggestionThread(db, { storyId: who.storyId, suggestionId });
+	if (!thread.ok) throw new Error(thread.reason);
+	return thread.threadId;
+}
+
 describe('suggest_edit', () => {
 	it('stages a pending suggestion in the apps name and leaves the text alone', async () => {
 		const result = await edit(alice);
@@ -784,7 +873,7 @@ describe('leave_pattern_note', () => {
 		call(who, 'leave_pattern_note', {
 			universeId: who.universeId,
 			sceneId: who.sceneId,
-			comment: 'Pattern note (lanterns): the word carries every sentence.',
+			comment: PATTERN,
 			edits: [
 				{ original: 'open', replacement: 'shut' },
 				{ original: 'not in the scene', replacement: 'x' }
@@ -800,6 +889,11 @@ describe('leave_pattern_note', () => {
 		const [suggestion] = await listSuggestions(db, alice.storyId);
 		expect(thread.comments[0]).toMatchObject({ authorName: APP, isApp: true });
 		expect(suggestion).toMatchObject({ reviewerName: APP, patternThreadId: thread.id });
+		// The app is told the note's id and where the writer works through it.
+		expect(idIn(result.text)).toBe(thread.id);
+		expect(result.text).toContain(
+			`${ORIGIN}/stories/${alice.storyId}/review?scene=${alice.sceneId}&pass=${thread.id}`
+		);
 
 		// A retry with the same comment adds to the apps own note, not a new one.
 		const retry = await note(alice, { edits: [{ original: 'lantern', replacement: 'lamp' }] });
@@ -962,6 +1056,431 @@ describe('update_suggestion', () => {
 	});
 });
 
+// ============ Reading its own notes back, and the guided pass ============
+
+describe('suggest_edit linked to a pattern note', () => {
+	it('adds an edit to its own pattern note and to no one elses', async () => {
+		await setBody(alice, PARAGRAPHS);
+		const noteId = await patternNote(alice);
+		const added = await edit(alice, {
+			original: 'dark',
+			replacement: 'dim',
+			patternNoteId: noteId
+		});
+		expect(added.text).toContain('Staged a suggested edit');
+		const linked = (await listSuggestions(db, alice.storyId)).find(
+			(row) => row.id === idIn(added.text)
+		);
+		expect(linked).toMatchObject({ patternThreadId: noteId, reviewerName: APP });
+
+		await setBody(bob, PARAGRAPHS);
+		const second = await connect(alice.userId, 'Second');
+		const assistants = await createThread(db, {
+			storyId: alice.storyId,
+			sceneId: alice.sceneId,
+			anchor: null,
+			author: { assistant: true },
+			body: 'Pattern note (far): from the Assistant.'
+		});
+		const notTheirs = [
+			await patternNote(bob),
+			await patternNote({ ...alice, token: second }, [{ original: 'last', replacement: 'final' }]),
+			assistants.ok && assistants.threadId,
+			MISSING,
+			'nope'
+		];
+		const before = await stagedRows();
+		for (const patternNoteId of notTheirs) {
+			expect(await edit(alice, { original: 'far', replacement: 'near', patternNoteId })).toEqual({
+				text: NO_NOTE,
+				isError: false
+			});
+		}
+		expect(await stagedRows()).toBe(before);
+	});
+
+	it('stages one follow-up to an accepted edit, held to the paragraphs around it', async () => {
+		await setBody(alice, PARAGRAPHS);
+		const noteId = await patternNote(alice);
+		const [first] = await listSuggestions(db, alice.storyId);
+		await decideSuggestion(db, alice.userId, alice.storyId, first.id, true);
+		const follow = (original: string, replacement: string) =>
+			edit(alice, { original, replacement, followsSuggestionId: first.id });
+
+		// Two paragraphs on from the change is out of reach.
+		expect((await follow('far', 'near')).text).toContain('outside the paragraphs under review');
+		const staged = await follow('dark', 'dim');
+		expect(staged.text).toContain('Staged a suggested edit');
+		const row = (await listSuggestions(db, alice.storyId)).find(
+			(entry) => entry.id === idIn(staged.text)
+		);
+		expect(row).toMatchObject({ patternThreadId: noteId, followsId: first.id, status: 'pending' });
+		// One per accepted edit, whatever becomes of it.
+		await decideSuggestion(db, alice.userId, alice.storyId, row!.id, false);
+		expect((await follow('Two', 'Second')).text).toBe(
+			'You have already staged a follow-up to that edit.'
+		);
+		expect(await listSuggestions(db, alice.storyId)).toHaveLength(2);
+	});
+
+	it('follows nothing that is not an accepted edit in a note of its own', async () => {
+		await setBody(alice, PARAGRAPHS);
+		await setBody(bob, PARAGRAPHS);
+		// Its own edit, still pending.
+		await patternNote(alice);
+		const [pending] = await listSuggestions(db, alice.storyId);
+		// Another writer's accepted edit.
+		await patternNote(bob);
+		const [bobs] = await listSuggestions(db, bob.storyId);
+		await decideSuggestion(db, bob.userId, bob.storyId, bobs.id, true);
+		// The Assistant's accepted edit, in its own note on this writer's scene.
+		const assistants = await dispatchToolCall(
+			{ db, userId: alice.userId, universeId: alice.universeId },
+			{
+				id: 'call',
+				name: 'leave_pattern_note',
+				arguments: JSON.stringify({
+					sceneId: alice.sceneId,
+					comment: 'Pattern note (dark): from the Assistant.',
+					edits: [{ original: 'dark', replacement: 'dim' }]
+				})
+			}
+		);
+		expect(assistants.staged).toBe(true);
+		const assistantsEdit = (await listSuggestions(db, alice.storyId)).find(
+			(row) => row.isAssistant
+		)!;
+		await decideSuggestion(db, alice.userId, alice.storyId, assistantsEdit.id, true);
+
+		const before = await stagedRows();
+		for (const followsSuggestionId of [pending.id, bobs.id, assistantsEdit.id, MISSING, 'nope']) {
+			expect(
+				await edit(alice, { original: 'Two', replacement: 'Second', followsSuggestionId })
+			).toEqual({ text: 'No accepted edit with that id in a note of yours.', isError: false });
+		}
+		expect(await stagedRows()).toBe(before);
+	});
+});
+
+describe('list_review_notes', () => {
+	const list = (who: World | string, storyId: unknown, universeId = alice.universeId) =>
+		call(who, 'list_review_notes', { universeId, storyId });
+	type Listed = {
+		notes: {
+			id: string;
+			opening: string;
+			edits: Record<string, number>;
+			writerRepliedLast: boolean;
+		}[];
+		otherEdits: { id: string; writerRepliedLast: boolean }[];
+	};
+	const listed = async () => JSON.parse((await list(alice, alice.storyId)).text) as Listed;
+
+	it('lists the apps own notes with what became of their edits', async () => {
+		await setBody(alice, PARAGRAPHS);
+		const noteId = await patternNote(alice, [
+			{ original: 'open', replacement: 'shut' },
+			{ original: 'dark', replacement: 'dim' },
+			{ original: 'far', replacement: 'near' }
+		]);
+		const edits = await listSuggestions(db, alice.storyId);
+		await decideSuggestion(db, alice.userId, alice.storyId, edits[0].id, true);
+		await decideSuggestion(db, alice.userId, alice.storyId, edits[1].id, false);
+		const loose = idIn((await edit(alice, { original: 'last', replacement: 'final' })).text);
+		const plain = idIn((await comment(alice)).text);
+		// Notes that are someone else's: another app's, the Assistant's, the writer's.
+		const second = await connect(alice.userId, 'Second');
+		await comment({ ...alice, token: second }, { comment: 'From the second app.' });
+		await edit({ ...alice, token: second }, { original: 'Four', replacement: 'Fourth' });
+		for (const author of [{ assistant: true as const }, { userId: alice.userId }]) {
+			await createThread(db, {
+				storyId: alice.storyId,
+				sceneId: alice.sceneId,
+				anchor: null,
+				author,
+				body: 'Not from this app.'
+			});
+		}
+
+		const result = await listed();
+		expect(result.notes.map((note) => note.id).sort()).toEqual([noteId, plain].sort());
+		const note = result.notes.find((entry) => entry.id === noteId)!;
+		expect(note).toMatchObject({
+			sceneId: alice.sceneId,
+			sceneTitle: 'Alice Quay',
+			resolved: false,
+			edits: { pending: 1, accepted: 1, rejected: 1 },
+			writerRepliedLast: false
+		});
+		expect(note.opening).toContain('Pattern note (lanterns)');
+		expect(result.otherEdits).toEqual([
+			expect.objectContaining({
+				id: loose,
+				status: 'pending',
+				replacement: 'final',
+				writerRepliedLast: false
+			})
+		]);
+	});
+
+	it('flags a note the writer answered last, on the note or under one of its edits', async () => {
+		await setBody(alice, PARAGRAPHS);
+		const noteId = await patternNote(alice);
+		const [linked] = await listSuggestions(db, alice.storyId);
+		const loose = idIn((await edit(alice, { original: 'last', replacement: 'final' })).text);
+		const flagged = async () => {
+			const result = await listed();
+			return [result.notes[0].writerRepliedLast, result.otherEdits[0].writerRepliedLast];
+		};
+		expect(await flagged()).toEqual([false, false]);
+
+		await writerSays(alice, noteId, 'Why this one?');
+		expect(await flagged()).toEqual([true, false]);
+		// A guest's aside does not answer the writer; the app's reply does.
+		await guestSays(alice, noteId, 'A guest aside.');
+		expect(await flagged()).toEqual([true, false]);
+		await call(alice, 'reply_in_thread', {
+			universeId: alice.universeId,
+			threadId: noteId,
+			comment: 'Because it repeats.'
+		});
+		expect(await flagged()).toEqual([false, false]);
+
+		await writerSays(alice, await discussionOf(alice, linked.id), 'Could it be "ajar"?');
+		expect(await flagged()).toEqual([true, false]);
+		await writerSays(alice, await discussionOf(alice, loose), 'Not sure about this.');
+		expect(await flagged()).toEqual([true, true]);
+	});
+
+	it('finds no story that is another writers, muted, in the trash or missing', async () => {
+		await expectNoUniverse('list_review_notes', { storyId: alice.storyId });
+		await comment(bob);
+		const before = await stagedRows();
+		const hidden = [
+			bob.storyId,
+			await storyOf(alice.mutedSceneId),
+			await storyOf(alice.trashedStorySceneId),
+			MISSING,
+			'nope'
+		];
+		for (const storyId of hidden) {
+			expect(await list(alice, storyId)).toEqual({ text: NO_STORY, isError: false });
+		}
+		// The writer's own story, asked for through their other universe.
+		expect(await list(alice, alice.storyId, alice.otherUniverseId)).toEqual({
+			text: NO_STORY,
+			isError: false
+		});
+		expect(await list(alice, bob.storyId, bob.universeId)).toEqual({
+			text: NO_UNIVERSE_RESULT,
+			isError: true
+		});
+		expect(await stagedRows()).toBe(before);
+	});
+});
+
+describe('get_review_note', () => {
+	const get = (who: World | string, noteId: unknown, universeId = alice.universeId) =>
+		call(who, 'get_review_note', { universeId, noteId });
+	type Reply = { from: string; body: string };
+	type Got = {
+		storyId: string;
+		note?: { id: string; comments: Reply[] };
+		edits: { id: string; threadId: string | null; replies: Reply[] }[];
+		workThroughLink?: string;
+	};
+	const said = (replies: Reply[]) => replies.map((reply) => [reply.from, reply.body]);
+
+	it('returns the note, the talk with the writer in order, and each edit as it stands', async () => {
+		await setBody(alice, PARAGRAPHS);
+		const noteId = await patternNote(alice, [
+			{ original: 'open', replacement: 'shut' },
+			{ original: 'dark', replacement: 'dim' }
+		]);
+		const [first, second] = await listSuggestions(db, alice.storyId);
+		// The writer accepts the first in their own words and asks about the second.
+		await decideSuggestion(db, alice.userId, alice.storyId, first.id, true, 'ajar');
+		const discussion = await discussionOf(alice, second.id);
+		await writerSays(alice, discussion, 'Could it be "dull"?');
+		// On the note: the writer, a guest, another app, then this app.
+		await writerSays(alice, noteId, 'Why this one?');
+		await guestSays(alice, noteId, 'A guest aside.');
+		const other = await connect(alice.userId, 'Second');
+		await call(other, 'reply_in_thread', {
+			universeId: alice.universeId,
+			threadId: noteId,
+			comment: 'Another app butting in.'
+		});
+		await call(alice, 'reply_in_thread', {
+			universeId: alice.universeId,
+			threadId: noteId,
+			comment: 'Because it repeats.'
+		});
+
+		const got = JSON.parse((await get(alice, noteId)).text) as Got;
+		expect(got.storyId).toBe(alice.storyId);
+		expect(got.note).toMatchObject({ id: noteId, sceneId: alice.sceneId, resolved: false });
+		expect(said(got.note!.comments)).toEqual([
+			['you', PATTERN],
+			['writer', 'Why this one?'],
+			['you', 'Because it repeats.']
+		]);
+		expect(got.edits).toHaveLength(2);
+		expect(got.edits[0]).toMatchObject({
+			id: first.id,
+			yours: true,
+			status: 'accepted',
+			original: 'open',
+			replacement: 'ajar',
+			paragraphNow: 'One ajar lantern.',
+			threadId: null,
+			replies: []
+		});
+		expect(got.edits[1]).toMatchObject({
+			id: second.id,
+			status: 'pending',
+			original: 'dark',
+			replacement: 'dim',
+			paragraphNow: 'Two dark lantern.',
+			threadId: discussion
+		});
+		expect(said(got.edits[1].replies)).toEqual([['writer', 'Could it be "dull"?']]);
+		expect(got.workThroughLink).toBe(
+			`${ORIGIN}/stories/${alice.storyId}/review?scene=${alice.sceneId}&pass=${noteId}`
+		);
+
+		// The app answers under the edit, with the thread id it was given.
+		const answered = await call(alice, 'reply_in_thread', {
+			universeId: alice.universeId,
+			threadId: discussion,
+			comment: 'It could; revising.'
+		});
+		expect(answered.text).toBe('Your reply was posted to the thread.');
+		const again = JSON.parse((await get(alice, noteId)).text) as Got;
+		expect(said(again.edits[1].replies)).toEqual([
+			['writer', 'Could it be "dull"?'],
+			['you', 'It could; revising.']
+		]);
+	});
+
+	it('reads a single edit by its id', async () => {
+		const editId = idIn((await edit(alice)).text);
+		await writerSays(alice, await discussionOf(alice, editId), 'Shut is too hard a word.');
+		const got = JSON.parse((await get(alice, editId)).text) as Got;
+		expect(got.note).toBeUndefined();
+		expect(got.workThroughLink).toBeUndefined();
+		expect(got.edits).toHaveLength(1);
+		expect(got.edits[0]).toMatchObject({
+			id: editId,
+			status: 'pending',
+			paragraphNow: 'Alice open lantern prose.'
+		});
+		expect(said(got.edits[0].replies)).toEqual([['writer', 'Shut is too hard a word.']]);
+	});
+
+	it('finds no note that is not its own', async () => {
+		await expectNoUniverse('get_review_note', { noteId: MISSING });
+		const second = await connect(alice.userId, 'Second');
+		const [client] = await db
+			.select()
+			.from(oauthClients)
+			.where(eq(oauthClients.clientName, APP_NAME));
+		const mutedStoryId = await storyOf(alice.mutedSceneId);
+		// Its own note, in a story the writer muted.
+		const muted = await createThread(db, {
+			storyId: mutedStoryId,
+			sceneId: alice.mutedSceneId,
+			anchor: null,
+			author: { client: { id: client.id, name: client.clientName, host: client.host } },
+			body: 'Left before the story was muted.'
+		});
+		const threadBy = async (author: { assistant: true } | { userId: string }) => {
+			const created = await createThread(db, {
+				storyId: alice.storyId,
+				sceneId: alice.sceneId,
+				anchor: null,
+				author,
+				body: 'Not from this app.'
+			});
+			if (!created.ok) throw new Error(created.reason);
+			return created.threadId;
+		};
+		const assistantsEdit = await createSuggestion(db, {
+			storyId: alice.storyId,
+			sceneId: alice.sceneId,
+			author: { assistant: true },
+			range: { start: 11, end: 18 },
+			replacement: 'lamp'
+		});
+		const bobsNote = idIn((await comment(bob)).text);
+		const notTheirs = [
+			bobsNote,
+			idIn((await edit(bob)).text),
+			idIn((await comment({ ...alice, token: second }, { comment: 'Second app.' })).text),
+			idIn((await edit({ ...alice, token: second })).text),
+			await threadBy({ assistant: true }),
+			await threadBy({ userId: alice.userId }),
+			assistantsEdit.ok && assistantsEdit.suggestionId,
+			muted.ok && muted.threadId,
+			MISSING,
+			'nope'
+		];
+		const own = idIn((await comment(alice)).text);
+		const before = await stagedRows();
+		for (const noteId of notTheirs) {
+			expect(noteId).toBeTruthy();
+			expect(await get(alice, noteId)).toEqual({ text: NO_NOTE, isError: false });
+		}
+		// Its own note through the writer's other universe, and Bob's through Bob's.
+		expect(await get(alice, own, alice.otherUniverseId)).toEqual({ text: NO_NOTE, isError: false });
+		expect(await get(alice, bobsNote, bob.universeId)).toEqual({
+			text: NO_UNIVERSE_RESULT,
+			isError: true
+		});
+		// Its own note is there until the scene goes in the trash.
+		expect((await get(alice, own)).text).toContain(own);
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, alice.sceneId));
+		expect(await get(alice, own)).toEqual({ text: NO_NOTE, isError: false });
+		expect(await stagedRows()).toBe(before);
+	});
+
+	it('gives the Assistant its own notes in the app, and not an apps', async () => {
+		const appsNote = idIn((await comment(alice)).text);
+		const created = await createThread(db, {
+			storyId: alice.storyId,
+			sceneId: alice.sceneId,
+			anchor: null,
+			author: { assistant: true },
+			body: 'From the Assistant.'
+		});
+		const assistantsNote = created.ok ? created.threadId : '';
+		await writerSays(alice, assistantsNote, 'Say more.');
+		const inApp = async (name: string, args: Record<string, unknown>) =>
+			(
+				await dispatchToolCall(
+					{ db, userId: alice.userId, universeId: alice.universeId },
+					{ id: 'call', name, arguments: JSON.stringify(args) }
+				)
+			).result;
+		expect(toolSpecs().map((tool) => tool.name)).toEqual(
+			expect.arrayContaining(['list_review_notes', 'get_review_note'])
+		);
+		const result = JSON.parse(await inApp('list_review_notes', { storyId: alice.storyId })) as {
+			notes: { id: string; writerRepliedLast: boolean }[];
+		};
+		expect(result.notes).toEqual([
+			expect.objectContaining({ id: assistantsNote, writerRepliedLast: true })
+		]);
+		expect(await inApp('get_review_note', { noteId: appsNote })).toBe(NO_NOTE);
+		const got = JSON.parse(await inApp('get_review_note', { noteId: assistantsNote })) as Got;
+		expect(said(got.note!.comments)).toEqual([
+			['you', 'From the Assistant.'],
+			['writer', 'Say more.']
+		]);
+		expect(await inApp('list_review_notes', { storyId: bob.storyId })).toBe(NO_STORY);
+	});
+});
+
 describe('what an app leaves behind', () => {
 	it('keeps its name on its notes after the client is removed', async () => {
 		const suggestionId = idIn((await edit(alice)).text);
@@ -990,7 +1509,8 @@ describe('what an app leaves behind', () => {
 					external: {
 						sceneBodyCap: 1000,
 						client: { id: client.id, name: client.clientName, host: client.host },
-						maxNotesPerScene: 2
+						maxNotesPerScene: 2,
+						origin: ORIGIN
 					}
 				},
 				{
@@ -1023,6 +1543,8 @@ describe('across every read tool', () => {
 				await call(who, 'get_entity', { universeId, entityId: other.characterId });
 				await call(who, 'find_appearances', { universeId, entityId: other.characterId });
 				await call(who, 'search_text', { universeId, query: 'lantern' });
+				await call(who, 'list_review_notes', { universeId, storyId: other.storyId });
+				await call(who, 'get_review_note', { universeId, noteId: other.sceneId });
 			}
 		}
 		expect(await stagedRows()).toBe(0);

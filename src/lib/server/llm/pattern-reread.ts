@@ -1,7 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { Database } from '../auth';
 import { reviewComments, reviewSuggestions, reviewThreads } from '../db/schema';
-import { acceptedPatternEdit } from '../review';
+import { acceptedPatternEdit, FOLLOW_UP_NEIGHBOURS } from '../review';
 import { paragraphWindow } from '#lib/paragraphs';
 import { assembleReviewReplyContext, buildSystemMessage } from './context/assemble';
 import { buildRereadMessage } from './prompts/review';
@@ -15,8 +15,6 @@ import type { ChatMessage } from './providers/types';
 // the accepted edit, so the pass adds it at the end of its queue. Only
 // suggest_edit is offered, held to that stretch of the scene.
 
-// Each side of the changed paragraph.
-const NEIGHBOURS = 1;
 // One edit and an answer; a little room for a retry of an edit that misquoted.
 // The gateway never goes below the account's own budget, so maxEdits in the
 // scope is what holds the re-read to one follow-up.
@@ -47,20 +45,25 @@ export async function rereadPatternEdit(
 	reread.add(input.suggestionId);
 	if (reread.size > REREAD_MEMORY) reread.delete(reread.values().next().value!);
 	if (!edit.spot) return { skipped: 'not-found' };
+	// The note is the thread's opening comment, left by the Assistant or by an
+	// app the writer connected. Either way the follow-up is the Assistant's own.
 	const [note] = await db
-		.select({ body: reviewComments.bodyMd, resolvedAt: reviewThreads.resolvedAt })
+		.select({
+			body: reviewComments.bodyMd,
+			resolvedAt: reviewThreads.resolvedAt,
+			assistant: reviewComments.assistant,
+			clientHost: reviewComments.clientHost
+		})
 		.from(reviewComments)
 		.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
-		.where(
-			and(eq(reviewComments.threadId, edit.patternThreadId), eq(reviewComments.assistant, true))
-		)
+		.where(eq(reviewComments.threadId, edit.patternThreadId))
 		.orderBy(asc(reviewComments.createdAt))
 		.limit(1);
-	if (!note) return { skipped: 'gone' };
+	if (!note || !(note.assistant || note.clientHost !== null)) return { skipped: 'gone' };
 	// A resolved note takes no more edits, so there is nothing to ask for.
 	if (note.resolvedAt) return { skipped: 'done' };
 
-	const window = paragraphWindow(edit.bodyMd, edit.spot.start, edit.spot.end, NEIGHBOURS);
+	const window = paragraphWindow(edit.bodyMd, edit.spot.start, edit.spot.end, FOLLOW_UP_NEIGHBOURS);
 	const task: ChatMessage = {
 		role: 'user',
 		content: buildRereadMessage({

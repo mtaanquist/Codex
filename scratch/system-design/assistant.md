@@ -906,6 +906,29 @@ suggestion. On top of those:
 - `reply_in_thread` posts once and then waits: an app whose reply is the
   latest in a thread cannot add another until someone else writes.
 
+Reading its notes back. `list_review_notes` (a story's notes) and
+`get_review_note` (one note, or one edit by its id) are read tools on both
+sides: the Assistant gets its own notes, an app gets its own. A note is a
+thread the caller opened; the result carries the replies between the caller
+and the writer in order (on the note and under each edit), and for each edit
+its status, the original, the text as applied (the writer's wording when they
+changed it on accept) and the paragraph as the scene has it now. A guest
+reviewer's comments and another program's replies are left out.
+`writerRepliedLast` in the listing marks a note the writer wrote last on. With
+`reply_in_thread` and `update_suggestion` this is how an app talks an edit
+over with the writer before they decide, as an editor would.
+
+The guided pass for an app's note. `leave_pattern_note` tells an app the
+note's id and a link, `/stories/<story>/review?scene=<scene>&pass=<note>`,
+which opens "Work through this" on that note; the note's card offers the same
+button as on an Assistant note. After an accept the writer's own Assistant
+re-reads the paragraph as it does for its own notes, and its follow-up is the
+Assistant's, linked to the app's note. The app can follow up as well:
+`suggest_edit` over MCP takes an optional `patternNoteId` (add the edit to a
+pattern note the app opened) and `followsSuggestionId` (an accepted edit in
+such a note). A follow-up is held to the changed paragraph and one either
+side, in the same scene, one per accepted edit and app.
+
 Not offered yet: `propose_scene_split`, whose proposal is a card in the
 Assistant's chat; it needs a stored proposal the writer confirms in Codex.
 
@@ -921,6 +944,9 @@ Exceptions to "one toolbox for both", each with its reason:
   suggestion the open page fixes. Over MCP they take `threadId` and
   `suggestionId` as arguments, and the dispatcher checks that the target is
   in a live, unmuted story of the connected writer in the named universe.
+- `suggest_edit` takes `patternNoteId` and `followsSuggestionId` over MCP
+  only. In the app the run that calls it fixes both (the pattern pass, the
+  re-read), so the model is never asked for them.
 
 ### Background jobs
 

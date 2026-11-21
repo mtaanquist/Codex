@@ -9,6 +9,7 @@ import {
 	eq,
 	gt,
 	inArray,
+	isNotNull,
 	isNull,
 	or,
 	sql,
@@ -35,6 +36,7 @@ import { recordRevision } from './revisions.ts';
 import { remapMarkerAnchors } from './markers.ts';
 import { createAnchorMapper, type AnchorMapper } from '../review-anchor.ts';
 import { wordCount } from '../word-count.ts';
+import { paragraphWindow } from '../paragraphs.ts';
 import { normaliseAssistantName } from './llm/prompts/persona.ts';
 import { EMAIL_RE } from './signup.ts';
 import { isForeignKeyViolation } from './db-errors.ts';
@@ -384,6 +386,10 @@ async function ownThreadExists(
 	return Boolean(row);
 }
 
+// In a query that joins a thread to its comments: the comment is the thread's
+// opening one, not a reply.
+const IS_OPENING_COMMENT = sql`not exists (select 1 from ${reviewComments} as earlier where earlier.thread_id = ${reviewThreads.id} and earlier.created_at < ${reviewComments.createdAt})`;
+
 // The Assistant's (or the app's) open whole-scene note on a scene that begins
 // with this text, for a pattern note retried with the same comment: the retry
 // adds its edits to the note rather than opening a second one.
@@ -405,8 +411,7 @@ export async function openAssistantNote(
 				isNull(reviewThreads.anchorStart),
 				writtenBy(reviewComments, author),
 				sql`starts_with(${reviewComments.bodyMd}, ${opening})`,
-				// The note's own opening comment, not a reply in its thread.
-				sql`not exists (select 1 from ${reviewComments} as earlier where earlier.thread_id = ${reviewThreads.id} and earlier.created_at < ${reviewComments.createdAt})`
+				IS_OPENING_COMMENT
 			)
 		)
 		.orderBy(asc(reviewThreads.createdAt))
@@ -1115,6 +1120,390 @@ export async function acceptedPatternEdit(
 		bodyMd: row.bodyMd,
 		sceneTitle: row.sceneTitle,
 		spot
+	};
+}
+
+// ---- a program reading back its own notes ----
+// The Assistant and a connected app can look at what became of the notes they
+// left: what the writer decided, what the text says now, and what the writer
+// answered. Only their own notes, and of the replies only the writer's and
+// their own: a guest reviewer's comments are not theirs to read.
+
+// How far each side of an accepted edit a follow-up to it may reach, in
+// paragraphs.
+export const FOLLOW_UP_NEIGHBOURS = 1;
+
+// The most notes, and the most loose edits, one listing returns (newest first).
+const OWN_NOTES_LISTED = 200;
+// The longest opening line or replacement shown in a listing.
+const LISTED_TEXT = 200;
+// The longest "paragraph as it now stands" returned with an edit.
+const PARAGRAPH_NOW_MAX = 4000;
+
+// A reply the program may read: the writer's or its own.
+function readableBy(author: MachineAuthor): SQL {
+	return or(isNotNull(reviewComments.authorUserId), writtenBy(reviewComments, author))!;
+}
+
+// Whether this standalone thread was opened by this program.
+export async function isOwnNote(
+	db: Database,
+	threadId: string,
+	author: MachineAuthor
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: reviewThreads.id })
+		.from(reviewThreads)
+		.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+		.where(
+			and(
+				eq(reviewThreads.id, threadId),
+				isNull(reviewThreads.suggestionId),
+				writtenBy(reviewComments, author),
+				IS_OPENING_COMMENT
+			)
+		);
+	return Boolean(row);
+}
+
+// Whether this program has already staged a follow-up to this edit, whatever
+// became of it.
+export async function followUpExists(
+	db: Database,
+	suggestionId: string,
+	author: MachineAuthor
+): Promise<boolean> {
+	const [row] = await db
+		.select({ id: reviewSuggestions.id })
+		.from(reviewSuggestions)
+		.where(
+			and(
+				eq(reviewSuggestions.followsSuggestionId, suggestionId),
+				writtenBy(reviewSuggestions, author)
+			)
+		)
+		.limit(1);
+	return Boolean(row);
+}
+
+export type OwnNoteReply = { from: 'you' | 'writer'; body: string; at: Date };
+
+// The readable replies of each thread, oldest first.
+async function repliesByThread(
+	db: Database,
+	threadIds: string[],
+	author: MachineAuthor
+): Promise<Map<string, OwnNoteReply[]>> {
+	const replies = new Map<string, OwnNoteReply[]>();
+	if (!threadIds.length) return replies;
+	const rows = await db
+		.select({
+			threadId: reviewComments.threadId,
+			authorUserId: reviewComments.authorUserId,
+			body: reviewComments.bodyMd,
+			at: reviewComments.createdAt
+		})
+		.from(reviewComments)
+		.where(and(inArray(reviewComments.threadId, threadIds), readableBy(author)))
+		.orderBy(asc(reviewComments.createdAt));
+	for (const row of rows) {
+		const list = replies.get(row.threadId) ?? [];
+		list.push({ from: row.authorUserId ? 'writer' : 'you', body: row.body, at: row.at });
+		replies.set(row.threadId, list);
+	}
+	return replies;
+}
+
+const writerWroteLast = (replies: OwnNoteReply[] | undefined) => replies?.at(-1)?.from === 'writer';
+
+const clipped = (text: string, max: number) =>
+	text.length > max ? `${text.slice(0, max)}...` : text;
+
+export type OwnNoteSummary = {
+	id: string;
+	sceneId: string;
+	sceneTitle: string | null;
+	// The start of the note's text.
+	opening: string;
+	resolved: boolean;
+	createdAt: Date;
+	// The edits linked to the note, by what the writer has decided.
+	edits: { pending: number; accepted: number; rejected: number };
+	// The writer wrote last, on the note or on one of its edits.
+	writerRepliedLast: boolean;
+};
+export type OwnEditSummary = {
+	id: string;
+	sceneId: string;
+	sceneTitle: string | null;
+	status: 'pending' | 'accepted' | 'rejected';
+	replacement: string;
+	createdAt: Date;
+	writerRepliedLast: boolean;
+};
+
+// The notes this program left on a story: the threads it opened, each with a
+// count of its linked edits, and its edits that belong to no note.
+export async function listOwnNotes(
+	db: Database,
+	storyId: string,
+	author: MachineAuthor
+): Promise<{ notes: OwnNoteSummary[]; edits: OwnEditSummary[]; truncated: boolean }> {
+	const noteRows = await db
+		.select({
+			id: reviewThreads.id,
+			sceneId: reviewThreads.sceneId,
+			sceneTitle: scenes.title,
+			resolvedAt: reviewThreads.resolvedAt,
+			createdAt: reviewThreads.createdAt,
+			body: reviewComments.bodyMd
+		})
+		.from(reviewThreads)
+		.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+		.innerJoin(scenes, eq(reviewThreads.sceneId, scenes.id))
+		.where(
+			and(
+				eq(reviewThreads.storyId, storyId),
+				isNull(reviewThreads.suggestionId),
+				isNull(scenes.deletedAt),
+				writtenBy(reviewComments, author),
+				IS_OPENING_COMMENT
+			)
+		)
+		.orderBy(desc(reviewThreads.createdAt))
+		.limit(OWN_NOTES_LISTED + 1);
+	const looseRows = await db
+		.select({
+			id: reviewSuggestions.id,
+			sceneId: reviewSuggestions.sceneId,
+			sceneTitle: scenes.title,
+			status: reviewSuggestions.status,
+			replacement: reviewSuggestions.replacement,
+			createdAt: reviewSuggestions.createdAt
+		})
+		.from(reviewSuggestions)
+		.innerJoin(scenes, eq(reviewSuggestions.sceneId, scenes.id))
+		.where(
+			and(
+				eq(reviewSuggestions.storyId, storyId),
+				isNull(reviewSuggestions.patternThreadId),
+				isNull(scenes.deletedAt),
+				writtenBy(reviewSuggestions, author)
+			)
+		)
+		.orderBy(desc(reviewSuggestions.createdAt))
+		.limit(OWN_NOTES_LISTED + 1);
+	const truncated = noteRows.length > OWN_NOTES_LISTED || looseRows.length > OWN_NOTES_LISTED;
+	const notes = noteRows.slice(0, OWN_NOTES_LISTED);
+	const loose = looseRows.slice(0, OWN_NOTES_LISTED);
+	const noteIds = notes.map((note) => note.id);
+
+	// Every edit linked to one of the notes, for the counts and to find the
+	// discussions under them.
+	const linked = noteIds.length
+		? await db
+				.select({
+					id: reviewSuggestions.id,
+					noteId: reviewSuggestions.patternThreadId,
+					status: reviewSuggestions.status
+				})
+				.from(reviewSuggestions)
+				.where(inArray(reviewSuggestions.patternThreadId, noteIds))
+		: [];
+	const editIds = [...linked.map((edit) => edit.id), ...loose.map((edit) => edit.id)];
+	const discussions = editIds.length
+		? await db
+				.select({ id: reviewThreads.id, suggestionId: reviewThreads.suggestionId })
+				.from(reviewThreads)
+				.where(inArray(reviewThreads.suggestionId, editIds))
+		: [];
+	const replies = await repliesByThread(
+		db,
+		[...noteIds, ...discussions.map((thread) => thread.id)],
+		author
+	);
+	// The edits whose discussion the writer wrote last in.
+	const waiting = new Set(
+		discussions
+			.filter((thread) => writerWroteLast(replies.get(thread.id)))
+			.map((thread) => thread.suggestionId!)
+	);
+
+	return {
+		notes: notes.map((note) => {
+			const edits = { pending: 0, accepted: 0, rejected: 0 };
+			let editWaiting = false;
+			for (const edit of linked) {
+				if (edit.noteId !== note.id) continue;
+				edits[edit.status] += 1;
+				if (waiting.has(edit.id)) editWaiting = true;
+			}
+			return {
+				id: note.id,
+				sceneId: note.sceneId,
+				sceneTitle: note.sceneTitle,
+				opening: clipped(note.body, LISTED_TEXT),
+				resolved: note.resolvedAt !== null,
+				createdAt: note.createdAt,
+				edits,
+				writerRepliedLast: editWaiting || writerWroteLast(replies.get(note.id))
+			};
+		}),
+		edits: loose.map((edit) => ({
+			id: edit.id,
+			sceneId: edit.sceneId,
+			sceneTitle: edit.sceneTitle,
+			status: edit.status,
+			replacement: clipped(edit.replacement, LISTED_TEXT),
+			createdAt: edit.createdAt,
+			writerRepliedLast: waiting.has(edit.id)
+		})),
+		truncated
+	};
+}
+
+export type OwnEditView = {
+	id: string;
+	sceneId: string;
+	// False for an edit someone else linked to the note (the Assistant's
+	// follow-up on an app's note).
+	yours: boolean;
+	status: 'pending' | 'accepted' | 'rejected';
+	original: string;
+	// What was proposed; once accepted, the text that was applied, which is the
+	// writer's own wording when they changed it.
+	replacement: string;
+	reason: string | null;
+	followsId: string | null;
+	decidedAt: Date | null;
+	// The paragraph around the edit as the scene has it now; null when the spot
+	// can no longer be found.
+	paragraphNow: string | null;
+	// The discussion under the edit, once someone has replied there.
+	threadId: string | null;
+	replies: OwnNoteReply[];
+};
+export type OwnNoteView = {
+	// Absent when the id named a single edit.
+	note: {
+		id: string;
+		sceneId: string;
+		sceneTitle: string | null;
+		resolved: boolean;
+		// The note itself first, then the replies.
+		comments: OwnNoteReply[];
+	} | null;
+	edits: OwnEditView[];
+};
+
+// One of this program's own notes in a story, by the id of a thread it opened
+// (with every edit linked to it) or of an edit it made (that edit alone). Null
+// for anything else, including a note on a scene in the trash.
+export async function getOwnNote(
+	db: Database,
+	storyId: string,
+	author: MachineAuthor,
+	id: string
+): Promise<OwnNoteView | null> {
+	const [thread] = await db
+		.select({
+			id: reviewThreads.id,
+			sceneId: reviewThreads.sceneId,
+			sceneTitle: scenes.title,
+			resolvedAt: reviewThreads.resolvedAt
+		})
+		.from(reviewThreads)
+		.innerJoin(reviewComments, eq(reviewComments.threadId, reviewThreads.id))
+		.innerJoin(scenes, eq(reviewThreads.sceneId, scenes.id))
+		.where(
+			and(
+				eq(reviewThreads.id, id),
+				eq(reviewThreads.storyId, storyId),
+				isNull(reviewThreads.suggestionId),
+				isNull(scenes.deletedAt),
+				writtenBy(reviewComments, author),
+				IS_OPENING_COMMENT
+			)
+		);
+	const own = new Set(
+		(
+			await db
+				.select({ id: reviewSuggestions.id })
+				.from(reviewSuggestions)
+				.where(
+					and(
+						eq(reviewSuggestions.storyId, storyId),
+						writtenBy(reviewSuggestions, author),
+						thread ? eq(reviewSuggestions.patternThreadId, id) : eq(reviewSuggestions.id, id)
+					)
+				)
+		).map((row) => row.id)
+	);
+	if (!thread && own.size === 0) return null;
+
+	const wanted = (await listSuggestions(db, storyId)).filter((suggestion) =>
+		thread ? suggestion.patternThreadId === id : suggestion.id === id
+	);
+	const sceneIds = [...new Set(wanted.map((suggestion) => suggestion.sceneId))];
+	const sceneRows = sceneIds.length
+		? await db
+				.select({ id: scenes.id, bodyMd: scenes.bodyMd })
+				.from(scenes)
+				.where(and(inArray(scenes.id, sceneIds), isNull(scenes.deletedAt)))
+		: [];
+	const bodies = new Map(sceneRows.map((scene) => [scene.id, scene.bodyMd]));
+	const shown = wanted.filter((suggestion) => bodies.has(suggestion.sceneId));
+	if (!thread && shown.length === 0) return null;
+
+	const discussions = shown.length
+		? await db
+				.select({ id: reviewThreads.id, suggestionId: reviewThreads.suggestionId })
+				.from(reviewThreads)
+				.where(
+					inArray(
+						reviewThreads.suggestionId,
+						shown.map((suggestion) => suggestion.id)
+					)
+				)
+		: [];
+	const discussionOf = new Map(discussions.map((row) => [row.suggestionId!, row.id]));
+	const replies = await repliesByThread(
+		db,
+		[...(thread ? [thread.id] : []), ...discussions.map((row) => row.id)],
+		author
+	);
+
+	return {
+		note: thread
+			? {
+					id: thread.id,
+					sceneId: thread.sceneId,
+					sceneTitle: thread.sceneTitle,
+					resolved: thread.resolvedAt !== null,
+					comments: replies.get(thread.id) ?? []
+				}
+			: null,
+		edits: shown.map((suggestion) => {
+			const body = bodies.get(suggestion.sceneId)!;
+			const span = suggestion.anchor
+				? paragraphWindow(body, suggestion.anchor.start, suggestion.anchor.end)
+				: null;
+			const threadId = discussionOf.get(suggestion.id) ?? null;
+			return {
+				id: suggestion.id,
+				sceneId: suggestion.sceneId,
+				yours: own.has(suggestion.id),
+				status: suggestion.status,
+				original: suggestion.original,
+				replacement: suggestion.replacement,
+				reason: suggestion.reason,
+				followsId: suggestion.followsId,
+				decidedAt: suggestion.decidedAt,
+				paragraphNow: span ? clipped(body.slice(span.start, span.end), PARAGRAPH_NOW_MAX) : null,
+				threadId,
+				replies: threadId ? (replies.get(threadId) ?? []) : []
+			};
+		})
 	};
 }
 

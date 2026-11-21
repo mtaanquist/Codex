@@ -14,9 +14,15 @@ import { entityAppearances, getEntityCard } from '../../plan-data.ts';
 import { searchAll } from '../../search.ts';
 import {
 	addComment,
+	acceptedPatternEdit,
 	clientNotesWaiting,
 	createSuggestion,
 	createThread,
+	FOLLOW_UP_NEIGHBOURS,
+	followUpExists,
+	getOwnNote,
+	isOwnNote,
+	listOwnNotes,
 	MAX_COMMENT_LENGTH,
 	openAssistantNote,
 	updateAssistantSuggestion,
@@ -25,6 +31,7 @@ import {
 } from '../../review.ts';
 import { toLf } from '#lib/line-endings';
 import { isUuid } from '#lib/slug';
+import { paragraphWindow } from '#lib/paragraphs';
 import { locateSplitBefore } from '#lib/scene-split-locate';
 import { locateQuote } from '#lib/quote-locate';
 import { universeSkeleton, type SceneSummary } from '../context/sources.ts';
@@ -95,6 +102,8 @@ export type ToolContext = {
 		client: ClientAuthor;
 		// The most notes the app may have waiting on one scene.
 		maxNotesPerScene: number;
+		// Where this Codex is reached, for a link the app can hand the writer.
+		origin: string;
 	};
 };
 
@@ -218,12 +227,18 @@ export async function dispatchToolCall(
 				return { result: await findAppearances(ctx, asString(args.entityId)), staged: false };
 			case 'search_text':
 				return { result: await searchText(ctx, asString(args.query)), staged: false };
+			case 'list_review_notes':
+				return { result: await listReviewNotes(ctx, asString(args.storyId)), staged: false };
+			case 'get_review_note':
+				return { result: await getReviewNote(ctx, asString(args.noteId)), staged: false };
 			case 'suggest_edit':
 				return suggestEdit(ctx, {
 					sceneId: asString(args.sceneId),
 					original: asString(args.original),
 					replacement: asString(args.replacement),
-					reason: asString(args.reason)
+					reason: asString(args.reason),
+					patternNoteId: asString(args.patternNoteId),
+					followsSuggestionId: asString(args.followsSuggestionId)
 				});
 			case 'leave_comment':
 				return leaveComment(ctx, {
@@ -486,9 +501,74 @@ async function searchText(ctx: ToolContext, query: string): Promise<string> {
 	);
 }
 
+// The link an outside app asked for on a suggest_edit: the note the edit
+// belongs to, and the accepted edit it follows up. In the app the calling
+// surface fixes both (ToolScope); an app names them, so each is checked here:
+// the note must be one the app opened, and a follow-up is held to the changed
+// paragraph and its neighbours, one per accepted edit, as the Assistant's
+// re-read is.
+type EditLink = {
+	patternThreadId?: string;
+	followsSuggestionId?: string;
+	editWindow?: { sceneId: string; start: number; end: number };
+};
+async function appEditLink(
+	ctx: ToolContext,
+	input: { sceneId: string; patternNoteId: string; followsSuggestionId: string }
+): Promise<EditLink | { refusal: string }> {
+	const author = stagingAuthor(ctx);
+	const noteId = input.patternNoteId;
+	if (noteId) {
+		const reached = await reachableStory(ctx, reviewThreads, noteId);
+		if (!reached || !(await isOwnNote(ctx.db, noteId, author))) {
+			return { refusal: NO_REVIEW_NOTE };
+		}
+	}
+	if (!input.followsSuggestionId) return { patternThreadId: noteId };
+	const followed = (await reachableStory(ctx, reviewSuggestions, input.followsSuggestionId))
+		? await acceptedPatternEdit(ctx.db, ctx.userId, input.followsSuggestionId)
+		: null;
+	if (
+		!followed ||
+		(noteId && followed.patternThreadId !== noteId) ||
+		!(await isOwnNote(ctx.db, followed.patternThreadId, author))
+	) {
+		return { refusal: 'No accepted edit with that id in a note of yours.' };
+	}
+	if (followed.sceneId !== input.sceneId) {
+		return { refusal: 'A follow-up must be in the scene of the edit it follows.' };
+	}
+	if (!followed.spot) {
+		return {
+			refusal: 'That change can no longer be found in the scene; there is nothing to follow.'
+		};
+	}
+	if (await followUpExists(ctx.db, input.followsSuggestionId, author)) {
+		return { refusal: 'You have already staged a follow-up to that edit.' };
+	}
+	const span = paragraphWindow(
+		followed.bodyMd,
+		followed.spot.start,
+		followed.spot.end,
+		FOLLOW_UP_NEIGHBOURS
+	);
+	return {
+		patternThreadId: followed.patternThreadId,
+		followsSuggestionId: input.followsSuggestionId,
+		editWindow: { sceneId: followed.sceneId, ...span }
+	};
+}
+
 async function suggestEdit(
 	ctx: ToolContext,
-	input: { sceneId: string; original: string; replacement: string; reason: string }
+	input: {
+		sceneId: string;
+		original: string;
+		replacement: string;
+		reason: string;
+		patternNoteId: string;
+		followsSuggestionId: string;
+	}
 ): Promise<ToolOutcome> {
 	if (!input.original) return { result: 'Provide the exact text to replace.', staged: false };
 	const limit = ctx.scope?.maxEdits;
@@ -498,7 +578,13 @@ async function suggestEdit(
 			staged: false
 		};
 	}
-	const window = ctx.scope?.editWindow;
+	let link: EditLink = ctx.scope ?? {};
+	if (ctx.external && (input.patternNoteId || input.followsSuggestionId)) {
+		const asked = await appEditLink(ctx, input);
+		if ('refusal' in asked) return { result: asked.refusal, staged: false };
+		link = asked;
+	}
+	const window = link.editWindow;
 	if (window && window.sceneId !== input.sceneId) {
 		return { result: 'Only the passage under review can be edited in this turn.', staged: false };
 	}
@@ -534,8 +620,8 @@ async function suggestEdit(
 		original: scene.bodyMd.slice(found.start, found.end),
 		replacement: input.replacement,
 		reason: input.reason,
-		patternThreadId: ctx.scope?.patternThreadId,
-		followsSuggestionId: ctx.scope?.followsSuggestionId
+		patternThreadId: link.patternThreadId,
+		followsSuggestionId: link.followsSuggestionId
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
 	if (limit !== undefined) stagedEdits.set(ctx, (stagedEdits.get(ctx) ?? 0) + 1);
@@ -586,6 +672,7 @@ async function reachableStory(
 	id: string
 ): Promise<string | null> {
 	if (!isUuid(id)) return null;
+	if (ctx.scope?.storyOnly && !ctx.storyId) return null;
 	const [row] = await ctx.db
 		.select({ storyId: table.storyId })
 		.from(table)
@@ -596,10 +683,73 @@ async function reachableStory(
 				eq(stories.universeId, ctx.universeId),
 				eq(stories.ownerId, ctx.userId),
 				isNull(stories.deletedAt),
-				storyAssistantOn()
+				storyAssistantOn(),
+				ctx.scope?.storyOnly && ctx.storyId ? eq(table.storyId, ctx.storyId) : undefined
 			)
 		);
 	return row?.storyId ?? null;
+}
+
+const NO_REVIEW_NOTE = 'No review note of yours with that id.';
+
+// Where the writer works through a pattern note one edit at a time.
+function passLink(
+	ctx: ToolContext,
+	storyId: string,
+	sceneId: string,
+	noteId: string
+): string | null {
+	if (!ctx.external) return null;
+	return `${ctx.external.origin}/stories/${storyId}/review?scene=${sceneId}&pass=${noteId}`;
+}
+
+// The caller's own notes on one story of the universe (see listOwnNotes).
+async function listReviewNotes(ctx: ToolContext, storyId: string): Promise<string> {
+	const [story] = isUuid(storyId)
+		? await ctx.db
+				.select({ id: stories.id })
+				.from(stories)
+				.where(
+					and(
+						eq(stories.id, storyId),
+						eq(stories.universeId, ctx.universeId),
+						eq(stories.ownerId, ctx.userId),
+						isNull(stories.deletedAt),
+						storyAssistantOn()
+					)
+				)
+		: [];
+	if (!story || (ctx.scope?.storyOnly && storyId !== ctx.storyId)) {
+		return 'No story with that id.';
+	}
+	const listed = await listOwnNotes(ctx.db, storyId, stagingAuthor(ctx));
+	return JSON.stringify({
+		notes: listed.notes,
+		// Suggested edits that belong to no note.
+		otherEdits: listed.edits,
+		...(listed.truncated ? { truncated: 'Only the newest are listed.' } : {})
+	});
+}
+
+// One of the caller's own notes, by the id of the note or of one of its own
+// edits. The id is checked like any target an app names (reachableStory), and
+// the note must be the caller's: anything else is the same miss.
+async function getReviewNote(ctx: ToolContext, noteId: string): Promise<string> {
+	const storyId =
+		(await reachableStory(ctx, reviewThreads, noteId)) ??
+		(await reachableStory(ctx, reviewSuggestions, noteId));
+	const view = storyId ? await getOwnNote(ctx.db, storyId, stagingAuthor(ctx), noteId) : null;
+	if (!storyId || !view) return NO_REVIEW_NOTE;
+	const pending = view.edits.some((edit) => edit.status === 'pending');
+	const link =
+		view.note && pending ? passLink(ctx, storyId, view.note.sceneId, view.note.id) : null;
+	return JSON.stringify({
+		storyId,
+		...(view.note ? { note: view.note } : {}),
+		edits: view.edits,
+		// Where the writer goes through the pending edits one at a time.
+		...(link ? { workThroughLink: link } : {})
+	});
 }
 
 // The scoped reply: posts into the thread fixed by the calling surface, as
@@ -826,6 +976,13 @@ async function leavePatternNote(
 	const lines = [
 		`Staged the pattern note with ${edits} linked edit${edits === 1 ? '' : 's'}. The author decides on each; nothing has changed yet.`
 	];
+	const link = edits ? passLink(ctx, scene.storyId, scene.id, threadId) : null;
+	if (ctx.external) lines.push(`Note id ${threadId}.`);
+	if (link) {
+		lines.push(
+			`Give the writer this link; it opens the note in Codex and takes them through the edits one at a time: ${link}`
+		);
+	}
 	if (missed.length) {
 		lines.push(
 			'These edits were not staged:',

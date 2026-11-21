@@ -477,6 +477,52 @@ describe('rereadPatternEdit', () => {
 		expect(result).toEqual({ staged: 1, ids: [followUp!.id] });
 	});
 
+	it('re-reads after an accept in a note a connected app left', async () => {
+		const { threadId, suggestionId } = await acceptedEdit();
+		// The note as an app would have left it, its client row since removed.
+		await pool.query(
+			`update review_comments set assistant = false, client_name = 'Writing Desk',
+			 client_host = 'app.example' where thread_id = $1`,
+			[threadId]
+		);
+		const call: ProviderToolCall = {
+			id: 't1',
+			name: 'suggest_edit',
+			arguments: JSON.stringify({
+				sceneId,
+				original: 'Mira followed her',
+				replacement: 'Mira followed Kara'
+			})
+		};
+		const { provider } = scripted([{ content: '', toolCalls: [call] }, { content: 'done' }]);
+		expect(await rereadPatternEdit(db, { userId, suggestionId }, { provider })).toMatchObject({
+			staged: 1
+		});
+		// The follow-up is the Assistant's own, linked to the app's note.
+		const followUp = (await db.select().from(reviewSuggestions)).find(
+			(s) => s.status === 'pending'
+		);
+		expect(followUp).toMatchObject({
+			assistant: true,
+			clientHost: null,
+			patternThreadId: threadId,
+			followsSuggestionId: suggestionId
+		});
+	});
+
+	it('does not re-read under a note a person opened', async () => {
+		const { threadId, suggestionId } = await acceptedEdit();
+		await pool.query(
+			`update review_comments set assistant = false, author_user_id = $2 where thread_id = $1`,
+			[threadId, userId]
+		);
+		const { provider, seen } = scripted([{ content: 'done' }]);
+		expect(await rereadPatternEdit(db, { userId, suggestionId }, { provider })).toEqual({
+			skipped: 'gone'
+		});
+		expect(seen).toHaveLength(0);
+	});
+
 	it('stages at most one follow-up, and only once per accepted edit', async () => {
 		const { suggestionId } = await acceptedEdit();
 		const call = (id: string, original: string, replacement: string): ProviderToolCall => ({

@@ -523,6 +523,21 @@
 		chosenPanel = 'comments';
 	}
 
+	// A link from an outside app (?pass=<note id>) opens the pass on that note
+	// straight away. Asked once, when the page first has the note; a note that
+	// is gone or has nothing left to decide just shows the review as usual.
+	let passAsked = false;
+	$effect(() => {
+		if (passAsked || role !== 'author' || !storyId) return;
+		passAsked = true;
+		const asked = page.url.searchParams.get('pass');
+		if (!asked) return;
+		untrack(() => {
+			const note = liveThreads.find((thread) => thread.id === asked);
+			if (note && (patternCounts.get(asked) ?? 0) > 0) startPass(asked);
+		});
+	});
+
 	// Each new step opens its scene and points the manuscript at the change.
 	// Only a new step does: the writer may open another scene mid-pass to read
 	// around, and is not pulled back until the next step. Nor is a writer
