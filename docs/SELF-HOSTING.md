@@ -239,6 +239,30 @@ labels:
 Traefik forwards `X-Forwarded-For` by default. Keep `ADDRESS_HEADER=x-forwarded-for`
 and set `ORIGIN` to the HTTPS URL.
 
+## Connected apps (MCP)
+
+An account holder can connect an AI app to their account from Account,
+Connected apps. Codex is the OAuth authorization server and serves an MCP
+endpoint at `/api/mcp`; there is nothing to install or configure for it. It is
+on by default and can be turned off for the whole instance in the admin panel,
+after which these routes answer 404.
+
+What a deployment needs for it to work:
+
+- **claude.ai and Claude Desktop need the instance reachable over public
+  HTTPS.** Both connect to a custom connector from Anthropic's servers, not
+  from the user's machine, so an instance on `localhost`, on a private
+  network, or behind a VPN cannot be reached by them. The same holds for any
+  other app that connects from its vendor's servers. A tool that runs on the
+  same machine or network as Codex can connect to a private instance.
+- `ORIGIN` must be the public URL. The discovery documents, the consent page
+  and the address shown to the user are all built from it.
+- The proxy must pass these paths through to the app unchanged, with the
+  `Authorization` header: `/api/mcp`, `/oauth/*` and `/.well-known/oauth-*`.
+  The bundled Caddy and the nginx and Traefik examples below already do.
+- Requests to `/api/mcp` are short and each gets a complete answer; no
+  long-lived connection or sticky routing is needed.
+
 ## Email
 
 With no SMTP configured, the worker writes the body of every message it would
@@ -406,6 +430,12 @@ in place yet.
 - **The app port does not answer from another machine.** It is published on
   `127.0.0.1` only. Point a proxy on the same host at it, or see
   `APP_BIND` under Reverse proxy and TLS.
+- **An AI app cannot connect, or says the server cannot be reached.** The app
+  connects from its vendor's servers, so the instance must answer on a public
+  HTTPS address and `ORIGIN` must be that address. Open
+  `<ORIGIN>/.well-known/oauth-protected-resource/api/mcp` from outside your
+  network; it should return a small JSON document. A 404 there means connected
+  apps are turned off in the admin panel.
 - **No emails arrive.** SMTP is not configured; check the worker log for the
   message body, then set the `SMTP_*` variables or the admin Email relay
   section and send a test.

@@ -49,6 +49,10 @@ test('a writer connects an app, disconnects it, then makes and revokes a token',
 	await expect(page.getByRole('button', { name: 'Allow', exact: true })).toHaveCount(0);
 	await page.getByRole('link', { name: 'Open Connected apps' }).click();
 	await expect(page.getByRole('heading', { name: 'Connected apps' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Help: connecting an app' })).toHaveAttribute(
+		'href',
+		'/docs/connecting-apps'
+	);
 	await waitForHydration(page);
 	// The checkbox is a hidden input behind the switch, so click the switch.
 	await page
