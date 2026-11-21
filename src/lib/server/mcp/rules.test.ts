@@ -140,7 +140,7 @@ describe('parseClientMetadata', () => {
 		expect(
 			parseClientMetadata({
 				client_name: '  Writing Desk ',
-				redirect_uris: [HOSTED, HOSTED, 'http://localhost/callback'],
+				redirect_uris: [HOSTED, HOSTED, `${HOSTED}/second`],
 				token_endpoint_auth_method: 'none',
 				grant_types: ['authorization_code', 'refresh_token'],
 				response_types: ['code']
@@ -149,9 +149,41 @@ describe('parseClientMetadata', () => {
 			ok: true,
 			metadata: {
 				clientName: 'Writing Desk',
-				redirectUris: [HOSTED, 'http://localhost/callback']
+				redirectUris: [HOSTED, `${HOSTED}/second`]
 			}
 		});
+	});
+
+	it('refuses redirect addresses on more than one remote host', () => {
+		const other = new URL(HOSTED);
+		other.hostname = 'evil.example';
+		for (const redirect_uris of [
+			// The first host would be shown while the code went to the second.
+			[HOSTED, other.toString()],
+			[other.toString(), HOSTED],
+			// Local addresses beside them do not make two remote hosts one.
+			['http://127.0.0.1/callback', HOSTED, other.toString()],
+			// Another port is another host.
+			[HOSTED, HOSTED.replace(new URL(HOSTED).host, `${new URL(HOSTED).host}:8443`)]
+		]) {
+			expect(parseClientMetadata({ redirect_uris })).toMatchObject({
+				ok: false,
+				error: 'invalid_redirect_uri'
+			});
+		}
+		// Local addresses are one class, whatever name this computer goes by.
+		expect(
+			parseClientMetadata({
+				redirect_uris: ['http://localhost/callback', 'http://127.0.0.1:9/cb', 'http://[::1]/cb']
+			})
+		).toMatchObject({ ok: true });
+		// A desktop app may list its local address beside one remote host.
+		for (const redirect_uris of [
+			[HOSTED, 'http://localhost/callback'],
+			['http://127.0.0.1/callback', 'http://[::1]:7/cb', HOSTED]
+		]) {
+			expect(parseClientMetadata({ redirect_uris })).toMatchObject({ ok: true });
+		}
 	});
 
 	it('leaves the name empty when there is none and strips control characters', () => {
@@ -159,6 +191,12 @@ describe('parseClientMetadata', () => {
 		expect(unnamed.ok && unnamed.metadata.clientName).toBeNull();
 		const odd = parseClientMetadata({ client_name: 'A\nB\u0000C', redirect_uris: [HOSTED] });
 		expect(odd.ok && odd.metadata.clientName).toBe('A B C');
+		// Characters that reorder or hide text are taken out as well.
+		const hidden = parseClientMetadata({
+			client_name: 'Claude\u202Eia.edualc\u200B\u2066',
+			redirect_uris: [HOSTED]
+		});
+		expect(hidden.ok && hidden.metadata.clientName).toBe('Claudeia.edualc');
 		const long = parseClientMetadata({ client_name: 'x'.repeat(500), redirect_uris: [HOSTED] });
 		expect(long.ok && long.metadata.clientName?.length).toBe(120);
 	});

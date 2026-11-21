@@ -121,6 +121,23 @@ export function parseClientMetadata(input: unknown): MetadataResult {
 		};
 	}
 
+	// One client, one remote place the code can go. The host is what the
+	// writer is shown beside the app's name, so a list spanning remote hosts
+	// would let a client show one and be answered at another. Local addresses
+	// (any loopback name, any port) may sit beside the one remote host, since
+	// desktop apps register both; the consent page names whichever is in use.
+	const remoteHosts = new Set(
+		(uris as string[]).filter((uri) => !isLoopbackRedirect(uri)).map((uri) => new URL(uri).host)
+	);
+	if (remoteHosts.size > 1) {
+		return {
+			ok: false,
+			error: 'invalid_redirect_uri',
+			description:
+				'The https redirect URIs must all be on one host. Register a separate client for each host.'
+		};
+	}
+
 	const method = doc.token_endpoint_auth_method;
 	if (method !== undefined && method !== 'none') {
 		return bad('Only public clients are supported: token_endpoint_auth_method must be "none".');
@@ -138,8 +155,15 @@ export function parseClientMetadata(input: unknown): MetadataResult {
 	return {
 		ok: true,
 		metadata: {
-			// Control characters would let a name break out of the line it is shown on.
-			clientName: name.replace(/\p{Cc}/gu, ' ').slice(0, MAX_CLIENT_NAME) || null,
+			// Control characters would let a name break out of the line it is
+			// shown on; format characters (direction overrides, zero-width marks)
+			// would let it read as something it is not.
+			clientName:
+				name
+					.replace(/\p{Cc}/gu, ' ')
+					.replace(/\p{Cf}/gu, '')
+					.trim()
+					.slice(0, MAX_CLIENT_NAME) || null,
 			redirectUris: [...new Set(uris as string[])]
 		}
 	};

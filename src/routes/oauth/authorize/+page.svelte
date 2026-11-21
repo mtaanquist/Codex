@@ -37,6 +37,18 @@
 			<a href={resolve('/')}>Go to your library</a>
 		</div>
 	</AuthShell>
+{:else if data.status === 'refused'}
+	<AuthShell title="This request cannot be answered">
+		<p class="form-error auth-note" role="alert">
+			The app that sent you here asked for something Codex does not support. Nothing was shared with
+			it.
+		</p>
+		<div class="auth-links">
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app's own address, outside this site -->
+			<a href={data.returnTo} rel="noreferrer">Return to {data.host}</a>
+			<a href={resolve('/')}>Go to your library</a>
+		</div>
+	</AuthShell>
 {:else if !data.accessOn}
 	<AuthShell title="Connect an app" sub="{appName} wants to connect to your Codex account.">
 		<p class="auth-note">

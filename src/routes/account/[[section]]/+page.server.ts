@@ -113,6 +113,28 @@ function reauthGuard(userId: string, scope: string) {
 	});
 }
 
+// Opening the account to outside programs (turning access on, making a
+// personal access token) hands out a credential that outlives the session, so
+// it asks who is there: the password, and the authenticator code when
+// two-factor is on. Returns the failure to answer with, or null to go on.
+async function confirmIdentity(userId: string, data: FormData, scope: string) {
+	const limited = reauthGuard(userId, scope);
+	if (limited) return limited;
+	if (!(await verifyAccountPassword(db, userId, formText(data, 'password')))) {
+		return fail(400, { scope, message: 'That password is not right.' });
+	}
+	if ((await totpStatus(db, userId)).status === 'on') {
+		const code = formText(data, 'code').replace(/\s+/g, '');
+		if (!(await verifyUserTotp(db, userId, code))) {
+			return fail(400, {
+				scope,
+				message: 'That code is not right. Enter the current code from your authenticator app.'
+			});
+		}
+	}
+	return null;
+}
+
 export const load: PageServerLoad = async ({ locals, params, url }) => {
 	// Profile rests on /account itself; the other sections have their own page.
 	if (
@@ -914,8 +936,16 @@ export const actions: Actions = {
 	// disconnecting one. Turning the switch off disconnects them all.
 	setExternalAccess: async ({ request, locals }) => {
 		if (!(await mcpInstanceEnabled(db))) error(404, 'Not found');
-		const enabled = formText(await request.formData(), 'enabled') === 'on';
-		await setMcpAccountEnabled(db, locals.user!.id, enabled);
+		const data = await request.formData();
+		const enabled = formText(data, 'enabled') === 'on';
+		const userId = locals.user!.id;
+		// Turning it off asks for nothing. Turning it on is what lets an app
+		// in, so a signed-in browser alone is not enough.
+		if (enabled && !(await mcpAccountEnabled(db, userId))) {
+			const refused = await confirmIdentity(userId, data, 'apps');
+			if (refused) return refused;
+		}
+		await setMcpAccountEnabled(db, userId, enabled);
 		return { scope: 'apps', saved: true };
 	},
 	revokeApp: async ({ request, locals }) => {
@@ -932,21 +962,9 @@ export const actions: Actions = {
 	createToken: async ({ request, locals }) => {
 		if (!(await mcpInstanceEnabled(db))) error(404, 'Not found');
 		const userId = locals.user!.id;
-		const limited = reauthGuard(userId, 'tokens');
-		if (limited) return limited;
 		const data = await request.formData();
-		if (!(await verifyAccountPassword(db, userId, formText(data, 'password')))) {
-			return fail(400, { scope: 'tokens', message: 'That password is not right.' });
-		}
-		if ((await totpStatus(db, userId)).status === 'on') {
-			const code = formText(data, 'code').replace(/\s+/g, '');
-			if (!(await verifyUserTotp(db, userId, code))) {
-				return fail(400, {
-					scope: 'tokens',
-					message: 'That code is not right. Enter the current code from your authenticator app.'
-				});
-			}
-		}
+		const refused = await confirmIdentity(userId, data, 'tokens');
+		if (refused) return refused;
 		const created = await createPersonalToken(db, {
 			userId,
 			name: formText(data, 'name'),

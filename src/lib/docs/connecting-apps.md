@@ -14,7 +14,7 @@ You need two things:
 ## Connect the app
 
 1. In Codex, open the account menu at the top right and select Account, then Connected apps.
-2. Turn on "Allow other apps to connect". Nothing can connect while this is off.
+2. Under "Allow other apps to connect", type your password, and the code from your authenticator app if you use two-factor authentication, then select "Turn on access for apps". Nothing can connect while this is off.
 3. Select Copy next to "Address to give the app".
 4. In your app, open its settings and find where connectors are added. Choose to add a custom connector, give it a name such as Codex, and paste the address. In Claude this is under Settings, then Connectors. The names of these menus differ between apps and change over time.
 5. The app opens a Codex page in your browser. Sign in if you are asked to.
@@ -57,7 +57,7 @@ Each of these shows the name of the app that left it.
 
 Open Account, then Connected apps. Under "Apps with access", select Disconnect next to the app. It stops working at once. What it already left stays for you to decide on.
 
-To disconnect every app at once, turn off "Allow other apps to connect". Changing or resetting your password also disconnects every app. To use an app again afterwards, connect it again.
+To disconnect every app at once, turn off "Allow other apps to connect". Changing or resetting your password also disconnects every app. To use an app again afterwards, turn access on again with your password and connect the app again.
 
 ## For a script or tool of your own
 
@@ -67,7 +67,7 @@ A tool that cannot open the Codex page to ask for access can use a personal acce
 
 - **"Connected apps" is missing from your account page.** The person who runs your Codex has turned this off. Ask them to turn it on.
 - **The app says it cannot reach the address.** Apps that run on the internet, including Claude on the web and the Claude desktop app, connect from their own servers, not from your computer. They can only reach a Codex that has a public web address starting with `https://`. A Codex that you open at `localhost`, or at an address that only works at home, cannot be reached by them. If you run Codex yourself, see [Running Codex yourself](/docs/selfhosting).
-- **The Codex page shows an error instead of asking you to allow the app.** Remove the connector in the app and add it again with the address copied from Connected apps.
+- **The Codex page shows an error instead of asking you to allow the app.** Remove the connector in the app and add it again with the address copied from Connected apps. If the page says "This request cannot be answered", the app sent a request Codex could not use; select the link to return to the app, or go to your library if you did not start this yourself.
 - **The app stopped working.** Check "Apps with access". If the app is not listed, it was disconnected, for example by a password change. Connect it again.
 - **The app cannot see one of your stories.** Check that the Assistant is not turned off for that story, and that the story is not in the trash.
 - **The app says there are too many calls.** Wait a minute and ask again. Codex limits how fast an app may work.
