@@ -86,6 +86,12 @@ import { listPasskeys, removePasskey } from '#lib/server/passkeys';
 import { reauthLimit } from '#lib/server/reauth';
 import QRCode from 'qrcode';
 import { formText } from '#lib/server/validation';
+import { listGrants, revokeGrant } from '#lib/server/mcp/oauth';
+import {
+	mcpAccountEnabled,
+	mcpInstanceEnabled,
+	setMcpAccountEnabled
+} from '#lib/server/mcp/settings';
 
 // The actions that re-verify the password share one throttle (see reauthLimit),
 // so a borrowed session cannot brute-force the password through them. Passkey
@@ -111,11 +117,15 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 			'notifications',
 			'pagesetup',
 			'assistant',
-			'invites'
+			'invites',
+			'apps'
 		].includes(params.section)
 	)
 		error(404, 'Not found');
 	const user = locals.user!;
+	// Connected apps exists only while the instance allows outside apps.
+	const externalAccessAvailable = await mcpInstanceEnabled(db);
+	if (params.section === 'apps' && !externalAccessAvailable) error(404, 'Not found');
 	const sessionId = locals.session!.id;
 	const [profile] = await db
 		.select({
@@ -188,7 +198,12 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		// The Invites section: how many codes the admin has granted, and the
 		// ones already generated. The section hides while both are empty.
 		inviteAllowance: await userInviteAllowance(db, user.id),
-		myInvites: await listUserInviteCodes(db, user.id)
+		myInvites: await listUserInviteCodes(db, user.id),
+		externalAccess: {
+			available: externalAccessAvailable,
+			enabled: await mcpAccountEnabled(db, user.id),
+			apps: externalAccessAvailable ? await listGrants(db, user.id) : []
+		}
 	};
 };
 
@@ -882,6 +897,21 @@ export const actions: Actions = {
 		// The account is now deactivated; end the current session.
 		cookies.delete(SESSION_COOKIE, { path: '/' });
 		redirect(303, '/login');
+	},
+	// Connected apps: the account's own switch for outside apps, and
+	// disconnecting one. Turning the switch off disconnects them all.
+	setExternalAccess: async ({ request, locals }) => {
+		if (!(await mcpInstanceEnabled(db))) error(404, 'Not found');
+		const enabled = formText(await request.formData(), 'enabled') === 'on';
+		await setMcpAccountEnabled(db, locals.user!.id, enabled);
+		return { scope: 'apps', saved: true };
+	},
+	revokeApp: async ({ request, locals }) => {
+		const grantId = formText(await request.formData(), 'grantId');
+		if (!isUuid(grantId) || !(await revokeGrant(db, locals.user!.id, grantId))) {
+			return fail(400, { scope: 'apps', message: 'That app is not connected any more.' });
+		}
+		return { scope: 'apps', saved: true };
 	},
 	// The Invites section: generate a single-use code against the admin-set
 	// allowance, or revoke one that has not been used.

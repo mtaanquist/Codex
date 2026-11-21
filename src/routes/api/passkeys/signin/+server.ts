@@ -8,6 +8,7 @@ import { createSession, SESSION_COOKIE } from '#lib/server/auth';
 import { finishPasskeySignIn, PASSKEY_CHALLENGE_COOKIE } from '#lib/server/passkeys';
 import { rateLimit } from '#lib/server/rate-limit';
 import { logEvent } from '#lib/server/log';
+import { takeReturnTo } from '#lib/server/return-to';
 
 // Step two of passkey sign-in: verify the assertion, apply the same account
 // gates as the password path, and create the session. A verified passkey
@@ -54,5 +55,6 @@ export const POST: RequestHandler = async ({ cookies, getClientAddress, request,
 		sameSite: 'lax',
 		expires: session.expiresAt
 	});
-	return Response.json({ ok: true });
+	// The page goes here next: a page that was waiting on the sign-in, or home.
+	return Response.json({ ok: true, next: takeReturnTo(cookies) ?? '/' });
 };

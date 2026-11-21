@@ -107,6 +107,60 @@ webauthn_credentials (
 )
 ```
 
+Outside apps connect through OAuth (see Access for outside apps in `design.md`). `users.mcp_enabled` (default false) is the account switch. Codes and tokens are stored only as hashes; permissions live on the grant, so a change to a grant applies to tokens already issued.
+
+```sql
+oauth_clients (
+  id            uuid primary key,
+  client_id     text unique not null,    -- a generated id (self-registered) or the https URL of the client's metadata document
+  kind          text not null,           -- 'dcr' | 'cimd'
+  client_name   text not null,           -- what the app calls itself
+  host          text not null,           -- what was checked: the host of the client_id URL, or of the first redirect address
+  redirect_uris text[] not null,         -- https, or http on this computer only
+  created_at    timestamptz not null,
+  fetched_at    timestamptz              -- cimd: when the document was last read (re-read after a day)
+)
+
+oauth_grants (
+  id            uuid primary key,
+  user_id       uuid references users(id) on delete cascade not null,
+  client_id     uuid references oauth_clients(id) on delete cascade not null,
+  permissions   text[] not null,         -- 'read' | 'suggest' | 'apply'
+  created_at    timestamptz not null,
+  last_used_at  timestamptz,
+  revoked_at    timestamptz              -- one live grant per (user, client): unique where revoked_at is null
+)
+
+oauth_codes (
+  id             uuid primary key,
+  code_hash      text unique not null,
+  user_id        uuid references users(id) on delete cascade not null,
+  client_id      uuid references oauth_clients(id) on delete cascade not null,
+  permissions    text[] not null,
+  redirect_uri   text not null,
+  code_challenge text not null,          -- PKCE, S256
+  expires_at     timestamptz not null,   -- one minute
+  used_at        timestamptz,            -- single use; a second use revokes family_id
+  family_id      uuid,                   -- the token family the code was exchanged for
+  created_at     timestamptz not null
+)
+
+api_tokens (
+  id            uuid primary key,
+  user_id       uuid references users(id) on delete cascade not null,
+  grant_id      uuid references oauth_grants(id) on delete cascade,
+  kind          text not null,           -- 'access' (1 hour) | 'refresh' (30 days, replaced on each use)
+  token_hash    text unique not null,
+  family_id     uuid not null,           -- every token descended from one code exchange
+  expires_at    timestamptz not null,
+  used_at       timestamptz,             -- refresh: set when it is exchanged; using it again revokes the family
+  revoked_at    timestamptz,
+  created_at    timestamptz not null
+)
+```
+
+The daily session clean-up also deletes expired tokens, spent codes, clients that no writer connected within 24 hours of registering, and clients whose grants have all been revoked for 30 days. Deleting a client deletes its grants.
+
 ### Plans and entitlements
 
 A plan is a named bundle of entitlements. Entitlements are key/value rows, so a new limit or capability can be added without a schema change. Self-host seeds a single default plan that grants everything; the hosted service can define more.

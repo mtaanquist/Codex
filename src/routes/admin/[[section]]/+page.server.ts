@@ -38,6 +38,8 @@ import {
 } from '#lib/server/settings';
 import { secretsAvailable } from '#lib/server/crypto';
 import { egressPolicy, saveEgressPolicy, type EgressPolicyName } from '#lib/server/llm/egress';
+import { mcpInstanceEnabled, saveMcpInstanceEnabled } from '#lib/server/mcp/settings';
+import { logEvent } from '#lib/server/log';
 import { sendEmail } from '#lib/server/email';
 import { adminCancelDeletion, purgeAccount } from '#lib/server/account-deletion';
 import { disableTotp } from '#lib/server/two-factor';
@@ -90,6 +92,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		assetMigration: await assetMigrationResult(db),
 		smtp: await smtpView(db),
 		egress: await egressPolicy(db),
+		externalAccess: await mcpInstanceEnabled(db),
 		secretsAvailable: secretsAvailable(),
 		version: pkg.version,
 		uptime: formatUptime(process.uptime())
@@ -386,5 +389,13 @@ export const actions: Actions = {
 		const result = await saveEgressPolicy(db, { policy: policy as EgressPolicyName, allowlist });
 		if (!result.ok) return fail(400, { scope: 'egress', message: result.reason });
 		return { scope: 'egress', saved: true };
+	},
+	// The instance switch for outside apps (the MCP endpoint and its sign-in).
+	saveExternalAccess: async ({ request, locals }) => {
+		requireAdmin(locals);
+		const enabled = formText(await request.formData(), 'enabled') === 'on';
+		await saveMcpInstanceEnabled(db, enabled);
+		logEvent('info', 'admin.external_access', { adminId: locals.user!.id, enabled });
+		return { scope: 'external-access', saved: true };
 	}
 };

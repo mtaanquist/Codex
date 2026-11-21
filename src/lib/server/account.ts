@@ -6,6 +6,7 @@ import { consumeToken, reserveToken, revokeTokens } from './tokens';
 import { isUniqueViolation } from './db-errors.ts';
 import { EMAIL_RE } from './signup.ts';
 import { MAX_DISPLAY_NAME } from './validation.ts';
+import { revokeAllGrants } from './mcp/oauth.ts';
 import { MIN_PASSWORD } from '#lib/password';
 
 const EMAIL_CHANGE_TTL_MINUTES = 60 * 24;
@@ -211,6 +212,9 @@ export async function changePassword(
 		await revokeTokens(tx, userId, 'password_reset');
 		// A sign-in link stands in for the old password, so it dies with it.
 		await revokeTokens(tx, userId, 'sign_in');
+		// Outside apps are signed out with the other devices; each has to be
+		// connected again.
+		await revokeAllGrants(tx, userId);
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })

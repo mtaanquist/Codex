@@ -4,6 +4,7 @@ import { sessions, users } from './db/schema';
 import { hashPassword } from './password';
 import { consumeToken, NO_USER, reserveToken, revokeTokens } from './tokens';
 import { MIN_PASSWORD } from '#lib/password';
+import { revokeAllGrants } from './mcp/oauth';
 
 const RESET_TTL_MINUTES = 60;
 
@@ -55,6 +56,8 @@ export async function resetPassword(
 		await revokeTokens(tx, userId, 'password_reset');
 		// A sign-in link stands in for the old password, so it dies with it.
 		await revokeTokens(tx, userId, 'sign_in');
+		// Outside apps lose their access with the sessions.
+		await revokeAllGrants(tx, userId);
 		await tx
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })

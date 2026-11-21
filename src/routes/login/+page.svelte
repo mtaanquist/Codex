@@ -27,7 +27,10 @@
 			if (!verifyResponse.ok) {
 				throw new Error((await verifyResponse.json()).message ?? 'Sign-in failed.');
 			}
-			location.href = '/';
+			// The server names a page that was waiting on the sign-in, or home.
+			const { next } = await verifyResponse.json();
+			location.href =
+				typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/';
 		} catch (err) {
 			passkeyError =
 				err instanceof Error && err.name === 'NotAllowedError'

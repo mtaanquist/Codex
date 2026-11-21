@@ -101,6 +101,18 @@ export default async function globalSetup() {
 		   preferences = '{}'`,
 		['core-flow-e2e@example.com', passwordHash]
 	);
+	// A separate account for the connected-apps journey, which starts with
+	// access for other apps off and nothing connected.
+	await pool.query(
+		`insert into users (email, display_name, password_hash, role, email_verified_at, approved_at)
+		 values ($1, 'Apps Tester', $2, 'user', now(), now())
+		 on conflict (email) do update set password_hash = excluded.password_hash, mcp_enabled = false`,
+		['apps-e2e@example.com', passwordHash]
+	);
+	await pool.query(
+		`delete from oauth_grants where user_id = (select id from users where email = $1)`,
+		['apps-e2e@example.com']
+	);
 	// A separate account for the passkey journey, kept clean of credentials so
 	// the register-then-sign-in flow starts fresh every run.
 	await pool.query(
