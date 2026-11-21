@@ -25,18 +25,6 @@ function schemaFor(name: string, inputSchema: Record<string, unknown>) {
 	return schema;
 }
 
-// A tool's argument schema is the same for every request, and compiling its
-// validator is the costly part of building a server, so it is done once.
-const schemas = new Map<string, ReturnType<typeof fromJsonSchema<Record<string, unknown>>>>();
-function schemaFor(name: string, inputSchema: Record<string, unknown>) {
-	let schema = schemas.get(name);
-	if (!schema) {
-		schema = fromJsonSchema<Record<string, unknown>>(inputSchema);
-		schemas.set(name, schema);
-	}
-	return schema;
-}
-
 function buildServer(connection: Connection): McpServer {
 	const server = new McpServer({ name: 'codex', version: '1' }, { instructions: INSTRUCTIONS });
 	for (const tool of mcpTools(connection.identity.permissions)) {
