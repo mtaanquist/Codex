@@ -282,7 +282,10 @@ async function respondWithRetry(
 // its limit as options.num_predict).
 const REPLY_LIMIT_PARAMS = [
 	'max_tokens',
+	'maxTokens',
+	'max_tokens_to_sample',
 	'max_completion_tokens',
+	'maxOutputTokens',
 	'max_output_tokens',
 	'max_new_tokens',
 	'max_length',
@@ -293,7 +296,7 @@ const REPLY_LIMIT_PARAMS = [
 // Names that ask for several replies at once. Short enough to mean something
 // else elsewhere (a property of a response_format schema), so they are left
 // out only at the top level and in the groups endpoints read options from.
-const REPLY_COUNT_PARAMS = ['n', 'best_of'];
+const REPLY_COUNT_PARAMS = ['n', 'best_of', 'candidate_count', 'num_return_sequences'];
 const OPTION_GROUPS = ['options', 'extra_body', 'parameters'];
 export function withoutReplySizeParams<T extends Record<string, unknown> | undefined>(
 	params: T,
@@ -302,6 +305,11 @@ export function withoutReplySizeParams<T extends Record<string, unknown> | undef
 	if (!params) return params;
 	const kept: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(params)) {
+		// A schema for the reply: its property names are the writer's own.
+		if (key === 'response_format') {
+			kept[key] = value;
+			continue;
+		}
 		if (REPLY_LIMIT_PARAMS.includes(key)) continue;
 		if (options && REPLY_COUNT_PARAMS.includes(key)) continue;
 		const nested = value !== null && typeof value === 'object' && !Array.isArray(value);

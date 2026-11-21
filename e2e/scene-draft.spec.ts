@@ -448,13 +448,33 @@ test('typing in a draft decided in another window is kept to copy', async ({ pag
 	await page.keyboard.press('Enter');
 	const brief = card.getByLabel('What happens in this scene');
 	await brief.fill('The boy leads the horse back.');
+	const pov = card.getByLabel('Point of view (optional)');
+	await pov.fill('the boy');
 	await stageDraft(sceneId, 'From a chapter run.');
 	await gotoReady(page, link);
 	await expect(text).toHaveValue('From a chapter run.');
 	await card.getByRole('button', { name: 'Discard' }).click();
 	await expect(card).toHaveCount(0);
-	await gotoReady(page, link);
+	// Asked for again with no reload, from the scene's menu: the form comes
+	// back as it was left, not with the scene's suggested brief.
+	await openRowMenu(page, page.locator('.scene-row').first());
+	await page.locator('.row-menu').getByRole('menuitem', { name: 'Assistant' }).hover();
+	await page.locator('.row-submenu').getByRole('menuitem', { name: 'Draft this scene...' }).click();
 	await expect(brief).toHaveValue('The boy leads the horse back.');
+	await expect(pov).toHaveValue('the boy');
+	// The same after a second draft, asked for with words: they replace the
+	// brief and nothing else.
+	await stageDraft(sceneId, 'From another run.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('From another run.');
+	await card.getByRole('button', { name: 'Discard' }).click();
+	await expect(card).toHaveCount(0);
+	await composer.fill('/draft The horse bolts.');
+	await page.keyboard.press('Enter');
+	await expect(brief).toHaveValue('The horse bolts.');
+	await expect(pov).toHaveValue('the boy');
+	await gotoReady(page, link);
+	await expect(brief).toHaveValue('The horse bolts.');
 });
 
 // #1168: on a story with the Assistant turned off, the panel lists the drafts

@@ -7,6 +7,7 @@
 	import { createConfirmGuard } from '#lib/confirm-guard';
 	import {
 		adoptStored,
+		conflictShown,
 		draftBaseHashes,
 		draftEdit,
 		dropDraftEdit,
@@ -249,6 +250,24 @@
 			onClose?.();
 		}
 	}
+	// While the card says a draft changed or was decided elsewhere, the page
+	// does not also ask before it is left.
+	$effect(() => {
+		const id =
+			view === 'gone' ? gone?.id : view === 'draft' && changedElsewhere ? draft?.id : undefined;
+		if (!id) return;
+		conflictShown(id, true);
+		return () => conflictShown(id, false);
+	});
+	// Text typed into a draft of this scene that was kept or discarded in
+	// another window while no card showed it: said first, so it can be copied.
+	function showStranded(found: SceneDraftView | null): boolean {
+		const stranded = strandedDraftText(sceneId, found?.id ?? null);
+		if (!stranded) return false;
+		gone = { ...stranded, next: found };
+		view = 'gone';
+		return true;
+	}
 	// Leaves the draft's edit state to save on its own.
 	function releaseEdit() {
 		if (!edit) return;
@@ -338,6 +357,10 @@
 			targetWords = from.targetWords;
 			pov = from.pov ?? '';
 			view = 'form';
+		} else if (restoreForm()) {
+			// A brief left half typed comes back; words typed with the request
+			// replace the brief only.
+			if (typed) brief = typed;
 		} else {
 			view = 'loading';
 			const response = await post<SceneDraftDefaults>(
@@ -345,7 +368,7 @@
 				{ ...scope(), defaults: true },
 				'Could not open the draft form.'
 			);
-			if (!alive) return;
+			if (!alive || view !== 'loading') return;
 			if (!response.ok) {
 				error = response.message;
 				brief = typed;
@@ -366,23 +389,19 @@
 		if (view === 'form') keepDraftForm('scene', sceneId, { brief, targetWords, pov, sceneTitle });
 	});
 
-	onMount(() => {
+	// Opens the form the writer left unfinished, when there is one.
+	function restoreForm(): boolean {
 		const open = canDraft ? readDraftForm('scene', sceneId, parseOpenForm) : undefined;
-		if (open) {
-			({ brief, targetWords, pov, sceneTitle } = open);
-			view = 'form';
-		}
+		if (!open) return false;
+		({ brief, targetWords, pov, sceneTitle } = open);
+		view = 'form';
+		return true;
+	}
+
+	onMount(() => {
+		restoreForm();
 		void readDraftSurely().then((found) => {
-			if (!alive) return;
-			// Text typed into a draft that was kept or discarded in another
-			// window while this card was away: said first, so it can be copied.
-			const stranded = strandedDraftText(sceneId, found?.id ?? null);
-			if (stranded) {
-				gone = { ...stranded, next: found };
-				view = 'gone';
-				return;
-			}
-			if (!found) return;
+			if (!alive || view === 'gone' || showStranded(found) || !found) return;
 			// A form open to try a failed draft again keeps that draft behind it;
 			// any other draft is what there is to decide. A form the writer left
 			// half typed is kept for when this draft is decided.
@@ -446,8 +465,16 @@
 				view = 'hidden';
 				onDecided?.();
 				found = fresh;
-			} else found = draft ?? (await readDraftSurely());
-			if (!alive) return;
+			} else {
+				found = draft ?? (await readDraftSurely());
+				if (!alive) return;
+				// Said by now, or to say now: it is not replaced by what was asked.
+				if ((view as View) === 'gone' || (!draft && showStranded(found))) {
+					await reveal();
+					card?.focus();
+					return;
+				}
+			}
 			if (found) {
 				show(found);
 				await reveal();

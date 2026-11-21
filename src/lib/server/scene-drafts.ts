@@ -566,20 +566,6 @@ function onceEach(jobState: DraftJobState | undefined): DraftJobState | undefine
 }
 
 /**
- * True when the writer has a draft in this story still to keep or discard.
- * The story page asks while the Assistant is off, to keep the panel there
- * for the drafts written before.
- */
-export async function hasWaitingDrafts(
-	db: Database,
-	userId: string,
-	storyId: string,
-	jobState?: DraftJobState
-): Promise<boolean> {
-	return (await waitingDrafts(db, userId, storyId, jobState)).length > 0;
-}
-
-/**
  * The writer's undecided drafts in a story, in story order: written and
  * waiting, failed, or still being written (shown so they can be stopped).
  */

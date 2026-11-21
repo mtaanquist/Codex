@@ -263,10 +263,13 @@ describe('a draft changed in another window', () => {
 		const again = edits.draftEdit(key, { textMd: 'From the other window.', sceneId: SCENE });
 		expect(again).toBe(edit);
 		expect(again).toMatchObject({ text: 'Typed, then the panel was closed.', conflict: true });
-		// The writer has seen it now: the page no longer asks on its account.
+		// A card holding it is not the writer seeing it: the page still asks,
+		// until the card says so on screen, and again once it has gone.
+		expect(leaving()).toBe(true);
+		edits.conflictShown(key, true);
 		expect(leaving()).toBe(false);
 		edits.releaseDraftEdit(again);
-		expect(leaving()).toBe(false);
+		expect(leaving()).toBe(true);
 	});
 });
 
@@ -290,7 +293,10 @@ describe('a draft kept or discarded in another window', () => {
 			id: key,
 			text: 'Typed, then the pane was switched.'
 		});
-		// Said on screen now: the page does not ask, and nothing more is sent.
+		// Found, but not on screen yet: the page still asks. Once it is said
+		// on screen it does not, and nothing more is sent either way.
+		expect(leaving()).toBe(true);
+		edits.conflictShown(key, true);
 		expect(leaving()).toBe(false);
 		edit.autosave.schedule();
 		await vi.advanceTimersByTimeAsync(5000);
@@ -313,18 +319,35 @@ describe('a draft kept or discarded in another window', () => {
 		expect(edits.draftEdit(key, stored)).not.toBe(edit);
 	});
 
-	it('does not ask again before leaving once a card has shown a refusal', async () => {
+	it('asks before leaving unless the refusal is on screen, and does not send it again', async () => {
 		answers = [gone];
 		const key = id();
 		const edit = edits.draftEdit(key, stored);
 		edit.onChange = () => {};
 		await type(edit, 'Typed.');
+		// Refused with a card attached, which has not shown it yet.
+		expect(leaving()).toBe(true);
+		edits.conflictShown(key, true);
 		expect(leaving()).toBe(false);
-		// The card goes, and the writer's text is flushed: not sent, not asked.
+		// The card goes: asked again, and the flush sends nothing.
 		edits.releaseDraftEdit(edit);
 		await vi.advanceTimersByTimeAsync(5000);
 		expect(sent).toHaveLength(1);
-		expect(leaving()).toBe(false);
+		expect(leaving()).toBe(true);
+	});
+
+	it('drops a conflict along with the old text when a copy only looked at follows a read', async () => {
+		const key = id();
+		const edit = edits.draftEdit(key, stored);
+		// A keep that was refused marks the copy without a save from here.
+		edit.conflict = true;
+		edit.error = 'This draft was changed in another window.';
+		edits.conflictShown(key, true);
+		const again = edits.draftEdit(key, { textMd: 'From the other window.', sceneId: SCENE });
+		expect(again).toMatchObject({ text: 'From the other window.', conflict: false, error: '' });
+		// Typing is sent again.
+		await type(again, 'From the other window. And on.');
+		expect(sent).toHaveLength(1);
 	});
 });
 

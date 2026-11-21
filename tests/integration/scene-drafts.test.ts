@@ -76,7 +76,6 @@ const {
 	fillSceneFromDraft,
 	requestSceneDraft,
 	sceneDraftFor,
-	hasWaitingDrafts,
 	saveDraftText,
 	waitingDrafts,
 	DRAFT_DID_NOT_FINISH
@@ -1458,8 +1457,13 @@ describe("the writer's own request parameters", () => {
 						options: { num_predict: 99_999, mirostat: 1 },
 						extra_body: { n: 2 },
 						parameters: { max_tokens: 99_999, max_length: 99_999, max_gen_len: 99_999 },
+						max_tokens_to_sample: 99_999,
+						maxTokens: 99_999,
+						candidate_count: 3,
+						num_return_sequences: 3,
+						generationConfig: { maxOutputTokens: 99_999, topK: 40 },
 						// A property that happens to be called n is not a reply count.
-						response_format: { schema: { properties: { n: { type: 'number' } } } }
+						response_format: { schema: { properties: { n: {}, max_length: {}, maxTokens: {} } } }
 					}
 				}
 			}
@@ -1471,7 +1475,8 @@ describe("the writer's own request parameters", () => {
 			{
 				top_p: 0.9,
 				options: { mirostat: 1 },
-				response_format: { schema: { properties: { n: { type: 'number' } } } }
+				generationConfig: { topK: 40 },
+				response_format: { schema: { properties: { n: {}, max_length: {}, maxTokens: {} } } }
 			}
 		]);
 	});
@@ -1509,12 +1514,12 @@ describe('reading a draft back', () => {
 	});
 
 	it('says whether the story has drafts waiting, for the panel of an Assistant that is off', async () => {
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(false);
 		const draftId = await readyDraft();
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
-		expect(await hasWaitingDrafts(db, strangerId, storyId)).toBe(false);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(true);
+		expect((await waitingDrafts(db, strangerId, storyId)).length > 0).toBe(false);
 		await discardSceneDraft(db, ownerId, draftId);
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(false);
 	});
 
 	it('lists a scene once, by its newest draft, when a failed one and its replacement both wait', async () => {
@@ -1549,7 +1554,7 @@ describe('reading a draft back', () => {
 		expect(await waitingDrafts(db, ownerId, storyId)).toEqual([
 			{ sceneId: target, sceneTitle: 'The Crossing', status: 'pending' }
 		]);
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(true);
 		await db.insert(assistantDrafts).values({
 			userId: ownerId,
 			storyId,
@@ -1583,11 +1588,11 @@ describe('reading a draft back', () => {
 
 	it('does not count a draft whose scene is in the trash or has left the story', async () => {
 		await readyDraft();
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(true);
 		await trashScene(db, ownerId, target);
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(false);
 		await db.update(scenes).set({ deletedAt: null }).where(eq(scenes.id, target));
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(true);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(true);
 
 		// The scene moves to another story; the draft's own story column is stale.
 		const [other] = await db
@@ -1598,8 +1603,8 @@ describe('reading a draft back', () => {
 			.update(scenes)
 			.set({ storyId: other.id, chapterId: null })
 			.where(eq(scenes.id, target));
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
-		expect(await hasWaitingDrafts(db, ownerId, other.id)).toBe(true);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(false);
+		expect((await waitingDrafts(db, ownerId, other.id)).length > 0).toBe(true);
 	});
 
 	it('says when the scene is no longer empty', async () => {
@@ -1617,6 +1622,25 @@ describe('reading a draft back', () => {
 			{ sceneId: target, sceneTitle: 'The Crossing', status: 'failed' }
 		]);
 		expect((await draftRow(draftId)).note).toBe(DRAFT_DID_NOT_FINISH);
+	});
+
+	it("leaves another writer's drafts, and other stories', alone when it lists", async () => {
+		const [other] = await db
+			.insert(stories)
+			.values({ universeId, ownerId, title: 'Another' })
+			.returning({ id: stories.id });
+		// One of another writer's on this story, one of the writer's on another.
+		const draft = { brief: 'b', targetWords: 500, jobId: crypto.randomUUID() };
+		const rows = await db
+			.insert(assistantDrafts)
+			.values([
+				{ ...draft, userId: strangerId, storyId, sceneId: before },
+				{ ...draft, userId: ownerId, storyId: other.id, sceneId: target }
+			])
+			.returning({ id: assistantDrafts.id });
+		jobs.assistantDraftJobState.mockResolvedValue('failed');
+		await waitingDrafts(db, ownerId, storyId, jobs.assistantDraftJobState);
+		for (const row of rows) expect((await draftRow(row.id)).status).toBe('pending');
 	});
 
 	it('settles a draft whose job ended without it', async () => {
@@ -1925,7 +1949,7 @@ describe("another user's draft on a scene the caller owns", () => {
 	it('is not read, kept or discarded by the scene owner', async () => {
 		const draftId = await foreignDraft();
 		expect(await sceneDraftFor(db, ownerId, target)).toBeNull();
-		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		expect((await waitingDrafts(db, ownerId, storyId)).length > 0).toBe(false);
 		const base = await baseFor(draftId);
 		// lockReadyDraft, through both ways of keeping.
 		expect(await fillSceneFromDraft(db, ownerId, draftId, undefined, base)).toMatchObject({
