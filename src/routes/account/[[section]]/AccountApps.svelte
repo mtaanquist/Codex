@@ -57,6 +57,12 @@
 			tokenField?.select();
 		};
 	};
+	// A refusal is shown in the form that was sent, with what was typed kept.
+	const keepTyped: Parameters<typeof enhance>[1] = () => {
+		return async ({ update }) => {
+			await update({ reset: false });
+		};
+	};
 	const lasts = (days: number) => (days === 365 ? '1 year' : `${days} days`);
 	const now = Date.now();
 
@@ -83,7 +89,7 @@
 		{#if !access.enabled}
 			<!-- Turning access on lets an app in, so it asks who is there. Turning
 			     it off, below, asks for nothing. -->
-			<form method="POST" action="?/setExternalAccess" autocomplete="off">
+			<form method="POST" action="?/setExternalAccess" autocomplete="off" use:enhance={keepTyped}>
 				<input type="hidden" name="enabled" value="on" />
 				<div class="t-title">Allow other apps to connect</div>
 				<div class="t-sub">
@@ -116,6 +122,7 @@
 				{/if}
 				<div class="settings-actions">
 					<button type="submit" class="btn btn-primary">Turn on access for apps</button>
+					<FormStatus error={form?.scope === 'access' && form.message ? form.message : null} />
 				</div>
 			</form>
 		{:else}
@@ -350,6 +357,9 @@
 						required
 						autocomplete="one-time-code"
 					/>
+					<span class="field-hint">
+						Each code works once. If you have just used one, wait for the next.
+					</span>
 				</div>
 			{/if}
 			<div class="settings-actions">

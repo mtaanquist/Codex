@@ -150,6 +150,48 @@ test('the author works through a pattern note across two scenes', async ({ page 
 	expect(await sceneBodies(name)).toEqual(['The elk crossed the ford.', 'Kara looked back.']);
 });
 
+// The suggestion is revised while the writer is rewording it. The accept is
+// refused; the card then shows the new wording above theirs, keeps what they
+// typed, and keeps the keyboard in the pass.
+test('an edit revised while the writer rewords it shows the new wording', async ({ page }) => {
+	const { name } = await openNote(page);
+	const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+	await note.getByRole('button', { name: 'Work through this (2)' }).click();
+	const pass = page.locator('.review-panel');
+	const step = pass.locator('[aria-current="step"]');
+	await expect(pass.getByText('1 of 2')).toBeVisible();
+	await step.getByRole('button', { name: 'Edit' }).click();
+	await step.getByLabel('Your wording').fill('Kara of the ford');
+
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	try {
+		await pool.query(
+			`update review_suggestions set replacement = 'The ranger'
+			 where scene_id = (select s.id from scenes s join stories st on st.id = s.story_id
+			   join universes u on u.id = st.universe_id where u.name = $1
+			   order by s.global_position limit 1)`,
+			[name]
+		);
+	} finally {
+		await pool.end();
+	}
+
+	await step.getByRole('button', { name: 'Accept my wording' }).click();
+	const refusal = step.getByRole('alert');
+	await expect(refusal).toHaveText('This suggestion changed. Read it again.');
+	await expect(step.locator('.pp-revised')).toContainText('The ranger');
+	await expect(step.getByLabel('Your wording')).toHaveValue('Kara of the ford');
+	await expect(step).toBeFocused();
+	expect(await sceneBodies(name)).toEqual(['The elf crossed the ford.', 'The elf looked back.']);
+
+	// Read again, the writer's own wording goes in.
+	await step.getByRole('button', { name: 'Accept my wording' }).click();
+	await expect(pass.getByText('2 of 2')).toBeVisible();
+	await expect
+		.poll(() => sceneBodies(name))
+		.toEqual(['Kara of the ford crossed the ford.', 'The elf looked back.']);
+});
+
 const LONG_APP_NAME = 'The Writing Desk Assistant For Novelists And Playwrights And Poets';
 
 // #1175: a pattern note a connected app left. The link the app hands the writer
