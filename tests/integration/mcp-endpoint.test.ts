@@ -4,10 +4,14 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import type pg from 'pg';
 import {
+	assistantDrafts,
 	characters,
+	entityCategories,
 	entityMentions,
+	loreEntries,
 	oauthClients,
 	oauthGrants,
+	places,
 	reviewInvitations,
 	reviewers,
 	reviewSuggestions,
@@ -57,6 +61,14 @@ const {
 	listSuggestions,
 	listThreads
 } = await import('#lib/server/review');
+const {
+	decideEntityProposal,
+	decideSplitProposal,
+	listProposals,
+	stageEntityProposal,
+	MAX_ENTITY_PROPOSALS_WAITING
+} = await import('#lib/server/proposals');
+const { discardSceneDraft, sceneDraftFor } = await import('#lib/server/scene-drafts');
 const { createAnchorMapper } = await import('#lib/review-anchor');
 const { TOOL_RESULT_MAX_CHARS } = await import('#lib/server/mcp/constants');
 const route = await import('../../src/routes/api/mcp/+server');
@@ -283,7 +295,8 @@ async function stagedRows(): Promise<number> {
 	const { rows } = await pool.query(
 		`select (select count(*) from review_threads) + (select count(*) from review_suggestions)
 		      + (select count(*) from review_comments) + (select count(*) from entity_suggestions)
-		      + (select count(*) from assistant_drafts) as n`
+		      + (select count(*) from assistant_drafts) + (select count(*) from entity_proposals)
+		      + (select count(*) from scene_split_proposals) as n`
 	);
 	return Number(rows[0].n);
 }
@@ -430,11 +443,14 @@ describe('the protocol', () => {
 		expect(staging.map((tool) => tool.name).sort()).toEqual([
 			'leave_comment',
 			'leave_pattern_note',
+			'propose_scene_split',
 			'reply_in_thread',
+			'stage_scene_draft',
 			'suggest_edit',
+			'suggest_entity',
 			'update_suggestion'
 		]);
-		expect(tools).toHaveLength(14);
+		expect(tools).toHaveLength(17);
 		const required = (name: string) =>
 			tools.find((tool) => tool.name === name)!.inputSchema.required;
 		expect(required('reply_in_thread')).toEqual(['universeId', 'threadId', 'comment']);
@@ -538,7 +554,9 @@ describe('the protocol', () => {
 			[readOnly, 'suggest_edit'],
 			[readOnly, 'leave_comment'],
 			[readOnly, 'leave_pattern_note'],
-			[alice.token, 'propose_scene_split'],
+			[readOnly, 'propose_scene_split'],
+			[readOnly, 'suggest_entity'],
+			[readOnly, 'stage_scene_draft'],
 			[alice.token, 'no_such_tool']
 		];
 		for (const [token, name] of attempts) {
@@ -550,7 +568,10 @@ describe('the protocol', () => {
 				comment: 'x',
 				edits: [{ original: 'open', replacement: 'shut' }],
 				newSceneStart: 'lantern',
-				rationale: 'x'
+				rationale: 'x',
+				kind: 'character',
+				name: 'Old Marit',
+				text: 'A draft.'
 			});
 			expect(result.isError).toBe(true);
 		}
@@ -559,7 +580,7 @@ describe('the protocol', () => {
 
 	it('keeps the external tools out of the in-app toolbox', async () => {
 		const external = TOOLS.filter((tool) => tool.external).map((tool) => tool.name);
-		expect(external).toEqual(['list_universes', 'list_stories']);
+		expect(external.sort()).toEqual(['list_stories', 'list_universes', 'stage_scene_draft']);
 		const inApp = toolSpecs().map((tool) => tool.name);
 		expect(inApp).not.toContain('list_universes');
 		expect(toolSpecs(external)).toEqual([]);
@@ -1556,6 +1577,374 @@ describe('get_review_note', () => {
 			['writer', 'Say more.']
 		]);
 		expect(await inApp('list_review_notes', { storyId: bob.storyId })).toBe(NO_STORY);
+	});
+});
+
+describe('suggest_entity', () => {
+	const suggest = (who: World | string, overrides: Record<string, unknown> = {}) =>
+		call(who, 'suggest_entity', {
+			universeId: alice.universeId,
+			kind: 'character',
+			name: 'Old Marit',
+			description: 'The lamplighter on the quay.',
+			seenIn: 'Alice Quay: "Old Marit lit the lantern."',
+			...overrides
+		});
+
+	it('stages an entry for the writer to accept, and creates nothing', async () => {
+		const result = await suggest(alice);
+		expect(result.isError).toBe(false);
+		expect(result.text).toContain('Suggested the character "Old Marit"');
+		expect(result.text).toContain(`${ORIGIN}/universes/${alice.universeId}/suggestions`);
+		const waiting = await listProposals(db, alice.userId, alice.universeId);
+		expect(waiting.entities).toEqual([
+			expect.objectContaining({
+				kind: 'character',
+				name: 'Old Marit',
+				description: 'The lamplighter on the quay.',
+				seenIn: 'Alice Quay: "Old Marit lit the lantern."',
+				from: APP
+			})
+		]);
+		expect(await db.select().from(characters).where(eq(characters.name, 'Old Marit'))).toEqual([]);
+		// Nothing of it shows in another writer's universe, or another of her own.
+		expect((await listProposals(db, bob.userId, bob.universeId)).entities).toEqual([]);
+		expect((await listProposals(db, alice.userId, alice.otherUniverseId)).entities).toEqual([]);
+		expect((await listProposals(db, bob.userId, alice.universeId)).entities).toEqual([]);
+	});
+
+	it('stages nothing outside the writers own universes', async () => {
+		await expectNoUniverse('suggest_entity', { kind: 'character', name: 'Old Marit' });
+		expect(await stagedRows()).toBe(0);
+	});
+
+	it('refuses a name or another name the universe already has', async () => {
+		await db
+			.update(characters)
+			.set({ aliases: ['The Quiet One'] })
+			.where(eq(characters.id, alice.characterId));
+		await db
+			.insert(places)
+			.values({ universeId: alice.universeId, ownerId: alice.userId, name: 'Saltmere' });
+		for (const name of ['alices hero bram', 'the quiet one', '  Saltmere ']) {
+			const refused = await suggest(alice, { name });
+			expect(refused.text).toContain('already has an entry named');
+		}
+		// A name only another universe has is free here.
+		expect((await suggest(alice, { name: 'Alices outsider' })).text).toContain('Suggested');
+		for (const bad of [{ kind: 'weapon' }, { name: '   ' }, { name: 'x'.repeat(121) }]) {
+			expect((await suggest(alice, bad)).text).not.toContain('Suggested');
+		}
+		expect((await listProposals(db, alice.userId, alice.universeId)).entities).toHaveLength(1);
+	});
+
+	it('does not stage a name twice, or again once the writer dismissed it', async () => {
+		expect((await suggest(alice)).text).toContain('Suggested');
+		expect((await suggest(alice, { name: 'old marit' })).text).toContain('already suggested');
+		const second = await connect(alice.userId, 'Second');
+		expect((await suggest(second, { kind: 'place' })).text).toContain('already suggested');
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).entities;
+		expect(await decideEntityProposal(db, alice.userId, waiting.id, 'dismiss')).toMatchObject({
+			ok: true,
+			entityId: null
+		});
+		expect((await suggest(alice)).text).toContain('turned down "Old Marit" before');
+		expect((await listProposals(db, alice.userId, alice.universeId)).entities).toEqual([]);
+	});
+
+	it('creates the entry only when the writer accepts, and only for its owner', async () => {
+		await suggest(alice);
+		await suggest(alice, { kind: 'place', name: 'Saltmere', description: '' });
+		const { entities } = await listProposals(db, alice.userId, alice.universeId);
+		const [marit, saltmere] = entities;
+		// Another writer cannot decide it, by either answer.
+		for (const decision of ['accept', 'dismiss'] as const) {
+			expect((await decideEntityProposal(db, bob.userId, marit.id, decision)).ok).toBe(false);
+		}
+		expect((await decideEntityProposal(db, alice.userId, MISSING, 'accept')).ok).toBe(false);
+		expect(await db.select().from(characters).where(eq(characters.name, 'Old Marit'))).toEqual([]);
+
+		const accepted = await decideEntityProposal(db, alice.userId, marit.id, 'accept');
+		expect(accepted).toMatchObject({ ok: true, universeId: alice.universeId });
+		const [created] = await db.select().from(characters).where(eq(characters.name, 'Old Marit'));
+		expect(created).toMatchObject({
+			id: accepted.ok ? accepted.entityId : '',
+			ownerId: alice.userId,
+			universeId: alice.universeId,
+			summaryMd: 'The lamplighter on the quay.'
+		});
+		// Decided once.
+		expect((await decideEntityProposal(db, alice.userId, marit.id, 'accept')).ok).toBe(false);
+		expect(await db.select().from(characters).where(eq(characters.name, 'Old Marit'))).toHaveLength(
+			1
+		);
+
+		// A name the writer took in the meantime is not created twice.
+		await db
+			.insert(places)
+			.values({ universeId: alice.universeId, ownerId: alice.userId, name: 'Saltmere' });
+		const late = await decideEntityProposal(db, alice.userId, saltmere.id, 'accept');
+		expect(late).toMatchObject({ ok: false, code: 'conflict' });
+		expect(await db.select().from(places).where(eq(places.name, 'Saltmere'))).toHaveLength(1);
+	});
+
+	it('files an accepted lore entry under the first category', async () => {
+		await suggest(alice, { kind: 'lore', name: 'The Tide Oath' });
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).entities;
+		const early = await decideEntityProposal(db, alice.userId, waiting.id, 'accept');
+		expect(early).toMatchObject({ ok: false, code: 'invalid' });
+		const [category] = await db
+			.insert(entityCategories)
+			.values({
+				universeId: alice.universeId,
+				ownerId: alice.userId,
+				name: 'Customs',
+				sortOrder: 0
+			})
+			.returning({ id: entityCategories.id });
+		expect((await decideEntityProposal(db, alice.userId, waiting.id, 'accept')).ok).toBe(true);
+		const [entry] = await db.select().from(loreEntries);
+		expect(entry).toMatchObject({ title: 'The Tide Oath', categoryId: category.id });
+	});
+
+	it('is the Assistants tool too, staged in its name', async () => {
+		const outcome = await dispatchToolCall(
+			{ db, userId: alice.userId, universeId: alice.universeId },
+			{
+				id: 'call',
+				name: 'suggest_entity',
+				arguments: JSON.stringify({ kind: 'place', name: 'Saltmere' })
+			}
+		);
+		expect(outcome.staged).toBe(true);
+		expect(outcome.result).toContain('under Suggestions');
+		expect(toolSpecs().map((tool) => tool.name)).toContain('suggest_entity');
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).entities;
+		expect(waiting).toMatchObject({ name: 'Saltmere', from: 'Assistant' });
+	});
+
+	it('stops at a ceiling of waiting entries, and counts against the staging budget', async () => {
+		const [client] = await db.select().from(oauthClients);
+		const author = { client: { id: client.id, name: client.clientName, host: client.host } };
+		for (let i = 0; i < MAX_ENTITY_PROPOSALS_WAITING; i++) {
+			const staged = await stageEntityProposal(db, {
+				ownerId: alice.userId,
+				universeId: alice.universeId,
+				kind: 'character',
+				name: `Sailor ${i}`,
+				author
+			});
+			expect(staged.ok).toBe(true);
+		}
+		expect((await suggest(alice)).text).toContain('suggested entries waiting');
+		// Bob's universe is his own count; the budget is one for all staging.
+		let staged = 0;
+		for (let i = 0; i < 31; i++) {
+			const result = await suggest(bob, { universeId: bob.universeId, name: `Rower ${i}` });
+			if (!result.isError) staged++;
+		}
+		expect(staged).toBe(30);
+		expect((await suggest(bob, { universeId: bob.universeId })).text).toMatch(/^Too many calls/);
+	});
+});
+
+describe('propose_scene_split', () => {
+	const BODY = 'They rowed out past the bar and slept.\n\nDawn came swiftly over the water.';
+	const propose = (who: World | string, overrides: Record<string, unknown> = {}) =>
+		call(who, 'propose_scene_split', {
+			universeId: alice.universeId,
+			sceneId: alice.sceneId,
+			newSceneStart: 'Dawn came swiftly',
+			rationale: 'A night passes.',
+			...overrides
+		});
+	const sceneCount = async (storyId: string) =>
+		(await db.select().from(scenes).where(eq(scenes.storyId, storyId))).length;
+
+	beforeEach(async () => {
+		await setBody(alice, BODY);
+	});
+
+	it('stores the proposal for the writer and leaves the scene whole', async () => {
+		const result = await propose(alice);
+		expect(result.isError).toBe(false);
+		expect(result.text).toContain('Nothing has changed');
+		expect(result.text).toContain(`${ORIGIN}/universes/${alice.universeId}/suggestions`);
+		const { splits } = await listProposals(db, alice.userId, alice.universeId);
+		expect(splits).toEqual([
+			expect.objectContaining({
+				storyId: alice.storyId,
+				sceneId: alice.sceneId,
+				sceneTitle: 'Alice Quay',
+				before: 'Dawn came swiftly',
+				rationale: 'A night passes.',
+				from: APP
+			})
+		]);
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
+		expect(scene.bodyMd).toBe(BODY);
+		expect((await listProposals(db, bob.userId, bob.universeId)).splits).toEqual([]);
+		expect((await listProposals(db, bob.userId, alice.universeId)).splits).toEqual([]);
+	});
+
+	it('stages nothing outside the writers own open stories', async () => {
+		await expectNoUniverse('propose_scene_split', {
+			sceneId: alice.sceneId,
+			newSceneStart: 'Dawn came swiftly',
+			rationale: 'x'
+		});
+		for (const sceneId of hiddenScenes()) {
+			expect(await propose(alice, { sceneId, newSceneStart: 'lantern' })).toEqual({
+				text: NO_SCENE,
+				isError: false
+			});
+		}
+		expect(await stagedRows()).toBe(0);
+	});
+
+	it('refuses a point it cannot place, a repeat, and more than a few', async () => {
+		expect((await propose(alice, { newSceneStart: 'No such words' })).text).toContain('not found');
+		expect((await propose(alice, { newSceneStart: 'They rowed' })).text).toContain(
+			'already starts there'
+		);
+		expect(await stagedRows()).toBe(0);
+		expect((await propose(alice)).text).toContain('proposed to the writer');
+		expect((await propose(alice)).text).toContain('already proposed this split');
+		for (const start of ['came swiftly', 'swiftly over', 'over the', 'the water']) {
+			expect((await propose(alice, { newSceneStart: start })).text).toContain('proposed to');
+		}
+		expect((await propose(alice, { newSceneStart: 'water.' })).text).toContain(
+			'split proposals waiting'
+		);
+	});
+
+	it('splits only when the writer confirms, and only for its owner', async () => {
+		await propose(alice);
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).splits;
+		const before = await sceneCount(alice.storyId);
+		for (const decision of ['confirm', 'dismiss'] as const) {
+			expect((await decideSplitProposal(db, bob.userId, waiting.id, decision)).ok).toBe(false);
+		}
+		expect(await sceneCount(alice.storyId)).toBe(before);
+
+		const confirmed = await decideSplitProposal(db, alice.userId, waiting.id, 'confirm');
+		expect(confirmed).toMatchObject({ ok: true, splitSceneId: alice.sceneId });
+		expect(await sceneCount(alice.storyId)).toBe(before + 1);
+		const [first] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
+		expect(first.bodyMd.trim()).toBe('They rowed out past the bar and slept.');
+		const newSceneId = confirmed.ok ? (confirmed.newSceneId ?? '') : '';
+		const [second] = await db.select().from(scenes).where(eq(scenes.id, newSceneId));
+		expect(second.bodyMd.trim()).toBe('Dawn came swiftly over the water.');
+		// Decided once.
+		expect((await decideSplitProposal(db, alice.userId, waiting.id, 'confirm')).ok).toBe(false);
+		expect(await sceneCount(alice.storyId)).toBe(before + 1);
+	});
+
+	it('keeps a proposal waiting when the words are gone, and lets the writer dismiss it', async () => {
+		await propose(alice);
+		const [waiting] = (await listProposals(db, alice.userId, alice.universeId)).splits;
+		await setBody(alice, 'They rowed out past the bar and slept.');
+		const before = await sceneCount(alice.storyId);
+		expect((await decideSplitProposal(db, alice.userId, waiting.id, 'confirm')).ok).toBe(false);
+		expect(await sceneCount(alice.storyId)).toBe(before);
+		expect((await listProposals(db, alice.userId, alice.universeId)).splits).toHaveLength(1);
+		expect((await decideSplitProposal(db, alice.userId, waiting.id, 'dismiss')).ok).toBe(true);
+		expect((await listProposals(db, alice.userId, alice.universeId)).splits).toEqual([]);
+	});
+
+	it('stays a card in the chat for the Assistant, with nothing stored', async () => {
+		const outcome = await dispatchToolCall(
+			{ db, userId: alice.userId, universeId: alice.universeId },
+			{
+				id: 'call',
+				name: 'propose_scene_split',
+				arguments: JSON.stringify({
+					sceneId: alice.sceneId,
+					newSceneStart: 'Dawn came swiftly',
+					rationale: 'A night passes.'
+				})
+			}
+		);
+		expect(outcome.result).not.toContain('/suggestions');
+		expect(await stagedRows()).toBe(0);
+	});
+});
+
+describe('stage_scene_draft', () => {
+	const DRAFT = 'The tide went out. *Nobody* watched it go.';
+	const stage = (who: World | string, overrides: Record<string, unknown> = {}) =>
+		call(who, 'stage_scene_draft', {
+			universeId: alice.universeId,
+			sceneId: alice.sceneId,
+			text: DRAFT,
+			brief: 'The morning after.',
+			...overrides
+		});
+	const draftsOf = (userId: string) =>
+		db.select().from(assistantDrafts).where(eq(assistantDrafts.userId, userId));
+
+	it('leaves a draft on the scene in the apps name, and the scene text alone', async () => {
+		const result = await stage(alice);
+		expect(result.isError).toBe(false);
+		expect(result.text).toContain('Staged the draft');
+		expect(result.text).toContain(
+			`${ORIGIN}/stories/${alice.storyId}?scene=${alice.sceneId}&draft=show`
+		);
+		expect(await draftsOf(alice.userId)).toEqual([
+			expect.objectContaining({
+				storyId: alice.storyId,
+				sceneId: alice.sceneId,
+				textMd: DRAFT,
+				brief: 'The morning after.',
+				status: 'ready',
+				note: `Drafted by ${APP}.`
+			})
+		]);
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
+		expect(scene.bodyMd).toBe('Alice open lantern prose.');
+		expect(await draftsOf(bob.userId)).toEqual([]);
+		// The writer sees it where a draft of the Assistant's shows.
+		const shown = await sceneDraftFor(db, alice.userId, alice.sceneId);
+		expect(shown).toMatchObject({ status: 'ready', textMd: DRAFT });
+	});
+
+	it('stages nothing outside the writers own open stories', async () => {
+		await expectNoUniverse('stage_scene_draft', { sceneId: alice.sceneId, text: DRAFT });
+		for (const sceneId of hiddenScenes()) {
+			expect(await stage(alice, { sceneId })).toEqual({ text: NO_SCENE, isError: false });
+		}
+		expect(await stagedRows()).toBe(0);
+	});
+
+	it('takes one undecided draft a scene, whichever app wrote it', async () => {
+		expect((await stage(alice)).text).toContain('Staged the draft');
+		expect((await stage(alice, { text: 'Another go.' })).text).toContain('already has a draft');
+		const second = await connect(alice.userId, 'Second');
+		expect((await stage(second, { text: 'A third.' })).text).toContain('already has a draft');
+		expect(await draftsOf(alice.userId)).toHaveLength(1);
+		// Once the writer has decided, the scene takes another.
+		const [draft] = await draftsOf(alice.userId);
+		expect((await discardSceneDraft(db, alice.userId, draft.id)).ok).toBe(true);
+		expect((await stage(alice, { text: 'Another go.' })).text).toContain('Staged the draft');
+	});
+
+	it('refuses an empty draft and one that is too long', async () => {
+		expect((await stage(alice, { text: '   ' })).text).toContain('Give the text');
+		expect((await stage(alice, { text: 'x'.repeat(60_001) })).text).toContain('too long');
+		expect(await stagedRows()).toBe(0);
+	});
+
+	it('is not a tool of the Assistant', async () => {
+		const outcome = await dispatchToolCall(
+			{ db, userId: alice.userId, universeId: alice.universeId },
+			{
+				id: 'call',
+				name: 'stage_scene_draft',
+				arguments: JSON.stringify({ sceneId: alice.sceneId, text: DRAFT })
+			}
+		);
+		expect(outcome.result).toBe('Unknown tool: stage_scene_draft.');
+		expect(await stagedRows()).toBe(0);
 	});
 });
 

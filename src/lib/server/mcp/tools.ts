@@ -45,11 +45,6 @@ const UNIVERSE_ARGUMENT = {
 // writer's, so the answer says nothing about what exists.
 export const NO_UNIVERSE_RESULT = 'No universe with that id.';
 
-// Staging tools that are not on this surface yet. A split proposal lives in
-// the Assistant's chat as a card; an app has no chat, so it waits for a stored
-// proposal the writer confirms in Codex.
-const NOT_YET = new Set(['propose_scene_split']);
-
 // Arguments a tool takes on this surface only. In the app the open page (or
 // the run that called the tool) fixes the thread, the suggestion, the pattern
 // note and the edit being followed up. An app has no page, so it names them;
@@ -91,7 +86,7 @@ const EXTRA_ARGUMENTS: Record<string, ExtraArgument[]> = {
 // The tools a connection is offered: every read tool, and the staging tools
 // when the writer allowed suggestions.
 function offered(tool: ToolDef, permissions: readonly McpPermission[]): boolean {
-	return !NOT_YET.has(tool.name) && permissions.includes(PERMISSION_FOR[tool.kind]);
+	return permissions.includes(PERMISSION_FOR[tool.kind]);
 }
 
 function inputSchema(tool: ToolDef): Record<string, unknown> {

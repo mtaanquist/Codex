@@ -1,9 +1,9 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import type { ActionFailure } from './action-result';
-import type { Database } from './auth';
+import type { ActionFailure } from './action-result.ts';
+import type { Database } from './auth.ts';
 import { dbNow } from './db-clock.ts';
-import { entityMentions, sceneMarkers, scenes, stories } from './db/schema';
-import { recordRevision } from './revisions';
+import { entityMentions, sceneMarkers, scenes, stories } from './db/schema.ts';
+import { recordRevision } from './revisions.ts';
 import { keepTimestamps, keepUpdatedAt, ownedScene } from './scene-access.ts';
 import { lockStoryScenes } from './row-locks.ts';
 import { textHash } from '#lib/text-hash';

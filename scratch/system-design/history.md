@@ -1023,6 +1023,37 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 7: proposals and app drafts (2026-11-21)
+
+Part of #1175, branch `feat/mcp-proposals` on `staging/mcp-endpoint`.
+Migration `0099_mcp-proposals` (two new tables, nothing rewritten).
+
+- `suggest_entity` on both surfaces, `propose_scene_split` now offered over
+  MCP, and `stage_scene_draft` over MCP only. All three need `suggest`.
+- New tables rather than a reuse of `entity_suggestions`: that table hangs a
+  field suggestion (alias, detail, summary) off an entry that exists, with a
+  target id and a job. A proposal for a new entry has no target, so it got its
+  own table and its own list. The accept path inserts the row the same way
+  the Plan sidebar's create does and queues the universe mention scan.
+- The list lives in the universe's settings as a Suggestions section with a
+  count in its link, built from the existing list primitives
+  (`UniverseSuggestions.svelte`). The tool results give the app the link.
+- The split store is used by apps only. Sharing it with the in-app card was
+  considered and left: the card already confirms through the split endpoint
+  with the text re-located at confirm time, and moving it would change a flow
+  that works for no gain. Confirm from the store reuses `locateSplitInStory`
+  and `splitScene`. The proposal is claimed before the split and put back if
+  the split is refused, so two confirms cannot both split.
+- App drafts needed no schema change. The row is an ordinary `ready`
+  `assistant_drafts` row with the app's label in `note`, which the draft card
+  already shows, and the unique index gives the one-undecided-draft rule. The
+  writer's fill, add as new scene, and discard are untouched.
+- The `write`, `draft` and `draft-chapter` prompts now end by staging with
+  `stage_scene_draft` for a connection that may suggest.
+- Deferred: a count of waiting suggestions outside the universe's settings
+  (the Plan sidebar or the library), and a notification when an app stages
+  something.
+
 ## MCP endpoint, lane 6: prompts (2026-11-21)
 
 Part of #1175, branch `feat/mcp-prompts` on `staging/mcp-endpoint`. No

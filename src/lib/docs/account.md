@@ -369,7 +369,23 @@ What you can allow:
   always included. A story where you have turned the Assistant off stays hidden
   from apps too.
 - **Leave suggestions and comments**: suggested edits and comments that wait for
-  you in Review, where you accept or reject each one.
+  you in Review, where you accept or reject each one. The app can also suggest
+  a character, place or lore entry your universe does not have yet, propose
+  splitting a scene in two, and hand you a draft it wrote for a scene. None of
+  these changes your writing until you say so.
+
+Where to find what an app left:
+
+- Suggested edits and comments are in the story's Review.
+- Suggested entries and proposed scene splits are in the universe's settings,
+  under Suggestions. Select Accept to add an entry or Dismiss to drop it, and
+  "Split here" to split a scene or Dismiss to leave it whole. See
+  [Planning your world](/docs/planning).
+- A draft waits on its scene. Open the scene and select the Assistant tab on
+  the right to read it, change it, and keep or discard it, the same way as a
+  draft from the Assistant. The card says which app wrote it. A scene holds
+  one waiting draft at a time, so an app cannot leave another until you have
+  decided.
 
 A connected app is also given ready-made prompts for the work the Assistant
 does in Codex: review, copyedit, continuity review, pattern pass, write,

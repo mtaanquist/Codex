@@ -1,8 +1,8 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type { Database } from './auth';
-import { scenes } from './db/schema';
-import { remapMarkerAnchors, updateMarkerAnchors } from './markers';
-import { recordRevision } from './revisions';
+import type { Database } from './auth.ts';
+import { scenes } from './db/schema.ts';
+import { remapMarkerAnchors, updateMarkerAnchors } from './markers.ts';
+import { recordRevision } from './revisions.ts';
 import { inLiveStory } from './universe-scope.ts';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';

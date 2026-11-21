@@ -44,6 +44,17 @@ type PromptDef = {
 export type McpPrompt = Pick<PromptDef, 'name' | 'title' | 'description' | 'arguments'>;
 export type PromptConnection = { permissions: readonly McpPermission[] };
 
+// How a drafting prompt ends: staged where the connection may suggest, else
+// in the reply.
+function draftClose(connection: PromptConnection, each: boolean, thing = 'draft'): string {
+	if (!connection.permissions.includes('suggest')) {
+		return each
+			? `Reply with the drafts in scene order, each under a line that names its scene. ${NOT_STORED}`
+			: REPLY_ONLY;
+	}
+	return `You cannot change the writer's text. Do not put ${each ? 'the drafts' : `the ${thing}`} in your reply. Hand ${each ? 'each one' : 'it'} to the writer with stage_scene_draft on its scene${each ? ', as soon as it is written' : ''}: it waits there for the writer to read, and they keep or discard it in Codex. It never replaces prose the writer has. Then tell the writer ${each ? 'which scenes have a draft waiting' : `that the ${thing} is waiting on the scene`}.`;
+}
+
 // A prompt's arguments arrive as text. Every read goes through these, so a
 // bad one is refused with a message that names it.
 export class PromptArgumentError extends Error {}
@@ -237,14 +248,14 @@ const PROMPTS: PromptDef[] = [
 			SCENE,
 			{ name: 'brief', description: 'What the passage should do.', required: true }
 		],
-		build: (args) =>
+		build: (args, connection) =>
 			framed(
 				universe(args),
 				[
 					currentScene(scene(args)),
 					buildCoauthorMessage(text(args, 'brief', MAX_DRAFT_BRIEF_CHARS))
 				],
-				REPLY_ONLY
+				draftClose(connection, false, 'passage')
 			)
 	},
 	{
@@ -300,7 +311,7 @@ const PROMPTS: PromptDef[] = [
 				required: false
 			}
 		],
-		build: (args) =>
+		build: (args, connection) =>
 			framed(
 				universe(args),
 				[
@@ -312,7 +323,7 @@ const PROMPTS: PromptDef[] = [
 						pov: text(args, 'pov', MAX_DRAFT_POV_CHARS, false)
 					})
 				],
-				REPLY_ONLY
+				draftClose(connection, false)
 			)
 	},
 	{
@@ -335,7 +346,7 @@ const PROMPTS: PromptDef[] = [
 				required: false
 			}
 		],
-		build: (args) =>
+		build: (args, connection) =>
 			framed(
 				universe(args),
 				[
@@ -347,7 +358,7 @@ const PROMPTS: PromptDef[] = [
 						targetWords: words(args)
 					})
 				],
-				`Reply with the drafts in scene order, each under a line that names its scene. ${NOT_STORED}`
+				draftClose(connection, true)
 			)
 	},
 	{

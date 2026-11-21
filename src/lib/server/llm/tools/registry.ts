@@ -134,6 +134,38 @@ export const TOOLS: ToolDef[] = [
 	},
 	{
 		kind: 'write',
+		external: true,
+		name: 'stage_scene_draft',
+		description:
+			'Hand the writer a draft you wrote for a scene. It waits on the scene in Codex, where the writer reads it and either keeps it (into the scene while it is empty, or as a new scene after it) or discards it; it never replaces prose the writer has. A scene takes one undecided draft at a time.',
+		parameters: obj(
+			{
+				sceneId: str('The scene id.'),
+				text: str(
+					'The draft, as manuscript prose with *asterisks* only for italics and no other Markdown.'
+				),
+				brief: str('Optional: one or two sentences on what you were asked to write.')
+			},
+			['sceneId', 'text']
+		)
+	},
+	{
+		kind: 'write',
+		name: 'suggest_entity',
+		description:
+			'Suggest a character, place or lore entry the universe has no entry for yet, such as someone the text names again and again. Staged for the writer to accept or dismiss; nothing is created until they accept. Refused for a name, or another name of an entry, the universe already has: look with search_text first.',
+		parameters: obj(
+			{
+				kind: { type: 'string', enum: ['character', 'place', 'lore'], description: 'What it is.' },
+				name: str('The name of the entry.'),
+				description: str('Optional: one or two sentences on who or what it is.'),
+				seenIn: str('Optional: where in the text it turns up, such as a scene title and a quote.')
+			},
+			['kind', 'name']
+		)
+	},
+	{
+		kind: 'write',
 		name: 'leave_comment',
 		description:
 			'Leave a review comment on a scene, optionally anchored to a quoted passage. Staged for the author like a guest reviewer comment.',

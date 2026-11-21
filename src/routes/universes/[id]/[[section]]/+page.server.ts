@@ -19,6 +19,9 @@ import { exportLimit } from '#lib/server/rate-limit';
 import { formText } from '#lib/server/validation';
 import { assistantLayout, saveUniverseModels } from '#lib/server/llm/config';
 import { modelsFromForm, scopeModelSettings } from '#lib/server/llm/scope-models';
+import { decideEntityProposal, decideSplitProposal, listProposals } from '#lib/server/proposals';
+import { queueSceneMentions, queueUniverseMentions } from '#lib/server/jobs';
+import { isUuid } from '#lib/slug';
 
 // The uploaded file, parsed into a plan: a Codex export zip, or a Word/EPUB
 // manuscript by its extension. Returns a fail() the action passes straight back.
@@ -45,7 +48,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	// their own page.
 	if (
 		params.section !== undefined &&
-		!['categories', 'assistant', 'history', 'export'].includes(params.section)
+		!['categories', 'suggestions', 'assistant', 'history', 'export'].includes(params.section)
 	)
 		error(404, 'Not found');
 	const universe = await ownedUniverse(params.id, locals.user!.id);
@@ -66,6 +69,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		universe,
 		contents,
 		categories,
+		// Entries and scene splits the Assistant or a connected app proposed.
+		proposals: await listProposals(db, locals.user!.id, universe.id),
 		timeline,
 		revisionCount,
 		trashDays: UNIVERSE_TRASH_DAYS,
@@ -170,6 +175,51 @@ export const actions: Actions = {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
 		await trashUniverse(db, locals.user!.id, universe.id);
 		redirect(303, '/');
+	},
+	// Accept or dismiss a suggested entry. Accepting adds it to the universe.
+	decideEntity: async ({ request, params, locals }) => {
+		const universe = await ownedUniverse(params.id, locals.user!.id);
+		const data = await request.formData();
+		const id = formText(data, 'id');
+		const accept = formText(data, 'decision') === 'accept';
+		const result = isUuid(id)
+			? await decideEntityProposal(db, locals.user!.id, id, accept ? 'accept' : 'dismiss')
+			: null;
+		// One of this universe's, or nothing was decided.
+		if (!result || (result.ok && result.universeId !== universe.id)) {
+			return fail(404, {
+				action: 'suggestions',
+				message: 'That suggestion is no longer there.'
+			});
+		}
+		if (!result.ok) return fail(409, { action: 'suggestions', message: result.reason });
+		// The new name may already appear in existing scenes.
+		if (result.entityId) await queueUniverseMentions(universe.id);
+		return {
+			action: 'suggestions',
+			done: accept ? 'Added to this universe. Find it in Plan.' : 'Dismissed.'
+		};
+	},
+	// Split a scene where an app proposed, or dismiss the proposal.
+	decideSplit: async ({ request, params, locals }) => {
+		await ownedUniverse(params.id, locals.user!.id);
+		const data = await request.formData();
+		const id = formText(data, 'id');
+		const confirm = formText(data, 'decision') === 'confirm';
+		const result = isUuid(id)
+			? await decideSplitProposal(db, locals.user!.id, id, confirm ? 'confirm' : 'dismiss')
+			: null;
+		if (!result) {
+			return fail(404, {
+				action: 'suggestions',
+				message: 'That proposal is no longer there.'
+			});
+		}
+		if (!result.ok) return fail(409, { action: 'suggestions', message: result.reason });
+		for (const sceneId of [result.splitSceneId, result.newSceneId]) {
+			if (sceneId) await queueSceneMentions(sceneId);
+		}
+		return { action: 'suggestions', done: confirm ? 'The scene is split in two.' : 'Dismissed.' };
 	},
 	previewImport: async ({ request, params, locals }) => {
 		const universe = await ownedUniverse(params.id, locals.user!.id);
