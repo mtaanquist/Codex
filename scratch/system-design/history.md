@@ -1023,6 +1023,33 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 5 (2026-11-21)
+
+Fixes from the fifth reviews of #1168, branch `fix/scene-draft-review-5` on
+`staging/scene-drafting`. All of it is one situation seen from several
+sides: a draft decided in another window while this one holds unsaved text.
+
+- A refused save with no card on screen left the text held where nothing
+  showed it. Held edits now know their scene, and a card that finds the
+  scene's draft gone or replaced asks for text stranded there
+  (`strandedDraftText`) and shows the "already kept or discarded" view with
+  it. The edit is dropped when the writer closes that view, not when it is
+  shown, so a pane switch in between does not lose it.
+- With the card on screen, a refused save now reads the draft again and
+  goes to the same view when it is no longer waiting. "Changed in another
+  window" is left for a real text conflict. The server's refusal says which
+  it was (decided, or never written), and "Reload the page" is gone, since
+  reloading dropped the typing.
+- Once a refusal has been shown, the edit is not sent again and the page
+  does not ask before it is left.
+- A clean copy follows a fresh read only when this window has never sent
+  a save for the draft. Adopting whenever nothing is unanswered was tried
+  on paper and dropped: a read sent before this window's last save landed
+  can come back after it with older text, which round 3 had fixed.
+- Drafts meter spend with no cap set (`meterUncapped`), so a cap set or
+  raised mid-run is held against the real total; other jobs meter as
+  before.
+
 ## Scene drafting, review round 4 (2026-11-21)
 
 Fixes from the fourth reviews of #1168, branch `fix/scene-draft-review-4` on

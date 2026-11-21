@@ -35,12 +35,19 @@ import {
 	pickModel,
 	resolveLlmConfig
 } from './config.ts';
-import { completeDetailed, NoModelError, requestReplyLimit, type GatewayDeps } from './gateway.ts';
+import {
+	AssistantDisabledError,
+	completeDetailed,
+	NoModelError,
+	ReplyRefusedError,
+	requestReplyLimit,
+	type GatewayDeps
+} from './gateway.ts';
 import { jobSpendMeter } from './job-spend.ts';
 import type { SpendMeter } from './spend.ts';
 import { buildSceneDraftMessage } from './prompts/scene-draft.ts';
 import { adapterKind } from './providers/presets.ts';
-import { stoppedByWriter, type ChatMessage } from './providers/types.ts';
+import { EndpointReplyError, stoppedByWriter, type ChatMessage } from './providers/types.ts';
 
 // A scene draft: one whole scene written to the writer's brief, as a
 // background job. The job only ever writes the draft row (assistant_drafts);
@@ -315,8 +322,20 @@ function draftCostUsd(
 function wouldPassCap(meter: SpendMeter, request: DraftRequest): boolean {
 	const capUsd = request.config.spendCapUsd;
 	if (!capUsd) return false;
+	// The cap in force now, which may not be the one the job started under.
+	if (meter.spentUsd >= capUsd) return true;
 	const cost = draftCostUsd(request, requestTokens(request), request.limit.maxTokens);
 	return cost !== undefined && meter.spentUsd + cost > capUsd + 1e-9;
+}
+
+// Whether the worker would run the job again after this failure. The ones it
+// settles at once (see the draft handlers) end the same way every time.
+function wouldBeRetried(err: unknown): boolean {
+	return !(
+		err instanceof ReplyRefusedError ||
+		err instanceof EndpointReplyError ||
+		err instanceof AssistantDisabledError
+	);
 }
 
 // What a request held back at the cap is told: what it could cost, what the
@@ -327,7 +346,7 @@ function cappedNote(meter: SpendMeter, request: DraftRequest, advice: string): s
 	if (!capUsd || cost === undefined) {
 		return 'This job has reached your spend cap, so the draft was not written. Raise the cap under Account, Assistant.';
 	}
-	return `The next request could cost up to $${cost.toFixed(2)}. This job has spent ${spentPhrase(meter.spentUsd)} and your spend cap is $${capUsd.toFixed(2)}, so it was not sent. ${advice}`;
+	return `The next request could cost up to $${cost.toFixed(2)}. This job has spent ${spentPhrase(meter.spentUsd, meter.spentEstimated)} and your spend cap is $${capUsd.toFixed(2)}, so it was not sent. ${advice}`;
 }
 
 // What the draft would send and cost, counted without sending anything. Null
@@ -536,13 +555,18 @@ export async function runSceneDraft(
 
 	// One request, but a job pg-boss retries sends it again: the meter carries
 	// what earlier attempts spent.
-	const meter = await jobSpendMeter(db, { userId, storyId: draft.storyId, jobId: opts.jobId });
+	const meter = await jobSpendMeter(db, {
+		userId,
+		storyId: draft.storyId,
+		jobId: opts.jobId,
+		meterUncapped: true
+	});
 	const capped = async (): Promise<SceneDraftResult> => {
 		const note = cappedNote(meter, request, sceneCapAdvice(request.limit.thinks));
 		await settleDraft(db, draftId, { status: 'failed', note });
 		return { outcome: 'capped', spentUsd: meter.spentUsd, note };
 	};
-	if (meter.capReached || wouldPassCap(meter, request)) return capped();
+	if (wouldPassCap(meter, request)) return capped();
 
 	await db
 		.update(assistantDrafts)
@@ -575,8 +599,9 @@ export async function runSceneDraft(
 			return { outcome: 'stopped' };
 		}
 		// The failed attempt was billed, and another would not fit under the
-		// cap: the job ends here instead of being sent again.
-		if (wouldPassCap(meter, request)) {
+		// cap: the job ends here instead of being sent again. A failure that
+		// would not be sent again anyway keeps its own reason.
+		if (wouldBeRetried(err) && wouldPassCap(meter, request)) {
 			await meter.flush();
 			return capped();
 		}
@@ -736,10 +761,17 @@ export async function runChapterDraft(
 	const known = new Set(rows.map((row) => row.id));
 	const plans = new Map(rows.flatMap((row) => (row.sceneId ? [[row.sceneId, row.brief]] : [])));
 
-	const meter = await jobSpendMeter(db, { userId, storyId, jobId: opts.jobId });
+	const meter = await jobSpendMeter(db, {
+		userId,
+		storyId,
+		jobId: opts.jobId,
+		meterUncapped: true
+	});
 	let previous: { sceneId: string; text: string } | null = null;
 	let emptyNote: string | undefined;
 	let capNote: string | undefined;
+	// The scene the run was held back at.
+	let cappedAt: string | undefined;
 	let drafted = 0;
 	let words = 0;
 	let cutOff = 0;
@@ -805,8 +837,9 @@ export async function runChapterDraft(
 			continue;
 		}
 		// With this scene the run could pass the cap: it ends here.
-		if (meter.capReached || wouldPassCap(meter, request)) {
+		if (wouldPassCap(meter, request)) {
 			ended = 'capped';
+			cappedAt = draftId;
 			capNote = cappedNote(meter, request, chapterCapAdvice(request.limit.thinks));
 			break;
 		}
@@ -843,8 +876,9 @@ export async function runChapterDraft(
 			}
 			// The failed attempt was billed, and another would not fit under
 			// the cap.
-			if (wouldPassCap(meter, request)) {
+			if (wouldBeRetried(err) && wouldPassCap(meter, request)) {
 				ended = 'capped';
+				cappedAt = draftId;
 				capNote = cappedNote(meter, request, chapterCapAdvice(request.limit.thinks));
 				break;
 			}
@@ -883,6 +917,10 @@ export async function runChapterDraft(
 		previous = { sceneId: draft.sceneId, text };
 	}
 
+	// Nothing was drafted, so there is no card to say why but this scene's.
+	if (cappedAt && capNote && drafted === 0) {
+		await settleDraft(db, cappedAt, { status: 'failed', note: capNote });
+	}
 	if (ended) await discardRest(db, [...known]);
 	return {
 		outcome: 'done',

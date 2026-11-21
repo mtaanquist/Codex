@@ -269,6 +269,30 @@ describe('gateway gating', () => {
 		expect(captured?.extraParams).toEqual({ top_p: 0.4, min_p: 0.05 });
 	});
 
+	it('leaves reply limits and counts in the extra parameters of an unbounded request', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			extraParams: { max_completion_tokens: 900, n: 2 },
+			toolCallBudget: 8
+		});
+		for (const role of ['chat', 'reviewer'] as const) {
+			await complete(db, { userId, role, messages: [] }, stubDeps);
+			expect(captured?.extraParams).toEqual({ max_completion_tokens: 900, n: 2 });
+		}
+		// Only a request that knows what its reply needs has them taken out.
+		await complete(
+			db,
+			{ userId, role: 'chat', messages: [], maxTokens: 500, boundedReply: true },
+			stubDeps
+		);
+		expect(captured?.extraParams).toBeUndefined();
+	});
+
 	it('offers the provider web search only on an established universe, when opted in', async () => {
 		const anthropic = {
 			enabled: true,

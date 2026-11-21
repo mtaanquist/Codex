@@ -51,6 +51,7 @@ export class SpendMeter {
 	private unreported = false;
 	private estimated = false;
 	private readonly persist: ((spentUsd: number) => Promise<void>) | undefined;
+	private readonly uncapped: boolean;
 	private saving: Promise<void> = Promise.resolve();
 
 	// spentUsd seeds the meter with what an earlier attempt of the same job
@@ -59,25 +60,29 @@ export class SpendMeter {
 	// another, and flush waits for the last.
 	// claude says the requests go to the Claude provider, whose cache read
 	// rate is known; without it cached tokens are metered at the full price.
+	// meterUncapped keeps count with no cap set too, for a job that holds its
+	// spend against the cap in force at each request, which may be set later.
 	constructor(opts: {
 		pricing?: ModelPricing;
 		claude?: boolean;
 		capUsd?: number;
 		spentUsd?: number;
 		persist?: (spentUsd: number) => Promise<void>;
+		meterUncapped?: boolean;
 	}) {
 		this.pricing = opts.pricing;
 		this.claude = opts.claude ?? false;
 		this.capUsd = opts.capUsd;
 		this.usd = opts.spentUsd ?? 0;
 		this.persist = opts.persist;
+		this.uncapped = opts.meterUncapped ?? false;
 	}
 
 	// One request's reported usage. A model with no price marks the run
 	// unpriceable; so does a priced model the endpoint reported no counts for,
 	// which would otherwise accrue nothing and let the ceiling pass unenforced.
 	record(model: string, usage?: TokenUsage): void {
-		if (!this.capUsd) return;
+		if (!this.capUsd && !this.uncapped) return;
 		if (!this.pricing?.[model]) {
 			this.unpriced = true;
 			return;
