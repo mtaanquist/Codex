@@ -977,24 +977,6 @@ result as a suggested edit when the connection may suggest. `write`, `draft`
 and `draft-chapter` hand their result over with `stage_scene_draft` when the
 connection may suggest, and give it in the reply otherwise.
 
-Prompts. Each Assistant command that starts work has an MCP prompt of the same
-name (`mcp/prompts.ts`): `review`, `copyedit`, `continuity-review`, `write`,
-`rewrite`, `draft`, `draft-chapter`, `catchup`, `who`, `find`, and
-`pattern-pass` (in the app a tick box in the review window, not a command). A
-prompt is the Assistant's own instruction for that work, from the builders in
-`llm/prompts`, inside a frame that tells the agent which universe id to pass,
-to read through the tools (it has no assembled context), and that it only
-stages. The two passes Codex runs in stages for its own model (continuity,
-patterns) are given to an agent as one brief each (`buildContinuityBrief`,
-`buildPatternBrief`) made of the same looks-for lists and staging rules; the
-JSON hand-off between Codex's stages is left out. `/who` and `/find` share
-their one-line asks with the chat panel (`assistant-slash.ts`). A prompt reads
-nothing from the database: it is text around the ids and words the caller
-sent, and the tools it names do the ownership checks. The prompts that stage
-notes are offered only to a connection that may suggest. `rewrite` stages its
-result as a suggested edit when the connection may suggest. The drafting
-prompts give their result in the reply until `stage_scene_draft` exists.
-
 Exceptions to "one toolbox for both", each with its reason:
 
 - `list_universes` and `list_stories` are offered over MCP only

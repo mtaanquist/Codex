@@ -394,13 +394,6 @@ search. Where an app shows them depends on the app; look for a list of prompts
 or commands from Codex, pick one, and fill in what it asks for. You can also
 ask the app in your own words.
 
-A connected app is also given ready-made prompts for the work the Assistant
-does in Codex: review, copyedit, continuity review, pattern pass, write,
-rewrite, draft, draft a chapter, catch me up, a character or place sheet, and
-search. Where an app shows them depends on the app; look for a list of prompts
-or commands from Codex, pick one, and fill in what it asks for. You can also
-ask the app in your own words.
-
 "Apps with access" lists every connected app with what it may do and when it
 was last used. Select Disconnect to stop one at once. Turning off "Allow other
 apps to connect" disconnects them all, and so does changing or resetting your
