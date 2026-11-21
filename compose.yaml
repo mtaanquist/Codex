@@ -176,7 +176,7 @@ services:
 
   caddy:
     logging: *logging
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     profiles:
       - caddy
     restart: unless-stopped
