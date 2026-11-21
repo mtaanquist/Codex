@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
-import { isHttpError, isRedirect } from '@sveltejs/kit';
+import { isHttpError } from '@sveltejs/kit';
 import type pg from 'pg';
 import {
 	apiTokens,
@@ -40,6 +40,7 @@ const { hashPassword } = await import('#lib/server/password');
 const { changePassword } = await import('#lib/server/account');
 const { requestPasswordReset, resetPassword } = await import('#lib/server/password-reset');
 const { scheduleAccountDeletion } = await import('#lib/server/account-deletion');
+const { setUserSuspended } = await import('#lib/server/admin');
 const { findClient, registerClient } = await import('#lib/server/mcp/clients');
 const {
 	createAuthorizationCode,
@@ -49,6 +50,7 @@ const {
 	listPersonalTokens,
 	purgeExternalAccess,
 	refreshTokens,
+	revokeAllGrants,
 	resolveBearer,
 	revokeGrant,
 	revokeToken
@@ -405,6 +407,95 @@ describe('disconnecting', () => {
 		expect(await resolveBearer(db, tokens.accessToken)).toBeNull();
 	});
 
+	it('spends the codes of an app when it is disconnected', async () => {
+		await connect(alice);
+		const [grant] = await listGrants(db, alice);
+		// Issued a moment before the writer selects Disconnect.
+		const pending = await codeFor(alice);
+		const bobs = await codeFor(bob);
+		const other = await newClient(['https://other.example/cb'], 'Other');
+		const others = await createAuthorizationCode(db, {
+			userId: alice,
+			client: other,
+			permissions: ['read'],
+			redirectUri: 'https://other.example/cb',
+			codeChallenge: CHALLENGE
+		});
+		expect(await revokeGrant(db, alice, grant.id)).toBe(true);
+		expect(await exchange(pending)).toEqual({ ok: false });
+		expect(await listGrants(db, alice)).toHaveLength(0);
+		// Another writer's code, and a code for another app, are untouched.
+		expect((await exchange(bobs)).ok).toBe(true);
+		const kept = await exchangeCode(db, {
+			code: others,
+			clientId: other.clientId,
+			redirectUri: 'https://other.example/cb',
+			codeVerifier: VERIFIER
+		});
+		expect(kept.ok).toBe(true);
+	});
+
+	it('leaves no live token when a code is exchanged while everything is revoked', async () => {
+		// The two run on separate connections and are started together; whatever
+		// the order, the writer ends with nothing connected.
+		for (let round = 0; round < 40; round++) {
+			const code = await codeFor(alice);
+			const [exchanged] = await Promise.all([
+				exchange(code),
+				db.transaction((tx) => revokeAllGrants(tx, alice))
+			]);
+			if (exchanged.ok) {
+				expect(await resolveBearer(db, exchanged.tokens.accessToken)).toBeNull();
+				expect(
+					await refreshTokens(db, {
+						refreshToken: exchanged.tokens.refreshToken,
+						clientId: client.clientId
+					})
+				).toEqual({ ok: false });
+			}
+			expect(await listGrants(db, alice)).toHaveLength(0);
+			const { rows } = await pool.query(
+				`select count(*)::int as n from api_tokens where user_id = $1 and revoked_at is null`,
+				[alice]
+			);
+			expect(rows[0].n).toBe(0);
+		}
+	});
+
+	it('leaves no live token when a refresh races the same revocation', async () => {
+		for (let round = 0; round < 20; round++) {
+			const tokens = await connect(alice);
+			const [refreshed] = await Promise.all([
+				refreshTokens(db, { refreshToken: tokens.refreshToken, clientId: client.clientId }),
+				db.transaction((tx) => revokeAllGrants(tx, alice))
+			]);
+			if (refreshed.ok) {
+				expect(await resolveBearer(db, refreshed.tokens.accessToken)).toBeNull();
+			}
+			const { rows } = await pool.query(
+				`select count(*)::int as n from api_tokens where user_id = $1 and revoked_at is null`,
+				[alice]
+			);
+			expect(rows[0].n).toBe(0);
+		}
+	});
+
+	it('disconnects every app when an admin suspends the account', async () => {
+		const tokens = await connect(alice);
+		const bobs = await connect(bob);
+		const pending = await codeFor(alice);
+		expect(await setUserSuspended(db, alice, true)).toBe(true);
+		// Lifting the suspension does not bring the connection back.
+		expect(await setUserSuspended(db, alice, false)).toBe(true);
+		expect(await resolveBearer(db, tokens.accessToken)).toBeNull();
+		expect(
+			await refreshTokens(db, { refreshToken: tokens.refreshToken, clientId: client.clientId })
+		).toEqual({ ok: false });
+		expect(await exchange(pending)).toEqual({ ok: false });
+		expect(await listGrants(db, alice)).toHaveLength(0);
+		expect((await resolveBearer(db, bobs.accessToken))?.userId).toBe(bob);
+	});
+
 	it('leaves nothing behind when the account row goes', async () => {
 		await connect(alice);
 		await codeFor(alice);
@@ -420,7 +511,7 @@ describe('clients', () => {
 	const doc = (extra: Record<string, unknown> = {}) => ({
 		client_id: URL_ID,
 		client_name: 'Desk',
-		redirect_uris: ['https://desk.example/cb', 'http://localhost/callback'],
+		redirect_uris: ['https://desk.example/cb', 'https://desk.example/cb2'],
 		token_endpoint_auth_method: 'none',
 		...extra
 	});
@@ -434,6 +525,28 @@ describe('clients', () => {
 		expect(await findClient(db, 'never-registered')).toBeNull();
 	});
 
+	it('refuses a client whose redirect addresses are on more than one host', async () => {
+		// Shown as "Claude (claude.ai)" while the code would go to evil.example.
+		const mixed = await registerClient(db, {
+			client_name: 'Claude',
+			redirect_uris: ['https://claude.ai/api/mcp/auth_callback', 'https://evil.example/cb']
+		});
+		expect(mixed).toMatchObject({ ok: false, error: 'invalid_redirect_uri' });
+		const withLocal = await registerClient(db, {
+			client_name: 'Claude',
+			redirect_uris: ['https://claude.ai/api/mcp/auth_callback', 'http://localhost/cb']
+		});
+		expect(withLocal.ok).toBe(false);
+		expect(
+			await db.select().from(oauthClients).where(eq(oauthClients.clientName, 'Claude'))
+		).toEqual([]);
+		// A metadata document is held to the same rule.
+		const fetchDocument = vi.fn(async () =>
+			doc({ redirect_uris: ['https://desk.example/cb', 'https://evil.example/cb'] })
+		);
+		expect(await findClient(db, URL_ID, fetchDocument)).toBeNull();
+	});
+
 	it('reads a metadata document once, names its host, and caches it', async () => {
 		const fetchDocument = vi.fn(async () => doc());
 		const first = await findClient(db, URL_ID, fetchDocument);
@@ -442,7 +555,7 @@ describe('clients', () => {
 			clientId: URL_ID,
 			clientName: 'Desk',
 			host: 'desk.example',
-			redirectUris: ['https://desk.example/cb', 'http://localhost/callback']
+			redirectUris: ['https://desk.example/cb', 'https://desk.example/cb2']
 		});
 		const second = await findClient(db, URL_ID, fetchDocument);
 		expect(second?.id).toBe(first?.id);
@@ -532,7 +645,7 @@ describe('the authorization request', () => {
 		expect(await request({ redirect_uri: null })).toMatchObject({ kind: 'invalid' });
 	});
 
-	it('tells the client, at its own address, about any other fault', async () => {
+	it('names the fault and the clients own address for any other fault', async () => {
 		for (const [overrides, error] of [
 			[{ response_type: 'token' }, 'unsupported_response_type'],
 			[{ code_challenge: null }, 'invalid_request'],
@@ -547,6 +660,7 @@ describe('the authorization request', () => {
 			expect(location.searchParams.get('error')).toBe(error);
 			expect(location.searchParams.get('state')).toBe('xyz');
 			expect(location.searchParams.get('iss')).toBe(ORIGIN);
+			expect(result.host).toBe('app.example');
 		}
 	});
 });
@@ -873,14 +987,48 @@ describe('the consent page', () => {
 		).toMatchObject({ status: 'invalid' });
 	});
 
-	it('sends a faulty request back to the client', async () => {
-		const err = await load(alice, authorizeQuery({ response_type: 'token' })).then(
-			() => null,
-			(thrown: unknown) => thrown
+	it('shows a faulty request as an error with a link back, and redirects nobody', async () => {
+		// Sent on without a click, this page would forward a visitor to any
+		// address a self-registered client chose.
+		const data = (await load(alice, authorizeQuery({ response_type: 'token' }))) as unknown as {
+			status: string;
+			host: string;
+			returnTo: string;
+		};
+		expect(data.status).toBe('refused');
+		expect(data.host).toBe('app.example');
+		expect(data.returnTo.startsWith(REDIRECT)).toBe(true);
+		expect(new URL(data.returnTo).searchParams.get('error')).toBe('unsupported_response_type');
+		// Answering a form whose request has been made faulty goes nowhere either.
+		for (const action of ['allow', 'deny'] as const) {
+			const result = await answer(action, alice, authorizeQuery({ response_type: 'token' }));
+			expect(result.status).toBe(400);
+			expect(result.continueTo).toBeUndefined();
+		}
+		expect(await db.select().from(oauthCodes)).toHaveLength(0);
+	});
+
+	it('names the host the answer goes to, whatever the client registered first', async () => {
+		// A row from before registration held every address to one host.
+		const [old] = await db
+			.insert(oauthClients)
+			.values({
+				clientId: 'old-mixed-client',
+				kind: 'dcr',
+				clientName: 'Claude',
+				host: 'claude.ai',
+				redirectUris: ['https://claude.ai/api/mcp/auth_callback', 'https://evil.example/cb']
+			})
+			.returning();
+		const data = await load(
+			alice,
+			authorizeQuery({ client_id: old.clientId, redirect_uri: 'https://evil.example/cb' })
 		);
-		if (!isRedirect(err)) throw new Error(`expected a redirect, got ${JSON.stringify(err)}`);
-		expect(err.location.startsWith(REDIRECT)).toBe(true);
-		expect(new URL(err.location).searchParams.get('error')).toBe('unsupported_response_type');
+		expect(data).toMatchObject({
+			status: 'ok',
+			client: { clientName: 'Claude', host: 'evil.example' },
+			local: false
+		});
 	});
 
 	it('issues a code only on Allow, for the signed-in writer, with what was ticked', async () => {
@@ -1198,9 +1346,47 @@ describe('making a token on the account page', () => {
 });
 
 describe('the account page actions', () => {
+	it('asks for the password, and a code with two-factor, to turn access on', async () => {
+		const carol = await addUser('carol@example.com', {
+			mcpEnabled: false,
+			passwordHash: await hashPassword('carols password')
+		});
+		const turnOn = async (extra: Record<string, string>) =>
+			(await accountPage.actions.setExternalAccess(
+				accountEvent(carol, { enabled: 'on', ...extra }) as never
+			)) as { status?: number; data?: { message?: string } };
+		const isOn = async () =>
+			(await db.select({ on: users.mcpEnabled }).from(users).where(eq(users.id, carol)))[0].on;
+
+		// A borrowed session alone cannot open the account to apps.
+		expect((await turnOn({})).status).toBe(400);
+		const wrong = await turnOn({ password: 'not it' });
+		expect(wrong.data?.message).toBe('That password is not right.');
+		expect(await isOn()).toBe(false);
+
+		const begin = await beginEnrollment(db, carol, 'carol@example.com');
+		if (!begin.ok) throw new Error(begin.reason);
+		expect((await confirmEnrollment(db, carol, totpCode(begin.secret))).ok).toBe(true);
+		expect((await turnOn({ password: 'carols password' })).status).toBe(400);
+		expect((await turnOn({ password: 'carols password', code: '000000' })).status).toBe(400);
+		expect(await isOn()).toBe(false);
+		const next = totpCode(begin.secret, Date.now() + 30_000);
+		expect((await turnOn({ password: 'carols password', code: next })).status).toBeUndefined();
+		expect(await isOn()).toBe(true);
+
+		// Turning it off asks for nothing.
+		await accountPage.actions.setExternalAccess(accountEvent(carol, {}) as never);
+		expect(await isOn()).toBe(false);
+	});
+
 	it('turns access on and off, disconnecting on the way out', async () => {
-		const carol = await addUser('carol@example.com', { mcpEnabled: false });
-		await accountPage.actions.setExternalAccess(accountEvent(carol, { enabled: 'on' }) as never);
+		const carol = await addUser('carol@example.com', {
+			mcpEnabled: false,
+			passwordHash: await hashPassword('carols password')
+		});
+		await accountPage.actions.setExternalAccess(
+			accountEvent(carol, { enabled: 'on', password: 'carols password' }) as never
+		);
 		client = await newClient();
 		const tokens = await connect(carol);
 		await accountPage.actions.setExternalAccess(accountEvent(carol, {}) as never);

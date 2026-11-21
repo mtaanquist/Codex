@@ -1,4 +1,4 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { db } from '#lib/server/db';
 import { logEvent } from '#lib/server/log';
@@ -29,9 +29,11 @@ export const load: PageServerLoad = async ({ url, locals, setHeaders }) => {
 		publicOrigin(url)
 	);
 	if (check.kind === 'invalid') return { status: 'invalid' as const, message: check.message };
-	// The address was matched against the client's registration, so leaving
-	// this site for it is intended.
-	if (check.kind === 'refused') redirect(302, check.location, { external: true });
+	// A faulty request is shown, with a link to the app's own address. It is
+	// not followed for the visitor (see AuthorizeCheck).
+	if (check.kind === 'refused') {
+		return { status: 'refused' as const, host: check.host, returnTo: check.location };
+	}
 
 	const user = locals.user!;
 	const { client } = check;
@@ -40,7 +42,13 @@ export const load: PageServerLoad = async ({ url, locals, setHeaders }) => {
 		status: 'ok' as const,
 		accessOn: await mcpAccountEnabled(db, user.id),
 		email: user.email,
-		client: { clientName: client.clientName, host: client.host },
+		// A client that registered itself is named by the host the answer goes
+		// to, read from the address in use and not from the registration. One
+		// named by a metadata document keeps the document's host.
+		client: {
+			clientName: client.clientName,
+			host: client.kind === 'dcr' ? redirectHost(check.redirectUri) : client.host
+		},
 		// Shown when the answer goes somewhere other than the app's own host.
 		redirectHost: redirectHost(check.redirectUri),
 		local: isLoopbackRedirect(check.redirectUri),
@@ -68,6 +76,9 @@ async function recheck(data: FormData, url: URL) {
 	);
 }
 
+const FAULTY =
+	'The request from the app is not one Codex can answer. Nothing was shared with it. Go back to the app and try connecting again.';
+
 // Both actions answer with the address to go to next rather than a redirect:
 // the page's own policy only lets its forms submit to this site, and some
 // browsers apply that to a redirect that follows a form.
@@ -76,7 +87,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const check = await recheck(data, url);
 		if (check.kind === 'invalid') return fail(400, { message: check.message });
-		if (check.kind === 'refused') return { continueTo: check.location };
+		if (check.kind === 'refused') return fail(400, { message: FAULTY });
 		const user = locals.user!;
 		if (!(await mcpAccountEnabled(db, user.id))) {
 			return fail(403, {
@@ -108,7 +119,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const check = await recheck(data, url);
 		if (check.kind === 'invalid') return fail(400, { message: check.message });
-		if (check.kind === 'refused') return { continueTo: check.location };
+		if (check.kind === 'refused') return fail(400, { message: FAULTY });
 		logEvent('info', 'oauth.denied', {
 			userId: locals.user!.id,
 			clientId: check.client.clientId

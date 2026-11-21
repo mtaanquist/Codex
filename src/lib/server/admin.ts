@@ -4,6 +4,7 @@ import { authTokens, sessions, stories, universes, users, userTotp } from './db/
 import { hashPassword } from './password.ts';
 import { isUniqueViolation } from './db-errors.ts';
 import { revokeTokens } from './tokens.ts';
+import { revokeAllGrants } from './mcp/oauth.ts';
 
 export type CreateAdminResult = { ok: true; id: string } | { ok: false; reason: string };
 
@@ -200,7 +201,7 @@ export async function setUserArchive(
 }
 
 // Suspends or unsuspends an account. Suspending blocks sign-in and revokes the
-// account's live sessions and unused sign-in links then and there, so
+// account's live sessions, unused sign-in links and connected apps then and there, so
 // unsuspending later cannot bring old access back to life; it never touches an admin.
 export async function setUserSuspended(
 	db: Database,
@@ -220,6 +221,8 @@ export async function setUserSuspended(
 				.set({ revokedAt: sql`now()` })
 				.where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
 			await revokeTokens(tx, userId, 'sign_in');
+			// Connected apps and personal access tokens go the same way.
+			await revokeAllGrants(tx, userId);
 		}
 		return true;
 	});

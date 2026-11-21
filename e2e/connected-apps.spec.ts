@@ -45,15 +45,32 @@ test('a writer connects an app, disconnects it, then makes and revokes a token',
 	await expect(page.getByRole('heading', { name: 'Connect an app' })).toBeVisible();
 	await expect(page.getByText('E2E Desk (localhost) wants to connect')).toBeVisible();
 
+	// A faulty request is shown here with a link back. The browser is not
+	// sent on to the app's address by itself.
+	await gotoReady(page, authorize.replace('response_type=code', 'response_type=token'));
+	await expect(
+		page.getByRole('heading', { name: 'This request cannot be answered' })
+	).toBeVisible();
+	await expect(page).toHaveURL(/\/oauth\/authorize\?/);
+	await expect(page.getByRole('link', { name: 'Return to localhost' })).toHaveAttribute(
+		'href',
+		/^http:\/\/localhost:9\/callback\?error=unsupported_response_type/
+	);
+	await gotoReady(page, authorize);
+
 	// Access is off until the writer turns it on, and there is nothing to allow.
 	await expect(page.getByRole('button', { name: 'Allow', exact: true })).toHaveCount(0);
 	await page.getByRole('link', { name: 'Open Connected apps' }).click();
 	await expect(page.getByRole('heading', { name: 'Connected apps' })).toBeVisible();
 	await waitForHydration(page);
-	// The checkbox is a hidden input behind the switch, so click the switch.
-	await page
-		.locator('label.toggle', { has: page.getByLabel('Allow other apps to connect') })
-		.click();
+	// Turning access on asks for the password; a wrong one leaves it off.
+	const accessForm = page.locator('form[action="?/setExternalAccess"]');
+	await accessForm.getByLabel('Confirm your password').fill('not-the-password');
+	await accessForm.getByRole('button', { name: 'Turn on access for apps' }).click();
+	await expect(page.getByText('That password is not right.')).toBeVisible();
+	await expect(page.getByLabel('Address to give the app')).toHaveCount(0);
+	await accessForm.getByLabel('Confirm your password').fill('e2e-password');
+	await accessForm.getByRole('button', { name: 'Turn on access for apps' }).click();
 	await expect(page.getByLabel('Address to give the app')).toHaveValue(/\/api\/mcp$/);
 	await expect(page.getByText('No app is connected. Paste the address above')).toBeVisible();
 

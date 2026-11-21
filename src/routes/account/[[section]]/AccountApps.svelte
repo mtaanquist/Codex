@@ -66,31 +66,71 @@
 
 <div class="admin-block">
 	<div class="admin-card">
-		<form
-			method="POST"
-			action="?/setExternalAccess"
-			use:enhance={autosaveSubmit}
-			onchange={onToggle}
-		>
-			<div class="toggle-row">
-				<label class="toggle">
+		{#if !access.enabled}
+			<!-- Turning access on lets an app in, so it asks who is there. Turning
+			     it off, below, asks for nothing. -->
+			<form method="POST" action="?/setExternalAccess" autocomplete="off">
+				<input type="hidden" name="enabled" value="on" />
+				<div class="t-title">Allow other apps to connect</div>
+				<div class="t-sub">
+					This is off, so no app can connect or read anything. To turn it on, confirm it is you.
+				</div>
+				<div class="field" style="margin-top:var(--space-4);">
+					<label for="access-password">Confirm your password</label>
 					<input
-						type="checkbox"
-						name="enabled"
-						aria-label="Allow other apps to connect"
-						checked={access.enabled}
+						id="access-password"
+						class="input short"
+						type="password"
+						name="password"
+						required
+						autocomplete="current-password"
 					/>
-					<span class="toggle-track"></span>
-				</label>
-				<div style="flex:1;">
-					<div class="t-title">Allow other apps to connect</div>
-					<div class="t-sub">
-						While this is off, no app can connect or read anything. Turning it off disconnects every
-						app listed below.
+				</div>
+				{#if access.needsCode}
+					<div class="field">
+						<label for="access-code">Code from your authenticator app</label>
+						<input
+							id="access-code"
+							class="input short"
+							type="text"
+							name="code"
+							inputmode="numeric"
+							required
+							autocomplete="one-time-code"
+						/>
+					</div>
+				{/if}
+				<div class="settings-actions">
+					<button type="submit" class="btn btn-primary">Turn on access for apps</button>
+				</div>
+			</form>
+		{:else}
+			<form
+				method="POST"
+				action="?/setExternalAccess"
+				use:enhance={autosaveSubmit}
+				onchange={onToggle}
+			>
+				<div class="toggle-row">
+					<label class="toggle">
+						<input
+							type="checkbox"
+							name="enabled"
+							aria-label="Allow other apps to connect"
+							checked={access.enabled}
+						/>
+						<span class="toggle-track"></span>
+					</label>
+					<div style="flex:1;">
+						<div class="t-title">Allow other apps to connect</div>
+						<div class="t-sub">
+							Turning this off disconnects every app and revokes every token listed below. Turning
+							it on again asks for your password.
+						</div>
 					</div>
 				</div>
-			</div>
-		</form>
+			</form>
+		{/if}
 
 		{#if access.enabled}
 			<div class="field" style="margin:var(--space-4) 0 0;">
