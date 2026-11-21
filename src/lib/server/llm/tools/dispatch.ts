@@ -1,13 +1,6 @@
-import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../../auth.ts';
-import {
-	reviewComments,
-	reviewSuggestions,
-	reviewThreads,
-	scenes,
-	stories,
-	universes
-} from '../../db/schema.ts';
+import { reviewSuggestions, reviewThreads, scenes, stories, universes } from '../../db/schema.ts';
 import { resolveOwnedEntity } from '../../entity-lookups.ts';
 import { ownedUniverseRow, storyAssistantOn, storyIsLive } from '../../universe-scope.ts';
 import { entityAppearances, getEntityCard } from '../../plan-data.ts';
@@ -18,10 +11,12 @@ import {
 	clientNotesWaiting,
 	createSuggestion,
 	createThread,
+	FOLLOW_UP_EXISTS,
 	FOLLOW_UP_NEIGHBOURS,
 	followUpExists,
 	getOwnNote,
 	isOwnNote,
+	isOwnThread,
 	listOwnNotes,
 	MAX_COMMENT_LENGTH,
 	openAssistantNote,
@@ -138,9 +133,13 @@ export type ToolOutcome = {
 	// How many notes the call staged, when one call stages several (a pattern
 	// note with its edits); counts in place of note.
 	noteCount?: number;
-	// True when the handler threw. The result then carries the error's own
-	// message, which is fine for the writer's model and not for an outside app.
+	// True when the handler threw. The result says only that it failed, unless
+	// the error was one of the app's own with a message meant to be read.
 	failed?: boolean;
+	// The database's error code, when it was the database that failed. The one
+	// detail of such an error that is safe to log: its message carries the
+	// statement and the values bound to it, which are the writer's prose.
+	errorCode?: string;
 	// A staged action the surface should show alongside the reply (a proposal
 	// card with a confirm button); the gateway forwards it on the stream.
 	surface?: { type: 'proposal'; proposal: SplitProposal };
@@ -214,90 +213,138 @@ export async function dispatchToolCall(
 	} catch {
 		return { result: 'Could not parse the tool arguments as JSON.', staged: false };
 	}
-	try {
-		switch (call.name) {
-			case 'list_universes':
-				return { result: await listUniverses(ctx), staged: false };
-			case 'list_stories':
-				return { result: await listStories(ctx), staged: false };
-			case 'list_scenes':
-				return { result: await listScenes(ctx), staged: false };
-			case 'get_scene':
-				return { result: await getScene(ctx, asString(args.sceneId)), staged: false };
-			case 'get_entity':
-				return { result: await getEntity(ctx, asString(args.entityId)), staged: false };
-			case 'find_appearances':
-				return { result: await findAppearances(ctx, asString(args.entityId)), staged: false };
-			case 'search_text':
-				return { result: await searchText(ctx, asString(args.query)), staged: false };
-			case 'list_review_notes':
-				return { result: await listReviewNotes(ctx, asString(args.storyId)), staged: false };
-			case 'get_review_note':
-				return { result: await getReviewNote(ctx, asString(args.noteId)), staged: false };
-			case 'suggest_edit':
-				return suggestEdit(ctx, {
-					sceneId: asString(args.sceneId),
-					original: asString(args.original),
-					replacement: asString(args.replacement),
-					reason: asString(args.reason),
-					patternNoteId: asString(args.patternNoteId),
-					followsSuggestionId: asString(args.followsSuggestionId)
-				});
-			case 'leave_comment':
-				return leaveComment(ctx, {
-					sceneId: asString(args.sceneId),
-					comment: asString(args.comment),
-					quote: typeof args.quote === 'string' ? args.quote : undefined
-				});
-			case 'leave_pattern_note':
-				return leavePatternNote(ctx, {
-					sceneId: asString(args.sceneId),
-					comment: asString(args.comment),
-					edits: asList(args.edits).map((edit) => ({
-						original: asString(edit.original),
-						replacement: asString(edit.replacement),
-						reason: asString(edit.reason)
-					})),
-					kept: asList(args.kept).map((entry) => ({
-						quote: asString(entry.quote),
-						reason: asString(entry.reason)
-					}))
-				});
-			case 'propose_scene_split':
-				return proposeSceneSplit(ctx, {
-					sceneId: asString(args.sceneId),
-					// The old parameter name rides as a fallback for any provider
-					// still answering against a cached tool schema. Remove once
-					// cached schemas have aged out; nothing else uses "before".
-					before: asString(args.newSceneStart) || asString(args.before),
-					rationale: asString(args.rationale)
-				});
-			case 'suggest_entity':
-				return suggestEntity(ctx, {
-					kind: asString(args.kind),
-					name: asString(args.name),
-					description: asString(args.description),
-					seenIn: asString(args.seenIn)
-				});
-			case 'stage_scene_draft':
-				return stageSceneDraft(ctx, {
-					sceneId: asString(args.sceneId),
-					text: asString(args.text),
-					brief: asString(args.brief)
-				});
-			case 'reply_in_thread':
-				return replyInThread(ctx, asString(args.comment), asString(args.threadId));
-			case 'update_suggestion':
-				return updateSuggestion(ctx, asString(args.replacement), asString(args.suggestionId));
-			default:
-				return { result: `Unhandled tool: ${call.name}.`, staged: false };
-		}
-	} catch (err) {
+	// The database takes no text with a null character in it, and would answer
+	// with an error that quotes the statement.
+	if (hasNullCharacter(args)) {
 		return {
-			result: `Tool error: ${err instanceof Error ? err.message : 'failed'}.`,
-			staged: false,
-			failed: true
+			result: 'Text cannot contain the null character. Remove it and try again.',
+			staged: false
 		};
+	}
+	try {
+		const { external } = ctx;
+		if (!external || tool.kind !== 'write') return await runTool(ctx, call.name, args);
+		// An app's staging calls for one universe run one at a time. Each of them
+		// checks before it writes (a repeat, a ceiling, whose turn it is), and
+		// calls sent together would otherwise all pass the check. The lock is
+		// taken first and held to the end of the call, so it orders nothing
+		// against the locks the handlers take.
+		return await ctx.db.transaction(async (tx) => {
+			const key = `mcp-staging:${external.client.id}:${ctx.universeId}`;
+			await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+			return await runTool({ ...ctx, db: tx }, call.name, args);
+		});
+	} catch (err) {
+		return toolFailure(err);
+	}
+}
+
+function hasNullCharacter(value: unknown): boolean {
+	if (typeof value === 'string') return value.includes('\u0000');
+	if (Array.isArray(value)) return value.some(hasNullCharacter);
+	if (value && typeof value === 'object') return Object.values(value).some(hasNullCharacter);
+	return false;
+}
+
+// What a throw inside a handler becomes. A database error is never quoted:
+// its message is the statement with its parameters.
+function toolFailure(err: unknown): ToolOutcome {
+	const cause = (err as { cause?: { code?: unknown } } | null)?.cause;
+	const code = typeof cause?.code === 'string' ? cause.code : undefined;
+	const fromDatabase =
+		code !== undefined || typeof (err as { query?: unknown })?.query === 'string';
+	return {
+		result:
+			err instanceof Error && !fromDatabase
+				? `Tool error: ${err.message}.`
+				: 'Tool error: the request could not be completed.',
+		staged: false,
+		failed: true,
+		errorCode: code
+	};
+}
+
+async function runTool(
+	ctx: ToolContext,
+	name: string,
+	args: Record<string, unknown>
+): Promise<ToolOutcome> {
+	switch (name) {
+		case 'list_universes':
+			return { result: await listUniverses(ctx), staged: false };
+		case 'list_stories':
+			return { result: await listStories(ctx), staged: false };
+		case 'list_scenes':
+			return { result: await listScenes(ctx), staged: false };
+		case 'get_scene':
+			return { result: await getScene(ctx, asString(args.sceneId)), staged: false };
+		case 'get_entity':
+			return { result: await getEntity(ctx, asString(args.entityId)), staged: false };
+		case 'find_appearances':
+			return { result: await findAppearances(ctx, asString(args.entityId)), staged: false };
+		case 'search_text':
+			return { result: await searchText(ctx, asString(args.query)), staged: false };
+		case 'list_review_notes':
+			return { result: await listReviewNotes(ctx, asString(args.storyId)), staged: false };
+		case 'get_review_note':
+			return { result: await getReviewNote(ctx, asString(args.noteId)), staged: false };
+		case 'suggest_edit':
+			return await suggestEdit(ctx, {
+				sceneId: asString(args.sceneId),
+				original: asString(args.original),
+				replacement: asString(args.replacement),
+				reason: asString(args.reason),
+				patternNoteId: asString(args.patternNoteId),
+				followsSuggestionId: asString(args.followsSuggestionId)
+			});
+		case 'leave_comment':
+			return await leaveComment(ctx, {
+				sceneId: asString(args.sceneId),
+				comment: asString(args.comment),
+				quote: typeof args.quote === 'string' ? args.quote : undefined
+			});
+		case 'leave_pattern_note':
+			return await leavePatternNote(ctx, {
+				sceneId: asString(args.sceneId),
+				comment: asString(args.comment),
+				edits: asList(args.edits).map((edit) => ({
+					original: asString(edit.original),
+					replacement: asString(edit.replacement),
+					reason: asString(edit.reason)
+				})),
+				kept: asList(args.kept).map((entry) => ({
+					quote: asString(entry.quote),
+					reason: asString(entry.reason)
+				}))
+			});
+		case 'propose_scene_split':
+			return await proposeSceneSplit(ctx, {
+				sceneId: asString(args.sceneId),
+				// The old parameter name rides as a fallback for any provider
+				// still answering against a cached tool schema. Remove once
+				// cached schemas have aged out; nothing else uses "before".
+				before: asString(args.newSceneStart) || asString(args.before),
+				rationale: asString(args.rationale)
+			});
+		case 'suggest_entity':
+			return await suggestEntity(ctx, {
+				kind: asString(args.kind),
+				name: asString(args.name),
+				description: asString(args.description),
+				seenIn: asString(args.seenIn)
+			});
+		case 'stage_scene_draft':
+			return await stageSceneDraft(ctx, {
+				sceneId: asString(args.sceneId),
+				text: asString(args.text),
+				brief: asString(args.brief)
+			});
+		case 'reply_in_thread':
+			return await replyInThread(ctx, asString(args.comment), asString(args.threadId));
+		case 'update_suggestion':
+			return await updateSuggestion(ctx, asString(args.replacement), asString(args.suggestionId));
+		default:
+			return { result: `Unhandled tool: ${name}.`, staged: false };
 	}
 }
 
@@ -560,7 +607,7 @@ async function appEditLink(
 		};
 	}
 	if (await followUpExists(ctx.db, input.followsSuggestionId, author)) {
-		return { refusal: 'You have already staged a follow-up to that edit.' };
+		return { refusal: FOLLOW_UP_EXISTS };
 	}
 	const span = paragraphWindow(
 		followed.bodyMd,
@@ -750,8 +797,9 @@ async function stageSceneDraft(
 
 // The story of a thread or a suggestion an outside app names by id, but only
 // when that story is the connected writer's, live, not muted, and in the
-// universe of the call. In the app the calling surface fixes the target; an
-// app has no surface, so the id is an argument and this check stands in.
+// universe of the call, and the scene it is on is not in the trash. In the app
+// the calling surface fixes the target; an app has no surface, so the id is an
+// argument and this check stands in.
 async function reachableStory(
 	ctx: ToolContext,
 	table: typeof reviewThreads | typeof reviewSuggestions,
@@ -763,12 +811,14 @@ async function reachableStory(
 		.select({ storyId: table.storyId })
 		.from(table)
 		.innerJoin(stories, eq(table.storyId, stories.id))
+		.innerJoin(scenes, eq(table.sceneId, scenes.id))
 		.where(
 			and(
 				eq(table.id, id),
 				eq(stories.universeId, ctx.universeId),
 				eq(stories.ownerId, ctx.userId),
 				isNull(stories.deletedAt),
+				isNull(scenes.deletedAt),
 				storyAssistantOn(),
 				ctx.scope?.storyOnly && ctx.storyId ? eq(table.storyId, ctx.storyId) : undefined
 			)
@@ -840,8 +890,9 @@ async function getReviewNote(ctx: ToolContext, noteId: string): Promise<string> 
 
 // The scoped reply: posts into the thread fixed by the calling surface, as
 // the Assistant. No thread id crosses the model boundary. An outside app
-// names the thread instead (see reachableStory), and may not answer itself:
-// it replies once, then waits for someone else to write.
+// names the thread instead (see reachableStory). It may speak only in a
+// thread of its own (a note it opened, or the discussion under its own edit),
+// and may not answer itself: it replies once, then waits for someone else.
 async function replyInThread(
 	ctx: ToolContext,
 	comment: string,
@@ -851,21 +902,11 @@ async function replyInThread(
 	let storyId = ctx.storyId;
 	if (ctx.external) {
 		const reached = await reachableStory(ctx, reviewThreads, threadArgument);
-		if (!reached) return { result: 'No thread with that id.', staged: false };
+		if (!reached || !(await isOwnThread(ctx.db, threadArgument, stagingAuthor(ctx)))) {
+			return { result: 'No thread with that id.', staged: false };
+		}
 		threadId = threadArgument;
 		storyId = reached;
-		const [last] = await ctx.db
-			.select({ clientId: reviewComments.clientId })
-			.from(reviewComments)
-			.where(eq(reviewComments.threadId, threadId))
-			.orderBy(desc(reviewComments.createdAt))
-			.limit(1);
-		if (last?.clientId === ctx.external.client.id) {
-			return {
-				result: 'Your reply is the latest in this thread. Wait for the writer to answer.',
-				staged: false
-			};
-		}
 	}
 	if (!threadId) return { result: 'There is no thread under discussion.', staged: false };
 	// The scoped review tools are only offered with a story in focus; the
@@ -876,7 +917,8 @@ async function replyInThread(
 		storyId,
 		threadId,
 		author: stagingAuthor(ctx),
-		body: comment
+		body: comment,
+		waitsItsTurn: Boolean(ctx.external)
 	});
 	if (!result.ok) return { result: result.reason, staged: false };
 	return { result: 'Your reply was posted to the thread.', staged: true, note: true };
@@ -884,7 +926,10 @@ async function replyInThread(
 
 // The scoped revision: amends the Assistant's own pending suggestion fixed by
 // the calling surface (or the one an outside app names, see reachableStory).
-// updateAssistantSuggestion enforces authorship and the pending status.
+// updateAssistantSuggestion enforces authorship and the pending status. An
+// app revises only after the writer has answered in the edit's discussion,
+// and is told the same for a suggestion that is not its own pending one as
+// for one that does not exist.
 async function updateSuggestion(
 	ctx: ToolContext,
 	replacement: string,
@@ -905,9 +950,15 @@ async function updateSuggestion(
 		storyId,
 		suggestionId,
 		replacement,
-		author: ctx.external ? stagingAuthor(ctx) : undefined
+		author: ctx.external ? stagingAuthor(ctx) : undefined,
+		afterWriter: Boolean(ctx.external)
 	});
-	if (!result.ok) return { result: result.reason, staged: false };
+	if (!result.ok) {
+		return {
+			result: ctx.external && result.notFound ? 'No suggestion with that id.' : result.reason,
+			staged: false
+		};
+	}
 	return {
 		result: 'Your suggestion now proposes the revised text; the author still decides on it.',
 		staged: true

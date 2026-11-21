@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { enhance } from '#lib/enhance';
 	import Icon from './Icon.svelte';
 	import { paragraphWindow } from '#lib/paragraphs';
@@ -241,12 +242,15 @@
 										typeof result.data?.message === 'string'
 											? result.data.message
 											: 'That change could not be accepted.';
+									// The edit may have been revised; show it as it is now.
+									await invalidateAll();
 								}
 								await update();
 							};
 						}}
 					>
 						<input type="hidden" name="suggestionId" value={step.id} />
+						<input type="hidden" name="seen" value={step.stamp ?? ''} />
 						{#if editing}
 							<span class="rv-draft-k rv-draft-to">Your wording</span>
 							<textarea

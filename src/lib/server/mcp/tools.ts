@@ -56,14 +56,15 @@ const EXTRA_ARGUMENTS: Record<string, ExtraArgument[]> = {
 		{
 			name: 'threadId',
 			description:
-				'The id of the review thread to reply in: a note id, or the threadId of an edit from get_review_note.',
+				'The id of the review thread to reply in: a note of yours, or the threadId of one of your edits from get_review_note. You can reply once the writer has written there, and then wait for them again.',
 			required: true
 		}
 	],
 	update_suggestion: [
 		{
 			name: 'suggestionId',
-			description: 'The id of your own pending suggestion to revise.',
+			description:
+				'The id of your own pending suggestion to revise. Revise only after the writer has answered in its discussion (see get_review_note).',
 			required: true
 		}
 	],
@@ -175,47 +176,55 @@ export async function callMcpTool(
 		);
 	}
 
-	const { universeId: universeArgument, ...rest } = args;
-	let universeId = '';
-	if (!NO_UNIVERSE.has(name)) {
-		if (
-			typeof universeArgument !== 'string' ||
-			!isUuid(universeArgument) ||
-			!(await ownsUniverse(db, identity.userId, universeArgument))
-		) {
-			return refuse('no_universe', NO_UNIVERSE_RESULT);
-		}
-		universeId = universeArgument;
-	}
-
-	const outcome = await dispatchToolCall(
-		{
-			db,
-			userId: identity.userId,
-			universeId,
-			allowedTools: [name],
-			external: {
-				sceneBodyCap: SCENE_BODY_MAX_CHARS,
-				client: {
-					id: identity.client.id,
-					name: identity.client.clientName,
-					host: identity.client.host
-				},
-				maxNotesPerScene: MAX_NOTES_WAITING_PER_SCENE,
-				origin
-			}
-		},
-		{ id: 'mcp', name, arguments: JSON.stringify(rest) }
-	);
-	if (outcome.failed) {
-		// The error text stays in the log; it is not prose, and not for the app.
-		logEvent('error', 'mcp.tool_failed', {
-			tool: name,
-			grantId: identity.grantId,
-			detail: outcome.result.slice(0, 300)
-		});
+	// What the app is told when a call fails, whatever failed. The log names
+	// the tool and the database's error code and nothing else: a database
+	// error's message is the statement and the values bound to it, which are
+	// the writer's prose.
+	const failed = (code: string | undefined): McpToolResult => {
+		logEvent('error', 'mcp.tool_failed', { tool: name, grantId: identity.grantId, code });
 		return { text: 'The tool failed. Try again.', isError: true };
+	};
+
+	try {
+		const { universeId: universeArgument, ...rest } = args;
+		let universeId = '';
+		if (!NO_UNIVERSE.has(name)) {
+			if (
+				typeof universeArgument !== 'string' ||
+				!isUuid(universeArgument) ||
+				!(await ownsUniverse(db, identity.userId, universeArgument))
+			) {
+				return refuse('no_universe', NO_UNIVERSE_RESULT);
+			}
+			universeId = universeArgument;
+		}
+
+		const outcome = await dispatchToolCall(
+			{
+				db,
+				userId: identity.userId,
+				universeId,
+				allowedTools: [name],
+				external: {
+					sceneBodyCap: SCENE_BODY_MAX_CHARS,
+					client: {
+						id: identity.client.id,
+						name: identity.client.clientName,
+						host: identity.client.host
+					},
+					maxNotesPerScene: MAX_NOTES_WAITING_PER_SCENE,
+					origin
+				}
+			},
+			{ id: 'mcp', name, arguments: JSON.stringify(rest) }
+		);
+		if (outcome.failed) return failed(outcome.errorCode);
+		log(outcome.staged ? 'staged' : 'ok');
+		return { text: capped(outcome.result), isError: false };
+	} catch (err) {
+		// The dispatcher catches what its handlers throw; this is for anything
+		// outside it, so no error's own text ever reaches the app.
+		const code = (err as { cause?: { code?: unknown } } | null)?.cause?.code;
+		return failed(typeof code === 'string' ? code : undefined);
 	}
-	log(outcome.staged ? 'staged' : 'ok');
-	return { text: capped(outcome.result), isError: false };
 }

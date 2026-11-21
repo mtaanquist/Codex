@@ -649,6 +649,8 @@ scene_split_proposals (
 )
 ```
 
+Partial unique indexes hold the rules that two calls sent together could otherwise both pass (migration 0100): one pending `entity_proposals` row for `(universe_id, lower(name))`, and one pending `scene_split_proposals` row for `(scene_id, client_id, md5(before))`; the passage is hashed because it can be longer than an index entry. `review_suggestions` has the same for an app's follow-ups: one row for `(follows_suggestion_id, client_id)` where both are set. Both proposal tables are indexed on `client_id`, and `scene_split_proposals` on `scene_id`, for the foreign-key checks on delete.
+
 Key points:
 
 - **Nothing is created by staging.** An accepted entity proposal inserts the character, place or lore entry the way the app does for the owner; a confirmed split runs the normal scene split after locating `before` in the story as it then stands.

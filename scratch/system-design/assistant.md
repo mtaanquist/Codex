@@ -880,6 +880,7 @@ Rules that hold on this surface:
   or entry that is another writer's, in a muted or trashed story, in another
   universe, or missing gives the tool's one not-found answer. There is one
   integration test per tool for this (`tests/integration/mcp-endpoint.test.ts`).
+  A thread or suggestion on a scene in the trash is the same miss.
 - An entity must belong to the universe the call names. This check sits in
   the dispatcher, so it holds in the app as well.
 - No model of the writer's is called, so there is no usage row, no spend
@@ -908,8 +909,37 @@ suggestion. On top of those:
 - An app may have at most 100 notes (pending suggestions and open comments
   it started) waiting on one scene; past that it stages nothing more there
   until the writer decides on some.
+- `reply_in_thread` reaches only a thread of the app's own: a note it
+  opened, or the discussion under an edit it suggested. A thread the writer,
+  a guest reviewer, the Assistant or another app opened is "No thread with
+  that id.", whoever has written in it since.
 - `reply_in_thread` posts once and then waits: an app whose reply is the
-  latest in a thread cannot add another until someone else writes.
+  latest in a thread cannot add another until someone else writes. The check
+  runs under the thread's lock, with the insert.
+- `update_suggestion` revises only after the writer has written last in that
+  edit's discussion. A suggestion that is not the app's own pending one gives
+  the same "No suggestion with that id." as one that does not exist.
+- An app's staging calls for one universe run one at a time (a transaction
+  advisory lock on client and universe, taken in the dispatcher before the
+  handler), so the checks that come before a write (a repeat, a ceiling,
+  whose turn it is) hold for calls sent together. Unique indexes back the
+  rules that are about one row: one pending entry suggestion for a name in a
+  universe, one pending split from an app for a point in a scene, one
+  follow-up from an app to an accepted edit.
+- A call that fails tells the app "The tool failed. Try again." and nothing
+  else. The log line (`mcp.tool_failed`) carries the tool and the database's
+  error code, never the error's message, which holds the statement and the
+  values bound to it. Text with a null character is refused before any query.
+- An app's `stage_scene_draft` leaves a failed draft of the writer's own on
+  that scene where it is.
+
+What holds for the Assistant in the app as well, since the handlers are
+shared: every tool call is awaited inside the dispatcher's own catch, so a
+throw becomes a tool result (a database error as "the request could not be
+completed", never its message); a revision through `update_suggestion` must
+change something and must not repeat another pending edit of the same author;
+and an accept is refused when the suggestion was revised after the writer was
+shown it (see Review in `design.md`).
 
 Reading its notes back. `list_review_notes` (a story's notes) and
 `get_review_note` (one note, or one edit by its id) are read tools on both

@@ -17,6 +17,7 @@ import { normaliseAssistantName } from './llm/prompts/persona.ts';
 import type { ClientAuthor, MachineAuthor } from './review.ts';
 import { locateSplitInStory, splitScene } from './scene-split-merge.ts';
 import { ownedUniverseRow, storyIsLive } from './universe-scope.ts';
+import { isUniqueViolation } from './db-errors.ts';
 import { locateSplitBefore } from '../scene-split-locate.ts';
 import { toLf } from '../line-endings.ts';
 
@@ -127,9 +128,11 @@ export async function stageEntityProposal(
 				sql`lower(${entityProposals.name}) = ${folded(name)}`
 			)
 		);
-	if (earlier.some((row) => row.status === 'pending')) {
-		return { ok: false, reason: `"${name}" is already suggested and waiting for the writer.` };
-	}
+	const waitingAlready = {
+		ok: false as const,
+		reason: `"${name}" is already suggested and waiting for the writer.`
+	};
+	if (earlier.some((row) => row.status === 'pending')) return waitingAlready;
 	if (earlier.some((row) => row.status === 'dismissed')) {
 		return {
 			ok: false,
@@ -154,19 +157,30 @@ export async function stageEntityProposal(
 			reason: `This universe already has ${waiting.n} of your suggested entries waiting for the writer. Suggest no more until they have decided on some.`
 		};
 	}
-	const [row] = await db
-		.insert(entityProposals)
-		.values({
-			ownerId: input.ownerId,
-			universeId: input.universeId,
-			kind,
-			name,
-			descriptionMd: input.description?.trim().slice(0, DESCRIPTION_MAX) || null,
-			seenIn: input.seenIn?.trim().slice(0, SEEN_IN_MAX) || null,
-			...('client' in input.author ? appColumns(input.author) : { assistant: true })
-		})
-		.returning({ id: entityProposals.id });
-	return { ok: true, id: row.id };
+	try {
+		// In a transaction of its own, so a refused insert does not spoil one the
+		// caller is already in.
+		const [row] = await db.transaction((tx) =>
+			tx
+				.insert(entityProposals)
+				.values({
+					ownerId: input.ownerId,
+					universeId: input.universeId,
+					kind,
+					name,
+					descriptionMd: input.description?.trim().slice(0, DESCRIPTION_MAX) || null,
+					seenIn: input.seenIn?.trim().slice(0, SEEN_IN_MAX) || null,
+					...('client' in input.author ? appColumns(input.author) : { assistant: true })
+				})
+				.returning({ id: entityProposals.id })
+		);
+		return { ok: true, id: row.id };
+	} catch (err) {
+		// The same name was suggested at the same moment and landed first (see
+		// entity_proposals_pending_name_idx).
+		if (isUniqueViolation(err)) return waitingAlready;
+		throw err;
+	}
 }
 
 // Stages a scene split an app proposed. The caller has checked the scene is
@@ -202,30 +216,38 @@ export async function stageSplitProposal(
 		.select({ before: sceneSplitProposals.before })
 		.from(sceneSplitProposals)
 		.where(mine);
-	if (open.some((row) => row.before === input.before)) {
-		return {
-			ok: false,
-			reason: 'You have already proposed this split; it is waiting for the writer.'
-		};
-	}
+	const proposedAlready = {
+		ok: false as const,
+		reason: 'You have already proposed this split; it is waiting for the writer.'
+	};
+	if (open.some((row) => row.before === input.before)) return proposedAlready;
 	if (open.length >= MAX_SPLIT_PROPOSALS_WAITING) {
 		return {
 			ok: false,
 			reason: `This scene already has ${open.length} of your split proposals waiting for the writer. Propose no more until they have decided on some.`
 		};
 	}
-	const [row] = await db
-		.insert(sceneSplitProposals)
-		.values({
-			ownerId: input.ownerId,
-			storyId: input.storyId,
-			sceneId: input.sceneId,
-			before: input.before,
-			rationale: input.rationale.trim().slice(0, RATIONALE_MAX),
-			...appColumns(input.author)
-		})
-		.returning({ id: sceneSplitProposals.id });
-	return { ok: true, id: row.id };
+	try {
+		const [row] = await db.transaction((tx) =>
+			tx
+				.insert(sceneSplitProposals)
+				.values({
+					ownerId: input.ownerId,
+					storyId: input.storyId,
+					sceneId: input.sceneId,
+					before: input.before,
+					rationale: input.rationale.trim().slice(0, RATIONALE_MAX),
+					...appColumns(input.author)
+				})
+				.returning({ id: sceneSplitProposals.id })
+		);
+		return { ok: true, id: row.id };
+	} catch (err) {
+		// The same split, proposed at the same moment, landed first (see
+		// scene_split_proposals_pending_idx).
+		if (isUniqueViolation(err)) return proposedAlready;
+		throw err;
+	}
 }
 
 export type EntityProposalView = {
