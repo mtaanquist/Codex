@@ -136,7 +136,7 @@
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="rv-card-foot" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-		{#if open && role === 'author' && root?.isAssistant && patternCount > 0 && onWorkThrough}
+		{#if open && role === 'author' && (root?.isAssistant || root?.isApp) && patternCount > 0 && onWorkThrough}
 			<div class="rv-actions rv-work-through">
 				<button
 					class="btn btn-sm btn-secondary"

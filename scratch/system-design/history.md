@@ -1023,6 +1023,49 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 5: the guided pass and reading notes back (2026-11-21)
+
+Part of #1175, branch `feat/mcp-guided-pass` on `staging/mcp-endpoint`. No
+migration.
+
+- Two read tools in the shared registry, `list_review_notes` and
+  `get_review_note`, backed by `listOwnNotes` and `getOwnNote` in `review.ts`.
+  "Own" is the caller: the Assistant in the app, the connected client over
+  MCP (`writtenBy`). They are in the Assistant's default set, so it can check
+  what became of an earlier note when asked.
+- Replies are filtered to the writer's and the caller's own. A guest
+  reviewer's comment in the same thread is not shown, and neither is another
+  app's or (to an app) the Assistant's. The "writer wrote last" flag is worked
+  out over the same filtered list, so a guest's aside after the writer's
+  question does not hide the question.
+- `get_review_note` takes a note id or an edit id, since a loose
+  `suggest_edit` has a discussion too and no note to hang it on. An edit
+  someone else linked to the note (the Assistant's follow-up on an app's
+  note) is shown with `yours: false`.
+- The edits come from `listSuggestions` for the story, filtered, so the
+  anchors (and so "the paragraph as it now stands") are the review page's own.
+  That reads every suggestion of the story for one note; the review page pays
+  the same on each load, so it was not worth a second anchoring path.
+- A note on a scene in the trash is not found; one in a muted or trashed
+  story is not found either (the same `reachableStory` check as lane 4).
+- `suggest_edit` over MCP: `patternNoteId` must be a note the app opened;
+  `followsSuggestionId` must be an accepted edit in such a note, in the same
+  scene, and the edit must fall inside `paragraphWindow(..., 1)` around where
+  the accepted text now sits. One follow-up per accepted edit per app,
+  counted whatever became of it, so a rejected follow-up is not retried in a
+  loop. The window size is one constant (`FOLLOW_UP_NEIGHBOURS`) shared with
+  the Assistant's re-read.
+- The re-read (`pattern-reread.ts`) accepted only a note whose first Assistant
+  comment existed; it now takes the thread's opening comment and requires the
+  Assistant or an app to have written it. Its follow-up stays the Assistant's.
+- `?pass=<note id>` on the story review page starts the pass once, when the
+  page first loads, if the note is there and has pending edits. The parameter
+  is left in the address, so a reload opens the pass again.
+- Not done, on purpose: the in-app Assistant does not answer in an app's
+  thread. The app answers for itself (it reads the writer's reply with
+  `get_review_note`), so there is one voice per note. This replaces the line
+  in the lane 4 notes that deferred it here.
+
 ## MCP endpoint, lane 4: staging tools and the app as author (2026-11-21)
 
 Part of #1175, branch `feat/mcp-staging` on `staging/mcp-endpoint`,
@@ -1057,9 +1100,8 @@ migration 0098.
 - The review UI shows an app's notes with an "App" role chip and plain-text
   bodies (the Assistant's are rendered as markdown; an app's are treated
   like a reviewer's).
-- Deferred to lane 5: "Work through this" on an app's pattern note, the
-  re-read after an accept, and the in-app Assistant answering in an app's
-  thread. No notification is sent for an app's note.
+- Deferred to lane 5: "Work through this" on an app's pattern note and the
+  re-read after an accept. No notification is sent for an app's note.
 
 ## MCP endpoint, lane 3: the endpoint and the read tools (2026-11-21)
 

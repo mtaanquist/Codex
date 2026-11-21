@@ -77,6 +77,27 @@ export const TOOLS: ToolDef[] = [
 		parameters: obj({ query: str('The text to search for.') }, ['query'])
 	},
 	{
+		kind: 'read',
+		name: 'list_review_notes',
+		description:
+			'List the review notes you have left on a story: the comments and pattern notes you opened, each with how many of its edits are pending, accepted or rejected, and your other suggested edits with their status. writerRepliedLast marks a note where the writer wrote last and may be waiting for your answer. Use get_review_note to read one.',
+		parameters: obj({ storyId: str('The story id.') }, ['storyId'])
+	},
+	{
+		kind: 'read',
+		name: 'get_review_note',
+		description:
+			'Read one of your own review notes: the note, the replies between you and the writer in order, and for each of its edits the status, the original text, the text as applied if the writer accepted it, and the paragraph as it now stands. Use it to see what the writer decided and to answer what they wrote.',
+		parameters: obj(
+			{
+				noteId: str(
+					'The id of a note you opened, or of a suggested edit you made, from list_review_notes.'
+				)
+			},
+			['noteId']
+		)
+	},
+	{
 		kind: 'write',
 		name: 'suggest_edit',
 		description:

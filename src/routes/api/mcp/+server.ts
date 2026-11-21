@@ -66,7 +66,7 @@ const handle: RequestHandler = async ({ request, url }) => {
 		);
 	}
 
-	return serveMcp(request, { db, identity });
+	return serveMcp(request, { db, identity, origin });
 };
 
 // One function for every method: the protocol layer answers 405 for the ones

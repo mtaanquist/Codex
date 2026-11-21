@@ -9,9 +9,9 @@ import { callMcpTool, mcpTools } from './tools.ts';
 // and holds nothing afterwards, so there is no session to keep or to steal.
 
 const INSTRUCTIONS =
-	"Codex holds a writer's fiction: universes, the stories in them, their chapters and scenes, and entries for characters, places and lore. Start with list_universes, then pass a universe id to the other tools. You cannot change, delete or publish anything. If you were allowed to suggest, your edits and comments wait in the writer's review, and the writer accepts or rejects each one there.";
+	"Codex holds a writer's fiction: universes, the stories in them, their chapters and scenes, and entries for characters, places and lore. Start with list_universes, then pass a universe id to the other tools. You cannot change, delete or publish anything. If you were allowed to suggest, your edits and comments wait in the writer's review, and the writer accepts or rejects each one there. list_review_notes and get_review_note show what the writer decided and what they answered; reply_in_thread answers them.";
 
-type Connection = { db: Database; identity: BearerIdentity };
+type Connection = { db: Database; identity: BearerIdentity; origin: string };
 
 // A tool's argument schema is the same for every request, and compiling its
 // validator is the costly part of building a server, so it is done once.
@@ -36,7 +36,13 @@ function buildServer(connection: Connection): McpServer {
 				annotations: { readOnlyHint: tool.readOnly, openWorldHint: false }
 			},
 			async (args) => {
-				const result = await callMcpTool(connection.db, connection.identity, tool.name, args);
+				const result = await callMcpTool(
+					connection.db,
+					connection.identity,
+					tool.name,
+					args,
+					connection.origin
+				);
 				return { content: [{ type: 'text', text: result.text }], isError: result.isError };
 			}
 		);

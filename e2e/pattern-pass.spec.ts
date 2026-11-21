@@ -150,6 +150,51 @@ test('the author works through a pattern note across two scenes', async ({ page 
 	expect(await sceneBodies(name)).toEqual(['The elk crossed the ford.', 'Kara looked back.']);
 });
 
+// #1175: a pattern note a connected app left. The link the app hands the writer
+// (?pass=<note id>) opens the pass on that note, and the note's card offers
+// the same way in.
+test('a link from a connected app opens the pass on its note', async ({ page }) => {
+	const { name, storyPath } = await openNote(page);
+	let threadId: string;
+	const pool = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+	try {
+		const { rows } = await pool.query<{ id: string }>(
+			`select t.id from review_threads t join stories st on st.id = t.story_id
+			 join universes u on u.id = st.universe_id where u.name = $1`,
+			[name]
+		);
+		threadId = rows[0].id;
+		// The note and its edits as the app would have staged them.
+		for (const table of ['review_comments', 'review_suggestions']) {
+			await pool.query(
+				`update ${table} set assistant = false, client_name = 'Writing Desk',
+				 client_host = 'app.example'
+				 where ${table === 'review_comments' ? 'thread_id' : 'pattern_thread_id'} = $1`,
+				[threadId]
+			);
+		}
+	} finally {
+		await pool.end();
+	}
+
+	await gotoReady(page, `${storyPath}/review?pass=${threadId}`);
+	const pass = page.locator('.review-panel');
+	await expect(pass.locator('.inspector-kind')).toHaveText('POV epithets');
+	await expect(pass.getByText('1 of 2')).toBeVisible();
+	await expect(pass.locator('.pp-para')).toContainText('crossed the ford.');
+
+	// Stopping shows the note under the app's name, with the same way back in.
+	await pass.getByRole('button', { name: 'Stop' }).click();
+	const note = page.locator('.rv-card').filter({ hasText: 'Pattern note (POV epithets)' });
+	await expect(note).toContainText('Writing Desk');
+	await note.getByRole('button', { name: 'Work through this (2)' }).click();
+	await pass.getByRole('button', { name: 'Accept', exact: true }).click();
+	await expect(pass.locator('.pp-para')).toContainText('looked back.');
+	await expect
+		.poll(() => sceneBodies(name))
+		.toEqual(['Kara crossed the ford.', 'The elf looked back.']);
+});
+
 // The writer may read another scene mid-pass. An accept then changes the
 // step's scene on the server, and the open scene keeps its own text.
 test('an accept with another scene open leaves that scene alone', async ({ page }) => {
