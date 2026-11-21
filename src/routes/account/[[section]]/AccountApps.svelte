@@ -18,10 +18,10 @@
 	async function onToggle(event: Event & { currentTarget: HTMLFormElement }) {
 		const formElement = event.currentTarget;
 		const box = event.target as HTMLInputElement;
-		if (!box.checked && access.apps.length > 0) {
+		if (!box.checked && access.apps.length + access.tokens.length > 0) {
 			const ok = await askConfirm({
 				title: 'Turn off access for other apps?',
-				body: `This disconnects ${access.apps.length === 1 ? 'the app' : `all ${access.apps.length} apps`} below. To use one again you will have to connect it again.`,
+				body: 'This disconnects every app and revokes every personal access token below. To use one again you will have to connect it, or make the token, again.',
 				confirmLabel: 'Turn off and disconnect',
 				danger: true
 			});
@@ -32,6 +32,19 @@
 		}
 		formElement.requestSubmit();
 	}
+
+	// The token just made: in the action's answer once, never in the page data.
+	const newToken = $derived(form?.scope === 'tokens' && 'token' in form ? form.token : null);
+	let tokenCopied = $state(false);
+	function copyToken() {
+		if (!newToken) return;
+		navigator.clipboard.writeText(newToken).then(() => {
+			tokenCopied = true;
+			setTimeout(() => (tokenCopied = false), 1500);
+		});
+	}
+	const lasts = (days: number) => (days === 365 ? '1 year' : `${days} days`);
+	const now = Date.now();
 
 	let copied = $state(false);
 	function copyAddress() {
@@ -152,4 +165,156 @@
 			success={form?.scope === 'apps' && form.saved ? 'Done.' : null}
 		/>
 	</div>
+</div>
+
+<div class="admin-block" id="apps-tokens">
+	<div class="admin-block-head">
+		<h2 class="admin-block-title">Personal access tokens</h2>
+		<p class="admin-block-sub">
+			For a script or tool of your own that cannot open the Codex page to ask for access. A token
+			works like a password for the address above, so keep it secret. Changing your password revokes
+			every token.
+		</p>
+	</div>
+
+	{#if newToken}
+		<div class="admin-card" role="status">
+			<div class="field" style="margin:0;">
+				<label for="new-token">Your new token</label>
+				<div class="copy-field">
+					<input id="new-token" type="text" value={newToken} readonly />
+					<button type="button" onclick={copyToken}>{tokenCopied ? 'Copied' : 'Copy'}</button>
+				</div>
+				<span class="field-hint">
+					Copy it now and store it somewhere safe. It is not shown again. In your tool, send it as
+					the bearer token with the address above.
+				</span>
+			</div>
+		</div>
+	{/if}
+
+	{#if access.tokens.length > 0}
+		<div class="admin-card tight">
+			<div class="attn-list">
+				{#each access.tokens as token (token.id)}
+					{@const expired = !token.expiresAt || token.expiresAt.getTime() <= now}
+					<div class="list-row">
+						<div class="list-main">
+							<div class="list-title">{token.name}</div>
+							<div class="list-sub">
+								May: {token.permissions
+									.map((permission) => PERMISSION_TEXT[permission].label.toLowerCase())
+									.join(', ')}.
+							</div>
+							<div class="list-sub">
+								Made {formatDate(token.createdAt, page.data.timeZone)}.
+								{#if expired}
+									Expired.
+								{:else if token.expiresAt}
+									Expires {formatDate(token.expiresAt, page.data.timeZone)}.
+								{/if}
+								{token.lastUsedAt
+									? `Last used ${formatDateTime(token.lastUsedAt, page.data.timeZone)}.`
+									: 'Not used yet.'}
+							</div>
+						</div>
+						<form method="POST" action="?/revokePersonalToken">
+							<input type="hidden" name="grantId" value={token.id} />
+							<button
+								type="submit"
+								class="btn btn-ghost btn-sm"
+								aria-label="Revoke the token {token.name}">Revoke</button
+							>
+						</form>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	{#if access.enabled}
+		<form method="POST" action="?/createToken" class="admin-card" autocomplete="off">
+			<div class="field">
+				<label for="token-name">Token name</label>
+				<input
+					id="token-name"
+					class="input short"
+					type="text"
+					name="name"
+					maxlength="60"
+					required
+				/>
+				<span class="field-hint">
+					Name the tool that will use it. Suggestions and comments it leaves are shown under this
+					name.
+				</span>
+			</div>
+			<div class="field">
+				<label class="check-row">
+					<input type="checkbox" name="permission" value="suggest" checked />
+					{PERMISSION_TEXT.suggest.label}
+				</label>
+				<p class="field-hint">
+					A token can always read your writing. With this ticked it can also add suggested edits and
+					comments for you to accept or reject. It can never change your text.
+				</p>
+			</div>
+			<div class="field">
+				<label for="token-expiry">Expires after</label>
+				<select id="token-expiry" class="select" name="expiresInDays">
+					{#each access.tokenExpiryDays as days (days)}
+						<option value={days} selected={days === access.tokenDefaultDays}>{lasts(days)}</option>
+					{/each}
+				</select>
+			</div>
+			<div class="field">
+				<label for="token-password">Confirm your password</label>
+				<input
+					id="token-password"
+					class="input short"
+					type="password"
+					name="password"
+					required
+					autocomplete="current-password"
+				/>
+			</div>
+			{#if access.needsCode}
+				<div class="field">
+					<label for="token-code">Code from your authenticator app</label>
+					<input
+						id="token-code"
+						class="input short"
+						type="text"
+						name="code"
+						inputmode="numeric"
+						required
+						autocomplete="one-time-code"
+					/>
+				</div>
+			{/if}
+			<div class="settings-actions">
+				<button type="submit" class="btn btn-primary">Create token</button>
+				<FormStatus
+					error={form?.scope === 'tokens' && form.message ? form.message : null}
+					success={form?.scope === 'tokens' && 'saved' in form && form.saved
+						? 'Token revoked.'
+						: null}
+				/>
+			</div>
+		</form>
+	{:else}
+		<div class="admin-card">
+			<div class="empty-state tight">
+				<p class="empty-state-text">Turn on access above to make a token.</p>
+			</div>
+		</div>
+		<div class="settings-actions">
+			<FormStatus
+				error={form?.scope === 'tokens' && form.message ? form.message : null}
+				success={form?.scope === 'tokens' && 'saved' in form && form.saved
+					? 'Token revoked.'
+					: null}
+			/>
+		</div>
+	{/if}
 </div>

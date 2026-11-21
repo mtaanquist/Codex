@@ -14,6 +14,16 @@ export const ACCESS_TOKEN_TTL_MS = HOUR;
 // Sliding: each refresh issues a new refresh token with a fresh lifetime.
 export const REFRESH_TOKEN_TTL_MS = 30 * DAY;
 
+// A personal access token: how long it may live, and the choice offered
+// first. It has no refresh token, so this is its whole life.
+export const PERSONAL_TOKEN_EXPIRY_DAYS = [30, 90, 365] as const;
+export const PERSONAL_TOKEN_DEFAULT_DAYS = 90;
+export const MAX_PERSONAL_TOKENS = 20;
+export const MAX_PERSONAL_TOKEN_NAME = 60;
+// Shown in place of an app's web address wherever the token is named. Not a
+// possible host name, so no registered app can pass for one.
+export const PERSONAL_TOKEN_HOST = 'personal token';
+
 // The grant's last-used stamp is refreshed at most this often.
 export const LAST_USED_REFRESH_MS = 5 * MINUTE;
 

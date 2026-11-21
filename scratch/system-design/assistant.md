@@ -868,6 +868,9 @@ writer on every call, since there is no turn to check it once for.
 
 Rules that hold on this surface:
 
+- The bearer token is an app's OAuth access token or a personal access
+  token the writer made on the Account page; both resolve through
+  `resolveBearer` to a grant, and everything below is the same for both.
 - The user id comes from the bearer token alone. No argument can name a
   writer, and the route never reads the session cookie.
 - A universe that is another writer's, in the trash, or missing gives one
@@ -968,7 +971,12 @@ to read through the tools (it has no assembled context), and that it only
 stages. The two passes Codex runs in stages for its own model (continuity,
 patterns) are given to an agent as one brief each (`buildContinuityBrief`,
 `buildPatternBrief`) made of the same looks-for lists and staging rules; the
-JSON hand-off between Codex's stages is left out. `/who` and `/find` share
+JSON hand-off between Codex's stages is left out. Where the in-app text says
+"in your context", the builders take a `WorldSource` (`prompts/format.ts`):
+`IN_CONTEXT` by default, `READ_WITH_TOOLS` for a prompt, which names the tools
+to read the world with instead. The `rewrite` prompt asks the co-author
+builder for its rewrite wording, since it knows the passage is to be replaced.
+`/who` and `/find` share
 their one-line asks with the chat panel (`assistant-slash.ts`). A prompt reads
 nothing from the database: it is text around the ids and words the caller
 sent, and the tools it names do the ownership checks. The prompts that stage

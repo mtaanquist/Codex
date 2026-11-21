@@ -113,7 +113,7 @@ Outside apps connect through OAuth (see Access for outside apps in `design.md`).
 oauth_clients (
   id            uuid primary key,
   client_id     text unique not null,    -- a generated id (self-registered) or the https URL of the client's metadata document
-  kind          text not null,           -- 'dcr' | 'cimd'
+  kind          text not null,           -- 'dcr' | 'cimd' | 'personal' (stands for one personal access token; client_name is the token's name)
   client_name   text not null,           -- what the app calls itself
   host          text not null,           -- what was checked: the host of the client_id URL, or of the first redirect address
   redirect_uris text[] not null,         -- https, or http on this computer only
@@ -149,7 +149,7 @@ api_tokens (
   id            uuid primary key,
   user_id       uuid references users(id) on delete cascade not null,
   grant_id      uuid references oauth_grants(id) on delete cascade,
-  kind          text not null,           -- 'access' (1 hour) | 'refresh' (30 days, replaced on each use)
+  kind          text not null,           -- 'access' (1 hour) | 'refresh' (30 days, replaced on each use) | 'personal' (30, 90 or 365 days, no refresh)
   token_hash    text unique not null,
   family_id     uuid not null,           -- every token descended from one code exchange
   expires_at    timestamptz not null,
@@ -160,6 +160,8 @@ api_tokens (
 ```
 
 The daily session clean-up also deletes expired tokens, spent codes, clients that no writer connected within 24 hours of registering, and clients whose grants have all been revoked for 30 days. Deleting a client deletes its grants.
+
+A personal access token is one `api_tokens` row of kind `personal` under a grant of its own, on an `oauth_clients` row of kind `personal` that carries the name the writer gave it (`client_id` is `personal:<uuid>`, `host` is the fixed text `personal token`, no redirect addresses). That makes it a connection like any other: the grant holds its permissions and last-used time, revoking the grant ends it, and notes left with it are attributed and counted by client the way an app's are. The OAuth routes never resolve a `personal` client. When the token row expires and is cleaned up, the clean-up revokes its grant.
 
 ### Plans and entitlements
 

@@ -1023,6 +1023,41 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 8: personal access tokens (2026-11-21)
+
+Part of #1175, branch `feat/mcp-personal-tokens` on `staging/mcp-endpoint`.
+No migration: the two `kind` columns are plain text and gained a value each.
+
+- A personal token is a grant on a client row of kind `personal`, with one
+  `api_tokens` row of kind `personal`. The alternative was a token row with
+  no grant and no client, carrying its own name and permissions. That would
+  have needed new columns and a second path through everything keyed on the
+  client: the `client_id` on review rows and proposals, the "only your own
+  note" rules, the waiting-note ceilings, the rate limits and the log line.
+  Giving the token a client row of its own made all of that apply unchanged,
+  and `resolveBearer` only had to accept one more token kind.
+- The OAuth side cannot reach a `personal` client: `findClient` returns only
+  `dcr` rows for a non-URL id, the row has no redirect addresses, and a
+  personal token is not a refresh token. `resolveBearer` also refuses a token
+  whose kind and client kind disagree.
+- Its host is the fixed text `personal token`, which no registered app can
+  have as a host, so "Name (personal token)" cannot be imitated.
+- Making one re-checks the password under the shared re-auth throttle, and
+  the TOTP code when two-factor is on. The secret is in the action's answer
+  only; the page data never holds it.
+- Revocation needed no new code: `revokeGrant` (one token, owner-scoped) and
+  `revokeAllGrants` (switch off, password change, reset, scheduled deletion)
+  already cover grants and tokens of every kind.
+- The clean-up revokes the grant of a personal token whose row has expired
+  and been deleted, so it leaves the list; until then the list says Expired.
+- Tests: the lifecycle and the account actions in `mcp-oauth.test.ts`; in
+  `mcp-endpoint.test.ts` a table runs every tool with a personal token
+  against another writer's universe and ids and the writer's own muted and
+  trashed scenes.
+- Also in this branch: the prompt wording fixes (the shared builders take the
+  source of the world details; a review of an untitled scene names it by id;
+  the rewrite prompt reads as a rewrite).
+
 ## MCP endpoint, lane 7: proposals and app drafts (2026-11-21)
 
 Part of #1175, branch `feat/mcp-proposals` on `staging/mcp-endpoint`.

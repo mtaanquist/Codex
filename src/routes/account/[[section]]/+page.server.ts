@@ -80,13 +80,20 @@ import {
 	pendingEnrollment,
 	recoveryCodesRemaining,
 	regenerateRecoveryCodes,
-	totpStatus
+	totpStatus,
+	verifyUserTotp
 } from '#lib/server/two-factor';
 import { listPasskeys, removePasskey } from '#lib/server/passkeys';
 import { reauthLimit } from '#lib/server/reauth';
 import QRCode from 'qrcode';
 import { formText } from '#lib/server/validation';
-import { listGrants, revokeGrant } from '#lib/server/mcp/oauth';
+import {
+	createPersonalToken,
+	listGrants,
+	listPersonalTokens,
+	revokeGrant
+} from '#lib/server/mcp/oauth';
+import { PERSONAL_TOKEN_DEFAULT_DAYS, PERSONAL_TOKEN_EXPIRY_DAYS } from '#lib/server/mcp/constants';
 import {
 	mcpAccountEnabled,
 	mcpInstanceEnabled,
@@ -202,7 +209,12 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		externalAccess: {
 			available: externalAccessAvailable,
 			enabled: await mcpAccountEnabled(db, user.id),
-			apps: externalAccessAvailable ? await listGrants(db, user.id) : []
+			apps: externalAccessAvailable ? await listGrants(db, user.id) : [],
+			tokens: externalAccessAvailable ? await listPersonalTokens(db, user.id) : [],
+			tokenExpiryDays: [...PERSONAL_TOKEN_EXPIRY_DAYS],
+			tokenDefaultDays: PERSONAL_TOKEN_DEFAULT_DAYS,
+			// Making a token asks for a code as well when two-factor is on.
+			needsCode: totp.status === 'on'
 		}
 	};
 };
@@ -912,6 +924,44 @@ export const actions: Actions = {
 			return fail(400, { scope: 'apps', message: 'That app is not connected any more.' });
 		}
 		return { scope: 'apps', saved: true };
+	},
+	// A personal access token, for a program of the writer's own. It acts as
+	// the writer does through an app, so making one re-checks the password,
+	// and the second factor when the account has one. The token is in this
+	// one response and nowhere after it.
+	createToken: async ({ request, locals }) => {
+		if (!(await mcpInstanceEnabled(db))) error(404, 'Not found');
+		const userId = locals.user!.id;
+		const limited = reauthGuard(userId, 'tokens');
+		if (limited) return limited;
+		const data = await request.formData();
+		if (!(await verifyAccountPassword(db, userId, formText(data, 'password')))) {
+			return fail(400, { scope: 'tokens', message: 'That password is not right.' });
+		}
+		if ((await totpStatus(db, userId)).status === 'on') {
+			const code = formText(data, 'code').replace(/\s+/g, '');
+			if (!(await verifyUserTotp(db, userId, code))) {
+				return fail(400, {
+					scope: 'tokens',
+					message: 'That code is not right. Enter the current code from your authenticator app.'
+				});
+			}
+		}
+		const created = await createPersonalToken(db, {
+			userId,
+			name: formText(data, 'name'),
+			permissions: data.getAll('permission').map(String),
+			expiresInDays: Number(formText(data, 'expiresInDays'))
+		});
+		if (!created.ok) return fail(400, { scope: 'tokens', message: created.reason });
+		return { scope: 'tokens', token: created.token, tokenId: created.id };
+	},
+	revokePersonalToken: async ({ request, locals }) => {
+		const grantId = formText(await request.formData(), 'grantId');
+		if (!isUuid(grantId) || !(await revokeGrant(db, locals.user!.id, grantId))) {
+			return fail(400, { scope: 'tokens', message: 'That token is already revoked.' });
+		}
+		return { scope: 'tokens', saved: true };
 	},
 	// The Invites section: generate a single-use code against the admin-set
 	// allowance, or revoke one that has not been used.

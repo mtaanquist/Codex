@@ -399,6 +399,36 @@ was last used. Select Disconnect to stop one at once. Turning off "Allow other
 apps to connect" disconnects them all, and so does changing or resetting your
 password. To use an app again afterwards, connect it again.
 
+### Personal access tokens
+
+Most apps connect by opening a Codex page where you allow them. A script or
+tool of your own that cannot open that page can use a personal access token
+instead. A token works like a password for the address under "Address to give
+the app", so treat it like one.
+
+To make a token:
+
+1. Open Connected apps and make sure "Allow other apps to connect" is on.
+2. Under "Personal access tokens", type a name for the tool that will use it.
+   Suggestions and comments left with the token are shown under this name.
+3. Leave "Leave suggestions and comments" ticked if the tool should be able to
+   leave them, or untick it to let the tool read only.
+4. Choose how long the token lasts. It stops working after that, and you make
+   a new one.
+5. Type your password, and the code from your authenticator app if you use
+   two-factor authentication, then select "Create token".
+6. Copy the token and store it somewhere safe. It is shown once and cannot be
+   shown again.
+
+In your tool, give the address as the server and send the token as a bearer
+token.
+
+The list shows each token with what it may do, when it expires and when it was
+last used. Select Revoke to stop one at once. If you lose a token or think
+someone else has it, revoke it and make a new one. Turning off "Allow other
+apps to connect" revokes every token, and so does changing or resetting your
+password.
+
 ## Page setup
 
 How print and PDF output is typeset: page size, margins, font, paragraph style,
