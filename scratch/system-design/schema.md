@@ -595,6 +595,7 @@ review_suggestions (
   pattern_thread_id  uuid references review_threads(id) on delete set null,  -- the Assistant pattern note this edit fixes
   decided_by_user_id uuid references users(id),
   decided_at         timestamptz,
+  revised_at         timestamptz,            -- when its author last revised the replacement; an app revises once per writer reply
   created_at         timestamptz not null,
   client_id          uuid references oauth_clients(id) on delete set null,  -- as on review_comments
   client_name        text,

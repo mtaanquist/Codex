@@ -1023,6 +1023,52 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, review round 2: endpoint and tools fixes (2026-11-21)
+
+Part of #1175, branch `fix/mcp-tools-review-2` on `staging/mcp-endpoint`,
+stacked on the sign-in branch because both add a migration (0101 there, 0102
+here: one nullable column, `review_suggestions.revised_at`).
+
+- The staging lock emptied the pool. Round 1 made an app's staging calls for
+  one universe take a transaction advisory lock, which is right for the
+  checks but means every waiting call sits on a pooled connection: 30 calls
+  at once from one grant took all ten, and anything else the server did
+  waited for a connection. The calls now queue in memory first
+  (`mcp/staging-queue.ts`: a promise chain per key, a count of who is in
+  line), so only the call whose turn it is has a connection. Eight may wait;
+  a call past that is answered "Another call is still running. Try again."
+  without waiting. The advisory lock stays inside the transaction as the
+  database's own copy of the rule, and the transaction sets `lock_timeout` to
+  two seconds, so if that lock (or any other, such as a row the writer's save
+  holds) is not free the call gives up with the same answer. The timeout
+  covers the whole transaction on purpose: an app should never wait long on
+  the writer either. The test that failed first: 30 calls at once had all ten
+  connections busy; now at most two (the call at work and the test's own
+  query).
+- How long a save can wait on an app. A staging call is one transaction, so
+  the scene's revision lock (what a save of that scene waits on) is held from
+  the call's first edit to its end. The outer transaction was kept: it is what
+  the advisory lock lives in, and it makes a pattern note land whole or not at
+  all. Measured instead: a 40-edit pattern note, the largest a call takes,
+  held the lock for 0.34 to 0.45 s here; a single edit for a few
+  milliseconds. A test asks for the lock over and over during a 40-edit call
+  and fails if any wait passes two seconds. What was not done: shortening the
+  per-edit work (each edit runs its ceiling check, repeat check and insert in
+  turn) so the hold is shorter still. Worth doing if a pattern note ever
+  grows past 40 edits.
+- One revision for each writer reply. An app could revise its suggestion any
+  number of times on one reply, and each revision refuses an accept of the
+  earlier wording, so a looping app could keep an accept from landing.
+  `revised_at` is set on every revision; an app's revision is refused when
+  the writer's last comment is not newer than it.
+- A ceiling on drafts: 20 undecided drafts from apps in a universe. The
+  drafts table does not say who wrote a draft, so an app's draft is told by
+  what it is: ready, with no job (the Assistant's always has one). Counted for
+  the writer across apps, so two apps staging at the same moment can pass it
+  by one; not worth a lock.
+- `nameTaken` ran three queries at once on one transaction client, which the
+  driver warns about. They run in turn.
+
 ## MCP endpoint, review round 2: sign-in fixes (2026-11-21)
 
 Part of #1175, branch `fix/mcp-sign-in-review-2` on `staging/mcp-endpoint`.
