@@ -153,7 +153,7 @@ function clampAnchors(start: number, end: number, lo: number, hi: number, length
 // shifts the later ones, so the whole story is held: two paths that add or
 // move scenes then take turns rather than handing out the same position.
 // Returns null when the scene, or its story, is gone by then.
-async function lockStoryScene(tx: Database, storyId: string, sceneId: string) {
+export async function lockStoryScene(tx: Database, storyId: string, sceneId: string) {
 	await lockStoryScenes(tx, storyId);
 	// A fresh read, so it sees what a split that held the lock before us did.
 	const [scene] = await tx
@@ -173,7 +173,7 @@ async function lockStoryScene(tx: Database, storyId: string, sceneId: string) {
 // Inserts a scene directly after `source` (its story's scenes locked by the
 // caller), shifting the later scenes of its story and chapter down one. The
 // shifted scenes keep both timestamps: the writer did not change them. Returns the new id.
-async function makeRoomAfter(
+export async function makeRoomAfter(
 	tx: Database,
 	source: typeof scenes.$inferSelect,
 	values: Omit<

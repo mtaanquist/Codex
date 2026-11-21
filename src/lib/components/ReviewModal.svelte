@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { NO_PRICE_NOTE, capNotAppliedNote, money, overWarnNote } from '#lib/cost-notes';
 	import { resolve } from '$app/paths';
 	import { modal } from '#lib/modal';
 	import { formatNumber, spentPhrase } from '#lib/format';
@@ -117,8 +118,6 @@
 			typeof e.estTokens === 'number'
 		);
 	}
-
-	const money = (usd: number) => usd.toFixed(2);
 
 	// The done phase never reaches here: the finished branch above it catches it.
 	const PHASE_LABEL: Record<string, string> = {
@@ -467,18 +466,14 @@
 									: "; the model's replies cost extra."}
 							</p>
 						{:else}
-							<p class="rm-note">This model has no price on record, so the cost cannot be shown.</p>
+							<p class="rm-note">{NO_PRICE_NOTE}</p>
 						{/if}
 						{#if estimate.capUsd !== undefined && !estimate.capEnforceable}
-							<p class="rm-note">
-								Your spend cap of ${money(estimate.capUsd)} cannot be applied to a model with no known
-								price.
-							</p>
+							<p class="rm-note">{capNotAppliedNote(estimate.capUsd)}</p>
 						{/if}
 						{#if warned}
 							<p class="rm-note">
-								That is more than your warning limit of ${money(estimate.warnUsd)}. Review a chapter
-								at a time to spend less.
+								{overWarnNote(estimate.warnUsd)} Review a chapter at a time to spend less.
 							</p>
 						{/if}
 					</div>

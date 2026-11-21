@@ -179,6 +179,45 @@ a.chip:hover {
 	font-size: var(--text-meta);
 	color: var(--text-faint);
 }
+/* A card the Assistant puts under the chat for the writer to act on: a split
+   proposal, a scene draft, a chapter's drafts. */
+.assist-card {
+	margin-top: var(--space-2);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg-card);
+	padding: var(--space-2) var(--space-3);
+	font-size: var(--text-base);
+}
+.assist-card-head {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-weight: 600;
+	color: var(--text);
+}
+.assist-card-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+.assist-card-note {
+	margin: 0;
+	color: var(--text-muted);
+}
+/* Rows the card spaces itself: fields, notes, hints and actions. */
+.assist-card-stack {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+.assist-card-stack .field {
+	margin-bottom: 0;
+}
+.assist-card-stack .field-hint {
+	margin: 0;
+}
 .modal-kind {
 	font-size: var(--text-micro);
 	font-weight: 650;

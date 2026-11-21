@@ -1,6 +1,7 @@
 import type { Job, JobWithMetadata, PgBoss } from 'pg-boss';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
 	DIGEST_DELAY_SECONDS,
 	LEGACY_ASSISTANT_REVIEW_QUEUE,
@@ -61,6 +62,13 @@ import {
 } from '../lib/server/llm/gateway.ts';
 import { EndpointReplyError } from '../lib/server/llm/providers/types.ts';
 import { summariseCharacterArc } from '../lib/server/llm/arc-summary.ts';
+import {
+	failChapterDraft,
+	failSceneDraft,
+	runChapterDraft,
+	runSceneDraft
+} from '../lib/server/llm/scene-draft.ts';
+import { chapterDraftHref, sceneDraftHref } from '../lib/scene-draft.ts';
 import { purgeJobSpend } from '../lib/server/llm/job-spend.ts';
 import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
@@ -82,6 +90,8 @@ const defaultServices = {
 	enrichUniverse,
 	enrichEntityFromText,
 	summariseCharacterArc,
+	runSceneDraft,
+	runChapterDraft,
 	sendEmail,
 	s3AssetStore
 };
@@ -118,6 +128,24 @@ export type AssistantEnrichData = {
 	read?: { entityId: string; name: string; storyId?: string; mode: 'scenes' | 'book' };
 };
 
+// One scene draft: the staged row (assistant_drafts) the job writes.
+export type AssistantDraftData = {
+	userId: string;
+	storyId: string;
+	sceneId: string;
+	draftId: string;
+};
+
+// A chapter drafted scene by scene: the staged rows the job writes, in order,
+// and what the writer said about the chapter as a whole.
+export type AssistantChapterDraftData = {
+	userId: string;
+	storyId: string;
+	chapterId: string;
+	draftIds: string[];
+	brief: string;
+};
+
 // The first distinct thing that went wrong in a run, for the notification
 // title. The whole list rides on the job status the review modal polls.
 function firstFailure(failures: ReviewFailure[] | undefined): string {
@@ -135,6 +163,14 @@ function staged(notes: number): string {
 const ARC_AGAIN = "try again from the character's entry in Plan";
 const PICK_MODEL = 'Pick one under Account, Assistant, Models per role';
 const DETAILS_AGAIN = 'select "Suggest details with the Assistant" on the entry again';
+const DRAFT_AGAIN = 'type /draft in the Assistant chat to ask again';
+const CHAPTER_DRAFT_AGAIN = 'type /draft-chapter in the Assistant chat to ask again';
+const KEEP_OR_DISCARD = 'Open each scene to keep or discard its draft.';
+
+// "1 scene", "3 scenes".
+function sceneCount(n: number): string {
+	return `${n} ${n === 1 ? 'scene' : 'scenes'}`;
+}
 
 // "1 entry", "3 other entries", for an enrich notice.
 function entries(n: number, other = false): string {
@@ -383,7 +419,211 @@ export function createHandlers(deps: WorkerDeps) {
 		await notifyWriter(ASSISTANT_ENRICH_QUEUE, job, userId, 'assistant_enrich', { title, href });
 	}
 
+	// One scene draft. The job writes only its staged row; the notice sends the
+	// writer to the scene, where the Assistant panel shows the draft to keep or
+	// discard.
+	async function sceneDraft(job: JobWithMetadata<AssistantDraftData>) {
+		const { userId, storyId, sceneId, draftId } = job.data;
+		const href = sceneDraftHref(storyId, sceneId);
+		const [scene] = await db
+			.select({ title: schema.scenes.title })
+			.from(schema.scenes)
+			.innerJoin(schema.stories, eq(schema.scenes.storyId, schema.stories.id))
+			.where(and(eq(schema.scenes.id, sceneId), eq(schema.stories.ownerId, userId)));
+		const name = scene?.title ? `the scene "${scene.title}"` : 'your scene';
+		// Settled as completed with a failed output, which the activity card
+		// reads as failed, and pg-boss does not run it again.
+		const settleFailed = () => boss.complete(ASSISTANT_DRAFT_QUEUE, job, { failed: true });
+		let title: string;
+		try {
+			const result = await withJobRunSignal(boss, job, (signal) =>
+				services.runSceneDraft(db, { userId, draftId, jobId: job.id, signal })
+			);
+			if (result.outcome === 'missing') {
+				logEvent('warn', 'assistant.draft_skipped', { draftId, userId });
+				return;
+			}
+			if (result.outcome === 'stopped') {
+				title = `The draft of ${name} was stopped before it finished, so nothing was kept.`;
+			} else if (result.outcome === 'empty') {
+				await settleFailed();
+				title = `The Assistant did not draft ${name}. ${result.note}`;
+			} else if (result.outcome === 'off') {
+				await settleFailed();
+				title = `The Assistant is off for this story, so it did not draft ${name}.`;
+			} else if (result.outcome === 'capped') {
+				await settleFailed();
+				title = `The Assistant did not draft ${name}. ${result.note} Then ${DRAFT_AGAIN}.`;
+			} else {
+				title = `The Assistant drafted ${name} (${result.words} ${result.words === 1 ? 'word' : 'words'}). Open the scene to keep or discard the draft.`;
+				if (result.cutOff) title += ' It stopped at the length limit, so it may end mid-scene.';
+				if (result.capNotApplied) title += ` ${result.capNotApplied}`;
+			}
+			logEvent('info', 'assistant.draft', { draftId, outcome: result.outcome });
+		} catch (error) {
+			logEvent('error', 'assistant.draft_failed', { draftId, ...errorFields(error) });
+			const settled =
+				error instanceof ReplyRefusedError ||
+				error instanceof EndpointReplyError ||
+				error instanceof AssistantDisabledError;
+			if (settled) {
+				// A retry would end the same way, so say why and end here.
+				const why =
+					error instanceof ReplyRefusedError
+						? 'The model declined to write this draft.'
+						: error instanceof EndpointReplyError
+							? `The endpoint did not send a reply. Check the endpoint in your settings, then ${DRAFT_AGAIN}.`
+							: error instanceof NoModelError
+								? `No model is chosen for the Assistant. ${PICK_MODEL}, then ${DRAFT_AGAIN}.`
+								: `The Assistant is turned off. Switch it back on in your settings, then ${DRAFT_AGAIN}.`;
+				await failSceneDraft(db, draftId, why);
+				await settleFailed();
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_draft', {
+						title: `The Assistant did not draft ${name}. ${why}`,
+						href
+					})
+				);
+				return;
+			}
+			// pg-boss runs it again (a passing endpoint fault, an expiry, a worker
+			// shutting down), and the draft stays unsettled for that attempt.
+			if (job.retryCount < job.retryLimit) throw error;
+			await failSceneDraft(
+				db,
+				draftId,
+				`The Assistant could not write this draft. Check the endpoint in your settings, then ${DRAFT_AGAIN}.`
+			);
+			await notifyWriter(ASSISTANT_DRAFT_QUEUE, job, userId, 'assistant_draft', {
+				title: `The Assistant could not draft ${name}. Check the endpoint in your settings.`,
+				href
+			});
+			throw error;
+		}
+		await notifyWriter(ASSISTANT_DRAFT_QUEUE, job, userId, 'assistant_draft', { title, href });
+	}
+
+	// A chapter drafted scene by scene. The job writes only the staged rows;
+	// the notice says how many scenes were drafted and, when the run ended
+	// early, why.
+	async function chapterDraft(job: JobWithMetadata<AssistantChapterDraftData>) {
+		const { userId, storyId, chapterId, draftIds, brief } = job.data;
+		const [chapter] = await db
+			.select({ title: schema.chapters.title })
+			.from(schema.chapters)
+			.innerJoin(schema.stories, eq(schema.chapters.storyId, schema.stories.id))
+			.where(and(eq(schema.chapters.id, chapterId), eq(schema.stories.ownerId, userId)));
+		const name = chapter?.title ? `the chapter "${chapter.title}"` : 'your chapter';
+		// A chapter deleted meanwhile leaves its scenes, and their drafts, in the
+		// story.
+		const href = chapter ? chapterDraftHref(storyId, chapterId) : `/stories/${storyId}`;
+		const settleFailed = () => boss.complete(ASSISTANT_DRAFT_QUEUE, job, { failed: true });
+		// What a run that ended on a fault leaves, for its notice.
+		const kept = (drafted: number) =>
+			drafted > 0
+				? ` ${sceneCount(drafted)} ${drafted === 1 ? 'was' : 'were'} drafted before that. ${KEEP_OR_DISCARD}`
+				: '';
+		let title: string;
+		try {
+			const result = await withJobRunSignal(boss, job, (signal) =>
+				services.runChapterDraft(db, { userId, storyId, brief, draftIds, jobId: job.id, signal })
+			);
+			if (result.outcome === 'missing') {
+				logEvent('warn', 'assistant.chapter_draft_skipped', { chapterId, userId });
+				return;
+			}
+			const { drafted, total, ended } = result;
+			if (!ended) {
+				title =
+					drafted === 0
+						? `The Assistant drafted no scenes in ${name}.`
+						: drafted === total
+							? `The Assistant drafted ${sceneCount(drafted)} in ${name}. ${KEEP_OR_DISCARD}`
+							: `The Assistant drafted ${drafted} of ${sceneCount(total)} in ${name}. ${KEEP_OR_DISCARD}`;
+			} else {
+				const why =
+					ended === 'stopped'
+						? 'You stopped it'
+						: ended === 'off'
+							? 'The Assistant is off for this story now'
+							: ended === 'empty'
+								? 'A scene came back with no text'
+								: 'The next scene could have taken it past your spend cap';
+				title =
+					drafted === 0
+						? `The Assistant drafted no scenes in ${name}. ${why}, so nothing was kept.`
+						: `The Assistant drafted ${drafted} of ${sceneCount(total)} in ${name}. ${why}, so the rest were not drafted. ${KEEP_OR_DISCARD}`;
+				if (ended === 'empty' && result.emptyNote) title += ` ${result.emptyNote}`;
+				if (ended === 'capped') {
+					title += ` ${result.cappedNote} Then ${CHAPTER_DRAFT_AGAIN}.`;
+				}
+				// Nothing to show for it: the activity card says so too.
+				if (drafted === 0 && ended !== 'stopped') await settleFailed();
+			}
+			if (result.gone > 0) {
+				title += ` ${sceneCount(result.gone)} ${result.gone === 1 ? 'was' : 'were'} no longer there.`;
+			}
+			if (result.cutOff > 0) {
+				title += ` ${sceneCount(result.cutOff)} stopped at the length limit, so ${result.cutOff === 1 ? 'it' : 'they'} may end early.`;
+			}
+			if (result.capNotApplied) title += ` ${result.capNotApplied}`;
+			logEvent('info', 'assistant.chapter_draft', { chapterId, drafted, total, ended });
+		} catch (error) {
+			logEvent('error', 'assistant.chapter_draft_failed', { chapterId, ...errorFields(error) });
+			const settled =
+				error instanceof ReplyRefusedError ||
+				error instanceof EndpointReplyError ||
+				error instanceof AssistantDisabledError;
+			if (settled) {
+				// A retry would end the same way, so say why and end here.
+				const why =
+					error instanceof ReplyRefusedError
+						? 'The model declined to write a scene.'
+						: error instanceof EndpointReplyError
+							? `The endpoint did not send a reply. Check the endpoint in your settings, then ${CHAPTER_DRAFT_AGAIN}.`
+							: error instanceof NoModelError
+								? `No model is chosen for the Assistant. ${PICK_MODEL}, then ${CHAPTER_DRAFT_AGAIN}.`
+								: `The Assistant is turned off. Switch it back on in your settings, then ${CHAPTER_DRAFT_AGAIN}.`;
+				const left = await failChapterDraft(db, userId, draftIds, why);
+				await settleFailed();
+				await queueDigests(
+					await insertNotifications(db, [userId], 'assistant_draft', {
+						title: `The Assistant did not finish drafting ${name}. ${why}${kept(left.drafted)}`,
+						href
+					})
+				);
+				return;
+			}
+			// pg-boss runs it again, and the retry carries on from the scene that
+			// failed: the scenes already drafted are kept.
+			if (job.retryCount < job.retryLimit) throw error;
+			const left = await failChapterDraft(
+				db,
+				userId,
+				draftIds,
+				`The Assistant could not write this draft. Check the endpoint in your settings, then ${DRAFT_AGAIN}.`
+			);
+			await notifyWriter(ASSISTANT_DRAFT_QUEUE, job, userId, 'assistant_draft', {
+				title: `The Assistant could not finish drafting ${name}. Check the endpoint in your settings.${kept(left.drafted)}`,
+				href
+			});
+			throw error;
+		}
+		await notifyWriter(ASSISTANT_DRAFT_QUEUE, job, userId, 'assistant_draft', { title, href });
+	}
+
 	return {
+		// One scene drafted from the writer's brief, or a chapter's scenes drafted
+		// one by one, staged for the writer to keep or discard. Only ever queued
+		// by the writer's own request.
+		async assistantDraft(jobs: JobWithMetadata<AssistantDraftData | AssistantChapterDraftData>[]) {
+			for (const job of jobs) {
+				if ('draftIds' in job.data) {
+					await chapterDraft(job as JobWithMetadata<AssistantChapterDraftData>);
+				} else await sceneDraft(job as JobWithMetadata<AssistantDraftData>);
+			}
+		},
+
 		async mentionsScene(jobs: Job<{ sceneId: string }>[]) {
 			for (const job of jobs) {
 				const result = await rebuildSceneMentions(db, job.data.sceneId);

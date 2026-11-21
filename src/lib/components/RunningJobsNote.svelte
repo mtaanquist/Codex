@@ -13,6 +13,13 @@
 	function describe(job: TrackedJob): string {
 		if (job.kind === 'summaries') return 'The Assistant is updating summaries';
 		if (job.kind === 'enrich') return 'The Assistant is suggesting details for the entries';
+		if (job.kind === 'draft') {
+			if (job.sceneId || !job.chapterId) return 'The Assistant is drafting a scene';
+			const drafted = job.progress;
+			return drafted && drafted.total > 0
+				? `The Assistant is drafting a chapter: ${drafted.completed} of ${drafted.total} scenes`
+				: 'The Assistant is drafting a chapter';
+		}
 		if (job.mode === 'continuity') return 'The Assistant is checking continuity';
 		const p = job.progress;
 		if (p?.phase === 'scenes' && p.total > 0) {

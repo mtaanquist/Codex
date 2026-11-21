@@ -32,6 +32,7 @@
 	import {
 		duplicateScene as duplicateSceneAction,
 		flushEditors as flushAll,
+		landSceneDraft as landSceneDraftAction,
 		mergeScenes as mergeScenesAction,
 		persistProposalState,
 		SAVE_FAILED,
@@ -601,6 +602,103 @@
 		};
 	}
 
+	// "Draft this scene" on a scene's menu: the scene opens, and the Assistant
+	// panel shows the draft form (or the draft the scene already has).
+	function draftScene(sceneId: string) {
+		rowMenu = null;
+		if (data.selectedScene?.id === sceneId) {
+			assistantIntent.pending = { kind: 'draft' };
+			return;
+		}
+		void goto(withQuery(storyPath, { scene: sceneId, draft: '1' }));
+	}
+	// "Draft this chapter" on a chapter's menu: the Assistant panel shows the
+	// chapter draft form (or the chapter's drafts while they are being written).
+	function draftChapter(chapterId: string) {
+		rowMenu = null;
+		assistantIntent.pending = { kind: 'draft-chapter', chapterId };
+	}
+	// The Assistant tab shows: the account has it on, or it is off but drafts
+	// it wrote before still wait here.
+	const assistantTab = $derived(data.assistant.tabEnabled || data.assistant.draftsWaiting);
+	// A link to a scene's draft carries draft=show (its notice, the background
+	// jobs list, the chapter's list of drafts) or draft=1 (the scene's menu,
+	// which also opens the form when the scene has no draft); one to a
+	// chapter's drafts carries draftChapter. Either opens the Assistant panel
+	// on what it names, once: the parameter is then taken off the address, so
+	// a refresh of the page's data, or a reload, does not open it again.
+	const draftAsked = $derived.by(() => {
+		const how = page.url.searchParams.get('draft');
+		const sceneId = page.url.searchParams.get('scene');
+		return (how === '1' || how === 'show') && sceneId
+			? { sceneId, showOnly: how === 'show' }
+			: null;
+	});
+	const chapterDraftAsked = $derived(page.url.searchParams.get('draftChapter'));
+	$effect(() => {
+		const scene = draftAsked;
+		const chapterId = chapterDraftAsked;
+		if (!scene && !chapterId) return;
+		untrack(() => {
+			// A draft shows beside its scene, so a link that also names the
+			// whole-story view opens the scene instead.
+			if (scene && page.url.searchParams.has('view')) {
+				const url = new URL(page.url.href);
+				url.searchParams.delete('view');
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page's own address
+				void goto(url, { replace: true });
+				return;
+			}
+			if (assistantTab) {
+				if (chapterId && data.chapters.some((chapter) => chapter.id === chapterId)) {
+					assistantIntent.pending = { kind: 'draft-chapter', chapterId, showOnly: true };
+				} else if (scene) {
+					assistantIntent.pending = {
+						kind: 'draft',
+						showOnly: scene.showOnly,
+						// The scene the link names was deleted since.
+						gone: data.selectedScene?.id !== scene.sceneId
+					};
+				}
+			}
+			const url = new URL(page.url.href);
+			url.searchParams.delete('draft');
+			url.searchParams.delete('draftChapter');
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- this page's own address
+			void goto(url, { replace: true, reset: false });
+		});
+	});
+
+	// With the Assistant off for the account, its tab is only here for drafts
+	// written before. Once one is kept or discarded the page's data is read
+	// again, so the tab goes with the last of them and the list of the ones
+	// still waiting (shown on a muted story too) is current.
+	function draftDecidedWhileOff() {
+		void refreshAll();
+	}
+
+	// Keeps a scene draft the way the writer chose in the Assistant panel. The
+	// server decides against the stored text (Fill is refused once the scene
+	// has any), so pending saves land first; then the scene the draft went to
+	// opens on the stored text.
+	async function landSceneDraft(
+		draftId: string,
+		action: 'fill' | 'add',
+		text: string,
+		baseHashes: string[]
+	): Promise<string | null> {
+		if (typingPaused) return BUSY;
+		if (uploading()) return WAIT_UPLOADING;
+		return pauseTypingWhile(async () => {
+			if (!(await flushEditors())) return SAVE_FAILED;
+			const result = await landSceneDraftAction(draftId, action, text, baseHashes);
+			if (!result.ok) return result.message;
+			const target = result.newSceneId ?? result.sceneId;
+			if (target) await openSceneKeepingPane(target);
+			return null;
+		});
+	}
+
 	// Which chapter shows its inline rename field; bound into the outline,
 	// set from the row menu.
 	let renamingChapterId = $state<string | null>(null);
@@ -693,7 +791,7 @@
 	const panels = $derived(
 		visiblePanels({
 			reference: true,
-			assistant: data.assistant.tabEnabled,
+			assistant: assistantTab,
 			history: Boolean(data.selectedScene),
 			notes: data.storyNotes.length
 		})
@@ -704,7 +802,7 @@
 	// An Assistant intent (from a menu here or the command palette) opens the
 	// panel; the panel consumes the intent itself once it renders.
 	$effect(() => {
-		if (assistantIntent.pending && data.assistant.tabEnabled) {
+		if (assistantIntent.pending && assistantTab) {
 			chosenPanel = 'assistant';
 			untrack(() => showPane('notes'));
 		}
@@ -1098,13 +1196,22 @@
 								<AssistantPanel
 									scope={{ storyId: data.story.id, storyTitle: data.story.title }}
 									sceneId={data.selectedScene?.id ?? null}
+									chapterId={data.scenes.find((s) => s.id === data.selectedScene?.id)?.chapterId ??
+										null}
 									name={data.assistant.name}
-									muted={data.assistant.muted}
+									muted={data.assistant.muted || !data.assistant.tabEnabled}
+									off={!data.assistant.tabEnabled}
+									onDraftDecided={data.assistant.tabEnabled && !data.assistant.muted
+										? undefined
+										: draftDecidedWhileOff}
+									waitingDrafts={data.assistant.waitingDrafts}
+									revisionPreview={Boolean(data.revisionPreview)}
 									suggestions={assistantSuggestions}
 									chat={data.assistantChat}
 									onConfirmSplit={confirmAssistantSplit}
 									onRevertSplit={revertAssistantSplit}
 									insertPaused={leavingScene}
+									onLandDraft={data.revisionPreview ? undefined : landSceneDraft}
 									reviewHref={resolve('/stories/[id]/review', { id: data.story.slug })}
 									onInsert={data.selectedScene && !inWholeStory && !data.revisionPreview
 										? (text) => {
@@ -1286,6 +1393,8 @@
 		}}
 		onOpenReview={openReviewFor}
 		onSuggestSplit={suggestSplit}
+		onDraftScene={data.revisionPreview ? undefined : draftScene}
+		onDraftChapter={data.revisionPreview ? undefined : draftChapter}
 		onDuplicateScene={duplicateScene}
 		onMergeSelected={mergeSelectedScenes}
 		onFindReplace={(chapterId) => {

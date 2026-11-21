@@ -10,6 +10,8 @@ import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
 	assets,
+	assistantDrafts,
+	chapters,
 	characters,
 	notifications,
 	reviewComments,
@@ -786,6 +788,375 @@ describe('a details read for one entry', () => {
 		expect(await titles(owner.id)).toEqual([
 			'The Assistant could not read for details about Bram. Raise Longest reply.'
 		]);
+	});
+});
+
+describe('a scene draft', () => {
+	async function seedDraft() {
+		const { owner, story } = await seedStory();
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId: story.id, globalPosition: 1, title: 'The Crossing' })
+			.returning();
+		const [draft] = await db
+			.insert(assistantDrafts)
+			.values({
+				userId: owner.id,
+				storyId: story.id,
+				sceneId: scene.id,
+				brief: 'Ilse crosses.',
+				targetWords: 900,
+				status: 'running'
+			})
+			.returning();
+		const data = { userId: owner.id, storyId: story.id, sceneId: scene.id, draftId: draft.id };
+		return { owner, story, scene, draft, data };
+	}
+	const draftRow = async (id: string) =>
+		(await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id)))[0];
+
+	it('tells the writer the draft is ready, with a link to it', async () => {
+		const { owner, story, scene, data } = await seedDraft();
+		const asked: unknown[] = [];
+		const { handlers, completed } = harness({
+			runSceneDraft: async (_db, opts) => {
+				asked.push({ userId: opts.userId, draftId: opts.draftId, jobId: opts.jobId });
+				return { outcome: 'ready', words: 912, cutOff: false };
+			}
+		});
+		const queued = job(data);
+		await handlers.assistantDraft([queued]);
+
+		expect(asked).toEqual([{ userId: owner.id, draftId: data.draftId, jobId: queued.id }]);
+		const rows = await db.select().from(notifications).where(eq(notifications.userId, owner.id));
+		expect(rows.map((row) => [row.kind, row.payload])).toEqual([
+			[
+				'assistant_draft',
+				{
+					title:
+						'The Assistant drafted the scene "The Crossing" (912 words). Open the scene to keep or discard the draft.',
+					href: `/stories/${story.id}?scene=${scene.id}&draft=show`
+				}
+			]
+		]);
+		expect(completed).toEqual([]);
+	});
+
+	it('says how a draft that did not finish ended', async () => {
+		const { owner, data } = await seedDraft();
+		const results = [
+			{ outcome: 'ready' as const, words: 400, cutOff: true },
+			{ outcome: 'stopped' as const },
+			{ outcome: 'off' as const },
+			{ outcome: 'capped' as const, spentUsd: 0, note: 'NOTE.' }
+		];
+		const { handlers, completed } = harness({ runSceneDraft: async () => results.shift()! });
+		for (let i = 0; i < 4; i++) await handlers.assistantDraft([job(data)]);
+		expect((await titles(owner.id)).sort()).toEqual(
+			[
+				'The Assistant drafted the scene "The Crossing" (400 words). Open the scene to keep or discard the draft. It stopped at the length limit, so it may end mid-scene.',
+				'The draft of the scene "The Crossing" was stopped before it finished, so nothing was kept.',
+				'The Assistant is off for this story, so it did not draft the scene "The Crossing".',
+				'The Assistant did not draft the scene "The Crossing". NOTE. Then type /draft in the Assistant chat to ask again.'
+			].sort()
+		);
+		// Off and capped are settled as failed, so the activity card says so.
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }, { failed: true }]);
+	});
+
+	it('settles a draft that came back with no text, saying what to do and not asking again', async () => {
+		const { owner, data } = await seedDraft();
+		let runs = 0;
+		const note = 'Raise Longest reply for Write, then ask again.';
+		const { handlers, completed } = harness({
+			runSceneDraft: async () => {
+				runs += 1;
+				return { outcome: 'empty', note };
+			}
+		});
+		// The handler returns rather than throws, so the queue does not retry.
+		await handlers.assistantDraft([job(data)]);
+		expect(runs).toBe(1);
+		const [title] = await titles(owner.id);
+		expect(title).toBe(`The Assistant did not draft the scene "The Crossing". ${note}`);
+		expect(title).not.toMatch(/endpoint/i);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it("says nothing for a draft that is gone or not the writer's", async () => {
+		const { owner, data } = await seedDraft();
+		const { handlers } = harness({ runSceneDraft: async () => ({ outcome: 'missing' }) });
+		await handlers.assistantDraft([job(data)]);
+		expect(await titles(owner.id)).toEqual([]);
+	});
+
+	it('retries a draft that failed, and fails it for the writer on the last attempt', async () => {
+		const { owner, data } = await seedDraft();
+		const { handlers } = harness(
+			{
+				runSceneDraft: async () => {
+					throw new Error('endpoint down');
+				}
+			},
+			{ state: 'active', startedOn: STARTED }
+		);
+
+		await expect(handlers.assistantDraft([job(data)])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([]);
+		// Still the retry's to write.
+		expect((await draftRow(data.draftId)).status).toBe('running');
+
+		const last = { ...job(data), retryCount: 2 };
+		await expect(handlers.assistantDraft([last])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not draft the scene "The Crossing". Check the endpoint in your settings.'
+		]);
+		expect(await draftRow(data.draftId)).toMatchObject({ status: 'failed', textMd: '' });
+	});
+
+	it('ends without retrying when a retry would end the same way, settled as failed', async () => {
+		for (const [error, why] of [
+			[new ReplyRefusedError(), 'The model declined to write this draft.'],
+			[
+				new NoModelError(),
+				'No model is chosen for the Assistant. Pick one under Account, Assistant, Models per role, then type /draft in the Assistant chat to ask again.'
+			],
+			[
+				new AssistantDisabledError(),
+				'The Assistant is turned off. Switch it back on in your settings, then type /draft in the Assistant chat to ask again.'
+			]
+		] as const) {
+			await pool.query('truncate table notifications, stories, universes, users cascade');
+			const { owner, data } = await seedDraft();
+			const { handlers, completed } = harness({
+				runSceneDraft: async () => {
+					throw error;
+				}
+			});
+			await handlers.assistantDraft([job(data)]);
+			expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+			expect(await titles(owner.id)).toEqual([
+				`The Assistant did not draft the scene "The Crossing". ${why}`
+			]);
+			expect(await draftRow(data.draftId)).toMatchObject({ status: 'failed', note: why });
+		}
+	});
+});
+
+describe('a chapter draft', () => {
+	async function seedRun() {
+		const { owner, story } = await seedStory();
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId: story.id, position: 1, title: 'The River' })
+			.returning();
+		const draftIds: string[] = [];
+		for (let i = 0; i < 3; i++) {
+			const [scene] = await db
+				.insert(scenes)
+				.values({ storyId: story.id, chapterId: chapter.id, globalPosition: i + 1 })
+				.returning();
+			const [draft] = await db
+				.insert(assistantDrafts)
+				.values({
+					userId: owner.id,
+					storyId: story.id,
+					chapterId: chapter.id,
+					sceneId: scene.id,
+					position: i,
+					brief: '',
+					targetWords: 900
+				})
+				.returning();
+			draftIds.push(draft.id);
+		}
+		const data = {
+			userId: owner.id,
+			storyId: story.id,
+			chapterId: chapter.id,
+			draftIds,
+			brief: 'Ilse flees.'
+		};
+		return { owner, story, chapter, data };
+	}
+	const done = (extra: Record<string, unknown>) => ({
+		outcome: 'done' as const,
+		drafted: 3,
+		total: 3,
+		words: 2700,
+		cutOff: 0,
+		gone: 0,
+		spentUsd: 0,
+		...extra
+	});
+	const statuses = async (ids: string[]) => {
+		const rows = await db.select().from(assistantDrafts);
+		return ids.map((id) => rows.find((row) => row.id === id)?.status);
+	};
+
+	it('runs the whole chapter as one job and says how many scenes were drafted', async () => {
+		const { owner, story, chapter, data } = await seedRun();
+		const asked: unknown[] = [];
+		const { handlers, completed } = harness({
+			runChapterDraft: async (_db, opts) => {
+				asked.push({ ...opts, signal: undefined });
+				return done({});
+			},
+			runSceneDraft: async () => {
+				throw new Error('a chapter draft is not a scene draft');
+			}
+		});
+		const queued = job(data);
+		await handlers.assistantDraft([queued]);
+
+		expect(asked).toEqual([
+			{
+				userId: owner.id,
+				storyId: story.id,
+				brief: 'Ilse flees.',
+				draftIds: data.draftIds,
+				jobId: queued.id,
+				signal: undefined
+			}
+		]);
+		const rows = await db.select().from(notifications).where(eq(notifications.userId, owner.id));
+		expect(rows.map((row) => [row.kind, row.payload])).toEqual([
+			[
+				'assistant_draft',
+				{
+					title:
+						'The Assistant drafted 3 scenes in the chapter "The River". Open each scene to keep or discard its draft.',
+					href: `/stories/${story.id}?draftChapter=${chapter.id}`
+				}
+			]
+		]);
+		expect(completed).toEqual([]);
+	});
+
+	it('says why a run stopped early and what it kept', async () => {
+		const { owner, data } = await seedRun();
+		const results = [
+			done({ drafted: 2, ended: 'stopped' }),
+			done({ drafted: 1, ended: 'capped', spentUsd: 1.25, cappedNote: 'NOTE.' }),
+			done({ drafted: 2, ended: 'off' }),
+			done({ drafted: 2, gone: 1, cutOff: 1 }),
+			done({ drafted: 0, ended: 'stopped' }),
+			done({ drafted: 0, ended: 'capped', spentUsd: 0, cappedNote: 'NOTE.' }),
+			done({ drafted: 0, ended: 'off' })
+		];
+		const count = results.length;
+		const { handlers, completed } = harness({ runChapterDraft: async () => results.shift()! });
+		for (let i = 0; i < count; i++) await handlers.assistantDraft([job(data)]);
+		const keep = 'Open each scene to keep or discard its draft.';
+		expect((await titles(owner.id)).sort()).toEqual(
+			[
+				`The Assistant drafted 2 of 3 scenes in the chapter "The River". You stopped it, so the rest were not drafted. ${keep}`,
+				`The Assistant drafted 1 of 3 scenes in the chapter "The River". The next scene could have taken it past your spend cap, so the rest were not drafted. ${keep} NOTE. Then type /draft-chapter in the Assistant chat to ask again.`,
+				`The Assistant drafted 2 of 3 scenes in the chapter "The River". The Assistant is off for this story now, so the rest were not drafted. ${keep}`,
+				`The Assistant drafted 2 of 3 scenes in the chapter "The River". ${keep} 1 scene was no longer there. 1 scene stopped at the length limit, so it may end early.`,
+				'The Assistant drafted no scenes in the chapter "The River". You stopped it, so nothing was kept.',
+				'The Assistant drafted no scenes in the chapter "The River". The next scene could have taken it past your spend cap, so nothing was kept. NOTE. Then type /draft-chapter in the Assistant chat to ask again.',
+				'The Assistant drafted no scenes in the chapter "The River". The Assistant is off for this story now, so nothing was kept.'
+			].sort()
+		);
+		// Only the runs that drafted nothing for a reason other than Stop are
+		// settled as failed.
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }, { failed: true }]);
+	});
+
+	it('says which way a run ended on a scene with no text, without pointing at the endpoint', async () => {
+		const { owner, data } = await seedRun();
+		const note = 'Raise Longest reply for Write, then ask again.';
+		const results = [
+			{
+				outcome: 'done' as const,
+				drafted: 1,
+				total: 3,
+				words: 400,
+				cutOff: 0,
+				gone: 0,
+				ended: 'empty' as const,
+				spentUsd: 0,
+				emptyNote: note
+			},
+			{
+				outcome: 'done' as const,
+				drafted: 0,
+				total: 3,
+				words: 0,
+				cutOff: 0,
+				gone: 0,
+				ended: 'empty' as const,
+				spentUsd: 0,
+				emptyNote: note
+			}
+		];
+		const { handlers, completed } = harness({ runChapterDraft: async () => results.shift()! });
+		await handlers.assistantDraft([job(data)]);
+		await handlers.assistantDraft([job(data)]);
+		const all = await titles(owner.id);
+		expect(all).toHaveLength(2);
+		for (const title of all) {
+			expect(title).toContain('A scene came back with no text');
+			expect(title).toContain(note);
+			expect(title).not.toMatch(/endpoint/i);
+		}
+		expect(all.some((title) => title.includes('drafted 1 of 3 scenes'))).toBe(true);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+	});
+
+	it('says nothing for a run whose drafts are gone', async () => {
+		const { owner, data } = await seedRun();
+		const { handlers } = harness({ runChapterDraft: async () => ({ outcome: 'missing' }) });
+		await handlers.assistantDraft([job(data)]);
+		expect(await titles(owner.id)).toEqual([]);
+	});
+
+	it('retries a run that failed, and ends it on the last attempt keeping what was drafted', async () => {
+		const { owner, data } = await seedRun();
+		await db
+			.update(assistantDrafts)
+			.set({ status: 'ready', textMd: 'Kept.' })
+			.where(eq(assistantDrafts.id, data.draftIds[0]));
+		await db
+			.update(assistantDrafts)
+			.set({ status: 'running' })
+			.where(eq(assistantDrafts.id, data.draftIds[1]));
+		const { handlers } = harness(
+			{
+				runChapterDraft: async () => {
+					throw new Error('endpoint down');
+				}
+			},
+			{ state: 'active', startedOn: STARTED }
+		);
+
+		await expect(handlers.assistantDraft([job(data)])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([]);
+		// Still the retry's to write.
+		expect(await statuses(data.draftIds)).toEqual(['ready', 'running', 'pending']);
+
+		const last = { ...job(data), retryCount: 2 };
+		await expect(handlers.assistantDraft([last])).rejects.toThrow('endpoint down');
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant could not finish drafting the chapter "The River". Check the endpoint in your settings. 1 scene was drafted before that. Open each scene to keep or discard its draft.'
+		]);
+		expect(await statuses(data.draftIds)).toEqual(['ready', 'failed', 'discarded']);
+	});
+
+	it('ends without retrying when a retry would end the same way, settled as failed', async () => {
+		const { owner, data } = await seedRun();
+		const { handlers, completed } = harness({
+			runChapterDraft: async () => {
+				throw new ReplyRefusedError();
+			}
+		});
+		await handlers.assistantDraft([job(data)]);
+		expect(completed.map((c) => c.data)).toEqual([{ failed: true }]);
+		expect(await titles(owner.id)).toEqual([
+			'The Assistant did not finish drafting the chapter "The River". The model declined to write a scene.'
+		]);
+		expect(await statuses(data.draftIds)).toEqual(['failed', 'discarded', 'discarded']);
 	});
 });
 

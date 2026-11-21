@@ -46,12 +46,14 @@
 		startSummariesJob,
 		reviewSceneWithAssistant,
 		startBackgroundReview,
+		sceneDraftPath,
 		startContinuityReview,
 		startEnrichJob
 	} from '#lib/assistant-actions';
 	import { openReviewModal } from '#lib/review-modal.svelte';
+	import type { WaitingDraft } from '#lib/scene-draft';
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
-	import { flashActivity } from '#lib/activity.svelte';
+	import { flashActivity, pollPause } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyBlocks } from '#lib/markdown';
 	import {
@@ -88,6 +90,8 @@
 	} from '#lib/assistant-slash';
 	import Icon from './Icon.svelte';
 	import AssistantProposal from './AssistantProposal.svelte';
+	import AssistantDraft from './AssistantDraft.svelte';
+	import AssistantChapterDraft from './AssistantChapterDraft.svelte';
 	import AssistantCommandMenu from './AssistantCommandMenu.svelte';
 	import AssistantModelMenu, { EFFORT_LABELS } from './AssistantModelMenu.svelte';
 	import AssistantContextPicker from './AssistantContextPicker.svelte';
@@ -97,8 +101,11 @@
 	let {
 		scope,
 		sceneId = null,
+		chapterId = null,
 		name,
 		muted = false,
+		off = false,
+		revisionPreview = false,
 		suggestions = [],
 		chat = null,
 		onConfirmSplit,
@@ -107,6 +114,9 @@
 		onReplaceSelection,
 		insertPaused = false,
 		getSelection,
+		onLandDraft,
+		onDraftDecided,
+		waitingDrafts = [],
 		reviewHref
 	}: {
 		// The conversation this panel serves: a single story (Write, Review, story
@@ -117,11 +127,18 @@
 		// The open scene, sent as the focus of context assembly; null off a scene
 		// and on the universe surface.
 		sceneId?: string | null;
+		// The chapter the open scene is in, for a chapter draft.
+		chapterId?: string | null;
 		// The Assistant's display name, shown over its replies.
 		name: string;
 		// This story has muted the Assistant; the tab stays to un-mute. Story scope
 		// only - the universe surface has no per-universe mute.
 		muted?: boolean;
+		// The Assistant is off for the account. The panel is then only here for
+		// drafts written before, to keep or discard.
+		off?: boolean;
+		// An earlier version of the scene is open in Write, so nothing is drafted.
+		revisionPreview?: boolean;
 		// Grounded starter prompts shown when the conversation is empty.
 		suggestions?: string[];
 		// The stored chats, loaded with the page; the panel seeds from them at
@@ -151,6 +168,21 @@
 		// The editor's current selection text, or null when nothing is selected.
 		// /rewrite needs it; only passed when a scene editor is open.
 		getSelection?: () => string | null;
+		// Keeps a scene draft, as the writer chose: into the open scene while it
+		// is empty (fill) or as a new scene after it (add). Resolves to a message
+		// when it did not go through. Only Write passes it, so only Write drafts.
+		onLandDraft?: (
+			draftId: string,
+			action: 'fill' | 'add',
+			text: string,
+			baseHashes: string[]
+		) => Promise<string | null>;
+		// Called once a draft is kept or discarded, and while the list of
+		// waiting drafts may be out of date, for the page to read them again.
+		onDraftDecided?: () => void;
+		// The story's undecided drafts, listed while the Assistant is off so the
+		// ones on other scenes can be reached.
+		waitingDrafts?: WaitingDraft[];
 		// The story's review page, for /copyedit to open when notes are staged.
 		// Story surfaces pass it; the universe surface does not.
 		reviewHref?: ResolvedPathname;
@@ -762,6 +794,12 @@
 					if (!done && typed) restoreDraft(raw, {});
 				});
 				break;
+			case 'draft':
+				if (!openSceneDraft(slashArgs(raw)) && typed) restoreDraft(raw, {});
+				break;
+			case 'draft-chapter':
+				if (!openChapterDraft(slashArgs(raw)) && typed) restoreDraft(raw, {});
+				break;
 			case 'review':
 				openReviewModal(sceneId ? { level: 'scene', sceneId } : { level: 'story' });
 				break;
@@ -791,6 +829,7 @@
 				assistantSay(
 					'Commands you can type here:\n\n' +
 						commandsForScope(!isStory)
+							.filter(offered)
 							.map((c) => `/${c.name} - ${c.detail}`)
 							.join('\n')
 				);
@@ -907,6 +946,78 @@
 		return runCoauthor({ storyId: scope.storyId, sceneId, instruction: brief });
 	}
 
+	// /draft and "Draft this scene": the brief form for a draft of the whole
+	// open scene, in a card under the chat (AssistantDraft). The draft is
+	// written by a background job and staged; the card is where the writer
+	// keeps or discards it. Only ever opened by the writer asking for it.
+	let draftRequest = $state<{ brief: string; sceneId: string; showOnly?: boolean } | null>(null);
+	// Why nothing can be drafted here, when it cannot.
+	function draftingRefusal(command: string): string | null {
+		if (revisionPreview) {
+			return `You are looking at an earlier version of this scene. Go back to the current text to use ${command}.`;
+		}
+		if (!('storyId' in scope) || !onLandDraft) {
+			return `Drafting works in Write. Open your story there to use ${command}.`;
+		}
+		return null;
+	}
+	function openSceneDraft(brief: string, showOnly = false): boolean {
+		const refusal = showOnly ? null : draftingRefusal('/draft');
+		if (refusal) {
+			assistantSay(refusal);
+			return false;
+		}
+		if (!sceneId) {
+			assistantSay('Open the scene you want drafted, then type /draft.');
+			return false;
+		}
+		draftRequest = { brief, sceneId, showOnly };
+		return true;
+	}
+
+	// /draft-chapter and "Draft this chapter": the brief form for a draft of
+	// every scene in a chapter, in its own card (AssistantChapterDraft). The
+	// command drafts the chapter the open scene is in; the chapter's menu names
+	// the chapter itself. Each drafted scene is then decided in its scene's card.
+	let chapterRequest = $state<{ brief: string; chapterId: string; showOnly?: boolean } | null>(
+		null
+	);
+	// The chapter asked for, which stays the one shown after the request is
+	// taken, until a scene in another chapter is opened.
+	let askedChapterId = $state<string | null>(null);
+	function openChapterDraft(
+		brief: string,
+		forChapter: string | null = chapterId,
+		showOnly = false
+	): boolean {
+		const refusal = showOnly ? null : draftingRefusal('/draft-chapter');
+		if (refusal) {
+			assistantSay(refusal);
+			return false;
+		}
+		if (!forChapter) {
+			assistantSay(
+				'Open a scene in the chapter you want drafted, then type /draft-chapter. You can also right-click the chapter in the left sidebar and choose Assistant, then "Draft this chapter...".'
+			);
+			return false;
+		}
+		askedChapterId = forChapter;
+		chapterRequest = { brief, chapterId: forChapter, showOnly };
+		return true;
+	}
+	// Counts scene drafts kept or discarded, so the chapter's list keeps up.
+	let draftsDecided = $state(0);
+	// The chapter whose drafts show: the one asked for, else the open scene's.
+	const draftChapterId = $derived(askedChapterId ?? chapterId);
+	// Opening a scene in another chapter moves the card on to that chapter.
+	let seenChapterId = untrack(() => chapterId);
+	$effect(() => {
+		if (chapterId === seenChapterId) return;
+		seenChapterId = chapterId;
+		chapterRequest = null;
+		askedChapterId = null;
+	});
+
 	// /rewrite: co-author a rewrite of the editor's current selection to an
 	// instruction. Needs an open scene editor and a live selection; the reply's
 	// affordance replaces the selection rather than inserting at the cursor.
@@ -1010,7 +1121,10 @@
 	let commandQuery = $state('');
 	let commandsTrigger = $state<HTMLButtonElement>();
 	let slashDismissed = $state<string | null>(null);
-	const slashMatches = $derived(matchSlash(input, !isStory));
+	// The drafting commands are only offered where a draft can be kept.
+	const offered = (command: SlashCommand) =>
+		Boolean(onLandDraft) || (command.name !== 'draft' && command.name !== 'draft-chapter');
+	const slashMatches = $derived(matchSlash(input, !isStory).filter(offered));
 	// One popover at a time: a "/" typed while another is open waits for it.
 	const slashOpen = $derived(
 		!commandsOpen &&
@@ -1021,7 +1135,11 @@
 			slashDismissed !== input
 	);
 	const shownCommands = $derived(
-		commandsOpen ? matchCommands(commandQuery, !isStory) : slashOpen ? slashMatches : []
+		commandsOpen
+			? matchCommands(commandQuery, !isStory).filter(offered)
+			: slashOpen
+				? slashMatches
+				: []
 	);
 	$effect(() => {
 		if (commandSelected >= shownCommands.length) commandSelected = 0;
@@ -1206,6 +1324,54 @@
 	let modelTrigger = $state<HTMLButtonElement>();
 	const commandListId = `assistant-commands-${newChatId().slice(0, 8)}`;
 
+	// The story's waiting drafts that are not on the open scene (that one has
+	// its card).
+	const draftsElsewhere = $derived(waitingDrafts.filter((waiting) => waiting.sceneId !== sceneId));
+	const WAITING_STATE: Partial<Record<WaitingDraft['status'], string>> = {
+		pending: 'Being written',
+		running: 'Being written',
+		ready: 'Ready',
+		failed: 'Not written'
+	};
+	// A draft in the list that is still being written changes on its own, so
+	// while there is one the page's data is read again every few seconds.
+	let listPollSince: number | null = null;
+	// Derived, so the wait below starts over only when the answer changes, not
+	// each time the page's data is read again.
+	const listWriting = $derived(
+		muted &&
+			draftsElsewhere.some(
+				(waiting) => waiting.status === 'pending' || waiting.status === 'running'
+			)
+	);
+	$effect(() => {
+		if (!listWriting) {
+			listPollSince = null;
+			return;
+		}
+		// Paced from when a draft was first seen being written, so a long one
+		// is checked less often.
+		const since = (listPollSince ??= Date.now());
+		let live = true;
+		void (async () => {
+			for (;;) {
+				await pollPause(since);
+				if (!live) return;
+				onDraftDecided?.();
+			}
+		})();
+		return () => {
+			live = false;
+		};
+	});
+
+	// Where the keyboard goes when a draft card closes: the chat box, or the
+	// scene's text while the Assistant is off and there is no chat box.
+	function focusAfterDraft() {
+		if (composer) composer.focus();
+		else document.querySelector<HTMLElement>('.cm-content')?.focus();
+	}
+
 	// The mute switch is a form action; the command menu submits it.
 	let muteForm = $state<HTMLFormElement>();
 
@@ -1213,13 +1379,30 @@
 	// already switched the right pane here; the panel acts on the intent.
 	$effect(() => {
 		const intent = assistantIntent.pending;
-		if (!intent || muted) return;
+		if (!intent) return;
+		if (muted) {
+			// Nothing is asked of the Assistant while it is off, but a link to a
+			// draft written before still shows it.
+			if (intent.kind === 'draft') {
+				assistantIntent.pending = null;
+				if (sceneId && !intent.gone) draftRequest = { brief: '', sceneId, showOnly: true };
+			} else if (intent.kind === 'draft-chapter') {
+				assistantIntent.pending = null;
+				openChapterDraft('', intent.chapterId, true);
+			}
+			return;
+		}
 		assistantIntent.pending = null;
 		if (intent.kind === 'reference') {
 			reference = { sceneId: intent.sceneId, text: intent.text };
 			composer?.focus();
 		} else if (intent.kind === 'prefill') {
 			prefill(intent.text);
+		} else if (intent.kind === 'draft') {
+			if (intent.gone) assistantSay('The scene that draft was for is no longer in this story.');
+			else openSceneDraft('', intent.showOnly);
+		} else if (intent.kind === 'draft-chapter') {
+			openChapterDraft('', intent.chapterId, intent.showOnly);
 		} else if (intent.kind === 'catchup') {
 			void catchUp();
 		} else if (intent.kind === 'focus') {
@@ -1416,15 +1599,78 @@
 	}
 </script>
 
+<!-- The drafts waiting on the open scene and its chapter. They show while the
+     Assistant is off too: a draft already written can still be kept. -->
+{#snippet draftCards()}
+	{#if 'storyId' in scope && sceneId && onLandDraft}
+		<!-- One per scene: it shows the scene's draft, if it has one. -->
+		{#key sceneId}
+			<AssistantDraft
+				storyId={scope.storyId}
+				{sceneId}
+				request={draftRequest?.sceneId === sceneId ? draftRequest : null}
+				canDraft={!muted}
+				onLand={onLandDraft}
+				onDecided={() => {
+					draftsDecided += 1;
+					onDraftDecided?.();
+				}}
+				onRequestTaken={() => (draftRequest = null)}
+				onClose={focusAfterDraft}
+			/>
+		{/key}
+	{/if}
+	{#if 'storyId' in scope && draftChapterId && onLandDraft}
+		<!-- One per chapter: it shows the chapter's drafts, if it has any. -->
+		{#key draftChapterId}
+			<AssistantChapterDraft
+				storyId={scope.storyId}
+				chapterId={draftChapterId}
+				request={chapterRequest?.chapterId === draftChapterId ? chapterRequest : null}
+				canDraft={!muted}
+				decided={draftsDecided}
+				onRequestTaken={() => (chapterRequest = null)}
+				onClose={focusAfterDraft}
+			/>
+		{/key}
+	{/if}
+{/snippet}
+
 {#if muted}
 	<div class="assistant-muted">
-		<p>The Assistant is off for this story.</p>
-		<p class="muted-hint">
-			Turn it back on to chat about this book, review scenes, and write alongside it.
-		</p>
-		<form method="POST" action="?/unmuteAssistant" use:enhance>
-			<button class="btn btn-primary" type="submit">Turn on for this story</button>
-		</form>
+		{#if off}
+			<p>The Assistant is off for your account.</p>
+			<p class="muted-hint">
+				Drafts it wrote before are still here to keep or discard. To use the Assistant again, turn
+				it on under Account, Assistant.
+			</p>
+		{:else}
+			<p>The Assistant is off for this story.</p>
+			<p class="muted-hint">
+				Turn it back on to chat about this book, review scenes, and write alongside it.
+			</p>
+			<form method="POST" action="?/unmuteAssistant" use:enhance>
+				<button class="btn btn-primary" type="submit">Turn on for this story</button>
+			</form>
+		{/if}
+		<div class="muted-drafts">
+			{@render draftCards()}
+			{#if 'storyId' in scope && draftsElsewhere.length > 0}
+				<p class="muted-drafts-head" id="muted-drafts-head">
+					{sceneId ? 'Drafts on other scenes' : 'Drafts in this story'}
+				</p>
+				<ul class="muted-drafts-list" aria-labelledby="muted-drafts-head">
+					{#each draftsElsewhere as waiting (waiting.sceneId)}
+						<li>
+							<a href={sceneDraftPath(scope.storyId, waiting.sceneId)}>
+								{waiting.sceneTitle || 'Untitled scene'}
+							</a>
+							<span class="muted-drafts-state">{WAITING_STATE[waiting.status] ?? ''}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	</div>
 {:else}
 	<div class="assistant">
@@ -1596,6 +1842,7 @@
 					</div>
 				{/if}
 			{/each}
+			{@render draftCards()}
 		</div>
 
 		{#if messages.length <= 1 && !busy && suggestions.length > 0}
@@ -2144,6 +2391,31 @@
 		color: var(--text-faint);
 		text-align: center;
 		margin: 0;
+	}
+	/* Draft cards read left to right, under the centred note. */
+	.muted-drafts {
+		text-align: left;
+	}
+	.muted-drafts-head {
+		font-size: 12.5px;
+		font-weight: 600;
+		margin: 16px 0 6px;
+	}
+	.muted-drafts-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		font-size: 13px;
+	}
+	.muted-drafts-list li {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 4px 0;
+	}
+	.muted-drafts-state {
+		color: var(--text-faint);
+		white-space: nowrap;
 	}
 	.assistant-muted .muted-hint {
 		font-size: 12.5px;

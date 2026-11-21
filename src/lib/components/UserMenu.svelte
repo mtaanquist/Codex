@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dropAllDraftForms } from '#lib/draft-forms';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { dismiss } from '#lib/dismiss';
@@ -92,7 +93,7 @@
 
 				<div class="avatar-dd-sep"></div>
 				<div class="avatar-dd-group">
-					<form method="POST" action={resolve('/logout')}>
+					<form method="POST" action={resolve('/logout')} onsubmit={dropAllDraftForms}>
 						<button class="avatar-dd-item danger" role="menuitem" type="submit">
 							<Icon name="logout" size={16} />
 							<span class="lbl">Sign out</span>

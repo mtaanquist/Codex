@@ -8,6 +8,7 @@ export const NOTIFICATION_KINDS = [
 	'assistant_review',
 	'assistant_summaries',
 	'assistant_enrich',
+	'assistant_draft',
 	'export_ready'
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -19,6 +20,7 @@ export const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
 	assistant_review: 'Assistant reviews you asked for',
 	assistant_summaries: 'Assistant summaries you asked for',
 	assistant_enrich: 'Assistant entry suggestions and character arcs you asked for',
+	assistant_draft: 'Assistant scene and chapter drafts you asked for',
 	export_ready: 'Exports you asked for are ready'
 };
 

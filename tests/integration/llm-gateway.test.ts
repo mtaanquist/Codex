@@ -269,6 +269,30 @@ describe('gateway gating', () => {
 		expect(captured?.extraParams).toEqual({ top_p: 0.4, min_p: 0.05 });
 	});
 
+	it('leaves reply limits and counts in the extra parameters of an unbounded request', async () => {
+		await saveAccountLlmConfig(db, userId, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: '',
+			models: { chat: 'chat-model' },
+			extraParams: { max_completion_tokens: 900, n: 2 },
+			toolCallBudget: 8
+		});
+		for (const role of ['chat', 'reviewer'] as const) {
+			await complete(db, { userId, role, messages: [] }, stubDeps);
+			expect(captured?.extraParams).toEqual({ max_completion_tokens: 900, n: 2 });
+		}
+		// Only a request that knows what its reply needs has them taken out.
+		await complete(
+			db,
+			{ userId, role: 'chat', messages: [], maxTokens: 500, boundedReply: true },
+			stubDeps
+		);
+		expect(captured?.extraParams).toBeUndefined();
+	});
+
 	it('offers the provider web search only on an established universe, when opted in', async () => {
 		const anthropic = {
 			enabled: true,
@@ -2334,6 +2358,31 @@ describe('gateway refusal and paused turns (#1083)', () => {
 		expect(result.content).toBe('First, then done.');
 		expect(seen).toHaveLength(2);
 		expect(seen[1].at(-1)).toEqual({ role: 'assistant', content: 'First, ', raw: blocks });
+	});
+
+	it('asks the caller before resuming a paused turn, as before a retry', async () => {
+		await configure(true);
+		const paused = { content: 'x', toolCalls: [], finishReason: 'paused' as const, raw: [] };
+		const { provider, seen } = queued([paused, { content: 'y', toolCalls: [] }]);
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, role: 'chat', messages: [], mayResend: () => false },
+				{ provider, http: noHttp }
+			)
+		).rejects.toThrow(/stopped partway/);
+		expect(seen).toHaveLength(1);
+
+		const { storyId } = await seedStoryScene('Text.');
+		const tools = queued([paused, { content: 'y', toolCalls: [] }]);
+		await expect(
+			completeDetailed(
+				db,
+				{ userId, storyId, role: 'chat', enableTools: true, messages: [], mayResend: () => false },
+				{ provider: tools.provider, http: noHttp }
+			)
+		).rejects.toThrow(/stopped partway/);
+		expect(tools.seen).toHaveLength(1);
 	});
 
 	it('resumes a paused round of the tool loop', async () => {

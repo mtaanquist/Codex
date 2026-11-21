@@ -2,8 +2,9 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import type { Database } from './auth.ts';
 import { isUuid } from '../slug.ts';
-import { chapters, characters, stories, universes } from './db/schema.ts';
+import { chapters, characters, scenes, stories, universes } from './db/schema.ts';
 import {
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
@@ -19,10 +20,12 @@ import {
 
 export type RunningAssistantJob = {
 	id: string;
-	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details';
+	kind: 'review' | 'summaries' | 'enrich' | 'arc' | 'details' | 'draft';
 	mode: 'full' | 'continuity';
 	storyId: string | null;
 	chapterId: string | null;
+	// The scene a draft is for.
+	sceneId: string | null;
 	universeId: string | null;
 	// The story, chapter or universe name, for the card's label.
 	title: string;
@@ -34,6 +37,11 @@ type JobData = {
 	userId?: string;
 	storyId?: string;
 	chapterId?: string;
+	// Set with draftId on a scene draft; a chapter draft carries chapterId and
+	// draftIds instead.
+	sceneId?: string;
+	draftId?: string;
+	draftIds?: string[];
 	universeId?: string;
 	characterId?: string;
 	// A full-text read of one entity (the "Suggest details" button).
@@ -59,6 +67,7 @@ export async function findRunningAssistantJobs(
 		select id, name, data, created_on from pgboss.job
 		where name in (
 			${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE}, ${ASSISTANT_ENRICH_QUEUE},
+			${ASSISTANT_DRAFT_QUEUE},
 			${LEGACY_ASSISTANT_REVIEW_QUEUE}, ${LEGACY_ASSISTANT_SUMMARIES_QUEUE}
 		)
 			and state in ('created', 'retry', 'active')
@@ -77,7 +86,9 @@ export async function findRunningAssistantJobs(
 						: row.data.read
 							? ('details' as const)
 							: ('enrich' as const)
-					: ('review' as const),
+					: row.name === ASSISTANT_DRAFT_QUEUE
+						? ('draft' as const)
+						: ('review' as const),
 		data: row.data,
 		startedAt: new Date(row.created_on).toISOString()
 	}));
@@ -150,6 +161,21 @@ export async function findRunningAssistantJobs(
 			: []
 	);
 
+	// A draft is named for its scene, within the writer's live story.
+	const sceneIds = [
+		...new Set(found.flatMap((j) => (j.kind === 'draft' && j.data.sceneId ? [j.data.sceneId] : [])))
+	];
+	const sceneTitles = new Map(
+		sceneIds.length
+			? (
+					await db
+						.select({ id: scenes.id, storyId: scenes.storyId, title: scenes.title })
+						.from(scenes)
+						.where(and(inArray(scenes.id, sceneIds), isNull(scenes.deletedAt)))
+				).map((r) => [r.id, r])
+			: []
+	);
+
 	const out: RunningAssistantJob[] = [];
 	for (const job of found) {
 		const { storyId, chapterId, universeId } = job.data;
@@ -170,6 +196,12 @@ export async function findRunningAssistantJobs(
 			if (title !== undefined && chapter?.storyId === storyId && chapter.title) {
 				title = `${title}: ${chapter.title}`;
 			}
+			// A chapter draft carries no scene and keeps its chapter's title.
+			if (job.kind === 'draft' && job.data.sceneId) {
+				const scene = job.data.sceneId ? sceneTitles.get(job.data.sceneId) : undefined;
+				if (scene?.storyId !== storyId) title = undefined;
+				else if (scene.title) title = scene.title;
+			}
 		}
 		if (title === undefined) continue;
 		out.push({
@@ -178,6 +210,7 @@ export async function findRunningAssistantJobs(
 			mode: job.data.mode === 'continuity' ? 'continuity' : 'full',
 			storyId: universeId ? null : (storyId ?? null),
 			chapterId: universeId ? null : (chapterId ?? null),
+			sceneId: job.kind === 'draft' ? (job.data.sceneId ?? null) : null,
 			universeId: universeId ?? null,
 			title,
 			startedAt: job.startedAt
@@ -203,6 +236,7 @@ export async function stopAssistantJob(
 		where id = ${jobId}::uuid
 			and name in (
 				${ASSISTANT_REVIEW_QUEUE}, ${ASSISTANT_SUMMARIES_QUEUE}, ${ASSISTANT_ENRICH_QUEUE},
+				${ASSISTANT_DRAFT_QUEUE},
 				${LEGACY_ASSISTANT_REVIEW_QUEUE}, ${LEGACY_ASSISTANT_SUMMARIES_QUEUE}
 			)
 			and state in ('created', 'retry', 'active')

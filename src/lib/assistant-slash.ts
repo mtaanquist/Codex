@@ -84,8 +84,24 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	},
 	{
 		name: 'write',
-		label: 'Draft a passage',
-		detail: 'Draft a passage from a brief (everything after the command)',
+		label: 'Write a passage',
+		detail: 'Write a passage from a brief (everything after the command)',
+		group: 'write',
+		scope: 'story',
+		args: true
+	},
+	{
+		name: 'draft',
+		label: 'Draft this scene',
+		detail: 'Draft the whole open scene from a brief (everything after the command)',
+		group: 'write',
+		scope: 'story',
+		args: true
+	},
+	{
+		name: 'draft-chapter',
+		label: 'Draft this chapter',
+		detail: "Draft the scenes you choose in the open scene's chapter, one by one, from a brief",
 		group: 'write',
 		scope: 'story',
 		args: true
@@ -176,23 +192,31 @@ export function slashQuery(input: string): string | null {
 }
 
 /**
- * The commands a menu query matches, in menu order: a command whose name
- * starts with the query, or whose label has a word that does. An empty query
- * matches every command on the surface.
+ * The commands a menu query matches: a command whose name starts with the
+ * query, or whose label has a word that does. The command named exactly comes
+ * first, then the other names the query starts, then the label matches, each
+ * in menu order, so Enter on a typed name runs that command. A single letter
+ * names nothing yet, so its matches stay in menu order: Enter after one
+ * letter must not jump to a command that starts work at once ("/s" is the
+ * model switch, not a summaries run). An empty query matches every command
+ * on the surface.
  */
 export function matchCommands(query: string, universe = false): SlashCommand[] {
 	const q = query.trim().toLowerCase().replace(/^\//, '');
 	const scoped = commandsForScope(universe);
-	return q
-		? scoped.filter(
-				(command) =>
-					command.name.startsWith(q) ||
-					command.label
-						.toLowerCase()
-						.split(/\s+/)
-						.some((word) => word.startsWith(q))
-			)
-		: scoped;
+	if (!q) return scoped;
+	const labelled = (command: SlashCommand) =>
+		command.label
+			.toLowerCase()
+			.split(/\s+/)
+			.some((word) => word.startsWith(q));
+	if (q.length === 1) {
+		return scoped.filter((command) => command.name.startsWith(q) || labelled(command));
+	}
+	const exact = scoped.filter((command) => command.name === q);
+	const byName = scoped.filter((command) => command.name !== q && command.name.startsWith(q));
+	const byLabel = scoped.filter((command) => !command.name.startsWith(q) && labelled(command));
+	return [...exact, ...byName, ...byLabel];
 }
 
 // Older names the panel still runs, kept out of the menu.

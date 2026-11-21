@@ -40,6 +40,24 @@ export async function duplicateScene(storyId: string, sceneId: string) {
 	);
 }
 
+// Keeps a scene draft the Assistant wrote: into its own scene while that is
+// still empty (fill), or as a new scene directly after it (add). text is the
+// draft as the writer edited it. The server checks the stored scene, so flush
+// any pending autosave first.
+export async function landSceneDraft(
+	draftId: string,
+	action: 'fill' | 'add',
+	text: string,
+	// Fingerprints of the texts this window has saved or may have saved.
+	baseHashes: string[]
+) {
+	return await post<{ sceneId?: string; newSceneId?: string }>(
+		`/api/assistant/draft/${draftId}`,
+		{ action, text, baseHashes },
+		'Could not add the draft.'
+	);
+}
+
 // Splits a scene at a character offset in the text baseHash fingerprints, or
 // before an exact passage (the Assistant's proposals); the server re-locates
 // the passage against the stored text, so flush any pending autosave first.

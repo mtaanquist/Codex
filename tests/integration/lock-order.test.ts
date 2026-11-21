@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import * as schema from '../../src/lib/server/db/schema';
 import {
+	assistantDrafts,
 	chapters,
 	characters,
 	entityCategories,
@@ -35,7 +36,12 @@ import { saveStoryDetails } from '../../src/lib/server/story-details';
 import { trashStory } from '../../src/lib/server/story-lifecycle';
 import { purgeStory } from '../../src/lib/server/story-delete';
 import { saveEntity } from '../../src/lib/server/entity-save';
-import { saveStoryLlmOverride } from '../../src/lib/server/llm/config';
+import { saveAccountLlmConfig, saveStoryLlmOverride } from '../../src/lib/server/llm/config';
+import {
+	addDraftAsScene,
+	fillSceneFromDraft,
+	requestChapterDraft
+} from '../../src/lib/server/scene-drafts';
 import { replaceProse } from '../../src/lib/server/prose-replace';
 import {
 	findInStory,
@@ -250,6 +256,7 @@ async function seedFor(...ops: Op[]) {
 
 // What the prepare steps left for their operation.
 const made = {
+	sceneDraftId: '',
 	draftId: '',
 	suggestionId: '',
 	revisionId: '',
@@ -272,7 +279,42 @@ const ok = (result: unknown) => {
 	return result;
 };
 
+// A scene draft the Assistant wrote, ready to keep. Fill needs its scene empty.
+async function stageSceneDraft(sceneId: string, emptyScene: boolean) {
+	if (emptyScene) {
+		await db.update(scenes).set({ bodyMd: '', wordCount: 0 }).where(eq(scenes.id, sceneId));
+		await rebuildSceneMentions(db, sceneId);
+	}
+	const [row] = await db
+		.insert(assistantDrafts)
+		.values({
+			userId: S.user,
+			storyId: S.story,
+			sceneId,
+			brief: 'b',
+			targetWords: 500,
+			textMd: 'Aldric came back.',
+			status: 'ready'
+		})
+		.returning({ id: assistantDrafts.id });
+	return row.id;
+}
+
 const OPS: Op[] = [
+	{
+		name: 'fill a scene from its draft',
+		prepare: async () => {
+			made.sceneDraftId = await stageSceneDraft(S.D, true);
+		},
+		run: async (db) => ok(await fillSceneFromDraft(db, S.user, made.sceneDraftId))
+	},
+	{
+		name: 'add a draft as a new scene',
+		prepare: async () => {
+			made.sceneDraftId = await stageSceneDraft(S.B, false);
+		},
+		run: async (db) => ok(await addDraftAsScene(db, S.user, made.sceneDraftId))
+	},
 	{
 		name: 'save scene text',
 		run: async (db) =>
@@ -891,6 +933,83 @@ describe('lock order around scenes being added', () => {
 		);
 		expect(failure).toBeNull();
 		expect(unlocked).toEqual([]);
+	});
+
+	// A scene delete or merge locks the scene and then, by cascade, its drafts.
+	// Asking for a chapter draft must take them the same way round: its new
+	// rows reference the scenes (a lock on each), and only after that does it
+	// touch the failed drafts they replace.
+	it('a chapter draft waiting on a scene holds none of the failed drafts it replaces', async () => {
+		await seed();
+		await saveAccountLlmConfig(db, S.user, {
+			enabled: true,
+			assistantName: '',
+			persona: 'balanced',
+			endpoint: 'https://api.example.com/v1',
+			apiKey: 'sk',
+			models: { coauthor: 'write-model' },
+			toolCallBudget: 8
+		});
+		const [failed] = await db
+			.insert(assistantDrafts)
+			.values({
+				userId: S.user,
+				storyId: S.story,
+				sceneId: S.A,
+				brief: 'b',
+				targetWords: 500,
+				status: 'failed',
+				note: 'The endpoint was down.'
+			})
+			.returning({ id: assistantDrafts.id });
+		const holder = await pool.connect();
+		try {
+			await holder.query('begin');
+			await holder.query('select 1 from scenes where id = $1 for update', [S.A]);
+			const holderPid = (await holder.query('select pg_backend_pid() as pid')).rows[0].pid;
+			const asking = requestChapterDraft(
+				opDb,
+				{
+					userId: S.user,
+					storyId: S.story,
+					chapterId: S.ch1,
+					brief: 'What happens.',
+					targetWords: 500,
+					pov: null,
+					scenes: [{ sceneId: S.A, brief: 'x' }]
+				},
+				{ queue: async (job) => job.jobId }
+			);
+			let waiting = false;
+			for (let i = 0; i < 200 && !waiting; i++) {
+				const { rows } = await pool.query(
+					`select 1 from pg_stat_activity
+					 where datname = current_database() and $1 = any(pg_blocking_pids(pid))`,
+					[holderPid]
+				);
+				waiting = rows.length > 0;
+				if (!waiting) await new Promise((resolve) => setTimeout(resolve, 10));
+			}
+			expect(waiting).toBe(true);
+			// The failed draft's row is free while the request waits on the scene.
+			const { rows: free } = await pool.query(
+				'select id, status from assistant_drafts where id = $1 for update skip locked',
+				[failed.id]
+			);
+			expect(free).toHaveLength(1);
+			// And still failed: it is discarded only after the new rows are in.
+			expect(free[0].status).toBe('failed');
+			await holder.query('commit');
+			expect(await asking).toMatchObject({ ok: true });
+		} finally {
+			await holder.query('rollback').catch(() => {});
+			holder.release();
+		}
+		const [after] = await db
+			.select({ status: assistantDrafts.status })
+			.from(assistantDrafts)
+			.where(eq(assistantDrafts.id, failed.id));
+		expect(after.status).toBe('discarded');
 	});
 
 	// The move must read the chapter list under its lock, or it writes back a

@@ -1589,6 +1589,68 @@ export const assistantJobSpend = pgTable('assistant_job_spend', {
 		.$onUpdate(() => sql`clock_timestamp()`)
 });
 
+export const ASSISTANT_DRAFT_STATUSES = [
+	'pending',
+	'running',
+	'ready',
+	'accepted',
+	'discarded',
+	'failed'
+] as const;
+
+// A scene the Assistant drafted from the writer's brief, staged for the writer
+// to keep or discard: the draft never reaches a scene until the writer accepts
+// it (see scene-drafts.ts). The background job writes text_md and moves the row
+// from pending through running to ready or failed; note says why a draft
+// failed, or that a ready one stopped at the length limit. scene_id is the
+// scene the draft was asked for. chapter_id and position are set on a draft
+// that is one of a chapter's, written scene by scene by one job (which they
+// share a job_id with): the chapter it was asked for, and its place in the
+// run. The rows go with their scene, story and user; a deleted chapter only
+// clears chapter_id.
+export const assistantDrafts = pgTable(
+	'assistant_drafts',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		storyId: uuid('story_id')
+			.references(() => stories.id, { onDelete: 'cascade' })
+			.notNull(),
+		// Deleting a chapter keeps its scenes (they become unfiled), so it keeps
+		// their drafts too: the draft then reads as one asked for its scene alone.
+		chapterId: uuid('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+		sceneId: uuid('scene_id').references(() => scenes.id, { onDelete: 'cascade' }),
+		position: integer('position'),
+		brief: text('brief').notNull(),
+		targetWords: integer('target_words').notNull(),
+		pov: text('pov'),
+		// Markdown, like any prose, so an accepted draft exports as written.
+		textMd: text('text_md').notNull().default(''),
+		status: text('status', { enum: ASSISTANT_DRAFT_STATUSES }).notNull().default('pending'),
+		note: text('note'),
+		// The pg-boss job writing it, for the status poll and Stop.
+		jobId: text('job_id'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => sql`clock_timestamp()`)
+	},
+	(table) => [
+		index('assistant_drafts_story_idx').on(table.storyId, table.userId),
+		// For the status poll, which counts a job's drafts, and the chapter's list.
+		index('assistant_drafts_job_idx').on(table.jobId),
+		index('assistant_drafts_chapter_idx').on(table.chapterId),
+		// One undecided draft per scene for a writer: a second request waits
+		// until the first is kept or discarded.
+		uniqueIndex('assistant_drafts_open_scene_idx')
+			.on(table.userId, table.sceneId)
+			.where(sql`${table.status} in ('pending', 'running', 'ready')`)
+	]
+);
+
 // What rides beside a chat turn's text; mirrors the panel's card data. A
 // confirmed split proposal records what it created, so the card stays
 // decided across reloads and the revert knows which scenes to merge back.

@@ -6,11 +6,19 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { PgBoss } from 'pg-boss';
 import * as schema from '../../src/lib/server/db/schema';
-import { chapters, characters, stories, universes, users } from '../../src/lib/server/db/schema';
+import {
+	chapters,
+	characters,
+	scenes,
+	stories,
+	universes,
+	users
+} from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
 import { ensureTestDatabase, TEST_DATABASE_URL } from './test-db';
 import { findRunningAssistantJobs, stopAssistantJob } from '../../src/lib/server/running-jobs';
 import {
+	ASSISTANT_DRAFT_QUEUE,
 	ASSISTANT_ENRICH_QUEUE,
 	ASSISTANT_QUEUE_OPTIONS,
 	ASSISTANT_REVIEW_QUEUE,
@@ -24,7 +32,8 @@ import {
 const ASSISTANT_QUEUES = [
 	ASSISTANT_REVIEW_QUEUE,
 	ASSISTANT_SUMMARIES_QUEUE,
-	ASSISTANT_ENRICH_QUEUE
+	ASSISTANT_ENRICH_QUEUE,
+	ASSISTANT_DRAFT_QUEUE
 ];
 let pool: pg.Pool;
 
@@ -107,6 +116,73 @@ describe('findRunningAssistantJobs', () => {
 		expect(Math.abs(Date.now() - queued)).toBeLessThan(60_000);
 	});
 
+	it('lists a scene draft as its own kind, named for the scene', async () => {
+		const [scene] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 1, title: 'The Crossing' })
+			.returning({ id: scenes.id });
+		const [untitled] = await db
+			.insert(scenes)
+			.values({ storyId, globalPosition: 2 })
+			.returning({ id: scenes.id });
+		const id = await send(ASSISTANT_DRAFT_QUEUE, {
+			userId,
+			storyId,
+			sceneId: scene.id,
+			draftId: randomUUID()
+		});
+		const second = await send(ASSISTANT_DRAFT_QUEUE, {
+			userId,
+			storyId,
+			sceneId: untitled.id,
+			draftId: randomUUID()
+		});
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs.find((j) => j.id === id)).toMatchObject({
+			kind: 'draft',
+			storyId,
+			sceneId: scene.id,
+			universeId: null,
+			title: 'The Crossing'
+		});
+		// An untitled scene is named for its story.
+		expect(jobs.find((j) => j.id === second)).toMatchObject({ kind: 'draft', title: 'Saltglass' });
+
+		// A draft over a scene since trashed, or another writer's, is left out.
+		await db.update(scenes).set({ deletedAt: new Date() }).where(eq(scenes.id, scene.id));
+		expect((await findRunningAssistantJobs(db, userId)).map((j) => j.id)).toEqual([second]);
+		expect(await findRunningAssistantJobs(db, otherId)).toEqual([]);
+
+		// Stop works on it like any Assistant job, for its writer only.
+		expect(await stopAssistantJob(db, boss, otherId, second!)).toBe(false);
+		expect(await stopAssistantJob(db, boss, userId, second!)).toBe(true);
+		expect((await boss.getJobById(ASSISTANT_DRAFT_QUEUE, second!))?.state).toBe('cancelled');
+	});
+
+	it('lists a chapter draft as a draft named for its chapter, with no scene', async () => {
+		const [chapter] = await db
+			.insert(chapters)
+			.values({ storyId, position: 7, title: 'The River' })
+			.returning({ id: chapters.id });
+		const id = await send(ASSISTANT_DRAFT_QUEUE, {
+			userId,
+			storyId,
+			chapterId: chapter.id,
+			draftIds: [randomUUID(), randomUUID()],
+			brief: 'Ilse flees.'
+		});
+		const jobs = await findRunningAssistantJobs(db, userId);
+		expect(jobs.find((j) => j.id === id)).toMatchObject({
+			kind: 'draft',
+			storyId,
+			chapterId: chapter.id,
+			sceneId: null,
+			title: 'Saltglass: The River'
+		});
+		expect(await findRunningAssistantJobs(db, otherId)).toEqual([]);
+		expect(await stopAssistantJob(db, boss, userId, id!)).toBe(true);
+	});
+
 	it('lists a character arc as its own kind, named for the character', async () => {
 		const [character] = await db
 			.insert(characters)
@@ -131,6 +207,7 @@ describe('findRunningAssistantJobs', () => {
 				mode: 'full',
 				storyId: null,
 				chapterId: null,
+				sceneId: null,
 				universeId,
 				title: 'Hollow Coast',
 				startedAt: expect.any(String)
@@ -161,6 +238,7 @@ describe('findRunningAssistantJobs', () => {
 			mode: 'full',
 			storyId,
 			chapterId: null,
+			sceneId: null,
 			universeId: null,
 			title: 'Saltglass',
 			startedAt: expect.any(String)

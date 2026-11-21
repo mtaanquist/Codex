@@ -39,6 +39,53 @@ describe('matchSlash', () => {
 		expect(matchSlash('/w').map((c) => c.name)).toEqual(['write', 'who']);
 	});
 
+	it('puts the command named ahead of one that only has the word in its label', () => {
+		// /write is about drafting too, but /draft must not run it.
+		expect(matchSlash('/draft').map((c) => c.name)).toEqual(['draft', 'draft-chapter']);
+		expect(matchSlash('/dr').map((c) => c.name)).toEqual(['draft', 'draft-chapter']);
+		expect(matchSlash('/draft-chapter').map((c) => c.name)).toEqual(['draft-chapter']);
+		expect(matchSlash('/draft-')[0].name).toBe('draft-chapter');
+		expect(matchSlash('/re').map((c) => c.name)).toEqual([
+			'rewrite',
+			'review',
+			'continuity-review'
+		]);
+	});
+
+	it('keeps menu order for one letter, so Enter does not jump to a command that starts work', () => {
+		// The first row is what Enter runs. "/s" is the model switch, not a
+		// summaries run; "/f" is mute, not a search.
+		const first: Record<string, string | undefined> = {};
+		for (const letter of 'abcdefghijklmnopqrstuvwxyz') {
+			const name = matchSlash(`/${letter}`)[0]?.name;
+			if (name) first[letter] = name;
+		}
+		expect(first).toEqual({
+			a: 'context',
+			c: 'context',
+			d: 'delete',
+			e: 'enrich',
+			f: 'mute',
+			h: 'history',
+			l: 'help',
+			m: 'model',
+			n: 'new',
+			o: 'who',
+			p: 'write',
+			r: 'rewrite',
+			s: 'model',
+			t: 'mute',
+			u: 'find',
+			w: 'write'
+		});
+		expect(matchSlash('/write')[0].name).toBe('write');
+		expect(matchSlash('/draft')[0].name).toBe('draft');
+		expect(matchSlash('/dr')[0].name).toBe('draft');
+		// From two letters on, a name the query starts beats a label word.
+		expect(matchSlash('/su')[0].name).toBe('summaries');
+		expect(matchSlash('/fi')[0].name).toBe('find');
+	});
+
 	it('lists every command for a bare slash on a story', () => {
 		expect(matchSlash('/')).toHaveLength(SLASH_COMMANDS.length);
 	});

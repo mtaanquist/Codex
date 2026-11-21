@@ -180,6 +180,14 @@ export type GatewayRequest = {
 	// model's arguments.
 	toolScope?: ToolScope;
 	maxTokens?: number;
+	// maxTokens is what this reply needs, worked out by the surface (a draft of
+	// a known length). The writer's "Longest reply" for the role may then lower
+	// it but not raise it, unless the role may think.
+	boundedReply?: boolean;
+	// Asked before a request is sent again after a transient failure. False
+	// gives the failure up instead: for a job that must not spend past a
+	// ceiling, since the failed attempt may have been billed.
+	mayResend?: () => boolean;
 	// Raise the tool-call ceiling for this run above the account's budget. A
 	// full review needs one call per note plus one read per scene, far beyond
 	// the conservative account default; server-set only, never client input.
@@ -255,6 +263,7 @@ async function respondWithRetry(
 			if (attempt >= RETRY_DELAYS_MS.length || req.signal?.aborted || !isTransientFailure(err)) {
 				throw err;
 			}
+			if (req.mayResend && !req.mayResend()) throw err;
 			logEvent('warn', 'assistant.retry', {
 				userId: req.userId,
 				model: p.model,
@@ -264,6 +273,57 @@ async function respondWithRetry(
 			await p.sleep(RETRY_DELAYS_MS[attempt]);
 		}
 	}
+}
+
+// Parameters that change how much a request can be billed for. A writer's
+// extra parameters may carry one; on a bounded request it would undo the
+// limit the cost was counted at, so it is left out there.
+// Names endpoints take a reply limit by, left out at any depth (Ollama takes
+// its limit as options.num_predict).
+const REPLY_LIMIT_PARAMS = [
+	'max_tokens',
+	'maxTokens',
+	'max_tokens_to_sample',
+	'max_completion_tokens',
+	'maxOutputTokens',
+	'max_output_tokens',
+	'max_new_tokens',
+	'max_length',
+	'max_gen_len',
+	'n_predict',
+	'num_predict'
+];
+// Names that ask for several replies at once. Short enough to mean something
+// else elsewhere (a property of a response_format schema), so they are left
+// out only at the top level and in the groups endpoints read options from.
+const REPLY_COUNT_PARAMS = ['n', 'best_of', 'candidate_count', 'num_return_sequences'];
+const OPTION_GROUPS = ['options', 'extra_body', 'parameters'];
+export function withoutReplySizeParams<T extends Record<string, unknown> | undefined>(
+	params: T,
+	options = true
+): T {
+	if (!params) return params;
+	const kept: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(params)) {
+		// A schema for the reply: its property names are the writer's own.
+		if (key === 'response_format') {
+			kept[key] = value;
+			continue;
+		}
+		if (REPLY_LIMIT_PARAMS.includes(key)) continue;
+		if (options && REPLY_COUNT_PARAMS.includes(key)) continue;
+		const nested = value !== null && typeof value === 'object' && !Array.isArray(value);
+		const inner = nested
+			? withoutReplySizeParams(
+					value as Record<string, unknown>,
+					options && OPTION_GROUPS.includes(key)
+				)
+			: value;
+		// A group emptied by this goes too; one the writer left empty stays.
+		if (nested && inner === undefined && Object.keys(value as object).length > 0) continue;
+		kept[key] = inner ?? value;
+	}
+	return (Object.keys(kept).length > 0 ? kept : undefined) as T;
 }
 
 // The reply cap when the writer set none: the surface's own, or the role's
@@ -279,6 +339,34 @@ export function surfaceMaxTokens(
 	const fallback = defaultMaxTokens(role, thinks, contextWindow);
 	if (requested === undefined) return fallback;
 	return thinks ? Math.max(requested, fallback) : requested;
+}
+
+// The reply limit a request for this role goes out with, and why: a figure the
+// writer set for the role wins over the surface's own (a local model that
+// answers in 300 tokens or one that needs 8000 is theirs to know, and the
+// surfaces cannot), else the surface's figure, raised to the thinking default
+// when the role may think. A bounded request knows what its reply needs, so
+// there the writer's figure only ever lowers the limit while the role does not
+// think: a reply that needs 800 tokens is not sent with room for 8000. An
+// estimate reads the same resolution, so what it counts is what is sent.
+// setByWriter says the limit sent is the writer's figure and not the surface's.
+export function requestReplyLimit(
+	config: ResolvedConfig,
+	role: AssistantRole,
+	requested: number | undefined,
+	contextWindow?: number,
+	bounded = false
+): { maxTokens: number; thinks: boolean; setByWriter: boolean } {
+	const thinks = roleMayThink(adapterKind(config.provider) === 'anthropic', config.tuning[role]);
+	const set = roleMaxTokens(config, role);
+	let maxTokens = set ?? surfaceMaxTokens(role, requested, thinks, contextWindow);
+	let setByWriter = set !== undefined;
+	if (bounded && !thinks && set !== undefined && requested !== undefined) {
+		maxTokens = Math.min(set, requested);
+		// Equal is the surface's own figure: raising the setting changes nothing.
+		setByWriter = set < requested;
+	}
+	return { maxTokens, thinks, setByWriter };
 }
 
 type Prepared = {
@@ -448,23 +536,18 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				? claudeEffort(req.role, model, resolved.config.tuning[req.role])
 				: undefined
 		),
-		extraParams: roleExtraParams(resolved.config, req.role),
+		extraParams: req.boundedReply
+			? withoutReplySizeParams(roleExtraParams(resolved.config, req.role))
+			: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
 		cacheTtl: resolved.config.cacheTtl,
-		// A figure the writer set for the role wins over the surface's own: a
-		// local model that answers in 300 tokens or one that needs 8000 is theirs
-		// to know, and the surfaces cannot.
-		maxTokens:
-			roleMaxTokens(resolved.config, req.role) ??
-			surfaceMaxTokens(
-				req.role,
-				req.maxTokens,
-				roleMayThink(
-					adapterKind(resolved.config.provider) === 'anthropic',
-					resolved.config.tuning[req.role]
-				),
-				contextWindow
-			),
+		maxTokens: requestReplyLimit(
+			resolved.config,
+			req.role,
+			req.maxTokens,
+			contextWindow,
+			req.boundedReply
+		).maxTokens,
 		contextWindow,
 		sleep: deps.sleep ?? realSleep
 	};
@@ -606,6 +689,7 @@ async function runAgent(db: Database, p: Prepared, req: GatewayRequest): Promise
 		if (response.finishReason === 'paused') {
 			pauses += 1;
 			if (pauses > MAX_PAUSE_RESUMES) throw new Error(PAUSED_MESSAGE);
+			if (req.mayResend && !req.mayResend()) throw new Error(PAUSED_MESSAGE);
 			pausedText += response.content;
 			push({ role: 'assistant', content: response.content, raw: response.raw });
 			continue;
@@ -770,6 +854,9 @@ export async function completeDetailed(
 		if (response.finishReason === 'refusal') throw new ReplyRefusedError();
 		if (response.finishReason === 'paused') {
 			if (pauses >= MAX_PAUSE_RESUMES) throw new Error(PAUSED_MESSAGE);
+			// A resume is one more billed request, so the caller's ceiling is
+			// asked here as it is before a retry.
+			if (req.mayResend && !req.mayResend()) throw new Error(PAUSED_MESSAGE);
 			messages.push({ role: 'assistant', content: response.content, raw: response.raw });
 			continue;
 		}

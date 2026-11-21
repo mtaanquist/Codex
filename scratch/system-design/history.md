@@ -1023,6 +1023,314 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## Scene drafting, review round 6 (2026-11-21)
+
+Small fixes from the sixth review of #1168, branch
+`fix/scene-draft-review-6` on `staging/scene-drafting`.
+
+- A brief kept behind a draft was overwritten when the writer asked again
+  without a reload: the form opened from the scene's defaults and the
+  remembering effect stored those. The form now restores what was stored
+  first.
+- "The writer has seen the refusal" was inferred from a card being attached
+  or from the stranded text being looked up. It is now set by the card
+  while the changed or gone view is on screen and cleared when it is not
+  (`conflictShown`), so the leave prompt is silent only then. A refused
+  edit stays unsaved in the queue's eyes and is not sent again.
+- Reply-size stripping skips `response_format` whole and knows a few more
+  names. `hasWaitingDrafts` had no caller left and was removed.
+
+## Scene drafting, review round 5 (2026-11-21)
+
+Fixes from the fifth reviews of #1168, branch `fix/scene-draft-review-5` on
+`staging/scene-drafting`. All of it is one situation seen from several
+sides: a draft decided in another window while this one holds unsaved text.
+
+- A refused save with no card on screen left the text held where nothing
+  showed it. Held edits now know their scene, and a card that finds the
+  scene's draft gone or replaced asks for text stranded there
+  (`strandedDraftText`) and shows the "already kept or discarded" view with
+  it. The edit is dropped when the writer closes that view, not when it is
+  shown, so a pane switch in between does not lose it.
+- With the card on screen, a refused save now reads the draft again and
+  goes to the same view when it is no longer waiting. "Changed in another
+  window" is left for a real text conflict. The server's refusal says which
+  it was (decided, or never written), and "Reload the page" is gone, since
+  reloading dropped the typing.
+- Once a refusal has been shown, the edit is not sent again and the page
+  does not ask before it is left.
+- A clean copy follows a fresh read only when this window has never sent
+  a save for the draft. Adopting whenever nothing is unanswered was tried
+  on paper and dropped: a read sent before this window's last save landed
+  can come back after it with older text, which round 3 had fixed.
+- Drafts meter spend with no cap set (`meterUncapped`), so a cap set or
+  raised mid-run is held against the real total; other jobs meter as
+  before.
+
+## Scene drafting, review round 4 (2026-11-21)
+
+Fixes from the fourth reviews of #1168, branch `fix/scene-draft-review-4` on
+`staging/scene-drafting`.
+
+- Draft saves now use the scene save's rule instead of their own. Rounds 2
+  and 3 had grown an md5 `base`, a `sent` text for the page-hide save, a
+  list of versions saved over, and still called a lost answer followed by
+  more typing a change in another window. The request now carries the
+  hashes of every text sent and not answered plus the last acknowledged
+  one, and Fill and Add take the same list. The scene saver was not reused
+  as it stands: it is built around the scene PUT (title, markers, its own
+  conflict body, the editor's callbacks). Its hash bookkeeping was lifted
+  into `save-bases.ts` and both use it. A save is not skipped while a text
+  is unanswered, which also covers undoing back to the old text.
+- Not fixed, recorded in `assistant.md`: a page-hide save that puts the
+  base text back and overtakes an older save lets the older one land last.
+  The scene save has the same limit; telling them apart needs a counter,
+  not a content hash.
+- A draft decided in another window was a dead end on the card. The card
+  now reads the draft again on a 404 or 409 and before showing a ready one,
+  and closes with a plain line; unsaved text is shown read-only until the
+  writer closes it, not thrown away.
+- An empty length box made the whole stored form invalid (Svelte binds an
+  empty number input as null), which dropped a half-typed brief. Fields are
+  now read one at a time.
+- The waiting list polled by re-running an effect on the list prop, which
+  the page's own live refresh kept restarting before the wait ended, so it
+  never fired. The effect now hangs off a derived boolean.
+- Server: the discard of failed rows after the insert leaves the new rows
+  alone (a job can fail before the request returns); `n`, `best_of` and
+  nested reply limits are stripped on bounded requests; the capped note
+  gives figures instead of "reached the cap at about $0.00"; a paused
+  reply's resume asks `mayResend`.
+
+## Scene drafting, review round 3 (2026-11-20)
+
+Fixes from the third reviews of #1168, branch `fix/scene-draft-review-3` on
+`staging/scene-drafting`.
+
+- Asking again for a scene whose draft had a saved edit put the first-read
+  text back: the card's cached copy was shown again and the clean edit
+  adopted it. Three changes, any one of which closes it: the request only
+  reveals a ready draft that is already in the box; the card's copy follows
+  each save; and the edit state keeps the versions it has saved over and
+  never adopts one of them (which also covers a slow read that lands after
+  a save).
+- A retried save whose first answer was lost was refused as changed
+  elsewhere. Stored text equal to the text sent is success. For the save
+  made as the page is left while another is still out, chaining was tried
+  on paper and dropped: the page may be gone before the first answer, so
+  the second would never be sent. It goes out at once and names the other
+  save's text (`sent`); the server takes it over either. An md5 of that text
+  would have been tidier, but the browser has no md5.
+- The off-state tab lists the story's waiting drafts by scene, since the
+  card only shows for the open scene. Pending and running drafts count, so
+  the tab is there to stop one.
+- Page-hide and leave-warning handling moved from the card into
+  `draft-edits.ts`, registered once, so a released edit is covered. Clean
+  released edits are freed after a minute, not at once, so a late read
+  still meets the versions it must not take.
+- The cap could be passed by a resend: the gateway sent a billed, failed
+  attempt again without looking at the meter, and the job only stopped once
+  spend was already at the cap. Drafts now ask before every send whether
+  spend plus this request at its limit fits. It is a hook on the request
+  (`mayResend`) and a check in the draft job, not a gateway-wide rule: other
+  roles are unchanged and have the same gap, to be filed.
+- Round 2 made "Longest reply" unable to raise a non-thinking draft's limit,
+  which left the cut-off notes giving advice that did nothing. They are now
+  worded by what set the limit, and the headroom grows with the length.
+- A new request inserts its rows before it discards the failed ones it
+  replaces, and only after the job is queued: scene row before draft row,
+  the order a scene delete takes them, and the failure note survives a
+  request that does not go through.
+- `base` is required on the endpoint; the library functions still take it
+  as optional for callers that hold the row themselves (tests).
+
+## Scene drafting, review round 2 (2026-11-20)
+
+Fixes from the second pair of reviews of #1168, branch
+`fix/scene-draft-review-2` on `staging/scene-drafting`.
+
+- The cap figure could still be lower than the limit sent: a non-thinking
+  role with a "Longest reply" above the draft's need was sent that setting
+  and counted at the words asked for. A draft request is now `boundedReply`:
+  without thinking, the setting can lower the limit but not raise it, and
+  the estimate counts the limit sent for every role ("up to", always). The
+  flat persona figure and chars/4 counting in the prompt side were left.
+- An empty reply was thrown and retried, paying three times for the same
+  nothing. It is settled as failed with a note and the job ends; in a
+  chapter run the run ends at that scene.
+- A chapter scene was told it followed the run's previous draft even when
+  that scene was not adjacent, or the draft was already kept (then the
+  context held it twice). Carried only for the adjacent, undecided one. A
+  scene trashed mid-run still breaks the chain, as before.
+- Two windows on one draft: saves and the keeping choices send the md5 of
+  the text last seen, compared in the statement that writes. Chosen over a
+  version column to avoid a migration.
+- Client: edits are held in module state by draft id, so a slow save from
+  an unmounted card cannot be overtaken by the remount's read, and are
+  flushed on pagehide (keepalive when the body fits, else the page asks
+  before leaving). Brief forms moved from module state to `sessionStorage`.
+  A start is ignored for 700 ms after the estimate shows; a fixed delay was
+  chosen over a second confirm step to keep the form at two presses.
+- The slash menu's ranked matcher is kept, but a one-letter query uses menu
+  order as on main. Against main, the only first-row change comes from the
+  new `/draft` commands and `/write` being relabelled.
+- Deferred, to file: discarding the scene being written in a chapter run
+  does not stop its request; the flat persona figure and chars/4 counting
+  in the estimate.
+
+## Scene drafting, review round 1 (2026-11-20)
+
+Fixes from two reviews of #1168 steps 1 and 2, branch
+`fix/scene-draft-review-1` on `staging/scene-drafting`.
+
+- The estimate was lower than the charge when the Write role may think: the
+  gateway raises the reply limit to the thinking default, and the estimate
+  counted only the scene's words. `requestReplyLimit` in the gateway is now
+  the one place the limit sent is worked out; the estimate calls it and
+  counts the whole limit as an "up to" figure when the model may think.
+- Main gained its own migration 0095 (#1324). Main was merged in, the
+  branch's 0095 dropped and the table regenerated as 0096, with
+  `chapter_id` now `ON DELETE SET NULL` and indexes on `job_id` and
+  `chapter_id`. A run whose chapter is deleted carries on: the scenes are
+  still in the story, and `position` (not `chapter_id`) marks a run's rows.
+- A draft's row is written with a job id made up front, which the queue then
+  uses, so there is no window where a queued job has a row without its id. A
+  row whose job the queue has never seen is settled as failed after a
+  minute's grace (`QUEUE_GRACE_MS`).
+- Reading, editing and deciding a staged draft need only its owner. The
+  panel shows the draft cards on a muted story, and the story page keeps the
+  Assistant tab for an account with the Assistant off while drafts wait.
+- Edits to a ready draft are saved to its row (PATCH, a moment after typing
+  stops, on blur, and when the card goes away). A brief form left open is
+  kept in module state by scene or chapter for the page's life; it is not
+  stored, so a reload starts it fresh.
+- The cards tell "no draft" from "could not read" and retry the latter,
+  poll with the activity center's pacing (`pollPause`: slower after five
+  minutes, paused in a hidden tab), keep keyboard focus between steps (one
+  button for "Check the cost" and "Draft the scene", not disabled while it
+  works) and return it to the chat box on close.
+- A link (`draft=1`, `draftChapter=`) is acted on once and then taken off
+  the address. A chapter link shows the drafts waiting instead of a form.
+- `/draft` no longer runs `/write`: the matcher ranks the command named
+  exactly, then names the query starts, then label words; `/write` is
+  labelled "Write a passage". The drafting commands are not listed where a
+  draft cannot be kept (Review, story Plan, an earlier version in Write).
+- The cards share `.assist-card` rules in `primitives.css` with the split
+  proposal, use `.field-hint` and `FormStatus`, and share the cost sentences
+  with the review confirm step (`cost-notes.ts`, `DraftCostNote.svelte`).
+
+Left as they are, to be filed: the estimate and the run each assemble the
+context once per scene of a chapter, and the chapter brief lives only in the
+job's data. Staged drafts are not in the account or story export.
+
+## Chapter drafts (2026-11-20)
+
+#1168 step 2, branch `feat/chapter-draft` on `staging/scene-drafting`, on top
+of the scene drafts below. One job drafts the ticked scenes of a chapter in
+order, each into its own `assistant_drafts` row, and each row is then an
+ordinary scene draft: Fill, Add as a new scene, Discard, in that scene's card.
+No migration: `chapter_id` and `position` were put on the table for this, and
+the rows of a run share its `job_id`, so there is no run table.
+
+Choices made while building:
+
+- The command is `/draft-chapter`, not `/draft` with a mode. Write has no
+  chapter focus (only a scene is ever open), so `/draft` could only have
+  guessed. `/draft-chapter` drafts the chapter the open scene is in, and the
+  chapter's menu names the chapter directly. With no scene open the command
+  says to open one or use the chapter's menu.
+- A chapter with no scenes is refused, with a message to add a scene for each
+  part first. The run never creates scenes; a drafted scene only reaches the
+  story through the two accept actions.
+- The form has one brief for the chapter and a ticked list of scenes with a
+  line each. A scene may leave its line empty when the chapter brief is
+  given. One length and one point of view apply to every scene. Scenes with
+  text start unticked (their draft could only be added as a new scene).
+- A scene with an undecided draft is left out of the run and the estimate,
+  and the card says how many were. When every ticked scene has one, the
+  request is refused.
+- Continuity: each request carries the closing 6000 characters of the scene
+  drafted just before it, and the writer's line for the next scene in place
+  of that scene's summary. After a scene that was skipped or gone, nothing is
+  carried, so the next scene is not told to follow a draft two back.
+- The run ends at a scene boundary on Stop, the spend cap, or the Assistant
+  going off for the story or the account. Drafts already written stay ready
+  and the rows not reached are discarded, so the scenes are free to be asked
+  for again. A Stop in the middle of a request drops that scene whole.
+- A scene deleted or trashed before its turn is left out and the run goes on.
+- A failed request is retried with the job, and the retry reads the rows
+  again, so it carries on from the scene that failed. When no retry follows,
+  that row is marked failed with the reason (its scene's card offers Try
+  again, as a single draft) and the rest are discarded.
+- Discarding one scene's draft while the run is under way does not stop the
+  job; the job passes over it. Stopping the whole run is the card's Stop.
+- Progress is counted from the rows (settled out of asked for), so the
+  job-status poll needs no store of its own.
+- The notice links to the story with `draftChapter=<id>`, which opens the
+  panel on the chapter's list of drafts.
+
+Deferred: a length or point of view per scene, creating the chapter's scenes
+from an outline, and accepting every drafted scene in one action.
+
+Tests: `tests/integration/chapter-drafts.test.ts` (the gates, the summed
+estimate and cap, cap stop and Stop at a boundary, mute and off mid-run, a
+scene trashed or deleted mid-run, retry, per-scene accept and discard,
+ownership), draft cases in the worker handler, running jobs and queue policy
+tests, prompt unit tests, and `e2e/chapter-draft.spec.ts`.
+
+## Scene drafts (2026-11-20)
+
+#1168 step 1, branch `feat/scene-draft` on `staging/scene-drafting`. The
+Assistant writes one whole scene from the writer's brief. Decided by the
+owner beforehand: no setting for it, only ever started by the writer
+(`/draft`, or "Draft this scene..." on the scene's menu), never over the
+writer's text, and counted before it runs.
+
+It is a background job on its own queue (`assistant-draft`) and not a
+stream, because a scene on a local model takes minutes; the job shape is the
+details read's (#1170). The text is staged in a new table, `assistant_drafts`
+(migration 0096, renumbered in review round 1), and the scene is only written when the writer chooses in
+the panel card (`AssistantDraft.svelte`). "Fill this scene" takes the scene's
+row lock, refuses when the stored body has any prose, and saves through
+`saveSceneBody`, so it is a revision. "Add as a new scene after this one"
+reuses `lockStoryScene` and `makeRoomAfter` from the split code (now
+exported). Lock order is scenes first, then the draft row.
+
+Choices made while building, none of them settled by the issue:
+
+- One undecided draft per writer and scene (a partial unique index). Asking
+  again while one waits shows it instead.
+- The reply limit is words times 1.4 plus 400 tokens, held to
+  `MAX_REPLY_TOKENS` and half the context window. The app does not know a
+  model's output limit, only its window. A "Longest reply" set for Write in
+  its Tune window still wins in the gateway, as it does everywhere; the
+  estimate tells the writer when that would stop the scene early rather
+  than overriding their setting.
+- A reply cut off at the limit is kept as a ready draft with a note. A stop
+  discards the draft (the worker only notices a cancel at its heartbeat, so
+  reading a draft whose job is gone settles the row: stopped ones are
+  discarded, others marked failed).
+- An estimate over the spend cap is a 409 from the request too, not only a
+  disabled button.
+- A scene that already has prose can still be drafted: the prompt is told to
+  carry on from it, and only "Add as a new scene" is offered.
+- The writer's edits to a ready draft live in the card until it is kept;
+  they are not saved back to the row.
+- Keeping or discarding a draft is not gated by the mute, so muting a story
+  never strands a draft. Reading one and asking for one are gated.
+- A new notification kind, `assistant_draft`. Its link, and the Background
+  jobs row, open the scene with `draft=1`, which opens the panel on the draft.
+- The neighbouring summaries the context reads can be stale (#1321); the two
+  places this code reads a summary itself use `usableSceneSummary`.
+
+Deferred: chapter drafts (step 2; `chapter_id` and `position` are on the
+table for it), streaming the draft into the card as it is written, and a
+replace action (ruled out).
+
+Tests: unit for the prompt and the length maths; integration for the gates,
+the cap, every accept path, ownership, stop and the handler; one Playwright
+journey with the model-facing calls stubbed.
+
 ## Guided pass UI and edit reasons (2026-11-20)
 
 #1295, #1296, #1297, #1298, #1304, #1306 on `staging/guided-pass-ui`, from

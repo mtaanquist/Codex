@@ -195,6 +195,19 @@ describe('createSceneSaver', () => {
 		expect(seen).toEqual([null]);
 	});
 
+	it('ignores the success of a save started before the conflict was settled', async () => {
+		let answer!: (r: Response) => void;
+		const sent = mockFetch([() => new Promise<Response>((r) => (answer = r)), ok]);
+		const saver = createSceneSaver('s', 'a', () => {});
+		const stale = saver.save(save('mine'));
+		saver.keepMine('theirs');
+		answer(ok());
+		await stale;
+		// The choice to overwrite still stands, from the text it was made on.
+		await saver.save(save('mine, and on'));
+		expect(sent[1]).toMatchObject({ overwrite: true, baseHashes: [textHash('theirs')] });
+	});
+
 	it('rebases onto an accepted suggestion made on the text it saved', async () => {
 		const sent = mockFetch([ok]);
 		const saver = createSceneSaver('s', 'a', () => {});

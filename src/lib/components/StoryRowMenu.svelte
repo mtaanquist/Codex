@@ -23,6 +23,8 @@
 		onRenameChapter,
 		onOpenReview,
 		onSuggestSplit,
+		onDraftScene,
+		onDraftChapter,
 		onDuplicateScene,
 		onMergeSelected,
 		onFindReplace
@@ -40,6 +42,10 @@
 		onOpenReview: (request: { sceneId?: string; chapterId?: string }) => void;
 		// Write only: Review's Assistant tab cannot confirm a split proposal.
 		onSuggestSplit?: (sceneId: string) => void;
+		// Write only: opens the scene draft form in the Assistant panel.
+		onDraftScene?: (sceneId: string) => void;
+		// Write only: opens the chapter draft form in the Assistant panel.
+		onDraftChapter?: (chapterId: string) => void;
 		onDuplicateScene: (sceneId: string) => void;
 		onMergeSelected: () => void;
 		// Write only: opens find and replace across the chapter.
@@ -129,6 +135,16 @@
 						>
 							Review with the Assistant...
 						</button>
+						{#if onDraftChapter}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => onDraftChapter(target.id)}
+							>
+								Draft this chapter...
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -228,6 +244,16 @@
 								onclick={() => onSuggestSplit(target.id)}
 							>
 								Suggest where to split
+							</button>
+						{/if}
+						{#if onDraftScene}
+							<button
+								class="menu-item"
+								type="button"
+								role="menuitem"
+								onclick={() => onDraftScene(target.id)}
+							>
+								Draft this scene...
 							</button>
 						{/if}
 					</div>
