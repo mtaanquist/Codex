@@ -48,8 +48,14 @@ const { saveStoryLlmOverride } = await import('#lib/server/llm/config');
 const { dispatchToolCall } = await import('#lib/server/llm/tools/dispatch');
 const { TOOLS, toolSpecs } = await import('#lib/server/llm/tools/registry');
 const { registerClient } = await import('#lib/server/mcp/clients');
-const { createAuthorizationCode, exchangeCode, revokeAllGrants } =
-	await import('#lib/server/mcp/oauth');
+const {
+	createAuthorizationCode,
+	createPersonalToken,
+	exchangeCode,
+	listPersonalTokens,
+	revokeAllGrants,
+	revokeGrant
+} = await import('#lib/server/mcp/oauth');
 const { saveMcpInstanceEnabled } = await import('#lib/server/mcp/settings');
 const { NO_UNIVERSE_RESULT } = await import('#lib/server/mcp/tools');
 const {
@@ -527,7 +533,7 @@ describe('the protocol', () => {
 
 		const own = promptText(await get({ universeId: alice.universeId, sceneId: alice.sceneId }));
 		expect(own).toContain(`The universe id is ${alice.universeId}`);
-		expect(own).toContain(`(id: ${alice.sceneId})`);
+		expect(own).toContain(`Review the scene with id ${alice.sceneId}.`);
 		expect(own).toContain('Read it in full with get_scene');
 		expect(own).toContain("You cannot change the writer's text.");
 
@@ -1945,6 +1951,231 @@ describe('stage_scene_draft', () => {
 		);
 		expect(outcome.result).toBe('Unknown tool: stage_scene_draft.');
 		expect(await stagedRows()).toBe(0);
+	});
+});
+
+// ============ A personal access token ============
+
+// The same rule with the other kind of credential: a token the writer made on
+// the Account page reaches that writer's data and nothing else, tool by tool.
+describe('with a personal access token', () => {
+	const TOKEN_NAME = 'Night Script';
+	type Ids = {
+		storyId: string;
+		sceneId: string;
+		entityId: string;
+		threadId: string;
+		suggestionId: string;
+		noteId: string;
+	};
+	const NOTHING: Ids = {
+		storyId: MISSING,
+		sceneId: MISSING,
+		entityId: MISSING,
+		threadId: MISSING,
+		suggestionId: MISSING,
+		noteId: MISSING
+	};
+	// Every tool but list_universes, with arguments that name the given things.
+	// `names` says which ids the tool takes; none means it works on the
+	// universe alone.
+	const TOOLS_BY_NAME: Record<
+		string,
+		{ names: (keyof Ids)[]; args: (ids: Ids) => Record<string, unknown>; stagesOwn?: boolean }
+	> = {
+		list_stories: { names: [], args: () => ({}) },
+		list_scenes: { names: [], args: () => ({}) },
+		search_text: { names: [], args: () => ({ query: 'lantern' }) },
+		get_scene: { names: ['sceneId'], args: ({ sceneId }) => ({ sceneId }) },
+		get_entity: { names: ['entityId'], args: ({ entityId }) => ({ entityId }) },
+		find_appearances: { names: ['entityId'], args: ({ entityId }) => ({ entityId }) },
+		list_review_notes: { names: ['storyId'], args: ({ storyId }) => ({ storyId }) },
+		get_review_note: { names: ['noteId'], args: ({ noteId }) => ({ noteId }) },
+		suggest_edit: {
+			names: ['sceneId'],
+			args: ({ sceneId }) => ({ sceneId, original: 'open', replacement: 'shut' })
+		},
+		leave_comment: { names: ['sceneId'], args: ({ sceneId }) => ({ sceneId, comment: 'x' }) },
+		leave_pattern_note: {
+			names: ['sceneId'],
+			args: ({ sceneId }) => ({
+				sceneId,
+				comment: PATTERN,
+				edits: [{ original: 'open', replacement: 'shut' }]
+			})
+		},
+		propose_scene_split: {
+			names: ['sceneId'],
+			args: ({ sceneId }) => ({ sceneId, newSceneStart: 'lantern', rationale: 'x' })
+		},
+		stage_scene_draft: {
+			names: ['sceneId'],
+			args: ({ sceneId }) => ({ sceneId, text: 'A draft.' })
+		},
+		reply_in_thread: {
+			names: ['threadId'],
+			args: ({ threadId }) => ({ threadId, comment: 'x' })
+		},
+		update_suggestion: {
+			names: ['suggestionId'],
+			args: ({ suggestionId }) => ({ suggestionId, replacement: 'x' })
+		},
+		// Takes no id: it can only ever stage in the universe of the call.
+		suggest_entity: {
+			names: [],
+			args: () => ({ kind: 'character', name: 'Old Marit' }),
+			stagesOwn: true
+		}
+	};
+
+	let pat: string;
+	let bobs: Ids;
+
+	async function personalToken(
+		userId: string,
+		permissions: string[] = ['suggest'],
+		name = TOKEN_NAME
+	): Promise<string> {
+		const made = await createPersonalToken(db, { userId, name, permissions, expiresInDays: 90 });
+		if (!made.ok) throw new Error(made.reason);
+		return made.token;
+	}
+
+	beforeEach(async () => {
+		pat = await personalToken(alice.userId);
+		// Things of Bob's that a call could name: a thread, a suggestion and a
+		// pattern note his own app left on his scene.
+		bobs = {
+			storyId: bob.storyId,
+			sceneId: bob.sceneId,
+			entityId: bob.characterId,
+			threadId: idIn((await comment(bob)).text),
+			suggestionId: idIn((await edit(bob, { original: 'lantern', replacement: 'lamp' })).text),
+			noteId: await patternNote(bob)
+		};
+	});
+
+	it('is offered the same tools as an app with the same permissions', async () => {
+		const names = async (token: string) =>
+			((await rpc(token, 'tools/list')).result!.tools as { name: string }[])
+				.map((tool) => tool.name)
+				.sort();
+		expect(await names(pat)).toEqual(await names(alice.token));
+		expect(await names(pat)).toEqual([...Object.keys(TOOLS_BY_NAME), 'list_universes'].sort());
+		const readOnly = await personalToken(alice.userId, [], 'Reader');
+		expect(await names(readOnly)).toEqual(
+			await names(await connect(alice.userId, 'Reader', ['read']))
+		);
+		expect((await call(readOnly, 'suggest_edit', editArgs())).isError).toBe(true);
+	});
+	const editArgs = () => ({
+		universeId: alice.universeId,
+		sceneId: alice.sceneId,
+		original: 'open',
+		replacement: 'shut'
+	});
+
+	it('lists only the universes of the writer who made it', async () => {
+		const { text, isError } = await call(pat, 'list_universes');
+		expect(isError).toBe(false);
+		const listed = JSON.parse(text).universes as { id: string }[];
+		expect(listed.map((row) => row.id).sort()).toEqual(
+			[alice.universeId, alice.otherUniverseId].sort()
+		);
+		expect(text).not.toContain('Bob');
+	});
+
+	it.each(Object.keys(TOOLS_BY_NAME))(
+		'%s reaches nothing of another writer, and nothing muted or trashed',
+		async (name) => {
+			const tool = TOOLS_BY_NAME[name];
+			const before = await stagedRows();
+			const bobsScene = async () =>
+				(await db.select().from(scenes).where(eq(scenes.id, bob.sceneId)))[0].bodyMd;
+			const bobsText = await bobsScene();
+
+			// Another writer's universe, a trashed one and a missing one: one answer.
+			for (const universeId of [bob.universeId, alice.trashedUniverseId, MISSING]) {
+				expect(await call(pat, name, { ...tool.args(bobs), universeId })).toEqual({
+					text: NO_UNIVERSE_RESULT,
+					isError: true
+				});
+			}
+			expect(await stagedRows()).toBe(before);
+
+			if (tool.names.length === 0) {
+				// Nothing to name: in the writer's own universe it sees only her own.
+				const own = await call(pat, name, { ...tool.args(bobs), universeId: alice.universeId });
+				expect(own.isError).toBe(false);
+				expect(own.text).not.toContain('Bob');
+				expect(await stagedRows()).toBe(before + (tool.stagesOwn ? 1 : 0));
+			} else {
+				// Another writer's things named through her own universe answer
+				// exactly as things that do not exist, and so do her own muted
+				// and trashed scenes.
+				const missing = await call(pat, name, {
+					...tool.args(NOTHING),
+					universeId: alice.universeId
+				});
+				expect(missing.text).toMatch(/^No /);
+				const targets: Ids[] = [bobs];
+				if (tool.names.includes('sceneId')) {
+					for (const sceneId of [
+						alice.mutedSceneId,
+						alice.trashedStorySceneId,
+						alice.trashedSceneId
+					]) {
+						targets.push({ ...NOTHING, sceneId });
+					}
+				}
+				for (const ids of targets) {
+					expect(
+						await call(pat, name, { ...tool.args(ids), universeId: alice.universeId })
+					).toEqual(missing);
+				}
+				expect(await stagedRows()).toBe(before);
+			}
+			expect(await bobsScene()).toBe(bobsText);
+			expect((await listProposals(db, bob.userId, bob.universeId)).entities).toEqual([]);
+		}
+	);
+
+	it('stages under the name the writer gave the token', async () => {
+		const result = await call(pat, 'suggest_edit', editArgs());
+		expect(result.text).toContain('Staged a suggested edit');
+		const [staged] = await listSuggestions(db, alice.storyId);
+		expect(staged).toMatchObject({
+			reviewerName: `${TOKEN_NAME} (personal token)`,
+			isApp: true,
+			isAssistant: false,
+			isOwner: false,
+			status: 'pending'
+		});
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
+		expect(scene.bodyMd).toBe('Alice open lantern prose.');
+		// Its notes are its own: the app's token cannot revise them.
+		const revised = await call(alice, 'update_suggestion', {
+			universeId: alice.universeId,
+			suggestionId: staged.id,
+			replacement: 'ajar'
+		});
+		expect(revised.text).toContain('You can only revise a suggestion you made');
+	});
+
+	it('stops working when it is revoked, and when every credential is', async () => {
+		const list = { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} };
+		expect((await send(list, { token: pat })).status).toBe(200);
+		const [token] = await listPersonalTokens(db, alice.userId);
+		// Another writer cannot revoke it.
+		expect(await revokeGrant(db, bob.userId, token.id)).toBe(false);
+		expect((await send(list, { token: pat })).status).toBe(200);
+		expect(await revokeGrant(db, alice.userId, token.id)).toBe(true);
+		expect((await send(list, { token: pat })).status).toBe(401);
+
+		const second = await personalToken(alice.userId, ['suggest'], 'Second');
+		expect((await send(list, { token: second })).status).toBe(200);
+		await revokeAllGrants(db, alice.userId);
+		expect((await send(list, { token: second })).status).toBe(401);
 	});
 });
 

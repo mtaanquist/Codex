@@ -28,7 +28,16 @@ describe('the briefs for an agent that runs a pass itself', () => {
 			const brief = buildContinuityBrief({ scope, storyId: 'story-1' });
 			const survey = buildSurveyMessage([], { scope });
 			const looksFor = shared(brief, survey);
-			expect(looksFor.filter((line) => line.startsWith('- ')).length).toBeGreaterThanOrEqual(3);
+			// The story list's lore line names where the world is read from, so
+			// it is the one line that differs between the two.
+			expect(looksFor.filter((line) => line.startsWith('- ')).length).toBeGreaterThanOrEqual(
+				scope === 'story' ? 2 : 3
+			);
+			expect(brief).not.toContain('the world context');
+			if (scope === 'story') {
+				expect(survey).toContain('or against the world context.');
+				expect(brief).toContain('or against the entries you read with get_entity and search_text.');
+			}
 			expect(looksFor).toContain(
 				'Judge only what spans scenes; spelling, grammar, and phrasing inside one scene are not this pass.'
 			);
@@ -84,8 +93,10 @@ describe('buildReviewMessage', () => {
 	});
 
 	it('falls back to a generic label for a blank or null title', () => {
-		expect(buildReviewMessage({ id: 's1', title: null })).toContain('"this scene"');
-		expect(buildReviewMessage({ id: 's1', title: '   ' })).toContain('"this scene"');
+		expect(buildReviewMessage({ id: 's1', title: null })).toContain('Review the scene with id s1.');
+		expect(buildReviewMessage({ id: 's1', title: '   ' })).toContain(
+			'Review the scene with id s1.'
+		);
 	});
 
 	it('invites a brief positive comment only when there are no prior notes', () => {

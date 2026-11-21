@@ -9,6 +9,7 @@ import {
 } from '../../scene-draft.ts';
 import { isUuid } from '../../slug.ts';
 import { buildCoauthorMessage, MAX_COAUTHOR_REFERENCE_CHARS } from '../llm/prompts/coauthor.ts';
+import { READ_WITH_TOOLS } from '../llm/prompts/format.ts';
 import { buildRecapMessage } from '../llm/prompts/recap.ts';
 import {
 	buildContinuityBrief,
@@ -153,7 +154,9 @@ const review = (args: Args, picked: ReviewCategory[]) =>
 	framed(
 		universe(args),
 		// With leave_pattern_note on offer, and the scene's text still to be read.
-		[buildReviewMessage({ id: scene(args), title: null }, [], picked, false, true)],
+		[
+			buildReviewMessage({ id: scene(args), title: null }, [], picked, false, true, READ_WITH_TOOLS)
+		],
 		STAGES_ONLY
 	);
 
@@ -253,7 +256,9 @@ const PROMPTS: PromptDef[] = [
 				universe(args),
 				[
 					currentScene(scene(args)),
-					buildCoauthorMessage(text(args, 'brief', MAX_DRAFT_BRIEF_CHARS))
+					buildCoauthorMessage(text(args, 'brief', MAX_DRAFT_BRIEF_CHARS), null, {
+						source: READ_WITH_TOOLS
+					})
 				],
 				draftClose(connection, false, 'passage')
 			)
@@ -280,10 +285,11 @@ const PROMPTS: PromptDef[] = [
 				universe(args),
 				[
 					currentScene(sceneId),
-					buildCoauthorMessage(text(args, 'instruction', MAX_DRAFT_BRIEF_CHARS), {
-						kind: 'selection',
-						text: text(args, 'passage', MAX_COAUTHOR_REFERENCE_CHARS)
-					})
+					buildCoauthorMessage(
+						text(args, 'instruction', MAX_DRAFT_BRIEF_CHARS),
+						{ kind: 'selection', text: text(args, 'passage', MAX_COAUTHOR_REFERENCE_CHARS) },
+						{ source: READ_WITH_TOOLS, rewrite: true }
+					)
 				],
 				connection.permissions.includes('suggest')
 					? `Then stage it with suggest_edit on the scene with id ${sceneId}: the passage exactly as it stands in the scene as "original", your version as "replacement". ${STAGES_ONLY}`
@@ -318,6 +324,7 @@ const PROMPTS: PromptDef[] = [
 					currentScene(scene(args)),
 					`If the scene already has prose: ${CONTINUE_RULE}`,
 					buildSceneDraftMessage({
+						source: READ_WITH_TOOLS,
 						brief: text(args, 'brief', MAX_DRAFT_BRIEF_CHARS),
 						targetWords: words(args),
 						pov: text(args, 'pov', MAX_DRAFT_POV_CHARS, false)
@@ -353,6 +360,7 @@ const PROMPTS: PromptDef[] = [
 					`Draft the scenes of the chapter "${text(args, 'chapter', MAX_SHORT_TEXT)}" of the story with id ${story(args)}, one at a time, in the order list_scenes gives them. Read the chapters before it for the voice, tense and point of view.`,
 					`Each scene in turn is "the current scene" below. Read it with get_scene first; if it already has prose: ${CONTINUE_RULE} From the second scene on, carry on from where your draft of the one before ends and do not repeat it. A scene's summary in list_scenes is the writer's plan for it.`,
 					buildSceneDraftMessage({
+						source: READ_WITH_TOOLS,
 						brief: '',
 						chapterBrief: text(args, 'brief', MAX_DRAFT_BRIEF_CHARS),
 						targetWords: words(args)

@@ -1,13 +1,22 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { Database } from '../auth.ts';
 import { apiTokens, oauthClients, oauthCodes, oauthGrants, users } from '../db/schema.ts';
 import { hashToken } from '../tokens.ts';
-import { parsePermissions, type McpPermission } from '../../mcp-access.ts';
+import {
+	BASE_PERMISSION,
+	GRANTABLE_PERMISSIONS,
+	parsePermissions,
+	type McpPermission
+} from '../../mcp-access.ts';
 import {
 	ACCESS_TOKEN_TTL_MS,
 	CODE_TTL_MS,
 	LAST_USED_REFRESH_MS,
+	MAX_PERSONAL_TOKEN_NAME,
+	MAX_PERSONAL_TOKENS,
+	PERSONAL_TOKEN_EXPIRY_DAYS,
+	PERSONAL_TOKEN_HOST,
 	REFRESH_TOKEN_TTL_MS,
 	REVOKED_CLIENT_RETENTION,
 	SPENT_CODE_RETENTION,
@@ -29,6 +38,7 @@ import { verifyPkce } from './rules.ts';
 const ACCESS_PREFIX = 'cdx_at_';
 const REFRESH_PREFIX = 'cdx_rt_';
 const CODE_PREFIX = 'cdx_ac_';
+const PERSONAL_PREFIX = 'cdx_pat_';
 
 function newSecret(prefix: string): string {
 	return prefix + randomBytes(32).toString('base64url');
@@ -263,8 +273,10 @@ export type BearerIdentity = {
 };
 
 // The one place an access token becomes a user. Returns null for anything
-// that is not a live access token of a live grant on a usable account; the
-// caller answers 401 without saying which.
+// that is not a live access token (an app's, or a personal one) of a live
+// grant on a usable account; the caller answers 401 without saying which.
+// A personal token resolves exactly as an app's does: its grant holds the
+// permissions and its client row the name the writer gave it.
 export async function resolveBearer(db: Database, token: string): Promise<BearerIdentity | null> {
 	if (!token) return null;
 	const [row] = await db
@@ -272,9 +284,16 @@ export async function resolveBearer(db: Database, token: string): Promise<Bearer
 		.from(apiTokens)
 		.innerJoin(oauthGrants, eq(apiTokens.grantId, oauthGrants.id))
 		.innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
-		.where(and(eq(apiTokens.tokenHash, hashToken(token)), eq(apiTokens.kind, 'access')));
+		.where(
+			and(
+				eq(apiTokens.tokenHash, hashToken(token)),
+				inArray(apiTokens.kind, ['access', 'personal'])
+			)
+		);
 	if (!row) return null;
 	const { token: stored, grant, client } = row;
+	// A personal token belongs to a personal client and no other kind does.
+	if ((stored.kind === 'personal') !== (client.kind === 'personal')) return null;
 	if (stored.revokedAt || grant.revokedAt || stored.expiresAt.getTime() <= Date.now()) return null;
 	// The token says whose it is; the grant must agree.
 	if (grant.userId !== stored.userId) return null;
@@ -318,9 +337,141 @@ export async function listGrants(db: Database, userId: string): Promise<GrantVie
 		})
 		.from(oauthGrants)
 		.innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
-		.where(and(eq(oauthGrants.userId, userId), isNull(oauthGrants.revokedAt)))
+		.where(
+			and(
+				eq(oauthGrants.userId, userId),
+				isNull(oauthGrants.revokedAt),
+				// Personal tokens have a list of their own.
+				ne(oauthClients.kind, 'personal')
+			)
+		)
 		.orderBy(desc(oauthGrants.createdAt));
 	return rows.map((row) => ({ ...row, permissions: parsePermissions(row.permissions) }));
+}
+
+// ============ Personal access tokens ============
+// A token the writer makes on the Account page for a program of their own
+// that cannot go through the consent page. It is a grant like an app's (same
+// permissions, same revocation, same checks on every use) on a client row of
+// kind 'personal' that carries its name, with one long-lived token in
+// api_tokens. The secret is returned once, here, and stored only as a hash.
+
+export type PersonalTokenView = {
+	// The grant's id: what the list revokes by.
+	id: string;
+	name: string;
+	permissions: McpPermission[];
+	createdAt: Date;
+	lastUsedAt: Date | null;
+	// Null once the clean-up has removed the expired token row.
+	expiresAt: Date | null;
+};
+
+export type CreatePersonalToken =
+	{ ok: true; id: string; token: string; expiresAt: Date } | { ok: false; reason: string };
+
+const live = (userId: string) =>
+	and(
+		eq(oauthGrants.userId, userId),
+		isNull(oauthGrants.revokedAt),
+		eq(oauthClients.kind, 'personal')
+	);
+
+export async function listPersonalTokens(
+	db: Database,
+	userId: string
+): Promise<PersonalTokenView[]> {
+	const rows = await db
+		.select({
+			id: oauthGrants.id,
+			name: oauthClients.clientName,
+			permissions: oauthGrants.permissions,
+			createdAt: oauthGrants.createdAt,
+			lastUsedAt: oauthGrants.lastUsedAt,
+			expiresAt: apiTokens.expiresAt
+		})
+		.from(oauthGrants)
+		.innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
+		.leftJoin(apiTokens, eq(apiTokens.grantId, oauthGrants.id))
+		.where(live(userId))
+		.orderBy(desc(oauthGrants.createdAt));
+	return rows.map((row) => ({ ...row, permissions: parsePermissions(row.permissions) }));
+}
+
+// The caller has checked who is asking (password, and the second factor
+// when the account has one).
+export async function createPersonalToken(
+	db: Database,
+	input: {
+		userId: string;
+		name: string;
+		permissions: readonly string[];
+		expiresInDays: number;
+	}
+): Promise<CreatePersonalToken> {
+	const name = input.name.replace(/\s+/g, ' ').trim();
+	if (!name) return { ok: false, reason: 'Give the token a name.' };
+	if (name.length > MAX_PERSONAL_TOKEN_NAME) {
+		return {
+			ok: false,
+			reason: `Keep the name to ${MAX_PERSONAL_TOKEN_NAME} characters or fewer.`
+		};
+	}
+	if (!(PERSONAL_TOKEN_EXPIRY_DAYS as readonly number[]).includes(input.expiresInDays)) {
+		return { ok: false, reason: 'Choose how long the token lasts.' };
+	}
+	// Only what a writer can hand out today, and always reading.
+	const permissions = parsePermissions([
+		BASE_PERMISSION,
+		...input.permissions.filter((permission) =>
+			(GRANTABLE_PERMISSIONS as readonly string[]).includes(permission)
+		)
+	]);
+	return db.transaction(async (tx) => {
+		if (!(await accountUsable(tx, input.userId))) {
+			return { ok: false, reason: 'Turn on "Allow other apps to connect" first.' };
+		}
+		const existing = await tx
+			.select({ name: oauthClients.clientName })
+			.from(oauthGrants)
+			.innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
+			.where(live(input.userId));
+		if (existing.length >= MAX_PERSONAL_TOKENS) {
+			return {
+				ok: false,
+				reason: `You have ${existing.length} tokens. Revoke one before making another.`
+			};
+		}
+		// The name is how its notes are attributed, so it names one token.
+		if (existing.some((row) => row.name.toLowerCase() === name.toLowerCase())) {
+			return { ok: false, reason: 'You already have a token with that name.' };
+		}
+		const [client] = await tx
+			.insert(oauthClients)
+			.values({
+				clientId: `personal:${randomUUID()}`,
+				kind: 'personal',
+				clientName: name,
+				host: PERSONAL_TOKEN_HOST,
+				redirectUris: []
+			})
+			.returning({ id: oauthClients.id });
+		const [grant] = await tx
+			.insert(oauthGrants)
+			.values({ userId: input.userId, clientId: client.id, permissions })
+			.returning({ id: oauthGrants.id });
+		const token = newSecret(PERSONAL_PREFIX);
+		const expiresAt = new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000);
+		await tx.insert(apiTokens).values({
+			userId: input.userId,
+			grantId: grant.id,
+			kind: 'personal',
+			tokenHash: hashToken(token),
+			familyId: randomUUID(),
+			expiresAt
+		});
+		return { ok: true, id: grant.id, token, expiresAt };
+	});
 }
 
 // The live grant a writer already gave this client, if any.
@@ -402,6 +553,18 @@ export async function purgeExternalAccess(
 		.delete(apiTokens)
 		.where(lt(apiTokens.expiresAt, sql`now()`))
 		.returning({ id: apiTokens.id });
+	// A personal token that has expired is over: its grant goes with it, and
+	// its client row follows by the rule for revoked clients below.
+	await db
+		.update(oauthGrants)
+		.set({ revokedAt: sql`now()` })
+		.where(
+			and(
+				isNull(oauthGrants.revokedAt),
+				sql`exists (select 1 from ${oauthClients} where ${oauthClients.id} = ${oauthGrants.clientId} and ${oauthClients.kind} = 'personal')`,
+				sql`not exists (select 1 from ${apiTokens} where ${apiTokens.grantId} = ${oauthGrants.id})`
+			)
+		);
 	const codes = await db
 		.delete(oauthCodes)
 		.where(lt(oauthCodes.expiresAt, sql`now() - ${SPENT_CODE_RETENTION}::interval`))

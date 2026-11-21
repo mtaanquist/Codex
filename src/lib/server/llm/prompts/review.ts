@@ -11,6 +11,7 @@ import {
 	type ReviewCategory
 } from '../../../review-shape.ts';
 import { bodyExcerpt, estimateTokens } from '../context/assemble.ts';
+import { IN_CONTEXT, READ_WITH_TOOLS, type WorldSource } from './format.ts';
 
 // An open note the Assistant left on an earlier pass, carried into the next
 // run so it does not repeat itself.
@@ -43,7 +44,7 @@ function priorLine(note: PriorNote): string {
 // full copyedit. The exhaustive passes are told not to filter, because a model
 // told to be sparing still finds the small mechanical errors and then declines
 // to report them.
-const CATEGORY_LINES: Record<ReviewCategory, string[]> = {
+const categoryLines = (source: WorldSource): Record<ReviewCategory, string[]> => ({
 	mechanics: [
 		'- Spelling and typos, including doubled or missing words.',
 		'- Grammar and punctuation: comma splices, missing question marks on questions, possessives, missing commas around direct address and appositives.',
@@ -55,11 +56,11 @@ const CATEGORY_LINES: Record<ReviewCategory, string[]> = {
 		'- Pacing and clarity within the scene.'
 	],
 	lore: [
-		'- Continuity: names, titles, dates, and facts checked against the world and entity details in your context.',
-		'- Characterisation: behaviour or voice that contradicts what the context establishes about a character.',
-		'- Lore: contradictions with the established world, places, and history in your context.'
+		`- Continuity: names, titles, dates, and facts checked against the world and entity details ${source.where}.`,
+		`- Characterisation: behaviour or voice that contradicts what ${source.establishes} about a character.`,
+		`- Lore: contradictions with the established world, places, and history ${source.where}.`
 	]
-};
+});
 
 // The intro sentence for an exhaustive pass: a fixed line for the full copyedit,
 // otherwise the selected category labels joined into one phrase.
@@ -75,10 +76,9 @@ function passIntro(categories: ReviewCategory[]): string {
 	return `This is a ${phrase} pass.`;
 }
 
-function focusInstruction(categories: ReviewCategory[]): string {
-	const lines = REVIEW_CATEGORIES.filter((c) => categories.includes(c)).flatMap(
-		(c) => CATEGORY_LINES[c]
-	);
+function focusInstruction(categories: ReviewCategory[], source: WorldSource): string {
+	const all = categoryLines(source);
+	const lines = REVIEW_CATEGORIES.filter((c) => categories.includes(c)).flatMap((c) => all[c]);
 	return [
 		`${passIntro(categories)} Work through the scene and report every issue you find in the categories below, including small mechanical ones and ones you are uncertain about; do not filter for importance - the writer accepts or rejects each note and would rather discard a nitpick than miss an error. Stay inside these categories:`,
 		...lines,
@@ -110,12 +110,15 @@ export function buildReviewMessage(
 	prior: PriorNote[] = [],
 	categories: ReviewCategory[] = [],
 	sceneTextIncluded = false,
-	patternTool = false
+	patternTool = false,
+	source: WorldSource = IN_CONTEXT
 ): string {
-	const title = (scene.title ?? '').trim() || 'this scene';
+	const title = (scene.title ?? '').trim();
 	const sparing = categories.length === 0;
 	const lines = [
-		`Review the scene "${title}" (id: ${scene.id}).`,
+		title
+			? `Review the scene "${title}" (id: ${scene.id}).`
+			: `Review the scene with id ${scene.id}.`,
 		sceneTextIncluded
 			? "The scene's full text is already in this message. Do not call get_scene for it. Leave your feedback through your tools, anchored to the scene:"
 			: 'Read it in full with get_scene, then leave your feedback through your tools, anchored to the scene:',
@@ -124,8 +127,8 @@ export function buildReviewMessage(
 		ONE_THEME_PER_NOTE,
 		patternTool ? PATTERN_WITH_TOOL : PATTERN_WITHOUT_TOOL,
 		sparing
-			? 'Be specific and sparing; a few high-value notes beat many shallow ones. Splitting your observations into one comment per theme does not count against being sparing. Check the scene against the established world and entity details in your context. Do not rewrite the scene wholesale or change the meaning of the prose.'
-			: focusInstruction(categories)
+			? `Be specific and sparing; a few high-value notes beat many shallow ones. Splitting your observations into one comment per theme does not count against being sparing. Check the scene against the established world and entity details ${source.where}. Do not rewrite the scene wholesale or change the meaning of the prose.`
+			: focusInstruction(categories, source)
 	];
 	if (prior.length === 0) {
 		lines.push(
@@ -228,9 +231,9 @@ const SURVEY_FORMAT = [
 	'One entry per suspected contradiction, each naming at least two scenes by the exact ids below. Keep the claim to one line. Do not stage notes and do not call tools; a later stage reads the full text of the scenes you name and discards whatever the prose does not bear out. If you see nothing, reply with [].'
 ];
 
-const STORY_SURVEY_LOOKS_FOR = [
+const storySurveyLooksFor = (source: WorldSource = IN_CONTEXT) => [
 	'- Continuity: names, titles, or facts that drift between scenes; timeline arithmetic that does not add up.',
-	'- Lore: a detail established one way in one scene and differently in another, or against the world context.',
+	`- Lore: a detail established one way in one scene and differently in another, or against ${source.world}.`,
 	'- Character: a trait, relationship, or history that contradicts another scene.'
 ];
 
@@ -275,7 +278,7 @@ export function buildSurveyMessage(
 		universe
 			? 'This is the survey stage of a universe-wide continuity pass. Below is every scene of every story in this universe, each with its summary or the opening of its text. Name the places where the material contradicts itself across stories:'
 			: 'This is the survey stage of the cross-scene continuity pass. Below are the scenes of the story in order, each with its summary or the opening of its text. Name the places where the material contradicts itself between scenes:',
-		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : STORY_SURVEY_LOOKS_FOR),
+		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : storySurveyLooksFor()),
 		SPANS_SCENES_ONLY,
 		...SURVEY_FORMAT
 	];
@@ -345,7 +348,7 @@ export function buildContinuityBrief(options: {
 		universe
 			? 'Stage 1, survey. Call list_scenes and go through every scene of every story by its summary (read a scene with get_scene where it has no summary). List for yourself the places where the material contradicts itself across stories:'
 			: 'Stage 1, survey. Call list_scenes and go through the scenes of the story in order by their summaries (read a scene with get_scene where it has no summary). List for yourself the places where the material contradicts itself between scenes:',
-		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : STORY_SURVEY_LOOKS_FOR),
+		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : storySurveyLooksFor(READ_WITH_TOOLS)),
 		SPANS_SCENES_ONLY,
 		'Stage 2, confirm. Take one suspected contradiction at a time and read the full text of the scenes involved with get_scene.',
 		CONFIRMED_NOTE,

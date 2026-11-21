@@ -13,7 +13,10 @@ const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url');
 // An app on this computer: registered without a port, used with one.
 const CALLBACK = 'http://localhost:9/callback';
 
-test('a writer connects an app, sees it listed and disconnects it', async ({ page, request }) => {
+test('a writer connects an app, disconnects it, then makes and revokes a token', async ({
+	page,
+	request
+}) => {
 	const registered = await request.post('/oauth/register', {
 		data: { client_name: 'E2E Desk', redirect_uris: ['http://localhost/callback'] }
 	});
@@ -122,6 +125,35 @@ test('a writer connects an app, sees it listed and disconnects it', async ({ pag
 	expect(refreshed.status()).toBe(400);
 	expect((await refreshed.json()).error).toBe('invalid_grant');
 	expect((await mcp(callTool, bearer)).status()).toBe(401);
+
+	// A personal access token, for a tool that cannot open the consent page.
+	// A wrong password makes none.
+	await gotoReady(page, '/account/apps');
+	const tokenForm = page.locator('form[action="?/createToken"]');
+	await tokenForm.getByLabel('Token name').fill('E2E Script');
+	await tokenForm.getByLabel('Confirm your password').fill('not-the-password');
+	await tokenForm.getByRole('button', { name: 'Create token' }).click();
+	await expect(page.getByText('That password is not right.')).toBeVisible();
+	await expect(page.getByLabel('Your new token')).toHaveCount(0);
+
+	await tokenForm.getByLabel('Token name').fill('E2E Script');
+	await tokenForm.getByLabel('Confirm your password').fill('e2e-password');
+	await tokenForm.getByRole('button', { name: 'Create token' }).click();
+	const personal = await page.getByLabel('Your new token').inputValue();
+	expect(personal).toMatch(/^cdx_pat_/);
+	const personalBearer = { authorization: `Bearer ${personal}` };
+	expect((await mcp(callTool, personalBearer)).status()).toBe(200);
+
+	// It is listed by name, and the token itself is not shown again.
+	await gotoReady(page, '/account/apps');
+	await expect(page.getByLabel('Your new token')).toHaveCount(0);
+	const tokenRow = page.locator('.list-row', { hasText: 'E2E Script' });
+	await expect(tokenRow).toContainText('May: read your writing, leave suggestions and comments.');
+	await expect(tokenRow).toContainText('Expires');
+	await expect(tokenRow).toContainText('Last used');
+	await tokenRow.getByRole('button', { name: 'Revoke the token E2E Script' }).click();
+	await expect(tokenRow).toHaveCount(0);
+	expect((await mcp(callTool, personalBearer)).status()).toBe(401);
 });
 
 test('a form post from another site is still refused everywhere else', async ({ request }) => {

@@ -19,6 +19,9 @@ import { sentToken } from './token-helpers';
 // and token rules, the two switches, revocation with the account's other
 // credentials, and the routes an outside app calls.
 
+// The second factor's secret is encrypted with a key derived from this.
+process.env.APP_SECRET = process.env.APP_SECRET || 'mcp-oauth-test-secret';
+
 vi.mock('#lib/server/db', async () => {
 	const { default: pgModule } = await import('pg');
 	const { drizzle } = await import('drizzle-orm/node-postgres');
@@ -40,8 +43,10 @@ const { scheduleAccountDeletion } = await import('#lib/server/account-deletion')
 const { findClient, registerClient } = await import('#lib/server/mcp/clients');
 const {
 	createAuthorizationCode,
+	createPersonalToken,
 	exchangeCode,
 	listGrants,
+	listPersonalTokens,
 	purgeExternalAccess,
 	refreshTokens,
 	resolveBearer,
@@ -51,6 +56,8 @@ const {
 const { mcpInstanceEnabled, saveMcpInstanceEnabled, setMcpAccountEnabled } =
 	await import('#lib/server/mcp/settings');
 const { checkAuthorizeRequest } = await import('#lib/server/mcp/authorize');
+const { beginEnrollment, confirmEnrollment } = await import('#lib/server/two-factor');
+const { totpCode } = await import('#lib/server/totp');
 
 const tokenRoute = await import('../../src/routes/oauth/token/+server');
 const registerRoute = await import('../../src/routes/oauth/register/+server');
@@ -930,6 +937,263 @@ describe('the consent page', () => {
 		const data = await load(alice);
 		expect(data.connected).toBe(true);
 		expect(data.permissions.map((p) => p.checked)).toEqual([true, false]);
+	});
+});
+
+describe('personal access tokens', () => {
+	const make = (userId: string, overrides: Record<string, unknown> = {}) =>
+		createPersonalToken(db, {
+			userId,
+			name: 'Night Script',
+			permissions: ['suggest'],
+			expiresInDays: 90,
+			...overrides
+		});
+	const made = async (userId: string, overrides: Record<string, unknown> = {}) => {
+		const result = await make(userId, overrides);
+		if (!result.ok) throw new Error(result.reason);
+		return result;
+	};
+
+	it('resolves to the writer who made it, with its name and permissions', async () => {
+		const { token, id } = await made(alice);
+		expect(token).toMatch(/^cdx_pat_/);
+		const identity = await resolveBearer(db, token);
+		expect(identity).toMatchObject({
+			userId: alice,
+			grantId: id,
+			client: { clientName: 'Night Script', host: 'personal token' },
+			permissions: ['read', 'suggest']
+		});
+		// Stored as a hash, in the table the app tokens are in.
+		const rows = await db.select().from(apiTokens).where(eq(apiTokens.userId, alice));
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ kind: 'personal', grantId: id });
+		expect(rows[0].tokenHash).not.toContain(token);
+		const days = (rows[0].expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+		expect(Math.round(days)).toBe(90);
+	});
+
+	it('always reads, suggests only when asked, and never takes more', async () => {
+		const reader = await made(alice, { name: 'Reader', permissions: [] });
+		expect((await resolveBearer(db, reader.token))?.permissions).toEqual(['read']);
+		const greedy = await made(alice, { name: 'Greedy', permissions: ['suggest', 'apply', 'x'] });
+		expect((await resolveBearer(db, greedy.token))?.permissions).toEqual(['read', 'suggest']);
+	});
+
+	it('refuses a bad name, a repeat of a name, a bad lifetime and an account with access off', async () => {
+		for (const bad of [
+			{ name: '   ' },
+			{ name: 'x'.repeat(61) },
+			{ expiresInDays: 0 },
+			{ expiresInDays: 9999 },
+			{ expiresInDays: Number.NaN }
+		]) {
+			expect((await make(alice, bad)).ok).toBe(false);
+		}
+		await made(alice);
+		expect(await make(alice, { name: 'night  script' })).toMatchObject({
+			ok: false,
+			reason: 'You already have a token with that name.'
+		});
+		// Another writer may use the same name.
+		expect((await make(bob)).ok).toBe(true);
+		const carol = await addUser('carol@example.com', { mcpEnabled: false });
+		expect((await make(carol)).ok).toBe(false);
+		expect(await db.select().from(apiTokens).where(eq(apiTokens.userId, carol))).toHaveLength(0);
+	});
+
+	it('is listed apart from the apps, for its own writer only', async () => {
+		await connect(alice);
+		const { id } = await made(alice);
+		expect((await listGrants(db, alice)).map((grant) => grant.clientName)).toEqual([
+			'Writing Desk'
+		]);
+		const [listed] = await listPersonalTokens(db, alice);
+		expect(listed).toMatchObject({
+			id,
+			name: 'Night Script',
+			permissions: ['read', 'suggest'],
+			lastUsedAt: null
+		});
+		expect(listed.expiresAt!.getTime()).toBeGreaterThan(Date.now());
+		expect(await listPersonalTokens(db, bob)).toEqual([]);
+	});
+
+	it('shows when it was last used', async () => {
+		const { token } = await made(alice);
+		await resolveBearer(db, token);
+		const [listed] = await listPersonalTokens(db, alice);
+		expect(listed.lastUsedAt).not.toBeNull();
+	});
+
+	it('cannot be used as an OAuth client or refreshed', async () => {
+		const { token } = await made(alice);
+		const [row] = await db.select().from(oauthClients).where(eq(oauthClients.kind, 'personal'));
+		expect(row.redirectUris).toEqual([]);
+		expect(await findClient(db, row.clientId)).toBeNull();
+		expect(await refreshTokens(db, { refreshToken: token, clientId: row.clientId })).toEqual({
+			ok: false
+		});
+		// The refusal did not cost the token its life.
+		expect((await resolveBearer(db, token))?.userId).toBe(alice);
+	});
+
+	it('stops at expiry, and the clean-up takes it off the list', async () => {
+		const { token, id } = await made(alice);
+		const kept = await made(alice, { name: 'Kept' });
+		await pool.query(
+			`update api_tokens set expires_at = now() - interval '1 minute' where grant_id = $1`,
+			[id]
+		);
+		expect(await resolveBearer(db, token)).toBeNull();
+		expect((await listPersonalTokens(db, alice)).map((row) => row.name).sort()).toEqual([
+			'Kept',
+			'Night Script'
+		]);
+		await purgeExternalAccess(db);
+		expect((await listPersonalTokens(db, alice)).map((row) => row.name)).toEqual(['Kept']);
+		expect((await resolveBearer(db, kept.token))?.userId).toBe(alice);
+	});
+
+	it('is revoked by its own writer only', async () => {
+		const { token, id } = await made(alice);
+		expect(await revokeGrant(db, bob, id)).toBe(false);
+		expect((await resolveBearer(db, token))?.userId).toBe(alice);
+		expect(await revokeGrant(db, alice, id)).toBe(true);
+		expect(await resolveBearer(db, token)).toBeNull();
+		expect(await listPersonalTokens(db, alice)).toEqual([]);
+	});
+
+	it('is revoked when the writer turns access off', async () => {
+		const { token } = await made(alice);
+		const bobs = await made(bob);
+		await setMcpAccountEnabled(db, alice, false);
+		await setMcpAccountEnabled(db, alice, true);
+		expect(await resolveBearer(db, token)).toBeNull();
+		expect(await listPersonalTokens(db, alice)).toEqual([]);
+		expect((await resolveBearer(db, bobs.token))?.userId).toBe(bob);
+	});
+
+	it('is revoked on a password change', async () => {
+		await db
+			.update(users)
+			.set({ passwordHash: await hashPassword('the old password') })
+			.where(eq(users.id, alice));
+		const { token } = await made(alice);
+		const bobs = await made(bob);
+		const result = await changePassword(
+			db,
+			alice,
+			'00000000-0000-4000-8000-000000000000',
+			'the old password',
+			'a brand new password'
+		);
+		expect(result.ok).toBe(true);
+		expect(await resolveBearer(db, token)).toBeNull();
+		expect((await resolveBearer(db, bobs.token))?.userId).toBe(bob);
+	});
+
+	it('is revoked on a password reset', async () => {
+		const { token } = await made(alice);
+		const tokenId = await requestPasswordReset(db, 'alice@example.com');
+		const result = await resetPassword(db, await sentToken(db, tokenId!), 'a brand new password');
+		expect(result.ok).toBe(true);
+		expect(await resolveBearer(db, token)).toBeNull();
+		expect(await listPersonalTokens(db, alice)).toEqual([]);
+	});
+
+	it('is revoked when the account is scheduled for deletion, and gone with the account', async () => {
+		const { token } = await made(alice);
+		await scheduleAccountDeletion(db, alice);
+		await db.update(users).set({ deletionScheduledAt: null }).where(eq(users.id, alice));
+		expect(await resolveBearer(db, token)).toBeNull();
+		await made(bob);
+		await pool.query('delete from users where id = $1', [bob]);
+		expect(await db.select().from(apiTokens).where(eq(apiTokens.userId, bob))).toHaveLength(0);
+		expect(await db.select().from(oauthGrants).where(eq(oauthGrants.userId, bob))).toHaveLength(0);
+	});
+
+	it('does not work for a suspended account', async () => {
+		const { token } = await made(alice);
+		await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, alice));
+		expect(await resolveBearer(db, token)).toBeNull();
+	});
+});
+
+describe('making a token on the account page', () => {
+	type Answer = { status?: number; data?: { message?: string }; token?: string; tokenId?: string };
+	const fields = { name: 'Night Script', permission: 'suggest', expiresInDays: '90' };
+	const create = async (userId: string, extra: Record<string, string>) =>
+		(await accountPage.actions.createToken(
+			accountEvent(userId, { ...fields, ...extra }) as never
+		)) as Answer;
+
+	beforeEach(async () => {
+		await db
+			.update(users)
+			.set({ passwordHash: await hashPassword('the right password') })
+			.where(eq(users.id, alice));
+	});
+
+	it('asks for the password and shows the token once', async () => {
+		const wrong = await create(alice, { password: 'not the password' });
+		expect(wrong.status).toBe(400);
+		expect(wrong.data?.message).toBe('That password is not right.');
+		expect(await create(alice, {})).toMatchObject({ status: 400 });
+		expect(await listPersonalTokens(db, alice)).toEqual([]);
+
+		const right = await create(alice, { password: 'the right password' });
+		expect(right.token).toMatch(/^cdx_pat_/);
+		expect((await resolveBearer(db, right.token!))?.userId).toBe(alice);
+		// Nothing the page loads afterwards holds the secret.
+		const [listed] = await listPersonalTokens(db, alice);
+		expect(JSON.stringify(listed)).not.toContain(right.token);
+		expect(listed.id).toBe(right.tokenId);
+	});
+
+	it('asks for an authenticator code as well when two-factor is on', async () => {
+		const begin = await beginEnrollment(db, alice, 'alice@example.com');
+		if (!begin.ok) throw new Error(begin.reason);
+		expect((await confirmEnrollment(db, alice, totpCode(begin.secret))).ok).toBe(true);
+
+		const noCode = await create(alice, { password: 'the right password' });
+		expect(noCode.status).toBe(400);
+		const badCode = await create(alice, { password: 'the right password', code: '000000' });
+		expect(badCode.data?.message).toContain('That code is not right.');
+		// A right code does not make up for a wrong password.
+		const next = totpCode(begin.secret, Date.now() + 30_000);
+		expect((await create(alice, { password: 'wrong', code: next })).status).toBe(400);
+		expect(await listPersonalTokens(db, alice)).toEqual([]);
+
+		const right = await create(alice, { password: 'the right password', code: next });
+		expect(right.token).toMatch(/^cdx_pat_/);
+	});
+
+	it('throttles password guesses with the other account actions', async () => {
+		for (let i = 0; i < 10; i++) await create(alice, { password: 'guess' });
+		const limited = await create(alice, { password: 'the right password' });
+		expect(limited.status).toBe(429);
+		expect(await listPersonalTokens(db, alice)).toEqual([]);
+	});
+
+	it('revokes only a token of the signed-in writer', async () => {
+		const made = await createPersonalToken(db, {
+			userId: alice,
+			name: 'Night Script',
+			permissions: [],
+			expiresInDays: 30
+		});
+		if (!made.ok) throw new Error(made.reason);
+		const asBob = (await accountPage.actions.revokePersonalToken(
+			accountEvent(bob, { grantId: made.id }) as never
+		)) as Answer;
+		expect(asBob.status).toBe(400);
+		expect((await resolveBearer(db, made.token))?.userId).toBe(alice);
+		await accountPage.actions.revokePersonalToken(
+			accountEvent(alice, { grantId: made.id }) as never
+		);
+		expect(await resolveBearer(db, made.token)).toBeNull();
 	});
 });
 

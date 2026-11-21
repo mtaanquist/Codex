@@ -1752,10 +1752,14 @@ export const webauthnCredentials = pgTable(
 // registration and carry a generated client_id; 'cimd' rows cache a client ID
 // metadata document, and their client_id is the document's URL. All clients are
 // public (no secret): PKCE is what binds a code to the app that asked for it.
+// A 'personal' row stands for one personal access token: it carries the name
+// the writer gave the token, so notes left with it are attributed and scoped
+// the way an app's are. It has no redirect URIs and the OAuth routes never
+// resolve it.
 export const oauthClients = pgTable('oauth_clients', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	clientId: text('client_id').notNull().unique(),
-	kind: text('kind', { enum: ['dcr', 'cimd'] }).notNull(),
+	kind: text('kind', { enum: ['dcr', 'cimd', 'personal'] }).notNull(),
 	// What the app calls itself. Self-asserted, so it is always shown with host.
 	clientName: text('client_name').notNull(),
 	// The part of the client we can vouch for: the host of the client_id URL
@@ -1834,7 +1838,8 @@ export const apiTokens = pgTable(
 			.references(() => users.id, { onDelete: 'cascade' })
 			.notNull(),
 		grantId: uuid('grant_id').references(() => oauthGrants.id, { onDelete: 'cascade' }),
-		kind: text('kind', { enum: ['access', 'refresh'] }).notNull(),
+		// 'personal' is a personal access token: long-lived, no refresh token.
+		kind: text('kind', { enum: ['access', 'refresh', 'personal'] }).notNull(),
 		tokenHash: text('token_hash').notNull().unique(),
 		familyId: uuid('family_id').notNull(),
 		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

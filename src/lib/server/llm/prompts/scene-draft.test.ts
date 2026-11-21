@@ -11,7 +11,7 @@ describe('buildSceneDraftMessage', () => {
 		expect(message).toContain('"Ilse finds the ledger and hides it"');
 		expect(message).toContain('about 1200 words');
 		expect(message).toContain('whole of the current scene');
-		expect(message).toMatch(/established voice and tense, and point of view/);
+		expect(message).toMatch(/established voice, tense, and point of view, and consistent/);
 		expect(message).toMatch(/only the scene/i);
 		expect(message.endsWith(PROSE_FORMAT)).toBe(true);
 	});
@@ -25,6 +25,7 @@ describe('buildSceneDraftMessage', () => {
 		expect(message).toContain('Point of view: Ilse, close third.');
 		// The writer's choice stands in for "the established point of view".
 		expect(message).not.toMatch(/and point of view/);
+		expect(message).toMatch(/established voice and tense, and consistent/);
 	});
 
 	it('leaves the point of view out when it is blank', () => {
