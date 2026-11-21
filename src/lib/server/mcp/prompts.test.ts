@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { findAsk, SLASH_COMMANDS, whoAsk } from '../../assistant-slash.ts';
 import { REVIEW_CATEGORIES } from '../../review-shape.ts';
 import { buildCoauthorMessage } from '../llm/prompts/coauthor.ts';
+import { READ_WITH_TOOLS } from '../llm/prompts/format.ts';
 import { buildRecapMessage } from '../llm/prompts/recap.ts';
 import {
 	buildContinuityBrief,
@@ -78,6 +79,15 @@ describe('what a prompt says', () => {
 			const stages = text.includes("You cannot change the writer's text.");
 			const replies = text.includes('Nothing you write here is put into Codex');
 			expect(stages || replies).toBe(true);
+			// An outside agent is handed no context: every prompt points at
+			// what to read with the tools, and names no placeholder scene.
+			for (const focus of ['', 'mechanics, prose, lore']) {
+				const rendered = build(prompt.name, { ...args, focus });
+				expect(rendered).not.toMatch(/in your context|the context establishes|world context/);
+				expect(rendered).not.toContain('"this scene"');
+				expect(rendered).not.toContain('tense, and point of view, and point');
+				expect(rendered).not.toContain('voice and tense, and point of view');
+			}
 			// Plain ASCII throughout.
 			expect([...text].every((character) => character.charCodeAt(0) < 128)).toBe(true);
 		}
@@ -85,14 +95,20 @@ describe('what a prompt says', () => {
 
 	it('gives a review the Assistants own instruction, with the pattern tool', () => {
 		const scene = { id: SCENE, title: null };
-		expect(build('review')).toContain(buildReviewMessage(scene, [], [], false, true));
+		expect(build('review')).toContain(
+			buildReviewMessage(scene, [], [], false, true, READ_WITH_TOOLS)
+		);
 		expect(build('review', { focus: 'lore, mechanics' })).toContain(
-			buildReviewMessage(scene, [], ['mechanics', 'lore'], false, true)
+			buildReviewMessage(scene, [], ['mechanics', 'lore'], false, true, READ_WITH_TOOLS)
 		);
 		expect(build('copyedit')).toContain(
-			buildReviewMessage(scene, [], [...REVIEW_CATEGORIES], false, true)
+			buildReviewMessage(scene, [], [...REVIEW_CATEGORIES], false, true, READ_WITH_TOOLS)
 		);
 		expect(build('copyedit')).toContain('This is a full copyedit pass.');
+		expect(build('review')).toContain(`Review the scene with id ${SCENE}.`);
+		expect(build('copyedit')).toContain(
+			'facts checked against the world and entity details as you read them with your tools (get_scene, get_entity, search_text, find_appearances).'
+		);
 		expect(build('review')).toContain("wait in the writer's review in Codex");
 	});
 
@@ -118,7 +134,9 @@ describe('what a prompt says', () => {
 
 	it('writes and rewrites from the co-author instruction', () => {
 		const write = build('write', { brief: 'The ford at dawn.' });
-		expect(write).toContain(buildCoauthorMessage('The ford at dawn.'));
+		expect(write).toContain(
+			buildCoauthorMessage('The ford at dawn.', null, { source: READ_WITH_TOOLS })
+		);
 		expect(write).toContain(`the scene with id ${SCENE}`);
 		// Staged on the scene where the connection may, else given in the reply.
 		expect(write).toContain('Hand it to the writer with stage_scene_draft');
@@ -128,12 +146,18 @@ describe('what a prompt says', () => {
 		expect(said).toContain('Nothing you write here is put into Codex');
 
 		const args = { passage: 'The elf crossed.', instruction: 'Tighten it.' };
-		const asked = buildCoauthorMessage('Tighten it.', {
-			kind: 'selection',
-			text: 'The elf crossed.'
-		});
+		const asked = buildCoauthorMessage(
+			'Tighten it.',
+			{ kind: 'selection', text: 'The elf crossed.' },
+			{ source: READ_WITH_TOOLS, rewrite: true }
+		);
 		const staged = build('rewrite', args);
 		expect(staged).toContain(asked);
+		// It reads as a rewrite of the quoted passage, not as a new one.
+		expect(staged).toContain(
+			'Rewrite this passage of the current scene:\n\nThe elf crossed.\n\nRewrite it to this instruction:\n\n"Tighten it."'
+		);
+		expect(staged).not.toContain('Write a passage for the current scene');
 		expect(staged).toContain('Then stage it with suggest_edit');
 		const replied = build('rewrite', args, READ);
 		expect(replied).toContain(asked);
@@ -144,7 +168,12 @@ describe('what a prompt says', () => {
 	it('drafts a scene or a chapter from the scene draft instruction', () => {
 		const draft = build('draft', { brief: 'They cross.', words: '1200', pov: 'Kara' });
 		expect(draft).toContain(
-			buildSceneDraftMessage({ brief: 'They cross.', targetWords: 1200, pov: 'Kara' })
+			buildSceneDraftMessage({
+				brief: 'They cross.',
+				targetWords: 1200,
+				pov: 'Kara',
+				source: READ_WITH_TOOLS
+			})
 		);
 		expect(draft).toContain('If the scene already has prose: Write the rest of the scene');
 		expect(build('draft', { brief: 'They cross.' })).toContain('Aim for about 800 words');
@@ -153,7 +182,12 @@ describe('what a prompt says', () => {
 
 		const chapter = build('draft-chapter', { chapter: 'The Ford', brief: 'The crossing.' });
 		expect(chapter).toContain(
-			buildSceneDraftMessage({ brief: '', chapterBrief: 'The crossing.', targetWords: 800 })
+			buildSceneDraftMessage({
+				brief: '',
+				chapterBrief: 'The crossing.',
+				targetWords: 800,
+				source: READ_WITH_TOOLS
+			})
 		);
 		expect(chapter).toContain(`the chapter "The Ford" of the story with id ${STORY}`);
 

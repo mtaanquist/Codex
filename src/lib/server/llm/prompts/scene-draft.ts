@@ -3,10 +3,13 @@
 // system message the gateway places after the persona). The result is staged
 // for the writer to keep or discard; it is never written to a scene on its own.
 
-import { PROSE_FORMAT } from './format.ts';
+import { IN_CONTEXT, PROSE_FORMAT, type WorldSource } from './format.ts';
 
 export type SceneDraftBrief = {
 	brief: string;
+	// Where the world and the scenes around this one are found; the assembled
+	// context unless the caller says otherwise.
+	source?: WorldSource;
 	targetWords: number;
 	// Whose point of view to write from, in the writer's words; empty leaves it
 	// to the established voice.
@@ -114,9 +117,11 @@ export function buildSceneDraftMessage(input: SceneDraftBrief): string {
 	parts.push(
 		`Aim for about ${input.targetWords} words, and bring the scene to an end within that length.`,
 		'',
-		'Write it as finished prose ready to drop into the manuscript, in the established voice and tense' +
-			(pov ? '' : ', and point of view') +
-			', and consistent with the world, the characters, and the scenes around it in your context. Reply with only the scene: no title, no preamble, no commentary, and no surrounding quotation marks.',
+		`Write it as finished prose ready to drop into the manuscript, in the established ${
+			pov ? 'voice and tense' : 'voice, tense, and point of view'
+		}, and consistent with the world, the characters, and the scenes around it ${
+			(input.source ?? IN_CONTEXT).where
+		}. Reply with only the scene: no title, no preamble, no commentary, and no surrounding quotation marks.`,
 		PROSE_FORMAT
 	);
 	return parts.join('\n');

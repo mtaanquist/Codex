@@ -527,7 +527,7 @@ describe('the protocol', () => {
 
 		const own = promptText(await get({ universeId: alice.universeId, sceneId: alice.sceneId }));
 		expect(own).toContain(`The universe id is ${alice.universeId}`);
-		expect(own).toContain(`(id: ${alice.sceneId})`);
+		expect(own).toContain(`Review the scene with id ${alice.sceneId}.`);
 		expect(own).toContain('Read it in full with get_scene');
 		expect(own).toContain("You cannot change the writer's text.");
 
