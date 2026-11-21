@@ -33,6 +33,10 @@ export type SceneDraftBrief = {
 	previousDraft?: string | null;
 };
 
+// What a draft does with a scene that already has prose.
+export const CONTINUE_RULE =
+	'Write the rest of the scene from exactly where it stops. Do not repeat or rewrite what is already there.';
+
 const FOLLOWING_LEAD = {
 	summary: 'is summarised as',
 	opening: 'opens with',
@@ -71,12 +75,7 @@ export function buildSceneDraftMessage(input: SceneDraftBrief): string {
 			''
 		);
 	}
-	if (existing) {
-		parts.push(
-			'Write the rest of the scene from exactly where it stops. Do not repeat or rewrite what is already there.',
-			''
-		);
-	}
+	if (existing) parts.push(CONTINUE_RULE, '');
 	const following = input.following?.text.trim();
 	if (following) {
 		const title = input.following?.title?.trim();

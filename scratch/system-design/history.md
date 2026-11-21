@@ -1023,6 +1023,38 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 6: prompts (2026-11-21)
+
+Part of #1175, branch `feat/mcp-prompts` on `staging/mcp-endpoint`. No
+migration.
+
+- Eleven MCP prompts, one per Assistant flow (`src/lib/server/mcp/prompts.ts`),
+  registered on the per-request server next to the tools.
+- One source for the instruction text. `review` and `copyedit` call
+  `buildReviewMessage`; `write` and `rewrite` call `buildCoauthorMessage`;
+  `draft` and `draft-chapter` call `buildSceneDraftMessage`; `catchup` calls
+  `buildRecapMessage`. For the two staged passes the shared sentences in
+  `prompts/review.ts` became constants, used both by the staged builders and
+  by two new briefs for an agent that runs the pass itself. The `/who` and
+  `/find` asks moved out of the chat panel into `assistant-slash.ts`. Unit
+  tests assert each prompt contains its builder's output, so a change to the
+  Assistant's instruction changes the prompt with it.
+- Prompts do not read the database. The alternative was to look up the scene
+  to put its title in the prompt and refuse a foreign id there; that would
+  have added a second place where ownership is decided. A prompt for another
+  writer's ids is the same text around those ids and nothing else (tested);
+  the tools refuse the ids.
+- The review prompt therefore says `Review the scene "this scene" (id: ...)`,
+  the builder's wording for an untitled scene.
+- Arguments are text. Ids must look like ids, free text is capped (the brief
+  at the draft brief's cap), `focus` takes the review categories, `words` is
+  clamped as the draft form clamps it. A bad argument is a protocol error
+  that names it.
+- Review and copyedit are per scene. A chapter or a story is the agent
+  running the prompt scene by scene, where Codex would queue a background run.
+- The pattern caps moved to `prompts/review.ts` (re-exported from
+  `pattern-pass.ts`), so the prompts module does not import the gateway.
+
 ## MCP endpoint, lane 5: the guided pass and reading notes back (2026-11-21)
 
 Part of #1175, branch `feat/mcp-guided-pass` on `staging/mcp-endpoint`. No

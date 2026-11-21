@@ -174,6 +174,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	}
 ];
 
+// What /who and /find send to the model. Kept here so the chat panel and the
+// prompts an outside app is offered (#lib/server/mcp/prompts) ask the same.
+export function whoAsk(who: string): string {
+	return `Show me a short sheet for ${who}: the key facts you have on them.`;
+}
+
+export function findAsk(query: string): string {
+	return `Search this universe for "${query}" and list what you find, with where each turns up.`;
+}
+
 /** The commands available on a surface: every command on a story, the 'both' set on the universe. */
 export function commandsForScope(universe: boolean): SlashCommand[] {
 	return universe ? SLASH_COMMANDS.filter((command) => command.scope === 'both') : SLASH_COMMANDS;

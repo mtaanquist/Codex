@@ -454,6 +454,84 @@ describe('the protocol', () => {
 		expect(inApp.properties).not.toHaveProperty('patternNoteId');
 	});
 
+	it('offers a prompt for each Assistant flow, by what the connection may do', async () => {
+		const { result: opening } = await rpc(alice.token, 'initialize', {
+			protocolVersion: '2025-06-18',
+			capabilities: {},
+			clientInfo: { name: 'test', version: '1' }
+		});
+		expect(opening?.capabilities).toHaveProperty('prompts');
+
+		type Listed = { name: string; arguments: { name: string; required?: boolean }[] }[];
+		const { result } = await rpc(alice.token, 'prompts/list');
+		const prompts = result!.prompts as Listed;
+		expect(prompts.map((prompt) => prompt.name).sort()).toEqual([
+			'catchup',
+			'continuity-review',
+			'copyedit',
+			'draft',
+			'draft-chapter',
+			'find',
+			'pattern-pass',
+			'review',
+			'rewrite',
+			'who',
+			'write'
+		]);
+		const review = prompts.find((prompt) => prompt.name === 'review')!;
+		expect(review.arguments).toEqual([
+			expect.objectContaining({ name: 'universeId', required: true }),
+			expect.objectContaining({ name: 'sceneId', required: true }),
+			expect.objectContaining({ name: 'focus', required: false })
+		]);
+
+		const readOnly = await connect(alice.userId, 'Reader', ['read']);
+		const reader = (await rpc(readOnly, 'prompts/list')).result!.prompts as Listed;
+		expect(reader.map((prompt) => prompt.name)).not.toContain('review');
+		expect(reader.map((prompt) => prompt.name)).toContain('catchup');
+		const refused = await rpc(readOnly, 'prompts/get', {
+			name: 'review',
+			arguments: { universeId: alice.universeId, sceneId: alice.sceneId }
+		});
+		expect(refused.error).toBeDefined();
+	});
+
+	it('gives a prompt as text built from the arguments alone', async () => {
+		const get = (args: Record<string, unknown>, name = 'review') =>
+			rpc(alice.token, 'prompts/get', { name, arguments: args });
+		const promptText = (answered: Awaited<ReturnType<typeof get>>) => {
+			const messages = answered.result!.messages as {
+				role: string;
+				content: { type: string; text: string };
+			}[];
+			expect(messages).toHaveLength(1);
+			expect(messages[0].role).toBe('user');
+			return messages[0].content.text;
+		};
+
+		const own = promptText(await get({ universeId: alice.universeId, sceneId: alice.sceneId }));
+		expect(own).toContain(`The universe id is ${alice.universeId}`);
+		expect(own).toContain(`(id: ${alice.sceneId})`);
+		expect(own).toContain('Read it in full with get_scene');
+		expect(own).toContain("You cannot change the writer's text.");
+
+		// A prompt reads nothing: for another writer's ids it is the same text
+		// around those ids, and says nothing of what they name. The tools it
+		// points at are what refuse them.
+		const others = promptText(await get({ universeId: bob.universeId, sceneId: bob.sceneId }));
+		expect(others).not.toMatch(/Bob|Quay|lantern/);
+		expect(others.replaceAll(bob.universeId, 'U').replaceAll(bob.sceneId, 'S')).toBe(
+			own.replaceAll(alice.universeId, 'U').replaceAll(alice.sceneId, 'S')
+		);
+
+		// A bad argument is refused, with the argument named.
+		const bad = await get({ universeId: alice.universeId, sceneId: 'nope' });
+		expect(bad.error?.message).toContain('"sceneId" must be an id from list_scenes.');
+		expect((await get({ universeId: alice.universeId })).error).toBeDefined();
+		expect((await get({}, 'no-such-prompt')).error).toBeDefined();
+		expect(await stagedRows()).toBe(0);
+	});
+
 	it('refuses a tool it does not offer, and stages nothing', async () => {
 		const readOnly = await connect(alice.userId, 'Reader', ['read']);
 		const attempts: [string, string][] = [

@@ -27,6 +27,7 @@ import {
 	type PriorNote
 } from './prompts/review.ts';
 import { completeDetailed, type GatewayDeps } from './gateway.ts';
+import { BOOK_PATTERN_CAP, CHAPTER_PATTERN_CAP } from './prompts/review.ts';
 import { logEvent } from '../log.ts';
 import type { SpendMeter } from './spend.ts';
 import type { ChatMessage } from './providers/types.ts';
@@ -37,9 +38,7 @@ import type { ChatMessage } from './providers/types.ts';
 // scene where it shows and, scene by scene, the linked edits that fix it. The
 // scene reviews that follow are handed the notes so they do not repeat them.
 
-// The most patterns one unit reports: a chapter, and the whole book.
-export const CHAPTER_PATTERN_CAP = 5;
-export const BOOK_PATTERN_CAP = 8;
+export { BOOK_PATTERN_CAP, CHAPTER_PATTERN_CAP };
 // An apply round stages one edit per instance in one scene.
 const APPLY_TOOL_BUDGET = 32;
 // The most scenes one pattern's fixes are suggested in, in reading order, so a

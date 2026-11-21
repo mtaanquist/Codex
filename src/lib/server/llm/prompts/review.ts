@@ -241,6 +241,15 @@ const UNIVERSE_SURVEY_LOOKS_FOR = [
 	'- Place: a location detail rendered inconsistently between stories.'
 ];
 
+const SPANS_SCENES_ONLY =
+	'Judge only what spans scenes; spelling, grammar, and phrasing inside one scene are not this pass.';
+// How a contradiction the text bears out is handed back, and what the pass
+// leaves alone. Shared by the confirm stage and the brief for an outside agent.
+const CONFIRMED_NOTE =
+	'If the text bears it out, stage one note: leave_comment on the scene where the contradiction is clearest, quoting the passage and naming the other scene(s) involved so the writer can find both sides. Use suggest_edit instead only when one exact short passage is plainly the wrong side of the contradiction.';
+const CONTINUITY_ONLY =
+	'Do not leave spelling, grammar, or style notes; this pass is continuity only.';
+
 export type SurveyChunk = { index: number; total: number };
 
 // Stage A: the scene summaries in order, and the ask for candidate
@@ -267,7 +276,7 @@ export function buildSurveyMessage(
 			? 'This is the survey stage of a universe-wide continuity pass. Below is every scene of every story in this universe, each with its summary or the opening of its text. Name the places where the material contradicts itself across stories:'
 			: 'This is the survey stage of the cross-scene continuity pass. Below are the scenes of the story in order, each with its summary or the opening of its text. Name the places where the material contradicts itself between scenes:',
 		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : STORY_SURVEY_LOOKS_FOR),
-		'Judge only what spans scenes; spelling, grammar, and phrasing inside one scene are not this pass.',
+		SPANS_SCENES_ONLY,
 		...SURVEY_FORMAT
 	];
 	if (options.chunk) {
@@ -313,10 +322,34 @@ export function buildConfirmMessage(
 	return [
 		'This is the confirm stage of the continuity pass. A survey of the scene summaries flagged a possible contradiction; check it against the full text below, which is all you need (do not call get_scene).',
 		`Suspected contradiction: ${claim.trim()}`,
-		'If the text bears it out, stage one note: leave_comment on the scene where the contradiction is clearest, quoting the passage and naming the other scene(s) involved so the writer can find both sides. Use suggest_edit instead only when one exact short passage is plainly the wrong side of the contradiction.',
-		'If the text does not bear it out, or the two passages can both be true, reply with the single word "discarded" and leave no notes. Do not leave spelling, grammar, or style notes; this pass is continuity only.',
+		CONFIRMED_NOTE,
+		`If the text does not bear it out, or the two passages can both be true, reply with the single word "discarded" and leave no notes. ${CONTINUITY_ONLY}`,
 		'The scenes involved:',
 		...scenes.map((scene) => confirmSceneBlock(scene, bodyChars))
+	].join('\n');
+}
+
+// The whole continuity pass as one brief, for an agent that runs both stages
+// itself and reads the material through its tools (an outside app over MCP).
+// In the app Codex runs the stages and hands the model the text; the looks-for
+// lists and the rules for what to stage are the same sentences.
+export function buildContinuityBrief(options: {
+	scope: 'story' | 'universe';
+	storyId?: string;
+}): string {
+	const universe = options.scope === 'universe';
+	return [
+		universe
+			? 'Run a continuity pass across every story in this universe, in two stages.'
+			: `Run a continuity pass over the story with id ${options.storyId}, in two stages.`,
+		universe
+			? 'Stage 1, survey. Call list_scenes and go through every scene of every story by its summary (read a scene with get_scene where it has no summary). List for yourself the places where the material contradicts itself across stories:'
+			: 'Stage 1, survey. Call list_scenes and go through the scenes of the story in order by their summaries (read a scene with get_scene where it has no summary). List for yourself the places where the material contradicts itself between scenes:',
+		...(universe ? UNIVERSE_SURVEY_LOOKS_FOR : STORY_SURVEY_LOOKS_FOR),
+		SPANS_SCENES_ONLY,
+		'Stage 2, confirm. Take one suspected contradiction at a time and read the full text of the scenes involved with get_scene.',
+		CONFIRMED_NOTE,
+		`If the text does not bear it out, or the two passages can both be true, drop it and leave no note. ${CONTINUITY_ONLY}`
 	].join('\n');
 }
 
@@ -436,6 +469,10 @@ export function buildRereadMessage(input: {
 // pattern and one scene at a time and stages a linked suggest_edit for each
 // instance it would change.
 
+// The most patterns one unit reports: a chapter, and the whole book.
+export const CHAPTER_PATTERN_CAP = 5;
+export const BOOK_PATTERN_CAP = 8;
+
 export type PatternScene = {
 	id: string;
 	title: string | null;
@@ -495,6 +532,9 @@ export const PATTERN_FORMAT = [
 	'Name each scene by the exact id given below. Do not stage notes and do not call tools; a later stage goes through each scene and proposes the fixes. If you see no recurring pattern, reply with [].'
 ];
 
+const patternReportRule = (cap: number) =>
+	`Report only patterns with several instances, not one-off fixes, spelling, or grammar. Report at most ${cap}, the ones that matter most.`;
+
 export type KnownPattern = { name: string; description: string };
 
 export function buildPatternSurveyMessage(
@@ -516,7 +556,7 @@ export function buildPatternSurveyMessage(
 			? 'This is the survey stage of a whole-book pattern pass. Below is the full text of the book, chapter by chapter. Find the habits in the prose that recur across it:'
 			: 'This is the survey stage of a chapter pattern pass. Below is the full text of the chapter, scene by scene. Find the habits in the prose that recur across it:',
 		...PATTERN_LOOKS_FOR,
-		`Report only patterns with several instances, not one-off fixes, spelling, or grammar. Report at most ${options.cap}, the ones that matter most.`,
+		patternReportRule(options.cap),
 		...PATTERN_FORMAT
 	];
 	if (options.known?.length) {
@@ -538,6 +578,27 @@ export function buildPatternSurveyMessage(
 	}
 	lines.push('The text:', patternListing(scenes));
 	return lines.join('\n');
+}
+
+// The pattern pass as one brief, for an agent that reads the chapter through
+// its tools and stages the notes itself (an outside app over MCP). cap is the
+// most patterns to report per chapter.
+export function buildPatternBrief(options: {
+	storyId: string;
+	chapter?: string;
+	cap: number;
+}): string {
+	const chapter = options.chapter?.trim();
+	return [
+		chapter
+			? `Run a pattern pass over the chapter "${chapter}" of the story with id ${options.storyId}.`
+			: `Run a pattern pass over the story with id ${options.storyId}, one chapter at a time.`,
+		'Find the scenes with list_scenes and read each one in full with get_scene. Find the habits in the prose that recur across the chapter:',
+		...PATTERN_LOOKS_FOR,
+		patternReportRule(options.cap),
+		PATTERN_WITH_TOOL,
+		'One leave_pattern_note call carries the edits of one scene: make it on the first scene where the pattern shows. For the same pattern in another scene, stage each fix with suggest_edit and pass the id of the note as patternNoteId, so the writer goes through every fix from the one note.'
+	].join('\n');
 }
 
 const MAX_PATTERN_EXAMPLES = 6;
