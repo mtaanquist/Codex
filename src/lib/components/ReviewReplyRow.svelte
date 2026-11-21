@@ -19,6 +19,7 @@
 			authorName: string;
 			isOwner: boolean;
 			isAssistant: boolean;
+			isApp?: boolean;
 			mine: boolean;
 			body: string;
 			createdAt: Date | string;
@@ -29,7 +30,12 @@
 
 <div class="rv-reply-row">
 	<ReviewAvatar
-		author={{ isOwner: reply.isOwner, isAssistant: reply.isAssistant, name: reply.authorName }}
+		author={{
+			isOwner: reply.isOwner,
+			isAssistant: reply.isAssistant,
+			isApp: reply.isApp,
+			name: reply.authorName
+		}}
 		size={20}
 	/>
 	<div class="rv-reply-main">

@@ -1,7 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import { normaliseReason } from '#lib/suggestion-reason';
 import { textHash } from '#lib/text-hash';
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql, type AnyColumn } from 'drizzle-orm';
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	gt,
+	inArray,
+	isNull,
+	or,
+	sql,
+	type AnyColumn,
+	type SQL
+} from 'drizzle-orm';
+import { clientDisplayName } from '../mcp-access.ts';
 import type { Database } from './auth.ts';
 import {
 	reviewComments,
@@ -256,18 +270,69 @@ async function sceneRevisionLock(db: Database, sceneId: string): Promise<void> {
 }
 
 // A comment or suggestion is authored by the signed-in owner, a guest
-// reviewer, or the Assistant. The Assistant carries no FK; its display name is
-// resolved live from the owner's config (assistantDisplayName).
-export type ThreadAuthor = { userId: string } | { reviewerId: string } | { assistant: true };
+// reviewer, the Assistant, or an outside app the owner connected. The
+// Assistant carries no FK; its display name is resolved live from the owner's
+// config (assistantDisplayName). An app is the registered client it connected
+// as; its name and host are copied onto each row (see the schema).
+export type ClientAuthor = { id: string; name: string; host: string };
+// The two authors that are programs. They share the rules a person does not
+// need: a repeat of their own note is dropped, and only they revise their own
+// pending suggestion.
+export type MachineAuthor = { assistant: true } | { client: ClientAuthor };
+export type ThreadAuthor = { userId: string } | { reviewerId: string } | MachineAuthor;
+
+function isMachine(author: ThreadAuthor): author is MachineAuthor {
+	return 'assistant' in author || 'client' in author;
+}
+
+function clientColumns(author: ThreadAuthor) {
+	return 'client' in author
+		? {
+				clientId: author.client.id,
+				clientName: author.client.name,
+				clientHost: author.client.host
+			}
+		: { clientId: null, clientName: null, clientHost: null };
+}
 
 function commentAuthorColumns(author: ThreadAuthor) {
+	const client = clientColumns(author);
 	if ('userId' in author) {
-		return { authorUserId: author.userId, authorReviewerId: null, assistant: false };
+		return { authorUserId: author.userId, authorReviewerId: null, assistant: false, ...client };
 	}
 	if ('reviewerId' in author) {
-		return { authorUserId: null, authorReviewerId: author.reviewerId, assistant: false };
+		return {
+			authorUserId: null,
+			authorReviewerId: author.reviewerId,
+			assistant: false,
+			...client
+		};
 	}
-	return { authorUserId: null, authorReviewerId: null, assistant: true };
+	return {
+		authorUserId: null,
+		authorReviewerId: null,
+		assistant: 'assistant' in author,
+		...client
+	};
+}
+
+// A where-clause condition: the row was written by this program.
+function writtenBy(
+	table: typeof reviewComments | typeof reviewSuggestions,
+	author: MachineAuthor
+): SQL {
+	return 'assistant' in author ? eq(table.assistant, true) : eq(table.clientId, author.client.id);
+}
+
+// How a row's author is shown when an app wrote it; null for any other
+// author. The one place the stored name and host become a label, so it reads
+// the same after the client row itself is gone.
+function clientAuthorName(row: {
+	clientName: string | null;
+	clientHost: string | null;
+}): string | null {
+	if (row.clientHost === null) return null;
+	return clientDisplayName({ clientName: row.clientName ?? '', host: row.clientHost });
 }
 
 // The Assistant's name to show on its comments and suggestions: the owner's
@@ -283,14 +348,15 @@ async function assistantDisplayName(db: Database, storyId: string): Promise<stri
 	return normaliseAssistantName(raw.assistantName) || 'Assistant';
 }
 
-// Whether the Assistant already has an open comment saying exactly this, in
-// the same place. A weak model repeats a tool call within a run and across
-// runs; the repeat is dropped instead of stacking identical cards on the
-// author's review. Only the Assistant's own writes are deduped, and only while
-// the thread is unresolved, so an author who wants the same note twice still
-// gets it and a resolved note can be raised again.
-async function assistantThreadExists(
+// Whether the Assistant (or the app) already has an open comment saying
+// exactly this, in the same place. A weak model repeats a tool call within a
+// run and across runs; the repeat is dropped instead of stacking identical
+// cards on the author's review. Only a program's own writes are deduped, and
+// only while the thread is unresolved, so an author who wants the same note
+// twice still gets it and a resolved note can be raised again.
+async function ownThreadExists(
 	db: Database,
+	author: MachineAuthor,
 	sceneId: string,
 	anchor: { start: number; end: number } | null,
 	body: string
@@ -310,7 +376,7 @@ async function assistantThreadExists(
 							eq(reviewThreads.anchorEnd, anchor.end)
 						)
 					: and(isNull(reviewThreads.anchorStart), isNull(reviewThreads.anchorEnd)),
-				eq(reviewComments.assistant, true),
+				writtenBy(reviewComments, author),
 				eq(reviewComments.bodyMd, body)
 			)
 		)
@@ -318,13 +384,14 @@ async function assistantThreadExists(
 	return Boolean(row);
 }
 
-// The Assistant's open whole-scene note on a scene that begins with this text,
-// for a pattern note retried with the same comment: the retry adds its edits
-// to the note rather than opening a second one.
+// The Assistant's (or the app's) open whole-scene note on a scene that begins
+// with this text, for a pattern note retried with the same comment: the retry
+// adds its edits to the note rather than opening a second one.
 export async function openAssistantNote(
 	db: Database,
 	sceneId: string,
-	opening: string
+	opening: string,
+	author: MachineAuthor = { assistant: true }
 ): Promise<string | null> {
 	const [row] = await db
 		.select({ id: reviewThreads.id })
@@ -336,7 +403,7 @@ export async function openAssistantNote(
 				isNull(reviewThreads.suggestionId),
 				isNull(reviewThreads.resolvedAt),
 				isNull(reviewThreads.anchorStart),
-				eq(reviewComments.assistant, true),
+				writtenBy(reviewComments, author),
 				sql`starts_with(${reviewComments.bodyMd}, ${opening})`,
 				// The note's own opening comment, not a reply in its thread.
 				sql`not exists (select 1 from ${reviewComments} as earlier where earlier.thread_id = ${reviewThreads.id} and earlier.created_at < ${reviewComments.createdAt})`
@@ -380,8 +447,8 @@ export async function createThread(
 		return { ok: false, reason: 'That selection no longer matches the text.' };
 	}
 
-	if ('assistant' in input.author) {
-		const duplicate = await assistantThreadExists(db, input.sceneId, input.anchor, body);
+	if (isMachine(input.author)) {
+		const duplicate = await ownThreadExists(db, input.author, input.sceneId, input.anchor, body);
 		if (duplicate) {
 			return {
 				ok: false,
@@ -547,6 +614,8 @@ export type ThreadView = {
 		isOwner: boolean;
 		// The Assistant authored it; the frontend can badge it.
 		isAssistant: boolean;
+		// An outside app authored it; authorName is the app's name and host.
+		isApp: boolean;
 		// The viewer passed to listThreads authored it, so they may retract it.
 		mine: boolean;
 		createdAt: Date;
@@ -641,9 +710,10 @@ export async function listThreads(
 						? assistantName
 						: commentRow.comment.authorUserId
 							? (commentRow.userName ?? 'Author')
-							: (commentRow.reviewerName ?? 'Reviewer'),
+							: (clientAuthorName(commentRow.comment) ?? commentRow.reviewerName ?? 'Reviewer'),
 					isOwner: commentRow.comment.authorUserId !== null,
 					isAssistant: commentRow.comment.assistant,
+					isApp: commentRow.comment.clientHost !== null,
 					mine: ownsComment(commentRow.comment, viewer),
 					createdAt: commentRow.comment.createdAt
 				}))
@@ -658,13 +728,49 @@ const MAX_REPLACEMENT_LENGTH = 20000;
 // range is pinned to a base revision so the author's later edits re-anchor.
 // Authored by the owner, a guest reviewer, or the Assistant, mirroring comments.
 function suggestionAuthorColumns(author: ThreadAuthor) {
+	const client = clientColumns(author);
 	if ('userId' in author) {
-		return { authorUserId: author.userId, reviewerId: null, assistant: false };
+		return { authorUserId: author.userId, reviewerId: null, assistant: false, ...client };
 	}
 	if ('reviewerId' in author) {
-		return { authorUserId: null, reviewerId: author.reviewerId, assistant: false };
+		return { authorUserId: null, reviewerId: author.reviewerId, assistant: false, ...client };
 	}
-	return { authorUserId: null, reviewerId: null, assistant: true };
+	return { authorUserId: null, reviewerId: null, assistant: 'assistant' in author, ...client };
+}
+
+// How many notes an app has waiting on a scene: its pending suggestions and
+// the open comments it started. The caller holds this against a ceiling, so
+// an app stuck in a loop cannot bury the writer's review.
+export async function clientNotesWaiting(
+	db: Database,
+	sceneId: string,
+	clientId: string
+): Promise<number> {
+	const [suggestions] = await db
+		.select({ n: count() })
+		.from(reviewSuggestions)
+		.where(
+			and(
+				eq(reviewSuggestions.sceneId, sceneId),
+				eq(reviewSuggestions.clientId, clientId),
+				eq(reviewSuggestions.status, 'pending')
+			)
+		);
+	const [threads] = await db
+		.select({ n: count() })
+		.from(reviewThreads)
+		.where(
+			and(
+				eq(reviewThreads.sceneId, sceneId),
+				isNull(reviewThreads.suggestionId),
+				isNull(reviewThreads.resolvedAt),
+				// Opened by the app: its comment is the thread's first. The outer
+				// column is spelled out because a single-table query renders
+				// column references without their table.
+				sql`(select opener.client_id from review_comments as opener where opener.thread_id = "review_threads"."id" order by opener.created_at limit 1) = ${clientId}`
+			)
+		);
+	return suggestions.n + threads.n;
 }
 
 export async function createSuggestion(
@@ -732,19 +838,19 @@ export async function createSuggestion(
 		return { ok: false, reason: 'That suggestion changes nothing.' };
 	}
 
-	// The Assistant repeating itself stages nothing new (see
-	// assistantThreadExists). The range is compared as stored, against whichever
+	// The Assistant or an app repeating itself stages nothing new (see
+	// ownThreadExists). The range is compared as stored, against whichever
 	// base revision the earlier suggestion pinned: a repeat inside one review
 	// pass is measured on the same unchanged body, and once the body moves the
 	// offsets are a different proposal anyway.
-	if ('assistant' in input.author) {
+	if (isMachine(input.author)) {
 		const [duplicate] = await db
 			.select({ id: reviewSuggestions.id })
 			.from(reviewSuggestions)
 			.where(
 				and(
 					eq(reviewSuggestions.sceneId, input.sceneId),
-					eq(reviewSuggestions.assistant, true),
+					writtenBy(reviewSuggestions, input.author),
 					eq(reviewSuggestions.status, 'pending'),
 					eq(reviewSuggestions.rangeStart, start),
 					eq(reviewSuggestions.rangeEnd, end),
@@ -804,6 +910,8 @@ export type SuggestionView = {
 	isOwner: boolean;
 	// The Assistant proposed it; the frontend can badge it.
 	isAssistant: boolean;
+	// An outside app proposed it; reviewerName is the app's name and host.
+	isApp: boolean;
 	// The viewer passed to listSuggestions proposed it, so they may retract it
 	// while it is still pending.
 	mine: boolean;
@@ -936,9 +1044,10 @@ export async function listSuggestions(
 				? assistantName
 				: isOwner
 					? (row.ownerName ?? 'Author')
-					: (row.reviewerName ?? 'Reviewer'),
+					: (clientAuthorName(row.suggestion) ?? row.reviewerName ?? 'Reviewer'),
 			isOwner,
 			isAssistant,
+			isApp: row.suggestion.clientHost !== null,
 			mine,
 			original: row.baseBody.slice(rangeStart, rangeEnd),
 			replacement: row.suggestion.replacement,
@@ -1009,13 +1118,14 @@ export async function acceptedPatternEdit(
 	};
 }
 
-// Revises the replacement text of the Assistant's own pending suggestion -
-// the discussion path where the author asks for a change and the Assistant
-// amends what it proposed. Never touches another author's suggestion or a
-// decided one, and only the replacement: the anchored range stays put.
+// Revises the replacement text of the Assistant's own pending suggestion (or
+// an app's own) - the discussion path where the author asks for a change and
+// the Assistant amends what it proposed. Never touches another author's
+// suggestion or a decided one, and only the replacement: the anchored range
+// stays put.
 export async function updateAssistantSuggestion(
 	db: Database,
-	input: { storyId: string; suggestionId: string; replacement: string }
+	input: { storyId: string; suggestionId: string; replacement: string; author?: MachineAuthor }
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
 	if (input.replacement.length > MAX_REPLACEMENT_LENGTH) {
 		return { ok: false, reason: 'That suggestion is too long.' };
@@ -1027,7 +1137,7 @@ export async function updateAssistantSuggestion(
 			and(
 				eq(reviewSuggestions.id, input.suggestionId),
 				eq(reviewSuggestions.storyId, input.storyId),
-				eq(reviewSuggestions.assistant, true),
+				writtenBy(reviewSuggestions, input.author ?? { assistant: true }),
 				eq(reviewSuggestions.status, 'pending')
 			)
 		)
@@ -1035,7 +1145,9 @@ export async function updateAssistantSuggestion(
 	if (updated.length === 0) {
 		return {
 			ok: false,
-			reason: 'Only the Assistant can revise its own suggestion, and only while it is pending.'
+			reason: input.author
+				? 'You can only revise a suggestion you made, and only while it is pending.'
+				: 'Only the Assistant can revise its own suggestion, and only while it is pending.'
 		};
 	}
 	return { ok: true };
