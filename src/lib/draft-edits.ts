@@ -6,7 +6,7 @@ import {
 	type Autosave
 } from './autosave';
 import { apiErrorMessage } from './format';
-import { DRAFT_EMPTY_SAVE } from './scene-draft';
+import { DRAFT_EMPTY_SAVE, isBlankDraft } from './scene-draft';
 
 // The writer's edits to a draft that is waiting to be kept, by draft id. Held
 // here and not in the card, so text not yet saved and a save still on its way
@@ -123,7 +123,7 @@ async function save(id: string, entry: Held, keepalive: boolean): Promise<void> 
 	if (sending === edit.saved && !overtaking) return;
 	// The server refuses to blank a draft; the box keeps what the writer left
 	// in it, and Discard is how a draft is dropped.
-	if (!sending.trim()) {
+	if (isBlankDraft(sending)) {
 		edit.error = DRAFT_EMPTY_SAVE;
 		edit.onChange?.();
 		return;

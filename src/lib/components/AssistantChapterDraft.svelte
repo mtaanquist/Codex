@@ -11,7 +11,7 @@
 		MAX_DRAFT_POV_CHARS,
 		MAX_DRAFT_WORDS,
 		MIN_DRAFT_WORDS,
-		CHAPTER_CAP_ADVICE,
+		chapterCapAdvice,
 		type ChapterDraftDefaults,
 		type ChapterDraftEstimate,
 		type ChapterDraftView,
@@ -537,7 +537,11 @@
 				</ul>
 			{/if}
 			{#if estimate}
-				<DraftCostNote {estimate} scenes={estimate.scenes} capAdvice={CHAPTER_CAP_ADVICE} />
+				<DraftCostNote
+					{estimate}
+					scenes={estimate.scenes}
+					capAdvice={chapterCapAdvice(estimate.mayThink)}
+				/>
 				{#if estimate.skipped.length > 0}
 					<p class="assist-card-note">
 						{estimate.skipped.length === 1

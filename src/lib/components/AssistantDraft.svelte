@@ -19,7 +19,7 @@
 		MAX_DRAFT_POV_CHARS,
 		MAX_DRAFT_WORDS,
 		MIN_DRAFT_WORDS,
-		SCENE_CAP_ADVICE,
+		sceneCapAdvice,
 		type SceneDraftDefaults,
 		type SceneDraftEstimate,
 		type SceneDraftView
@@ -597,7 +597,7 @@
 				</div>
 			</div>
 			{#if estimate}
-				<DraftCostNote {estimate} capAdvice={SCENE_CAP_ADVICE} />
+				<DraftCostNote {estimate} capAdvice={sceneCapAdvice(estimate.mayThink)} />
 			{/if}
 			<FormStatus block {error} />
 			<div class="assist-card-actions">

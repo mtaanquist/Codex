@@ -184,6 +184,10 @@ export type GatewayRequest = {
 	// a known length). The writer's "Longest reply" for the role may then lower
 	// it but not raise it, unless the role may think.
 	boundedReply?: boolean;
+	// Asked before a request is sent again after a transient failure. False
+	// gives the failure up instead: for a job that must not spend past a
+	// ceiling, since the failed attempt may have been billed.
+	mayResend?: () => boolean;
 	// Raise the tool-call ceiling for this run above the account's budget. A
 	// full review needs one call per note plus one read per scene, far beyond
 	// the conservative account default; server-set only, never client input.
@@ -259,6 +263,7 @@ async function respondWithRetry(
 			if (attempt >= RETRY_DELAYS_MS.length || req.signal?.aborted || !isTransientFailure(err)) {
 				throw err;
 			}
+			if (req.mayResend && !req.mayResend()) throw err;
 			logEvent('warn', 'assistant.retry', {
 				userId: req.userId,
 				model: p.model,
@@ -268,6 +273,24 @@ async function respondWithRetry(
 			await p.sleep(RETRY_DELAYS_MS[attempt]);
 		}
 	}
+}
+
+// Other names endpoints take a reply limit by. A writer's extra parameters may
+// carry one; on a bounded request it would override the limit the cost was
+// counted at, so it is left out there.
+const REPLY_LIMIT_PARAMS = [
+	'max_completion_tokens',
+	'max_output_tokens',
+	'max_new_tokens',
+	'n_predict',
+	'num_predict'
+];
+function withoutReplyLimits<T extends Record<string, unknown> | undefined>(params: T): T {
+	if (!params || !REPLY_LIMIT_PARAMS.some((key) => key in params)) return params;
+	const kept = Object.fromEntries(
+		Object.entries(params).filter(([key]) => !REPLY_LIMIT_PARAMS.includes(key))
+	);
+	return (Object.keys(kept).length > 0 ? kept : undefined) as T;
 }
 
 // The reply cap when the writer set none: the surface's own, or the role's
@@ -477,7 +500,9 @@ async function prepare(db: Database, req: GatewayRequest, deps: GatewayDeps): Pr
 				? claudeEffort(req.role, model, resolved.config.tuning[req.role])
 				: undefined
 		),
-		extraParams: roleExtraParams(resolved.config, req.role),
+		extraParams: req.boundedReply
+			? withoutReplyLimits(roleExtraParams(resolved.config, req.role))
+			: roleExtraParams(resolved.config, req.role),
 		webSearch: await webSearchAllowed(db, resolved.config, req),
 		cacheTtl: resolved.config.cacheTtl,
 		maxTokens: requestReplyLimit(

@@ -17,8 +17,10 @@ const MAX_DEFAULT_WORDS = 3000;
 
 // English prose runs a little over a token and a third per word.
 const TOKENS_PER_WORD = 1.4;
-// Room past the target, so a scene that runs slightly long still ends.
+// Room past the target, so a scene that runs long still ends: a quarter of
+// the expected length, and never less than this.
 const DRAFT_HEADROOM_TOKENS = 400;
+const DRAFT_HEADROOM_SHARE = 4;
 // A reply never takes more than this share of a known context window: the
 // brief, the world and the neighbouring scenes have to fit beside it.
 const WINDOW_SHARE = 2;
@@ -50,12 +52,26 @@ export function wordsForTokens(tokens: number): number {
 	return Math.max(0, Math.floor(tokens / TOKENS_PER_WORD / 50) * 50);
 }
 
+// What a draft of this length asks for when nothing holds it back: the
+// expected tokens and the headroom.
+export function draftWantedTokens(targetWords: number): number {
+	const expected = draftExpectedTokens(targetWords);
+	return expected + Math.max(DRAFT_HEADROOM_TOKENS, Math.ceil(expected / DRAFT_HEADROOM_SHARE));
+}
+
+// A reply or an edit with nothing to read in it: only spaces, line breaks,
+// and characters that take no room on the page (zero-width ones, a byte
+// order mark).
+export function isBlankDraft(text: string): boolean {
+	return text.replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim() === '';
+}
+
 // The reply limit a draft of this length asks for: the expected tokens plus
 // headroom, held to what the model can return. The app does not know a model's
 // own output limit, so the bound is half its context window where that is
 // known, and the ceiling a reply length may be set to otherwise.
 export function draftMaxTokens(targetWords: number, contextWindow?: number): number {
-	const wanted = draftExpectedTokens(targetWords) + DRAFT_HEADROOM_TOKENS;
+	const wanted = draftWantedTokens(targetWords);
 	const limit = contextWindow
 		? Math.min(MAX_REPLY_TOKENS, Math.floor(contextWindow / WINDOW_SHARE))
 		: MAX_REPLY_TOKENS;
@@ -96,10 +112,18 @@ export type SceneDraftEstimate = {
 
 // What to do about an estimate over the spend cap, as the card and the
 // server's refusal both say it.
-export const SCENE_CAP_ADVICE =
-	'Ask for a shorter scene, or raise the cap under Account, Assistant.';
-export const CHAPTER_CAP_ADVICE =
-	'Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.';
+// When the model may think, the estimate is the reply length it is allowed,
+// not the scene's, so a shorter scene does not lower it.
+export function sceneCapAdvice(mayThink: boolean): string {
+	return mayThink
+		? 'Lower Longest reply for Write in its Tune window, or raise the cap, both under Account, Assistant.'
+		: 'Ask for a shorter scene, or raise the cap under Account, Assistant.';
+}
+export function chapterCapAdvice(mayThink: boolean): string {
+	return mayThink
+		? 'Choose fewer scenes, lower Longest reply for Write in its Tune window, or raise the cap. The last two are under Account, Assistant.'
+		: 'Choose fewer scenes or a shorter length, or raise the cap under Account, Assistant.';
+}
 
 // What an edit or a decision made from an older copy of a draft is told.
 export const DRAFT_CHANGED_ELSEWHERE = 'This draft was changed in another window.';

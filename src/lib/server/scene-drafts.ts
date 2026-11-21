@@ -20,11 +20,12 @@ import { isUuid } from '#lib/slug';
 import { textHash } from '#lib/text-hash';
 import { wordCount } from '#lib/word-count';
 import {
-	CHAPTER_CAP_ADVICE,
+	chapterCapAdvice,
 	defaultDraftWords,
 	DRAFT_CHANGED_ELSEWHERE,
 	DRAFT_EMPTY_SAVE,
-	SCENE_CAP_ADVICE,
+	isBlankDraft,
+	sceneCapAdvice,
 	type ChapterDraftDefaults,
 	type ChapterDraftEstimate,
 	type ChapterDraftView,
@@ -212,7 +213,7 @@ export async function requestSceneDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${SCENE_CAP_ADVICE}`
+			reason: `This draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${sceneCapAdvice(estimate.mayThink)}`
 		};
 	}
 
@@ -232,12 +233,6 @@ export async function requestSceneDraft(
 	for (const draft of open) {
 		if (!(await settleOrphan(db, draft, deps.jobState))) return ALREADY_DRAFTING;
 	}
-	// A failed draft has been read by now; the new request takes its place.
-	await db
-		.update(assistantDrafts)
-		.set({ status: 'discarded' })
-		.where(and(mine, eq(assistantDrafts.status, 'failed')));
-
 	// The job's id is chosen here and written with the row, so a row never
 	// waits without one: if the request dies before the job is queued, reading
 	// the draft finds no such job and settles it (see settleOrphan).
@@ -281,6 +276,15 @@ export async function requestSceneDraft(
 					reason: 'Could not start the draft. Try again in a moment.'
 				};
 	}
+	// A failed draft has been read by now, and the new request takes its
+	// place. Only once the new one stands, so the reason the old one failed is
+	// not lost to a request that did not go through; and after the insert, so
+	// the scene's row is always locked before a draft's (as a scene delete
+	// takes them).
+	await db
+		.update(assistantDrafts)
+		.set({ status: 'discarded' })
+		.where(and(mine, eq(assistantDrafts.status, 'failed')));
 	return { ok: true, draftId, jobId };
 }
 
@@ -327,7 +331,8 @@ function changedElsewhere(stored: string, edited: string | undefined, base?: str
 // The text the writer accepts: the draft as they edited it in the panel, or
 // the stored draft when they changed nothing.
 function acceptedText(edited: string | undefined, stored: string): string {
-	return (edited ?? stored).trim();
+	const text = (edited ?? stored).trim();
+	return isBlankDraft(text) ? '' : text;
 }
 
 /**
@@ -482,7 +487,7 @@ export async function saveDraftText(
 	if (!isUuid(draftId)) return NOT_FOUND;
 	// A draft is paid for and has no history: it is dropped by Discard, never
 	// by a save that would leave it blank.
-	if (!text.trim()) return EMPTY_SAVE;
+	if (isBlankDraft(text)) return EMPTY_SAVE;
 	const rows = await db
 		.update(assistantDrafts)
 		.set({ textMd: text })
@@ -800,7 +805,7 @@ export async function requestChapterDraft(
 		return {
 			ok: false,
 			code: 'conflict',
-			reason: `This chapter draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${CHAPTER_CAP_ADVICE}`
+			reason: `This chapter draft is estimated at up to $${estimate.estCostUsd!.toFixed(2)}, over your spend cap of $${estimate.capUsd!.toFixed(2)}, so it was not started. ${chapterCapAdvice(estimate.mayThink)}`
 		};
 	}
 
@@ -809,19 +814,8 @@ export async function requestChapterDraft(
 	const jobId = randomUUID();
 	let draftIds: string[];
 	try {
-		draftIds = await db.transaction(async (tx) => {
-			// A failed draft has been read by now; the new one takes its place.
-			await tx
-				.update(assistantDrafts)
-				.set({ status: 'discarded' })
-				.where(
-					and(
-						eq(assistantDrafts.userId, input.userId),
-						inArray(assistantDrafts.sceneId, sceneIds),
-						eq(assistantDrafts.status, 'failed')
-					)
-				);
-			const rows = await tx
+		{
+			const rows = await db
 				.insert(assistantDrafts)
 				.values(
 					plan.scenes.map((scene, index) => ({
@@ -837,8 +831,8 @@ export async function requestChapterDraft(
 					}))
 				)
 				.returning({ id: assistantDrafts.id, position: assistantDrafts.position });
-			return rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((row) => row.id);
-		});
+			draftIds = rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((row) => row.id);
+		}
 	} catch (err) {
 		// A draft for one of the scenes was asked for at the same moment.
 		if (isUniqueViolation(err)) return ALREADY_DRAFTING_CHAPTER;
@@ -864,6 +858,18 @@ export async function requestChapterDraft(
 					reason: 'Could not start the draft. Try again in a moment.'
 				};
 	}
+	// The failed drafts these take the place of, as for a single draft (see
+	// requestSceneDraft): after the insert, and only once the run is queued.
+	await db
+		.update(assistantDrafts)
+		.set({ status: 'discarded' })
+		.where(
+			and(
+				eq(assistantDrafts.userId, input.userId),
+				inArray(assistantDrafts.sceneId, sceneIds),
+				eq(assistantDrafts.status, 'failed')
+			)
+		);
 	return { ok: true, jobId, draftIds, skipped: plan.skipped };
 }
 

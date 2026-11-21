@@ -1352,7 +1352,8 @@ calls the gateway, which proxies through the egress guard.
   how the next scene opens (prose the scene already holds is in the context
   once, and the message only says to carry on from it). The reply limit
   asked for comes from the length (`draftMaxTokens`: words times 1.4 plus
-  headroom, held to half the context window), but the limit sent is the
+  headroom of a quarter of that and at least 400 tokens, held to half the
+  context window), but the limit sent is the
   gateway's (`requestReplyLimit`, the one function the gateway and the
   estimate both call). A role that may think (always on the Claude provider,
   elsewhere with Thinking on or an effort set) gets the writer's "Longest
@@ -1369,11 +1370,23 @@ calls the gateway, which proxies through the egress guard.
   (`limitedBy`: the writer's setting, or the model's window). It also
   reports `capEnforceable` (false with no price) and `warnUsd`, and prices
   the prompt at the cache write rate on the Claude provider. The spend meter is
-  keyed by the job. A reply cut off at the limit is kept as a ready draft
+  keyed by the job. Before every send, a resend inside the gateway after a
+  transient failure included (`mayResend` on the request), the job checks
+  that what it has spent plus this request at its limit, priced by the
+  settings in force then, stays under the cap (`wouldPassCap`); when it
+  would not, the draft ends as capped. Reply-limit aliases in the writer's
+  extra parameters (`max_completion_tokens`, `n_predict` and the like) are
+  left off a bounded request, so they cannot raise the limit the cost was
+  counted at. A reply cut off at the limit is kept as a ready draft
   with a note; a stop discards the draft; a failure marks it failed with the
-  reason, to try again from the card. A reply with no text in it is settled
-  at once as failed, with a note saying what to do (raise "Longest reply"
-  for Write when the limit was all spent), and is not asked for again: it is
+  reason, to try again from the card. The cut-off notes say what would give
+  more room by what set the limit (`limitSetBy`): the writer's "Longest
+  reply" or the thinking default (raise it), the context window (a shorter
+  scene or another model), or the draft's own figure (a longer scene, or
+  Thinking on for Write when the model reasons first). A reply with no
+  visible text in it (zero-width characters and a byte order mark do not
+  count) is settled at once as failed, with such a note when the limit was
+  all spent, and is not asked for again: it is
   paid for and would come back the same. A Stop that a read of the draft
   settled before the worker saw it (`settleOrphan`, whose minute of grace is
   measured in SQL against `created_at`) is still reported as stopped.
@@ -1381,7 +1394,8 @@ calls the gateway, which proxies through the egress guard.
   writer's choice (fill, add, discard) for a draft they own, and a PATCH
   saves their edits to a ready draft's text (the draft row only). The PATCH
   and the two keeping choices carry `base`, the md5 of the text the window
-  last saw (`textVersion`); when the stored text differs they are refused
+  last saw (`textVersion`, required on all three; text with a null
+  character is refused with 400); when the stored text differs they are refused
   with 409 ("This draft was changed in another window.") and the card offers
   to load the current text. Text that is already what is stored is never a
   conflict (a save that landed with its answer lost, sent again), and a save
@@ -1426,7 +1440,8 @@ calls the gateway, which proxies through the egress guard.
   that comes back with no text ends the run there, as failed with its note,
   keeping the drafts before it. Before every scene it checks the
   writer's Stop, that the Assistant is still on for the account and the
-  story, and the spend cap (one meter for the job); any of them ends the run
+  story, and the spend cap (one meter for the job; the scene is not sent
+  when it could take the run past the cap); any of them ends the run
   there, keeps the drafts already written and discards the rows not reached.
   A Stop during a request drops that scene whole. A scene deleted or moved to
   the trash by its turn is left out and the run goes on. A request that

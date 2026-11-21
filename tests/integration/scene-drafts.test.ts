@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { asc, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -55,6 +56,7 @@ const { db, pool } = (await import('#lib/server/db')) as unknown as {
 	pool: pg.Pool;
 };
 const { resetRateLimits } = await import('#lib/server/rate-limit');
+const { withBilledUsage } = await import('../../src/lib/server/llm/providers/types');
 const { saveAccountLlmConfig, saveModelContext, saveModelPricing, saveStoryLlmOverride } =
 	await import('../../src/lib/server/llm/config');
 const {
@@ -62,7 +64,9 @@ const {
 	runSceneDraft,
 	sceneDraftDefaults,
 	failSceneDraft,
-	EMPTY_DRAFT_CUT_OFF_NOTE,
+	DRAFT_CUT_OFF_NOTE,
+	draftCutOffNote,
+	emptyDraftCutOffNote,
 	EMPTY_DRAFT_NOTE
 } = await import('../../src/lib/server/llm/scene-draft');
 const {
@@ -86,6 +90,9 @@ const decideRoute = await import('../../src/routes/api/assistant/draft/[id=uuid]
 // Error is thrown.
 let prompts: string[] = [];
 let maxTokensSent: (number | undefined)[] = [];
+let extraParamsSent: unknown[] = [];
+// Thrown by the stub's first answers, one per request, before `reply` is used.
+let failures: Error[] = [];
 let reply: string | Error = 'The ferry rocked. *Not yet,* Ilse thought.';
 let cutOff = false;
 // Runs while the stub is "writing", before it answers.
@@ -97,7 +104,10 @@ const stubProvider: Provider = {
 	async respond(req) {
 		prompts.push(req.messages.map((m) => m.content).join('\n'));
 		maxTokensSent.push(req.maxTokens);
+		extraParamsSent.push(req.extraParams);
 		await whileWriting?.();
+		const failure = failures.shift();
+		if (failure) throw failure;
 		if (reply instanceof Error) throw reply;
 		return {
 			content: reply,
@@ -149,6 +159,8 @@ beforeAll(async () => {
 beforeEach(async () => {
 	prompts = [];
 	maxTokensSent = [];
+	extraParamsSent = [];
+	failures = [];
 	reply = 'The ferry rocked. *Not yet,* Ilse thought.';
 	cutOff = false;
 	whileWriting = null;
@@ -242,6 +254,23 @@ async function readyDraft(text = 'The ferry rocked. *Not yet,* Ilse thought.') {
 
 const draftRow = async (id: string) =>
 	(await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id)))[0];
+// The version of a draft's stored text, as the panel sends it back.
+const baseFor = async (id: string) =>
+	createHash('md5')
+		.update((await draftRow(id)).textMd, 'utf8')
+		.digest('hex');
+// The account's settings with more on top (tuning, a provider, a cap).
+const configureWith = (extra: Record<string, unknown>) =>
+	saveAccountLlmConfig(db, ownerId, {
+		enabled: true,
+		assistantName: '',
+		persona: 'balanced',
+		endpoint: 'https://api.example.com/v1',
+		apiKey: 'sk',
+		models: { chat: 'chat-model', coauthor: 'write-model' },
+		toolCallBudget: 8,
+		...extra
+	});
 const sceneRow = async (id: string) => (await db.select().from(scenes).where(eq(scenes.id, id)))[0];
 const storyScenes = () =>
 	db.select().from(scenes).where(eq(scenes.storyId, storyId)).orderBy(asc(scenes.globalPosition));
@@ -672,12 +701,19 @@ describe('the endpoint', () => {
 		expect(read.body.draft).toMatchObject({ id: draftId, status: 'ready' });
 		const edited = await call(
 			decideRoute.PATCH,
-			event(owner, { method: 'PATCH', params: { id: draftId }, body: { text: 'Edited.' } })
+			event(owner, {
+				method: 'PATCH',
+				params: { id: draftId },
+				body: { text: 'Edited.', base: await baseFor(draftId) }
+			})
 		);
 		expect(edited.status).toBe(200);
 		const filled = await call(
 			decideRoute.POST,
-			event(owner, { params: { id: draftId }, body: { action: 'fill' } })
+			event(owner, {
+				params: { id: draftId },
+				body: { action: 'fill', base: await baseFor(draftId) }
+			})
 		);
 		expect(filled.status).toBe(200);
 		expect((await sceneRow(target)).bodyMd).toBe('Edited.');
@@ -693,8 +729,15 @@ describe('the endpoint', () => {
 		const draftId = await readyDraft('As written.');
 		const snapshot = await scenesSnapshot();
 		const revisionsBefore = await revisionCount();
-		const patch = (user: TestUser | null, text: unknown, id = draftId) =>
-			call(decideRoute.PATCH, event(user, { method: 'PATCH', params: { id }, body: { text } }));
+		const patch = async (user: TestUser | null, text: unknown, id = draftId) =>
+			call(
+				decideRoute.PATCH,
+				event(user, {
+					method: 'PATCH',
+					params: { id },
+					body: { text, base: await baseFor(draftId) }
+				})
+			);
 		expect((await patch({ id: ownerId }, 'As the writer changed it.')).status).toBe(200);
 		expect((await draftRow(draftId)).textMd).toBe('As the writer changed it.');
 		// It is the saved text that is kept when the panel sends none.
@@ -786,14 +829,50 @@ describe('the endpoint', () => {
 		expect((await sceneRow(target)).bodyMd).toBe('Edited once.');
 	});
 
+	it('needs the version the copy was made from, for a save and for keeping', async () => {
+		const draftId = await readyDraft('As written.');
+		const send = (method: 'PATCH' | 'POST', body: Record<string, unknown>) =>
+			call(
+				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
+				event({ id: ownerId }, { method, params: { id: draftId }, body })
+			);
+		expect((await send('PATCH', { text: 'Over the top.' })).status).toBe(400);
+		expect((await send('POST', { action: 'fill', text: 'Over the top.' })).status).toBe(400);
+		expect((await send('POST', { action: 'add' })).status).toBe(400);
+		expect(await draftRow(draftId)).toMatchObject({ status: 'ready', textMd: 'As written.' });
+		expect((await sceneRow(target)).bodyMd).toBe('');
+		// Discard replaces nothing, so it needs none.
+		expect((await send('POST', { action: 'discard' })).status).toBe(200);
+	});
+
+	it('refuses text with a null character in it, which the database cannot hold', async () => {
+		const draftId = await readyDraft('As written.');
+		const base = await baseFor(draftId);
+		const send = (method: 'PATCH' | 'POST', body: Record<string, unknown>) =>
+			call(
+				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
+				event({ id: ownerId }, { method, params: { id: draftId }, body })
+			);
+		expect((await send('PATCH', { text: 'One\u0000two.', base })).status).toBe(400);
+		expect((await send('PATCH', { text: 'Fine.', base, sent: 'a\u0000' })).status).toBe(400);
+		for (const action of ['fill', 'add']) {
+			expect((await send('POST', { action, text: 'One\u0000two.', base })).status).toBe(400);
+		}
+		expect(await draftRow(draftId)).toMatchObject({ status: 'ready', textMd: 'As written.' });
+	});
+
 	it('refuses a save that would leave the draft blank', async () => {
 		const draftId = await readyDraft('As written.');
-		const patch = (text: string) =>
+		const patch = async (text: string) =>
 			call(
 				decideRoute.PATCH,
-				event({ id: ownerId }, { method: 'PATCH', params: { id: draftId }, body: { text } })
+				event(
+					{ id: ownerId },
+					{ method: 'PATCH', params: { id: draftId }, body: { text, base: await baseFor(draftId) } }
+				)
 			);
-		for (const text of ['', '  \n\t ']) {
+		// Zero-width characters and a byte order mark are nothing to read either.
+		for (const text of ['', '  \n\t ', '\u200B\uFEFF \u2060\n']) {
 			const refused = await patch(text);
 			expect(refused.status).toBe(400);
 			expect(refused.body.message).toMatch(/Discard/);
@@ -803,10 +882,13 @@ describe('the endpoint', () => {
 
 	it('refuses edits to a draft that is not ready, or already kept or discarded', async () => {
 		const pending = await request();
-		const patch = (id: string) =>
+		const patch = async (id: string) =>
 			call(
 				decideRoute.PATCH,
-				event({ id: ownerId }, { method: 'PATCH', params: { id }, body: { text: 'Late.' } })
+				event(
+					{ id: ownerId },
+					{ method: 'PATCH', params: { id }, body: { text: 'Late.', base: await baseFor(id) } }
+				)
 			);
 		expect((await patch(pending.draftId)).status).toBe(409);
 		await discardSceneDraft(db, ownerId, pending.draftId);
@@ -856,7 +938,10 @@ describe('the endpoint', () => {
 		for (const action of ['fill', 'add', 'discard']) {
 			const result = await call(
 				decideRoute.POST,
-				event(stranger, { params: { id: draftId }, body: { action, text: 'Mine now.' } })
+				event(stranger, {
+					params: { id: draftId },
+					body: { action, text: 'Mine now.', base: await baseFor(draftId) }
+				})
 			);
 			expect(result.status).toBe(404);
 		}
@@ -877,7 +962,10 @@ describe('the endpoint', () => {
 		const ready = await readyDraft('A new scene.');
 		const added = await call(
 			decideRoute.POST,
-			event({ id: ownerId }, { params: { id: ready }, body: { action: 'add' } })
+			event(
+				{ id: ownerId },
+				{ params: { id: ready }, body: { action: 'add', base: await baseFor(ready) } }
+			)
 		);
 		expect(added.status).toBe(200);
 		expect(jobs.queueSceneMentions).toHaveBeenCalledWith(added.body.newSceneId);
@@ -1102,14 +1190,18 @@ describe('a reply with no text in it', () => {
 		cutOff = true;
 		const { draftId, jobId } = await request();
 		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
-		expect(result).toEqual({ outcome: 'empty', note: EMPTY_DRAFT_CUT_OFF_NOTE });
-		expect(EMPTY_DRAFT_CUT_OFF_NOTE).toMatch(/Longest reply for Write/);
-		expect(EMPTY_DRAFT_CUT_OFF_NOTE).not.toMatch(/endpoint/i);
+		// The limit was the draft's own figure, so raising Longest reply would
+		// change nothing and is not what the note says.
+		const note = emptyDraftCutOffNote('draft');
+		expect(result).toEqual({ outcome: 'empty', note });
+		expect(note).toMatch(/turn Thinking on for Write/);
+		expect(note).not.toMatch(/Longest reply/);
+		expect(note).not.toMatch(/endpoint/i);
 		// One request: an empty reply is paid for, and is not sent for again.
 		expect(prompts).toHaveLength(1);
 		expect(await draftRow(draftId)).toMatchObject({
 			status: 'failed',
-			note: EMPTY_DRAFT_CUT_OFF_NOTE,
+			note,
 			textMd: ''
 		});
 		// The job is over: a second run of it asks nothing more.
@@ -1119,6 +1211,14 @@ describe('a reply with no text in it', () => {
 		expect(prompts).toHaveLength(1);
 	});
 
+	it('treats a reply of characters that take no room as empty', async () => {
+		reply = '\u200B\uFEFF\u200D \n\u2060';
+		const { draftId, jobId } = await request();
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toEqual({ outcome: 'empty', note: EMPTY_DRAFT_NOTE });
+		expect(await draftRow(draftId)).toMatchObject({ status: 'failed', textMd: '' });
+	});
+
 	it('says so plainly when the reply was simply empty', async () => {
 		reply = '';
 		const { draftId, jobId } = await request();
@@ -1126,6 +1226,160 @@ describe('a reply with no text in it', () => {
 		expect(result).toEqual({ outcome: 'empty', note: EMPTY_DRAFT_NOTE });
 		expect(prompts).toHaveLength(1);
 		expect((await draftRow(draftId)).status).toBe('failed');
+	});
+});
+
+describe('a draft cut off at the limit', () => {
+	async function cutOffNote(extra: Record<string, unknown> = {}) {
+		await configureWith(extra);
+		cutOff = true;
+		const { draftId, jobId } = await request();
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toMatchObject({ outcome: 'ready', cutOff: true });
+		const note = (await draftRow(draftId)).note!;
+		expect(note.startsWith(DRAFT_CUT_OFF_NOTE)).toBe(true);
+		return note;
+	}
+
+	it('does not say to raise Longest reply when the limit was the draft own figure', async () => {
+		// 1000 words go out at 1800 tokens whatever Longest reply is set above
+		// that, so raising it would send the next one at 1800 again.
+		const note = await cutOffNote({ tuning: { coauthor: { maxTokens: 32_000 } } });
+		expect(maxTokensSent).toEqual([1800]);
+		expect(note).toBe(draftCutOffNote('draft'));
+		expect(note).toMatch(/ask for a longer scene/);
+		expect(note).toMatch(/turn Thinking on for Write/);
+		expect(note).not.toMatch(/Longest reply/);
+	});
+
+	it('says to raise Longest reply when that is what set the limit', async () => {
+		const note = await cutOffNote({ tuning: { coauthor: { maxTokens: 700 } } });
+		expect(maxTokensSent).toEqual([700]);
+		expect(note).toBe(draftCutOffNote('setting'));
+		expect(note).toMatch(/raise Longest reply for Write/);
+	});
+
+	it('says the same for a model that thinks, with or without a setting', async () => {
+		expect(await cutOffNote({ tuning: { coauthor: { thinking: true } } })).toBe(
+			draftCutOffNote('setting')
+		);
+	});
+
+	it('names the model when its context window set the limit', async () => {
+		await saveModelContext(db, ownerId, { 'write-model': 2000 });
+		const note = await cutOffNote();
+		expect(maxTokensSent).toEqual([1000]);
+		expect(note).toBe(draftCutOffNote('window'));
+		expect(note).not.toMatch(/Longest reply/);
+	});
+
+	it('gives a longer scene headroom in proportion, and counts it', async () => {
+		// 3000 words: 4200 tokens and a quarter more, not a flat 400.
+		const estimate = await estimateSceneDraft(db, input({ targetWords: 3000 }));
+		expect(estimate).toMatchObject({ estCompletionTokens: 5250 });
+		const { draftId } = await request({ targetWords: 3000 });
+		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
+		expect(maxTokensSent).toEqual([5250]);
+	});
+});
+
+describe('the spend cap while the job runs', () => {
+	const billed = (completionTokens: number) =>
+		withBilledUsage(new Error('Endpoint returned 502: the stream dropped'), {
+			promptTokens: 1000,
+			completionTokens
+		});
+	// $0.001 a token written, nothing for the prompt: 1000 words are counted at
+	// 1800 tokens, $1.80.
+	async function priced(spendCapUsd: number) {
+		await configure({ spendCapUsd });
+		await saveModelPricing(db, ownerId, { 'write-model': { prompt: 0, completion: 0.001 } });
+	}
+
+	it('does not send a billed attempt again when that could pass the cap', async () => {
+		await priced(2);
+		expect(await estimateSceneDraft(db, input())).toMatchObject({
+			estCostUsd: 1.8,
+			overCap: false
+		});
+		const { draftId, jobId } = await request();
+		// The stream drops after 1700 tokens were written, which are charged.
+		failures = [billed(1700)];
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toMatchObject({ outcome: 'capped' });
+		expect(result.outcome === 'capped' && result.spentUsd).toBeCloseTo(1.7, 6);
+		// One request, not two: $1.70 and another $1.80 would be $3.50.
+		expect(prompts).toHaveLength(1);
+		expect(await draftRow(draftId)).toMatchObject({
+			status: 'failed',
+			note: expect.stringMatching(/spend cap/)
+		});
+		// And the queue's own retry of the job finds it settled.
+		expect(await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps)).toEqual({
+			outcome: 'missing'
+		});
+		expect(prompts).toHaveLength(1);
+	});
+
+	it('still sends again after a failure that leaves room under the cap', async () => {
+		await priced(5);
+		const { draftId, jobId } = await request();
+		failures = [billed(1700)];
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toMatchObject({ outcome: 'ready' });
+		expect(prompts).toHaveLength(2);
+	});
+
+	it('does not start an attempt that earlier ones left no room for', async () => {
+		await priced(2);
+		const { draftId } = await request();
+		// An earlier attempt of the job spent $1.70 and failed for good; the
+		// queue runs the job again. $1.70 is under the cap, but one more request
+		// would not be.
+		await pool.query(
+			`insert into assistant_job_spend (job_id, user_id, spent_usd) values ('draft-retry', $1, 1.7)`,
+			[ownerId]
+		);
+		const result = await runSceneDraft(
+			db,
+			{ userId: ownerId, draftId, jobId: 'draft-retry' },
+			deps
+		);
+		expect(result).toMatchObject({ outcome: 'capped' });
+		expect(prompts).toEqual([]);
+		expect((await draftRow(draftId)).status).toBe('failed');
+	});
+
+	it('prices the request as the settings stand when it is sent', async () => {
+		await priced(2);
+		const { draftId, jobId } = await request();
+		// Thinking is turned on while the job waits: the request would now go
+		// out with room for 16,384 tokens, $16.38.
+		await configureWith({ spendCapUsd: 2, tuning: { coauthor: { thinking: true } } });
+		const result = await runSceneDraft(db, { userId: ownerId, draftId, jobId }, deps);
+		expect(result).toMatchObject({ outcome: 'capped' });
+		expect(prompts).toEqual([]);
+	});
+});
+
+describe("the writer's own request parameters", () => {
+	it('cannot carry a reply limit past the one the draft was counted at', async () => {
+		await configureWith({
+			tuning: {
+				coauthor: {
+					extraParams: {
+						top_p: 0.9,
+						max_completion_tokens: 99_999,
+						n_predict: 99_999,
+						max_new_tokens: 99_999
+					}
+				}
+			}
+		});
+		const { draftId } = await request();
+		await runSceneDraft(db, { userId: ownerId, draftId }, deps);
+		expect(maxTokensSent).toEqual([1800]);
+		expect(extraParamsSent).toEqual([{ top_p: 0.9 }]);
 	});
 });
 
@@ -1485,6 +1739,116 @@ describe('Add as a new scene after this one', () => {
 		expect((await addDraftAsScene(db, ownerId, draftId)).ok).toBe(true);
 		expect(await addDraftAsScene(db, ownerId, draftId)).toMatchObject({ ok: false });
 		expect(await storyScenes()).toHaveLength(4);
+	});
+});
+
+describe('the two checks Fill makes, each alone', () => {
+	it('is refused for a scene with text, from a copy that is current', async () => {
+		const draftId = await readyDraft('As written.');
+		const base = await baseFor(draftId);
+		await db.update(scenes).set({ bodyMd: 'Typed since.' }).where(eq(scenes.id, target));
+		expect(await fillSceneFromDraft(db, ownerId, draftId, 'As written.', base)).toMatchObject({
+			ok: false,
+			code: 'conflict',
+			reason: expect.stringMatching(/has text in it now/)
+		});
+		expect((await sceneRow(target)).bodyMd).toBe('Typed since.');
+		expect((await draftRow(draftId)).status).toBe('ready');
+	});
+
+	it('is refused from a copy that fell behind, for a scene that is empty', async () => {
+		const draftId = await readyDraft('As written.');
+		const stale = await baseFor(draftId);
+		expect((await saveDraftText(db, ownerId, draftId, 'From window one.', stale)).ok).toBe(true);
+		expect(await fillSceneFromDraft(db, ownerId, draftId, 'From window two.', stale)).toMatchObject(
+			{ ok: false, code: 'conflict', reason: 'This draft was changed in another window.' }
+		);
+		expect((await sceneRow(target)).bodyMd).toBe('');
+		expect((await draftRow(draftId)).status).toBe('ready');
+		// With the current version it goes through.
+		expect(
+			(await fillSceneFromDraft(db, ownerId, draftId, 'From window two.', await baseFor(draftId)))
+				.ok
+		).toBe(true);
+	});
+});
+
+describe("another user's draft on a scene the caller owns", () => {
+	// Cannot be made through the app (a draft is asked for by the scene's
+	// owner), but every read and decision is scoped to the draft's own user.
+	async function foreignDraft() {
+		const [row] = await db
+			.insert(assistantDrafts)
+			.values({
+				userId: strangerId,
+				storyId,
+				sceneId: target,
+				brief: 'Not yours.',
+				targetWords: 500,
+				textMd: 'Written for someone else.',
+				status: 'ready'
+			})
+			.returning({ id: assistantDrafts.id });
+		return row.id;
+	}
+
+	it('is not read, kept or discarded by the scene owner', async () => {
+		const draftId = await foreignDraft();
+		expect(await sceneDraftFor(db, ownerId, target)).toBeNull();
+		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+		const base = await baseFor(draftId);
+		// lockReadyDraft, through both ways of keeping.
+		expect(await fillSceneFromDraft(db, ownerId, draftId, undefined, base)).toMatchObject({
+			ok: false,
+			code: 'not_found'
+		});
+		expect(await addDraftAsScene(db, ownerId, draftId, undefined, base)).toMatchObject({
+			ok: false,
+			code: 'not_found'
+		});
+		expect(await saveDraftText(db, ownerId, draftId, 'Mine now.', base)).toMatchObject({
+			ok: false,
+			code: 'not_found'
+		});
+		expect(await discardSceneDraft(db, ownerId, draftId)).toMatchObject({
+			ok: false,
+			code: 'not_found'
+		});
+		expect(await draftRow(draftId)).toMatchObject({
+			status: 'ready',
+			textMd: 'Written for someone else.'
+		});
+		expect((await sceneRow(target)).bodyMd).toBe('');
+	});
+});
+
+describe('a failed draft when a new one is asked for', () => {
+	async function failedDraft() {
+		const { draftId } = await request();
+		await failSceneDraft(db, draftId, 'The endpoint was down.');
+		return draftId;
+	}
+
+	it('gives way once the new request stands', async () => {
+		const failed = await failedDraft();
+		const { draftId } = await request();
+		expect((await draftRow(failed)).status).toBe('discarded');
+		expect((await draftRow(draftId)).status).toBe('pending');
+	});
+
+	it('keeps its reason when the new request does not go through', async () => {
+		const failed = await failedDraft();
+		jobs.queueAssistantDraft.mockResolvedValueOnce(null);
+		const refused = await requestSceneDraft(db, input(), {
+			queue: jobs.queueAssistantDraft,
+			jobState: jobs.assistantDraftJobState
+		});
+		expect(refused.ok).toBe(false);
+		expect(await draftRow(failed)).toMatchObject({
+			status: 'failed',
+			note: 'The endpoint was down.'
+		});
+		expect((await sceneDraftFor(db, ownerId, target))?.id).toBe(failed);
 	});
 });
 

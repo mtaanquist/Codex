@@ -8,6 +8,8 @@ import {
 	defaultDraftWords,
 	draftExpectedTokens,
 	draftMaxTokens,
+	draftWantedTokens,
+	isBlankDraft,
 	PREVIOUS_DRAFT_CHARS,
 	wordsForTokens,
 	type ChapterDraftEstimate,
@@ -32,6 +34,7 @@ import {
 } from './config.ts';
 import { completeDetailed, NoModelError, requestReplyLimit, type GatewayDeps } from './gateway.ts';
 import { jobSpendMeter } from './job-spend.ts';
+import type { SpendMeter } from './spend.ts';
 import { buildSceneDraftMessage } from './prompts/scene-draft.ts';
 import { adapterKind } from './providers/presets.ts';
 import { stoppedByWriter, type ChatMessage } from './providers/types.ts';
@@ -48,8 +51,26 @@ const FOLLOWING_OPENING_CHARS = 600;
 export const DRAFT_STOPPED_NOTE = 'You stopped this draft before it finished.';
 export const CHAPTER_DRAFT_ENDED_NOTE =
 	'The chapter draft ended before it reached this scene, so it was not drafted.';
+// What set the reply limit a draft was sent with: the writer's Longest reply
+// for Write (or the thinking default it stands in for), the model's context
+// window, or the draft's own figure for its length.
+export type DraftLimitSetBy = 'setting' | 'window' | 'draft';
+
+// A draft cut off at the limit carries a note that starts with this, then
+// says what would give it more room. That depends on what set the limit.
 export const DRAFT_CUT_OFF_NOTE =
-	'This draft stopped at the length limit, so it may end mid-scene. To give it more room, raise Longest reply for Write in its Tune window under Account, Assistant.';
+	'This draft stopped at the length limit, so it may end mid-scene.';
+export function draftCutOffNote(by: DraftLimitSetBy): string {
+	const advice = {
+		setting:
+			'To give it more room, raise Longest reply for Write in its Tune window under Account, Assistant.',
+		window:
+			'That is as much as your model can write in one reply. Ask for a shorter scene, or choose a model with a larger context window for Write.',
+		draft:
+			'To give it more room, ask for a longer scene. If your model reasons before it writes, turn Thinking on for Write in its Tune window under Account, Assistant.'
+	}[by];
+	return `${DRAFT_CUT_OFF_NOTE} ${advice}`;
+}
 
 type DraftScene = {
 	id: string;
@@ -194,7 +215,17 @@ async function precedingSceneId(db: Database, scene: DraftScene): Promise<string
 // Such a reply is paid for and would come back the same way, so it is not
 // asked for again.
 export const EMPTY_DRAFT_CUT_OFF_NOTE =
-	'The model used up its whole reply length before it wrote any of the scene. Raise Longest reply for Write in its Tune window under Account, Assistant, then ask again.';
+	'The model used up its whole reply length before it wrote any of the scene.';
+export function emptyDraftCutOffNote(by: DraftLimitSetBy): string {
+	const advice = {
+		setting:
+			'Raise Longest reply for Write in its Tune window under Account, Assistant, then ask again.',
+		window: 'Choose a model with a larger context window for Write, then ask again.',
+		draft:
+			'If your model reasons before it writes, turn Thinking on for Write in its Tune window under Account, Assistant, then ask again. Otherwise ask for a longer scene.'
+	}[by];
+	return `${EMPTY_DRAFT_CUT_OFF_NOTE} ${advice}`;
+}
 export const EMPTY_DRAFT_NOTE =
 	'The model sent back an empty reply. Ask again, or choose another model for Write under Account, Assistant.';
 
@@ -242,18 +273,51 @@ async function sceneDraftRequest(db: Database, input: SceneDraftInput, chapter?:
 	};
 	const messages: ChatMessage[] = context ? [buildSystemMessage(context), task] : [task];
 	const maxTokens = draftMaxTokens(input.targetWords, contextWindow);
-	return {
-		scene,
-		config,
-		model,
-		messages,
-		maxTokens,
-		// The limit the gateway sends for this request, resolved the same way.
-		// Bounded: the draft knows what it needs, so the writer's "Longest reply"
-		// lowers the limit but does not raise it past that.
-		limit: requestReplyLimit(config, 'coauthor', maxTokens, contextWindow, true)
-	};
+	// The limit the gateway sends for this request, resolved the same way.
+	// Bounded: the draft knows what it needs, so the writer's "Longest reply"
+	// lowers the limit but does not raise it past that.
+	const limit = requestReplyLimit(config, 'coauthor', maxTokens, contextWindow, true);
+	// A thinking role with no setting gets the thinking default, which a
+	// setting would replace: raising it is the same advice.
+	const limitSetBy: DraftLimitSetBy =
+		limit.setByWriter || limit.thinks
+			? 'setting'
+			: maxTokens < draftWantedTokens(input.targetWords)
+				? 'window'
+				: 'draft';
+	return { scene, config, model, messages, maxTokens, limit, limitSetBy };
 }
+
+// What requests that send promptTokens and may write completionTokens cost at
+// most, by the prices on record. Undefined when the model has none.
+function draftCostUsd(
+	request: DraftRequest,
+	promptTokens: number,
+	completionTokens: number
+): number | undefined {
+	const { config, model } = request;
+	const price = config.modelPricing?.[model];
+	if (!price) return undefined;
+	// Claude bills text it has not seen before above the plain price, to cache it.
+	const firstReadRate =
+		adapterKind(config.provider) === 'anthropic' ? cacheWriteRate(config.cacheTtl) : 1;
+	return promptTokens * firstReadRate * price.prompt + completionTokens * price.completion;
+}
+
+// Whether sending this request could take the job past the spend cap: what
+// the job has spent, plus this request with its reply at the limit sent. The
+// cap, the model and the prices are the ones in force now, not when the draft
+// was asked for. Asked before every send, a resend after a failure included:
+// the failed attempt may have been billed.
+function wouldPassCap(meter: SpendMeter, request: DraftRequest): boolean {
+	const capUsd = request.config.spendCapUsd;
+	if (!capUsd) return false;
+	const cost = draftCostUsd(request, requestTokens(request), request.limit.maxTokens);
+	return cost !== undefined && meter.spentUsd + cost > capUsd + 1e-9;
+}
+
+const CAPPED_NOTE =
+	'Writing this draft could have taken the job past your spend cap, so it was not written. Raise the cap in your Assistant settings to try again.';
 
 // What the draft would send and cost, counted without sending anything. Null
 // when the scene is not the user's. Throws NoModelError when no model is chosen.
@@ -293,13 +357,7 @@ function priceDraft(
 	// own, spends the limit on thinking too. The figure held against the cap
 	// is therefore never lower than what can be charged.
 	const estCompletionTokens = limit * sceneCount;
-	const price = config.modelPricing?.[model];
-	// Claude bills text it has not seen before above the plain price, to cache it.
-	const firstReadRate =
-		adapterKind(config.provider) === 'anthropic' ? cacheWriteRate(config.cacheTtl) : 1;
-	const estCostUsd = price
-		? estTokens * firstReadRate * price.prompt + estCompletionTokens * price.completion
-		: undefined;
+	const estCostUsd = draftCostUsd(request, estTokens, estCompletionTokens);
 	const capUsd = config.spendCapUsd;
 	return {
 		model,
@@ -308,7 +366,7 @@ function priceDraft(
 		mayThink: thinks,
 		...(estCostUsd !== undefined ? { estCostUsd } : {}),
 		...(capUsd ? { capUsd } : {}),
-		capEnforceable: Boolean(price),
+		capEnforceable: estCostUsd !== undefined,
 		warnUsd: config.spendWarnUsd ?? DEFAULT_SPEND_WARN_USD,
 		overCap: Boolean(capUsd) && estCostUsd !== undefined && estCostUsd > capUsd!,
 		...(limited
@@ -466,11 +524,8 @@ export async function runSceneDraft(
 	// One request, but a job pg-boss retries sends it again: the meter carries
 	// what earlier attempts spent.
 	const meter = await jobSpendMeter(db, { userId, storyId: draft.storyId, jobId: opts.jobId });
-	if (meter.capReached) {
-		await settleDraft(db, draftId, {
-			status: 'failed',
-			note: 'This draft reached your spend cap before it was written. Raise the cap in your Assistant settings to try again.'
-		});
+	if (meter.capReached || wouldPassCap(meter, request)) {
+		await settleDraft(db, draftId, { status: 'failed', note: CAPPED_NOTE });
 		return { outcome: 'capped', spentUsd: meter.spentUsd };
 	}
 
@@ -491,6 +546,7 @@ export async function runSceneDraft(
 				messages: request.messages,
 				maxTokens: request.maxTokens,
 				boundedReply: true,
+				mayResend: () => !wouldPassCap(meter, request),
 				meter,
 				signal
 			},
@@ -503,13 +559,20 @@ export async function runSceneDraft(
 			await settleDraft(db, draftId, { status: 'discarded', note: DRAFT_STOPPED_NOTE });
 			return { outcome: 'stopped' };
 		}
+		// The failed attempt was billed, and another would not fit under the
+		// cap: the job ends here instead of being sent again.
+		if (wouldPassCap(meter, request)) {
+			await meter.flush();
+			await settleDraft(db, draftId, { status: 'failed', note: CAPPED_NOTE });
+			return { outcome: 'capped', spentUsd: meter.spentUsd };
+		}
 		throw err;
 	} finally {
 		await meter.flush();
 	}
 	const text = result.content.trim();
-	if (!text) {
-		const note = result.cutOff ? EMPTY_DRAFT_CUT_OFF_NOTE : EMPTY_DRAFT_NOTE;
+	if (isBlankDraft(text)) {
+		const note = result.cutOff ? emptyDraftCutOffNote(request.limitSetBy) : EMPTY_DRAFT_NOTE;
 		const failed = await settleDraft(db, draftId, { status: 'failed', note });
 		return failed ? { outcome: 'empty', note } : await settledElsewhere(db, draftId);
 	}
@@ -519,7 +582,7 @@ export async function runSceneDraft(
 	const kept = await settleDraft(db, draftId, {
 		status: 'ready',
 		textMd: text,
-		note: result.cutOff ? DRAFT_CUT_OFF_NOTE : null
+		note: result.cutOff ? draftCutOffNote(request.limitSetBy) : null
 	});
 	if (!kept) return await settledElsewhere(db, draftId);
 	return {
@@ -675,7 +738,7 @@ export async function runChapterDraft(
 		if (draft.status === 'ready' || draft.status === 'accepted') {
 			drafted += 1;
 			words += wordCount(draft.textMd);
-			if (draft.note === DRAFT_CUT_OFF_NOTE) cutOff += 1;
+			if (draft.note?.startsWith(DRAFT_CUT_OFF_NOTE)) cutOff += 1;
 			// A draft already kept is in the manuscript, and so in the context.
 			previous = draft.status === 'ready' ? { sceneId: draft.sceneId, text: draft.textMd } : null;
 			continue;
@@ -728,6 +791,11 @@ export async function runChapterDraft(
 			previous = null;
 			continue;
 		}
+		// With this scene the run could pass the cap: it ends here.
+		if (wouldPassCap(meter, request)) {
+			ended = 'capped';
+			break;
+		}
 
 		await db
 			.update(assistantDrafts)
@@ -746,6 +814,7 @@ export async function runChapterDraft(
 					messages: request.messages,
 					maxTokens: request.maxTokens,
 					boundedReply: true,
+					mayResend: () => !wouldPassCap(meter, request),
 					meter,
 					signal
 				},
@@ -758,15 +827,21 @@ export async function runChapterDraft(
 				ended = 'stopped';
 				break;
 			}
+			// The failed attempt was billed, and another would not fit under
+			// the cap.
+			if (wouldPassCap(meter, request)) {
+				ended = 'capped';
+				break;
+			}
 			throw err;
 		} finally {
 			await meter.flush();
 		}
 		const text = result.content.trim();
-		if (!text) {
+		if (isBlankDraft(text)) {
 			// Paid for, and the next attempt would come back the same: the run
 			// ends at this scene, keeping the ones before it.
-			emptyNote = result.cutOff ? EMPTY_DRAFT_CUT_OFF_NOTE : EMPTY_DRAFT_NOTE;
+			emptyNote = result.cutOff ? emptyDraftCutOffNote(request.limitSetBy) : EMPTY_DRAFT_NOTE;
 			await settleDraft(db, draftId, { status: 'failed', note: emptyNote });
 			ended = 'empty';
 			break;
@@ -776,7 +851,7 @@ export async function runChapterDraft(
 		const kept = await settleDraft(db, draftId, {
 			status: 'ready',
 			textMd: text,
-			note: result.cutOff ? DRAFT_CUT_OFF_NOTE : null
+			note: result.cutOff ? draftCutOffNote(request.limitSetBy) : null
 		});
 		if (!kept) {
 			const [now] = await db.select().from(assistantDrafts).where(mine(draftId));

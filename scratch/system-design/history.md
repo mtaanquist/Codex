@@ -1049,6 +1049,21 @@ Fixes from the third reviews of #1168, branch `fix/scene-draft-review-3` on
   `draft-edits.ts`, registered once, so a released edit is covered. Clean
   released edits are freed after a minute, not at once, so a late read
   still meets the versions it must not take.
+- The cap could be passed by a resend: the gateway sent a billed, failed
+  attempt again without looking at the meter, and the job only stopped once
+  spend was already at the cap. Drafts now ask before every send whether
+  spend plus this request at its limit fits. It is a hook on the request
+  (`mayResend`) and a check in the draft job, not a gateway-wide rule: other
+  roles are unchanged and have the same gap, to be filed.
+- Round 2 made "Longest reply" unable to raise a non-thinking draft's limit,
+  which left the cut-off notes giving advice that did nothing. They are now
+  worded by what set the limit, and the headroom grows with the length.
+- A new request inserts its rows before it discards the failed ones it
+  replaces, and only after the job is queued: scene row before draft row,
+  the order a scene delete takes them, and the failure note survives a
+  request that does not go through.
+- `base` is required on the endpoint; the library functions still take it
+  as optional for callers that hold the row themselves (tests).
 
 ## Scene drafting, review round 2 (2026-11-20)
 
