@@ -40,6 +40,13 @@ export const TOKEN_PER_MINUTE = 120;
 // their apps, so connecting several does not multiply the first number.
 export const READ_CALLS_PER_MINUTE = 120;
 export const READ_CALLS_PER_MINUTE_PER_USER = 240;
+// The same for calls that stage something for the writer to decide on.
+export const STAGING_CALLS_PER_MINUTE = 30;
+export const STAGING_CALLS_PER_MINUTE_PER_USER = 60;
+// The most notes (pending suggestions and open comments) one app may have
+// waiting on one scene. One pattern note can carry 40 edits, so this leaves
+// room for two or three passes before the writer has to decide on some.
+export const MAX_NOTES_WAITING_PER_SCENE = 100;
 // Every request to the endpoint, of any kind, per writer per minute.
 export const REQUESTS_PER_MINUTE = 600;
 

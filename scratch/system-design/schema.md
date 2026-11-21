@@ -572,8 +572,11 @@ review_comments (
   author_reviewer_id uuid references reviewers(id),  -- an invited reviewer
   body_md            text not null,
   created_at         timestamptz not null,
-  updated_at         timestamptz not null
-  -- exactly one of author_user_id / author_reviewer_id is set
+  updated_at         timestamptz not null,
+  client_id          uuid references oauth_clients(id) on delete set null,  -- an outside app as author (#1175)
+  client_name        text,                   -- the app's name, copied when the note was staged
+  client_host        text                    -- its checked host, copied too; set means "an app wrote this"
+  -- one author: author_user_id, author_reviewer_id, the Assistant (the assistant flag), or an app (client_host)
 )
 
 review_suggestions (
@@ -589,11 +592,16 @@ review_suggestions (
   pattern_thread_id  uuid references review_threads(id) on delete set null,  -- the Assistant pattern note this edit fixes
   decided_by_user_id uuid references users(id),
   decided_at         timestamptz,
-  created_at         timestamptz not null
+  created_at         timestamptz not null,
+  client_id          uuid references oauth_clients(id) on delete set null,  -- as on review_comments
+  client_name        text,
+  client_host        text
 )
 ```
 
 Key points:
+
+- **Notes from an outside app.** An app the owner connected stages comments and suggestions under its own name, not the Assistant's. The name and host are copied onto the row, so the note still says who left it after the client row is pruned (which only sets `client_id` null). `client_id` is what the app's own rules key on: a repeat of its own note is dropped, it revises only its own pending suggestion, and its waiting notes per scene are counted against a ceiling.
 
 - **No direct guest writes.** A reviewer never edits `body_md`. Their changes are `review_suggestions` the author accepts or rejects one at a time, which is what makes them attributable and reversible.
 - **Attribution across users and guests.** Every comment and suggestion points at the person who made it (a `reviewers` row, or a user for the owner), so the author can always see which edits came from whom.

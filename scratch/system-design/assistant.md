@@ -888,8 +888,26 @@ Rules that hold on this surface:
 - A request with an `Origin` header other than this site's is refused; a
   program that is not a browser sends none.
 
-Offered today: the read tools. The staging tools follow with their own
-author kind.
+Offered: the read tools to every connection, and to one the writer allowed
+to suggest also `suggest_edit`, `leave_comment`, `leave_pattern_note`,
+`reply_in_thread` and `update_suggestion`. What they stage is authored by the
+app, not the Assistant: the review rows carry the client (see Review and
+collaboration in `schema.md`) and show its name with its host, with an "App"
+role chip. The app has the Assistant's protections under its own identity: a
+repeat of its own comment or edit is dropped, a retried pattern note extends
+its own note only, and `update_suggestion` reaches only its own pending
+suggestion. On top of those:
+
+- Staging has its own rate limit: 30 calls a minute per connection, 60 per
+  writer.
+- An app may have at most 100 notes (pending suggestions and open comments
+  it started) waiting on one scene; past that it stages nothing more there
+  until the writer decides on some.
+- `reply_in_thread` posts once and then waits: an app whose reply is the
+  latest in a thread cannot add another until someone else writes.
+
+Not offered yet: `propose_scene_split`, whose proposal is a card in the
+Assistant's chat; it needs a stored proposal the writer confirms in Codex.
 
 Exceptions to "one toolbox for both", each with its reason:
 
@@ -899,6 +917,10 @@ Exceptions to "one toolbox for both", each with its reason:
   them on any other surface.
 - In the app the universe comes from the open page; over MCP the same tools
   take it as an argument. Same tool, different source for the id.
+- `reply_in_thread` and `update_suggestion` act in the app on the thread or
+  suggestion the open page fixes. Over MCP they take `threadId` and
+  `suggestionId` as arguments, and the dispatcher checks that the target is
+  in a live, unmuted story of the connected writer in the named universe.
 
 ### Background jobs
 

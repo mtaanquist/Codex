@@ -6,9 +6,12 @@ import { rateLimit } from '../rate-limit.ts';
 import { dispatchToolCall, ownsUniverse } from '../llm/tools/dispatch.ts';
 import { TOOLS, type ToolDef } from '../llm/tools/registry.ts';
 import {
+	MAX_NOTES_WAITING_PER_SCENE,
 	READ_CALLS_PER_MINUTE,
 	READ_CALLS_PER_MINUTE_PER_USER,
 	SCENE_BODY_MAX_CHARS,
+	STAGING_CALLS_PER_MINUTE,
+	STAGING_CALLS_PER_MINUTE_PER_USER,
 	TOOL_RESULT_MAX_CHARS
 } from './constants.ts';
 import type { BearerIdentity } from './oauth.ts';
@@ -42,19 +45,43 @@ const UNIVERSE_ARGUMENT = {
 // writer's, so the answer says nothing about what exists.
 export const NO_UNIVERSE_RESULT = 'No universe with that id.';
 
-// The tools that exist on this surface today: the read tools. The staging
-// tools join when their author kind does.
+// Staging tools that are not on this surface yet. A split proposal lives in
+// the Assistant's chat as a card; an app has no chat, so it waits for a stored
+// proposal the writer confirms in Codex.
+const NOT_YET = new Set(['propose_scene_split']);
+
+// In the app these two act on the thread or suggestion the open page fixes.
+// An app has no page, so it names the target; the dispatcher checks it against
+// the connected writer (reachableStory).
+const TARGET_ARGUMENT: Record<string, { name: string; description: string }> = {
+	reply_in_thread: {
+		name: 'threadId',
+		description: 'The id of the review thread to reply in.'
+	},
+	update_suggestion: {
+		name: 'suggestionId',
+		description: 'The id of your own pending suggestion to revise.'
+	}
+};
+
+// The tools a connection is offered: every read tool, and the staging tools
+// when the writer allowed suggestions.
 function offered(tool: ToolDef, permissions: readonly McpPermission[]): boolean {
-	return tool.kind === 'read' && !tool.scoped && permissions.includes(PERMISSION_FOR[tool.kind]);
+	return !NOT_YET.has(tool.name) && permissions.includes(PERMISSION_FOR[tool.kind]);
 }
 
 function inputSchema(tool: ToolDef): Record<string, unknown> {
 	if (NO_UNIVERSE.has(tool.name)) return tool.parameters;
 	const parameters = tool.parameters as { properties?: object; required?: string[] };
+	const target = TARGET_ARGUMENT[tool.name];
 	return {
 		...tool.parameters,
-		properties: { universeId: UNIVERSE_ARGUMENT, ...parameters.properties },
-		required: ['universeId', ...(parameters.required ?? [])]
+		properties: {
+			universeId: UNIVERSE_ARGUMENT,
+			...(target ? { [target.name]: { type: 'string', description: target.description } } : {}),
+			...parameters.properties
+		},
+		required: ['universeId', ...(target ? [target.name] : []), ...(parameters.required ?? [])]
 	};
 }
 
@@ -103,10 +130,15 @@ export async function callMcpTool(
 		return refuse('unknown_tool', `Unknown tool: ${name}.`);
 	}
 
+	// Staging has its own, tighter budget, so a burst of reads cannot be spent
+	// on notes and a burst of notes does not stop the app reading.
 	const windowMs = 60 * 1000;
+	const staging = tool.kind === 'write';
+	const perGrant = staging ? STAGING_CALLS_PER_MINUTE : READ_CALLS_PER_MINUTE;
+	const perUser = staging ? STAGING_CALLS_PER_MINUTE_PER_USER : READ_CALLS_PER_MINUTE_PER_USER;
 	const limits = [
-		rateLimit(`mcp:read:grant:${identity.grantId}`, READ_CALLS_PER_MINUTE, windowMs),
-		rateLimit(`mcp:read:user:${identity.userId}`, READ_CALLS_PER_MINUTE_PER_USER, windowMs)
+		rateLimit(`mcp:${tool.kind}:grant:${identity.grantId}`, perGrant, windowMs),
+		rateLimit(`mcp:${tool.kind}:user:${identity.userId}`, perUser, windowMs)
 	];
 	const blocked = limits.find((limit) => !limit.allowed);
 	if (blocked) {
@@ -135,7 +167,15 @@ export async function callMcpTool(
 			userId: identity.userId,
 			universeId,
 			allowedTools: [name],
-			external: { sceneBodyCap: SCENE_BODY_MAX_CHARS }
+			external: {
+				sceneBodyCap: SCENE_BODY_MAX_CHARS,
+				client: {
+					id: identity.client.id,
+					name: identity.client.clientName,
+					host: identity.client.host
+				},
+				maxNotesPerScene: MAX_NOTES_WAITING_PER_SCENE
+			}
 		},
 		{ id: 'mcp', name, arguments: JSON.stringify(rest) }
 	);
@@ -148,6 +188,6 @@ export async function callMcpTool(
 		});
 		return { text: 'The tool failed. Try again.', isError: true };
 	}
-	log('ok');
+	log(outcome.staged ? 'staged' : 'ok');
 	return { text: capped(outcome.result), isError: false };
 }

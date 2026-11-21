@@ -4,6 +4,7 @@ import {
 	authorColor,
 	authorInitials,
 	authorKey,
+	roleLabel,
 	reviewMarks,
 	reviewProse,
 	suggestionKind,
@@ -63,6 +64,13 @@ describe('authorColor / authorKey / authorInitials', () => {
 		expect(authorColor(GUEST)).toBe(authorColor({ ...GUEST }));
 		expect(authorColor(GUEST)).toMatch(/^var\(--cat-/);
 		expect(authorKey(GUEST)).toBe('reviewer:Jo Reeve');
+	});
+
+	it('tells an outside app from a guest of the same name', () => {
+		const app = { isOwner: false, isAssistant: false, isApp: true, name: 'Jo Reeve' };
+		expect(authorKey(app)).toBe('app:Jo Reeve');
+		expect(roleLabel(app)).toBe('App');
+		expect(roleLabel(GUEST)).toBe('Reviewer');
 	});
 
 	it('builds one or two initials', () => {

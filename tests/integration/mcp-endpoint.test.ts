@@ -6,7 +6,9 @@ import type pg from 'pg';
 import {
 	characters,
 	entityMentions,
+	oauthClients,
 	oauthGrants,
+	reviewSuggestions,
 	scenes,
 	stories,
 	universes,
@@ -44,6 +46,15 @@ const { createAuthorizationCode, exchangeCode, revokeAllGrants } =
 	await import('#lib/server/mcp/oauth');
 const { saveMcpInstanceEnabled } = await import('#lib/server/mcp/settings');
 const { NO_UNIVERSE_RESULT } = await import('#lib/server/mcp/tools');
+const {
+	addComment,
+	createSuggestion,
+	createThread,
+	decideSuggestion,
+	listSuggestions,
+	listThreads
+} = await import('#lib/server/review');
+const { createAnchorMapper } = await import('#lib/review-anchor');
 const { TOOL_RESULT_MAX_CHARS } = await import('#lib/server/mcp/constants');
 const route = await import('../../src/routes/api/mcp/+server');
 
@@ -51,6 +62,9 @@ const ORIGIN = 'http://localhost';
 const MISSING = '00000000-0000-4000-8000-000000000000';
 const NO_SCENE = 'No scene with that id in this story.';
 const NO_ENTITY = 'No entity with that id.';
+const NO_THREAD = 'No thread with that id.';
+const NO_SUGGESTION = 'No suggestion with that id.';
+const APP = 'Writing Desk (app.example)';
 const VERIFIER = 'v'.repeat(64);
 const CHALLENGE = createHash('sha256').update(VERIFIER).digest('base64url');
 
@@ -75,7 +89,11 @@ type World = {
 let alice: World;
 let bob: World;
 
-async function connect(userId: string, name = 'Writing Desk'): Promise<string> {
+async function connect(
+	userId: string,
+	name = 'Writing Desk',
+	permissions: ('read' | 'suggest')[] = ['read', 'suggest']
+): Promise<string> {
 	const registered = await registerClient(db, {
 		client_name: name,
 		redirect_uris: ['https://app.example/callback']
@@ -84,7 +102,7 @@ async function connect(userId: string, name = 'Writing Desk'): Promise<string> {
 	const code = await createAuthorizationCode(db, {
 		userId,
 		client: registered.client,
-		permissions: ['read', 'suggest'],
+		permissions,
 		redirectUri: 'https://app.example/callback',
 		codeChallenge: CHALLENGE
 	});
@@ -364,8 +382,9 @@ describe('the protocol', () => {
 		expect(String(result?.instructions)).toContain('list_universes');
 	});
 
-	it('offers the read tools, each asking for the universe, and nothing that stages', async () => {
-		const { result } = await rpc(alice.token, 'tools/list');
+	it('offers only the read tools to a connection that may only read', async () => {
+		const readOnly = await connect(alice.userId, 'Reader', ['read']);
+		const { result } = await rpc(readOnly, 'tools/list');
 		const tools = result!.tools as {
 			name: string;
 			inputSchema: { required?: string[]; properties: Record<string, unknown> };
@@ -394,14 +413,47 @@ describe('the protocol', () => {
 		]);
 	});
 
+	it('adds the staging tools for a connection that may suggest', async () => {
+		const { result } = await rpc(alice.token, 'tools/list');
+		const tools = result!.tools as {
+			name: string;
+			inputSchema: { required?: string[] };
+			annotations?: { readOnlyHint?: boolean };
+		}[];
+		const staging = tools.filter((tool) => tool.annotations?.readOnlyHint === false);
+		expect(staging.map((tool) => tool.name).sort()).toEqual([
+			'leave_comment',
+			'leave_pattern_note',
+			'reply_in_thread',
+			'suggest_edit',
+			'update_suggestion'
+		]);
+		expect(tools).toHaveLength(12);
+		const required = (name: string) =>
+			tools.find((tool) => tool.name === name)!.inputSchema.required;
+		expect(required('reply_in_thread')).toEqual(['universeId', 'threadId', 'comment']);
+		expect(required('update_suggestion')).toEqual(['universeId', 'suggestionId', 'replacement']);
+	});
+
 	it('refuses a tool it does not offer, and stages nothing', async () => {
-		for (const name of ['suggest_edit', 'leave_comment', 'reply_in_thread', 'no_such_tool']) {
-			const result = await call(alice, name, {
+		const readOnly = await connect(alice.userId, 'Reader', ['read']);
+		const attempts: [string, string][] = [
+			[readOnly, 'suggest_edit'],
+			[readOnly, 'leave_comment'],
+			[readOnly, 'leave_pattern_note'],
+			[alice.token, 'propose_scene_split'],
+			[alice.token, 'no_such_tool']
+		];
+		for (const [token, name] of attempts) {
+			const result = await call(token, name, {
 				universeId: alice.universeId,
 				sceneId: alice.sceneId,
 				original: 'open',
 				replacement: 'shut',
-				comment: 'x'
+				comment: 'x',
+				edits: [{ original: 'open', replacement: 'shut' }],
+				newSceneStart: 'lantern',
+				rationale: 'x'
 			});
 			expect(result.isError).toBe(true);
 		}
@@ -616,6 +668,348 @@ describe('search_text', () => {
 	});
 });
 
+// ============ Staging ============
+
+const idIn = (text: string) => /id ([0-9a-f-]{36})/.exec(text)?.[1] ?? '';
+const mapRange = (base: string, current: string, start: number, end: number) =>
+	createAnchorMapper().range(base, current, start, end);
+
+function edit(who: World, overrides: Record<string, unknown> = {}) {
+	return call(who, 'suggest_edit', {
+		universeId: who.universeId,
+		sceneId: who.sceneId,
+		original: 'open',
+		replacement: 'shut',
+		...overrides
+	});
+}
+
+function comment(who: World, overrides: Record<string, unknown> = {}) {
+	return call(who, 'leave_comment', {
+		universeId: who.universeId,
+		sceneId: who.sceneId,
+		comment: 'The lantern needs a keeper.',
+		...overrides
+	});
+}
+
+// A scene of the writer's own that an app must not reach, or no scene at all.
+const hiddenScenes = () => [
+	bob.sceneId,
+	alice.mutedSceneId,
+	alice.trashedStorySceneId,
+	alice.trashedSceneId,
+	MISSING,
+	'nope'
+];
+
+describe('suggest_edit', () => {
+	it('stages a pending suggestion in the apps name and leaves the text alone', async () => {
+		const result = await edit(alice);
+		expect(result).toMatchObject({ isError: false });
+		expect(result.text).toContain('Staged a suggested edit');
+		const [staged] = await listSuggestions(db, alice.storyId);
+		expect(staged).toMatchObject({
+			id: idIn(result.text),
+			reviewerName: APP,
+			isApp: true,
+			isAssistant: false,
+			isOwner: false,
+			original: 'open',
+			replacement: 'shut',
+			status: 'pending'
+		});
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
+		expect(scene.bodyMd).toBe('Alice open lantern prose.');
+	});
+
+	it('stages nothing outside the writers own open stories', async () => {
+		await expectNoUniverse('suggest_edit', {
+			sceneId: alice.sceneId,
+			original: 'open',
+			replacement: 'shut'
+		});
+		expect(await edit(alice, { universeId: bob.universeId, sceneId: bob.sceneId })).toEqual({
+			text: NO_UNIVERSE_RESULT,
+			isError: true
+		});
+		for (const sceneId of hiddenScenes()) {
+			expect(await edit(alice, { sceneId })).toEqual({ text: NO_SCENE, isError: false });
+		}
+		expect(await stagedRows()).toBe(0);
+	});
+
+	it('drops a repeat of its own edit, and lets another app make the same one', async () => {
+		expect((await edit(alice)).text).toContain('Staged');
+		expect((await edit(alice)).text).toContain('already staged this exact edit');
+		const second = await connect(alice.userId, 'Second');
+		expect((await edit({ ...alice, token: second })).text).toContain('Staged');
+		expect(await listSuggestions(db, alice.storyId)).toHaveLength(2);
+	});
+});
+
+describe('leave_comment', () => {
+	it('stages a comment in the apps name, anchored to the quote', async () => {
+		const result = await comment(alice, { quote: 'lantern' });
+		expect(result.text).toContain('Staged a review comment');
+		const [thread] = await listThreads(db, alice.storyId, mapRange);
+		expect(thread).toMatchObject({ id: idIn(result.text), anchor: { start: 11, end: 18 } });
+		expect(thread.comments[0]).toMatchObject({
+			authorName: APP,
+			isApp: true,
+			isAssistant: false,
+			isOwner: false,
+			mine: false,
+			body: 'The lantern needs a keeper.'
+		});
+	});
+
+	it('stages nothing outside the writers own open stories', async () => {
+		await expectNoUniverse('leave_comment', { sceneId: alice.sceneId, comment: 'x' });
+		for (const sceneId of hiddenScenes()) {
+			expect(await comment(alice, { sceneId })).toEqual({ text: NO_SCENE, isError: false });
+		}
+		expect(await stagedRows()).toBe(0);
+	});
+
+	it('drops a repeat of its own comment', async () => {
+		await comment(alice);
+		expect((await comment(alice)).text).toContain('already left this comment');
+		expect(await listThreads(db, alice.storyId, mapRange)).toHaveLength(1);
+	});
+});
+
+describe('leave_pattern_note', () => {
+	const note = (who: World, overrides: Record<string, unknown> = {}) =>
+		call(who, 'leave_pattern_note', {
+			universeId: who.universeId,
+			sceneId: who.sceneId,
+			comment: 'Pattern note (lanterns): the word carries every sentence.',
+			edits: [
+				{ original: 'open', replacement: 'shut' },
+				{ original: 'not in the scene', replacement: 'x' }
+			],
+			...overrides
+		});
+
+	it('stages the note with its edits, linked, in the apps name', async () => {
+		const result = await note(alice);
+		expect(result.text).toContain('Staged the pattern note with 1 linked edit');
+		expect(result.text).toContain('not found in the scene');
+		const [thread] = await listThreads(db, alice.storyId, mapRange);
+		const [suggestion] = await listSuggestions(db, alice.storyId);
+		expect(thread.comments[0]).toMatchObject({ authorName: APP, isApp: true });
+		expect(suggestion).toMatchObject({ reviewerName: APP, patternThreadId: thread.id });
+
+		// A retry with the same comment adds to the apps own note, not a new one.
+		const retry = await note(alice, { edits: [{ original: 'lantern', replacement: 'lamp' }] });
+		expect(retry.text).toContain('1 linked edit');
+		expect(await listThreads(db, alice.storyId, mapRange)).toHaveLength(1);
+		expect(await listSuggestions(db, alice.storyId)).toHaveLength(2);
+	});
+
+	it('does not extend a note the Assistant or another app left', async () => {
+		await createThread(db, {
+			storyId: alice.storyId,
+			sceneId: alice.sceneId,
+			anchor: null,
+			author: { assistant: true },
+			body: 'Pattern note (lanterns): the word carries every sentence.'
+		});
+		await note(alice);
+		const threads = await listThreads(db, alice.storyId, mapRange);
+		expect(threads.map((thread) => thread.comments[0].isApp)).toEqual([false, true]);
+	});
+
+	it('stages nothing outside the writers own open stories', async () => {
+		await expectNoUniverse('leave_pattern_note', {
+			sceneId: alice.sceneId,
+			comment: 'Pattern note (x): y',
+			edits: [{ original: 'open', replacement: 'shut' }]
+		});
+		for (const sceneId of hiddenScenes()) {
+			expect(await note(alice, { sceneId })).toEqual({ text: NO_SCENE, isError: false });
+		}
+		expect(await stagedRows()).toBe(0);
+	});
+});
+
+describe('reply_in_thread', () => {
+	const reply = (who: World, threadId: unknown, universeId = who.universeId) =>
+		call(who, 'reply_in_thread', { universeId, threadId, comment: 'A reply from the app.' });
+
+	async function ownersThread(who: World, sceneId = who.sceneId, storyId = who.storyId) {
+		const created = await createThread(db, {
+			storyId,
+			sceneId,
+			anchor: null,
+			author: { userId: who.userId },
+			body: 'What do you make of this?'
+		});
+		if (!created.ok) throw new Error(created.reason);
+		return created.threadId;
+	}
+
+	it('replies in a thread of the writers story, in the apps name', async () => {
+		const threadId = await ownersThread(alice);
+		expect((await reply(alice, threadId)).text).toBe('Your reply was posted to the thread.');
+		const [thread] = await listThreads(db, alice.storyId, mapRange);
+		expect(thread.comments.map((entry) => [entry.authorName, entry.isApp])).toEqual([
+			['Alice', false],
+			[APP, true]
+		]);
+	});
+
+	it('does not answer itself: one reply, then it waits for someone else', async () => {
+		const threadId = await ownersThread(alice);
+		await reply(alice, threadId);
+		expect((await reply(alice, threadId)).text).toContain('Wait for the writer to answer');
+		await addComment(db, {
+			storyId: alice.storyId,
+			threadId,
+			author: { userId: alice.userId },
+			body: 'Go on.'
+		});
+		expect((await reply(alice, threadId)).text).toBe('Your reply was posted to the thread.');
+		// Its own note is the latest word in that thread too.
+		const own = idIn((await comment(alice)).text);
+		expect((await reply(alice, own)).text).toContain('Wait for the writer to answer');
+	});
+
+	it('finds no thread that is another writers, in a muted story or missing', async () => {
+		await expectNoUniverse('reply_in_thread', { threadId: MISSING, comment: 'x' });
+		const bobs = await ownersThread(bob);
+		const [mutedScene] = await db.select().from(scenes).where(eq(scenes.id, alice.mutedSceneId));
+		const muted = await ownersThread(alice, mutedScene.id, mutedScene.storyId);
+		const own = await ownersThread(alice);
+		const before = await pool.query('select count(*) from review_comments');
+		for (const threadId of [bobs, muted, MISSING, 'nope']) {
+			expect(await reply(alice, threadId)).toEqual({ text: NO_THREAD, isError: false });
+		}
+		// Bob's thread through Bob's universe is no universe at all.
+		expect(await reply(alice, bobs, bob.universeId)).toEqual({
+			text: NO_UNIVERSE_RESULT,
+			isError: true
+		});
+		// A thread of the writer's own, asked for through their other universe.
+		expect(await reply(alice, own, alice.otherUniverseId)).toEqual({
+			text: NO_THREAD,
+			isError: false
+		});
+		const after = await pool.query('select count(*) from review_comments');
+		expect(after.rows).toEqual(before.rows);
+	});
+});
+
+describe('update_suggestion', () => {
+	const revise = (who: World | string, suggestionId: unknown, universeId = alice.universeId) =>
+		call(who, 'update_suggestion', { universeId, suggestionId, replacement: 'closed' });
+	const replacementOf = async (id: string) =>
+		(await db.select().from(reviewSuggestions).where(eq(reviewSuggestions.id, id)))[0].replacement;
+
+	it('revises its own pending suggestion and no other', async () => {
+		const own = idIn((await edit(alice)).text);
+		expect((await revise(alice, own)).text).toContain('now proposes the revised text');
+		expect(await replacementOf(own)).toBe('closed');
+
+		// The Assistant's, another app's and the writer's own are not its to change.
+		const assistants = await createSuggestion(db, {
+			storyId: alice.storyId,
+			sceneId: alice.sceneId,
+			author: { assistant: true },
+			range: { start: 11, end: 18 },
+			replacement: 'lamp'
+		});
+		const owners = await createSuggestion(db, {
+			storyId: alice.storyId,
+			sceneId: alice.sceneId,
+			author: { userId: alice.userId },
+			range: { start: 0, end: 5 },
+			replacement: 'She'
+		});
+		const second = await connect(alice.userId, 'Second');
+		const others = idIn(
+			(await edit({ ...alice, token: second }, { original: 'prose', replacement: 'verse' })).text
+		);
+		for (const id of [
+			assistants.ok && assistants.suggestionId,
+			owners.ok && owners.suggestionId,
+			others
+		]) {
+			expect((await revise(alice, id)).text).toContain('You can only revise a suggestion you made');
+			expect(await replacementOf(id as string)).not.toBe('closed');
+		}
+	});
+
+	it('leaves a decided suggestion as it was decided', async () => {
+		const own = idIn((await edit(alice)).text);
+		await decideSuggestion(db, alice.userId, alice.storyId, own, false);
+		expect((await revise(alice, own)).text).toContain('only while it is pending');
+		expect(await replacementOf(own)).toBe('shut');
+	});
+
+	it('finds no suggestion that is another writers or missing', async () => {
+		await expectNoUniverse('update_suggestion', { suggestionId: MISSING, replacement: 'x' });
+		const bobs = idIn((await edit(bob)).text);
+		for (const id of [bobs, MISSING, 'nope']) {
+			expect(await revise(alice, id)).toEqual({ text: NO_SUGGESTION, isError: false });
+		}
+		expect(await revise(alice, bobs, bob.universeId)).toEqual({
+			text: NO_UNIVERSE_RESULT,
+			isError: true
+		});
+		expect(await replacementOf(bobs)).toBe('shut');
+	});
+});
+
+describe('what an app leaves behind', () => {
+	it('keeps its name on its notes after the client is removed', async () => {
+		const suggestionId = idIn((await edit(alice)).text);
+		await comment(alice);
+		await pool.query('delete from oauth_clients');
+		expect(await db.select().from(oauthClients)).toHaveLength(0);
+		const [suggestion] = await listSuggestions(db, alice.storyId);
+		expect(suggestion).toMatchObject({ id: suggestionId, reviewerName: APP, isApp: true });
+		const [thread] = await listThreads(db, alice.storyId, mapRange);
+		expect(thread.comments[0]).toMatchObject({ authorName: APP, isApp: true });
+		// The writer still decides on it.
+		const decided = await decideSuggestion(db, alice.userId, alice.storyId, suggestionId, true);
+		expect(decided.ok).toBe(true);
+		const [scene] = await db.select().from(scenes).where(eq(scenes.id, alice.sceneId));
+		expect(scene.bodyMd).toBe('Alice shut lantern prose.');
+	});
+
+	it('stops at a ceiling of waiting notes per scene, until the writer decides', async () => {
+		const [client] = await db.select().from(oauthClients);
+		const stage = (original: string) =>
+			dispatchToolCall(
+				{
+					db,
+					userId: alice.userId,
+					universeId: alice.universeId,
+					external: {
+						sceneBodyCap: 1000,
+						client: { id: client.id, name: client.clientName, host: client.host },
+						maxNotesPerScene: 2
+					}
+				},
+				{
+					id: 'call',
+					name: 'suggest_edit',
+					arguments: JSON.stringify({ sceneId: alice.sceneId, original, replacement: 'x' })
+				}
+			);
+		const first = await stage('open');
+		expect((await stage('lantern')).staged).toBe(true);
+		const third = await stage('prose');
+		expect(third.staged).toBe(false);
+		expect(third.result).toContain('already has 2 of your notes waiting');
+		// Another scene is not affected, and deciding makes room.
+		await decideSuggestion(db, alice.userId, alice.storyId, idIn(first.result), false);
+		expect((await stage('prose')).staged).toBe(true);
+	});
+});
+
 describe('across every read tool', () => {
 	it('stages nothing and leaves both writers work as it was', async () => {
 		const before = await pool.query(`select id, body_md, updated_at from scenes order by id`);
@@ -669,6 +1063,18 @@ describe('limits', () => {
 		for (let i = 0; i < 601; i++) last = (await send(list, { token: alice.token })).status;
 		expect(last).toBe(429);
 		expect((await send(list, { token: bob.token })).status).toBe(200);
+	}, 30_000);
+
+	it('gives staging a tighter budget of its own', async () => {
+		let staged = 0;
+		for (let i = 0; i < 31; i++) {
+			const result = await comment(alice, { comment: `Note number ${i}.` });
+			if (!result.isError) staged++;
+		}
+		expect(staged).toBe(30);
+		expect((await comment(alice, { comment: 'One more.' })).text).toMatch(/^Too many calls/);
+		// Reading is counted apart.
+		expect((await call(alice, 'list_universes')).isError).toBe(false);
 	});
 
 	it('marks the connection as used', async () => {

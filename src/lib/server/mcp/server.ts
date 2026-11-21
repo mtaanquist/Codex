@@ -9,9 +9,21 @@ import { callMcpTool, mcpTools } from './tools.ts';
 // and holds nothing afterwards, so there is no session to keep or to steal.
 
 const INSTRUCTIONS =
-	"Codex holds a writer's fiction: universes, the stories in them, their chapters and scenes, and entries for characters, places and lore. Start with list_universes, then pass a universe id to the other tools. You can read; you cannot change, delete or publish anything.";
+	"Codex holds a writer's fiction: universes, the stories in them, their chapters and scenes, and entries for characters, places and lore. Start with list_universes, then pass a universe id to the other tools. You cannot change, delete or publish anything. If you were allowed to suggest, your edits and comments wait in the writer's review, and the writer accepts or rejects each one there.";
 
 type Connection = { db: Database; identity: BearerIdentity };
+
+// A tool's argument schema is the same for every request, and compiling its
+// validator is the costly part of building a server, so it is done once.
+const schemas = new Map<string, ReturnType<typeof fromJsonSchema<Record<string, unknown>>>>();
+function schemaFor(name: string, inputSchema: Record<string, unknown>) {
+	let schema = schemas.get(name);
+	if (!schema) {
+		schema = fromJsonSchema<Record<string, unknown>>(inputSchema);
+		schemas.set(name, schema);
+	}
+	return schema;
+}
 
 function buildServer(connection: Connection): McpServer {
 	const server = new McpServer({ name: 'codex', version: '1' }, { instructions: INSTRUCTIONS });
@@ -20,7 +32,7 @@ function buildServer(connection: Connection): McpServer {
 			tool.name,
 			{
 				description: tool.description,
-				inputSchema: fromJsonSchema<Record<string, unknown>>(tool.inputSchema),
+				inputSchema: schemaFor(tool.name, tool.inputSchema),
 				annotations: { readOnlyHint: tool.readOnly, openWorldHint: false }
 			},
 			async (args) => {

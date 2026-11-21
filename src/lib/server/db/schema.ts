@@ -1248,6 +1248,15 @@ export const reviewComments = pgTable(
 		// display name is resolved live from the owner's assistant config, so a
 		// rename relabels past comments on the fly.
 		assistant: boolean('assistant').notNull().default(false),
+		// An outside app as a fourth author (both FK authors null, assistant
+		// false, client_host set). The name and host are copied when the note is
+		// staged, so it still says who left it after the client row is pruned,
+		// which sets client_id null.
+		clientId: uuid('client_id').references((): AnyPgColumn => oauthClients.id, {
+			onDelete: 'set null'
+		}),
+		clientName: text('client_name'),
+		clientHost: text('client_host'),
 		bodyMd: text('body_md').notNull(),
 		createdAt: timestamp('created_at', { withTimezone: true })
 			.notNull()
@@ -1257,7 +1266,11 @@ export const reviewComments = pgTable(
 			.defaultNow()
 			.$onUpdate(() => sql`clock_timestamp()`)
 	},
-	(table) => [index('review_comments_thread_idx').on(table.threadId)]
+	(table) => [
+		index('review_comments_thread_idx').on(table.threadId),
+		// Every client delete checks this foreign key.
+		index('review_comments_client_idx').on(table.clientId)
+	]
 );
 
 // A proposed edit: replace [range_start, range_end) of the scene's body with
@@ -1281,6 +1294,15 @@ export const reviewSuggestions = pgTable(
 		// The Assistant as a third author (both FK authors null, this true);
 		// mirrors review_comments. The owner still accepts or rejects it.
 		assistant: boolean('assistant').notNull().default(false),
+		// An outside app as a fourth author (both FK authors null, assistant
+		// false, client_host set). The name and host are copied when the note is
+		// staged, so it still says who left it after the client row is pruned,
+		// which sets client_id null.
+		clientId: uuid('client_id').references((): AnyPgColumn => oauthClients.id, {
+			onDelete: 'set null'
+		}),
+		clientName: text('client_name'),
+		clientHost: text('client_host'),
 		// The text the range was placed against.
 		baseRevisionId: uuid('base_revision_id')
 			.references(() => revisions.id)
@@ -1320,7 +1342,10 @@ export const reviewSuggestions = pgTable(
 		index('review_suggestions_base_revision_idx').on(table.baseRevisionId),
 		index('review_suggestions_pattern_thread_idx').on(table.patternThreadId),
 		// Every suggestion delete checks this foreign key.
-		index('review_suggestions_follows_idx').on(table.followsSuggestionId)
+		index('review_suggestions_follows_idx').on(table.followsSuggestionId),
+		// Every client delete checks this foreign key, and the ceiling on an
+		// app's waiting notes counts by it.
+		index('review_suggestions_client_idx').on(table.clientId)
 	]
 );
 

@@ -1023,6 +1023,44 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 4: staging tools and the app as author (2026-11-21)
+
+Part of #1175, branch `feat/mcp-staging` on `staging/mcp-endpoint`,
+migration 0098.
+
+- A fourth review author. `review_comments` and `review_suggestions` gain
+  `client_id` (set null when the client row goes), `client_name` and
+  `client_host`. The name and host are copied at staging time and
+  `client_host` being set is what marks the row as an app's, so attribution
+  does not depend on the client row, which the worker prunes. One function
+  (`clientAuthorName` in `review.ts`, over `clientDisplayName`) turns the two
+  into the label.
+- The Assistant's own-write rules were generalised to "a program's own
+  writes" (`MachineAuthor`, `writtenBy`): the duplicate checks, the retried
+  pattern note, and the revise-own-pending-suggestion rule each compare on
+  `assistant = true` or on `client_id`. Two apps, or an app and the
+  Assistant, never dedupe against or revise each other.
+- Like the Assistant's, an app's notes cannot be retracted by anyone; the
+  writer resolves, rejects or clears them.
+- `reply_in_thread` and `update_suggestion` take the target id as an
+  argument over MCP. The check (`reachableStory` in the dispatcher) requires
+  the story to be the writer's, live, unmuted and in the named universe;
+  anything else is "No thread with that id." or "No suggestion with that
+  id.".
+- Three guards against a looping client: the staging rate limit, the
+  ceiling of 100 waiting notes per scene and app, and the rule that an app
+  does not reply to its own latest reply. The last one was not in the issue;
+  it is the cheapest way to stop a reply loop, which the ceiling does not
+  count.
+- `leave_comment` tells an app the new thread's id so it can reply there
+  later. The in-app result is unchanged.
+- The review UI shows an app's notes with an "App" role chip and plain-text
+  bodies (the Assistant's are rendered as markdown; an app's are treated
+  like a reviewer's).
+- Deferred to lane 5: "Work through this" on an app's pattern note, the
+  re-read after an accept, and the in-app Assistant answering in an app's
+  thread. No notification is sent for an app's note.
+
 ## MCP endpoint, lane 3: the endpoint and the read tools (2026-11-21)
 
 Part of #1175, branch `feat/mcp-endpoint` on `staging/mcp-endpoint`, no
