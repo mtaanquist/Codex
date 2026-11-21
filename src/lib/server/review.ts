@@ -1596,8 +1596,10 @@ export async function getOwnNote(
 // A revision is held to what a new suggestion is: it must change something,
 // and must not repeat another pending edit of the same author. afterWriter
 // adds the rule for a program that picks its own moment (an app): the writer
-// must have written last in the edit's discussion, as a revision answers
-// something they said. The row is locked, so an accept under way either sees
+// must have written last in the edit's discussion, and since the last
+// revision, as a revision answers something they said. One revision uses the
+// turn up: a second would refuse the accept of what the writer just read, and
+// an app that loops could keep doing so. The row is locked, so an accept under way either sees
 // the revision (and is refused, see decideSuggestion) or lands first.
 export async function updateAssistantSuggestion(
 	db: Database,
@@ -1637,7 +1639,10 @@ export async function updateAssistantSuggestion(
 		}
 		if (input.afterWriter) {
 			const [last] = await tx
-				.select({ authorUserId: reviewComments.authorUserId })
+				.select({
+					authorUserId: reviewComments.authorUserId,
+					createdAt: reviewComments.createdAt
+				})
 				.from(reviewComments)
 				.innerJoin(reviewThreads, eq(reviewComments.threadId, reviewThreads.id))
 				.where(eq(reviewThreads.suggestionId, own.id))
@@ -1648,6 +1653,13 @@ export async function updateAssistantSuggestion(
 					ok: false,
 					reason:
 						'Revise a suggestion only after the writer has answered in its discussion. Wait for them to write there.'
+				};
+			}
+			if (own.revisedAt && last.createdAt <= own.revisedAt) {
+				return {
+					ok: false,
+					reason:
+						'You have already revised this suggestion since the writer last wrote. Wait for them to answer again.'
 				};
 			}
 		}
@@ -1681,7 +1693,7 @@ export async function updateAssistantSuggestion(
 		}
 		await tx
 			.update(reviewSuggestions)
-			.set({ replacement: input.replacement })
+			.set({ replacement: input.replacement, revisedAt: sql`clock_timestamp()` })
 			.where(eq(reviewSuggestions.id, own.id));
 		return { ok: true };
 	});

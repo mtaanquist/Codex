@@ -79,7 +79,8 @@ const {
 } = await import('#lib/server/proposals');
 const { discardSceneDraft, sceneDraftFor } = await import('#lib/server/scene-drafts');
 const { createAnchorMapper } = await import('#lib/review-anchor');
-const { TOOL_RESULT_MAX_CHARS } = await import('#lib/server/mcp/constants');
+const { MAX_APP_DRAFTS_WAITING, MAX_STAGING_CALLS_WAITING, TOOL_RESULT_MAX_CHARS } =
+	await import('#lib/server/mcp/constants');
 const route = await import('../../src/routes/api/mcp/+server');
 
 const ORIGIN = 'http://localhost';
@@ -1054,6 +1055,97 @@ describe('the same call sent several times at once', () => {
 		expect(outcomes.filter((outcome) => outcome.staged)).toHaveLength(2);
 		expect((await listThreads(db, alice.storyId, mapRange)).length).toBe(2);
 	});
+
+	const BUSY = 'Another call is still running. Try again.';
+	const leave = (ctx: Awaited<ReturnType<typeof appContext>>, n: number) =>
+		dispatchToolCall(ctx, {
+			id: 'call',
+			name: 'leave_comment',
+			arguments: JSON.stringify({ sceneId: alice.sceneId, comment: `Note ${n}.` })
+		});
+
+	it('waits its turn without a database connection, and turns away a crowd', async () => {
+		const ctx = await appContext(alice);
+		let busiest = 0;
+		const watch = setInterval(() => {
+			busiest = Math.max(busiest, pool.totalCount - pool.idleCount);
+		}, 1);
+		const calls = Array.from({ length: 30 }, (_, n) => leave(ctx, n));
+		// Something else the server does meanwhile is not kept waiting.
+		const began = Date.now();
+		await pool.query('select 1');
+		const unrelated = Date.now() - began;
+		const outcomes = await Promise.all(calls);
+		clearInterval(watch);
+		expect(unrelated).toBeLessThan(1000);
+		// One call at work, and the unrelated query beside it.
+		expect(busiest).toBeLessThanOrEqual(2);
+		// One runs, a few wait, the rest are told to come back.
+		expect(outcomes.filter((outcome) => outcome.staged)).toHaveLength(
+			MAX_STAGING_CALLS_WAITING + 1
+		);
+		expect(outcomes.filter((outcome) => outcome.result === BUSY)).toHaveLength(
+			30 - MAX_STAGING_CALLS_WAITING - 1
+		);
+		// The queue is empty again afterwards.
+		expect((await leave(ctx, 99)).staged).toBe(true);
+	});
+
+	it('gives up rather than sit on a connection when the lock is held elsewhere', async () => {
+		const ctx = await appContext(alice);
+		const holder = await pool.connect();
+		try {
+			await holder.query('begin');
+			await holder.query('select pg_advisory_xact_lock(hashtext($1))', [
+				`mcp-staging:${ctx.external.client.id}:${alice.universeId}`
+			]);
+			const began = Date.now();
+			const outcome = await leave(ctx, 1);
+			expect(outcome).toMatchObject({ staged: false, result: BUSY });
+			expect(Date.now() - began).toBeLessThan(5000);
+		} finally {
+			await holder.query('rollback');
+			holder.release();
+		}
+		expect(await stagedRows()).toBe(0);
+		expect((await leave(ctx, 1)).staged).toBe(true);
+	});
+
+	it('keeps the writers save of the scene waiting only briefly behind a long note', async () => {
+		const words = Array.from({ length: 40 }, (_, n) => `word${n}x`);
+		await setBody(alice, words.map((word) => `A line with ${word} in it.`).join('\n\n'));
+		const ctx = await appContext(alice);
+		const saver = await pool.connect();
+		try {
+			const noting = dispatchToolCall(ctx, {
+				id: 'call',
+				name: 'leave_pattern_note',
+				arguments: JSON.stringify({
+					sceneId: alice.sceneId,
+					comment: PATTERN,
+					edits: words.map((word) => ({ original: word, replacement: `${word}y` }))
+				})
+			});
+			// What a save takes: the scene's revision lock. Asked for again and
+			// again while the note is staged; the longest wait is what a save
+			// would have seen.
+			let longest = 0;
+			let done = false;
+			void noting.then(() => (done = true));
+			while (!done) {
+				const began = Date.now();
+				await saver.query('begin');
+				await saver.query('select pg_advisory_xact_lock(hashtext($1))', [`scene:${alice.sceneId}`]);
+				await saver.query('commit');
+				longest = Math.max(longest, Date.now() - began);
+				await new Promise((resolve) => setTimeout(resolve, 2));
+			}
+			expect((await noting).result).toContain('with 40 linked edits');
+			expect(longest).toBeLessThan(2000);
+		} finally {
+			saver.release();
+		}
+	});
 });
 
 describe('leave_pattern_note', () => {
@@ -1291,6 +1383,18 @@ describe('update_suggestion', () => {
 		await asked(alice, own);
 		expect((await revise(alice, own)).text).toContain('now proposes the revised text');
 		expect(await replacementOf(own)).toBe('closed');
+		// One revision for each thing the writer says: a second one would keep
+		// an accept of what they just read refused.
+		expect((await revise(alice, own, alice.universeId, 'fastened')).text).toContain(
+			'already revised'
+		);
+		expect(await replacementOf(own)).toBe('closed');
+		await asked(alice, own);
+		expect((await revise(alice, own, alice.universeId, 'fastened')).text).toContain(
+			'now proposes the revised text'
+		);
+		expect((await revise(alice, own)).text).toContain('already revised');
+		expect(await replacementOf(own)).toBe('fastened');
 		// Once it has answered, it waits for the writer again.
 		expect(
 			(
@@ -1304,7 +1408,7 @@ describe('update_suggestion', () => {
 		expect((await revise(alice, own, alice.universeId, 'barred')).text).toContain(
 			'after the writer has answered'
 		);
-		expect(await replacementOf(own)).toBe('closed');
+		expect(await replacementOf(own)).toBe('fastened');
 
 		// The Assistant's, another app's and the writer's own are not its to
 		// change, and look the same as one that does not exist.
@@ -2361,6 +2465,55 @@ describe('stage_scene_draft', () => {
 		const [draft] = await draftsOf(alice.userId);
 		expect((await discardSceneDraft(db, alice.userId, draft.id)).ok).toBe(true);
 		expect((await stage(alice, { text: 'Another go.' })).text).toContain('Staged the draft');
+	});
+
+	it('stops at a ceiling of undecided app drafts in a universe', async () => {
+		const sceneIds = (
+			await db
+				.insert(scenes)
+				.values(
+					Array.from({ length: MAX_APP_DRAFTS_WAITING + 1 }, (_, n) => ({
+						storyId: alice.storyId,
+						globalPosition: n + 10,
+						title: `Scene ${n}`,
+						bodyMd: ''
+					}))
+				)
+				.returning({ id: scenes.id })
+		).map((row) => row.id);
+		const waiting = (sceneId: string, jobId: string | null = null) => ({
+			userId: alice.userId,
+			storyId: alice.storyId,
+			sceneId,
+			brief: 'x',
+			targetWords: 100,
+			textMd: 'Words.',
+			status: 'ready' as const,
+			jobId
+		});
+		// One short of the ceiling, and a draft the Assistant wrote, which does
+		// not count.
+		await db
+			.insert(assistantDrafts)
+			.values([
+				...sceneIds.slice(0, MAX_APP_DRAFTS_WAITING - 1).map((sceneId) => waiting(sceneId)),
+				waiting(sceneIds[MAX_APP_DRAFTS_WAITING - 1], 'a-job')
+			]);
+		expect((await stage(alice)).text).toContain('Staged the draft');
+		const full = await stage(alice, { sceneId: sceneIds[MAX_APP_DRAFTS_WAITING] });
+		expect(full).toMatchObject({ isError: false });
+		expect(full.text).toContain(`${MAX_APP_DRAFTS_WAITING} drafts from apps waiting`);
+		expect(await draftsOf(alice.userId)).toHaveLength(MAX_APP_DRAFTS_WAITING + 1);
+		// Bob's universe is not held back by Alice's.
+		expect((await stage(bob, { universeId: bob.universeId, sceneId: bob.sceneId })).text).toContain(
+			'Staged the draft'
+		);
+		// Once the writer has decided on one, there is room again.
+		const [draft] = await draftsOf(alice.userId);
+		expect((await discardSceneDraft(db, alice.userId, draft.id)).ok).toBe(true);
+		expect((await stage(alice, { sceneId: sceneIds[MAX_APP_DRAFTS_WAITING] })).text).toContain(
+			'Staged the draft'
+		);
 	});
 
 	it('takes one draft when two apps stage at the same moment', async () => {

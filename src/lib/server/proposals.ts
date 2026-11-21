@@ -80,11 +80,13 @@ async function nameTaken(db: Database, universeId: string, name: string): Promis
 				)
 			)
 			.limit(1);
-	const found = await Promise.all([
-		taken(characters, characters.name, characters.aliases),
-		taken(places, places.name, places.aliases),
-		taken(loreEntries, loreEntries.title, loreEntries.keywords)
-	]);
+	// One after another: inside a transaction they share one connection, which
+	// takes one query at a time.
+	const found = [
+		await taken(characters, characters.name, characters.aliases),
+		await taken(places, places.name, places.aliases),
+		await taken(loreEntries, loreEntries.title, loreEntries.keywords)
+	];
 	return found.some((rows) => rows.length > 0);
 }
 

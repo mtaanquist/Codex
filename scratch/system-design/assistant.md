@@ -917,12 +917,24 @@ suggestion. On top of those:
   latest in a thread cannot add another until someone else writes. The check
   runs under the thread's lock, with the insert.
 - `update_suggestion` revises only after the writer has written last in that
-  edit's discussion. A suggestion that is not the app's own pending one gives
+  edit's discussion, and once for each thing they say there
+  (`review_suggestions.revised_at`): a second revision would refuse the
+  accept of what the writer just read. A suggestion that is not the app's own pending one gives
   the same "No suggestion with that id." as one that does not exist.
-- An app's staging calls for one universe run one at a time (a transaction
-  advisory lock on client and universe, taken in the dispatcher before the
-  handler), so the checks that come before a write (a repeat, a ceiling,
-  whose turn it is) hold for calls sent together. Unique indexes back the
+- An app's staging calls for one universe run one at a time, so the checks
+  that come before a write (a repeat, a ceiling, whose turn it is) hold for
+  calls sent together. They wait in an in-process queue keyed on client and
+  universe (`mcp/staging-queue.ts`), before taking a database connection, so
+  a burst from one app cannot empty the pool; eight may wait, and a call past
+  that is answered "Another call is still running. Try again." The call then
+  runs in one transaction that takes an advisory lock on the same key (the
+  rule kept by the database, should more than one process ever serve an app)
+  with `lock_timeout` set to two seconds, so a call that cannot get a lock,
+  the writer's save of the same scene included, gives up with the same
+  answer instead of holding a connection. A staging call holds the scene's
+  revision lock from its first edit to its end, which is what a save of that
+  scene waits on: about 0.4 s for the largest pattern note (40 edits),
+  measured, and a few milliseconds for a single edit. Unique indexes back the
   rules that are about one row: one pending entry suggestion for a name in a
   universe, one pending split from an app for a point in a scene, one
   follow-up from an app to an accepted edit.
@@ -931,7 +943,9 @@ suggestion. On top of those:
   error code, never the error's message, which holds the statement and the
   values bound to it. Text with a null character is refused before any query.
 - An app's `stage_scene_draft` leaves a failed draft of the writer's own on
-  that scene where it is.
+  that scene where it is. A universe holds at most 20 undecided drafts from
+  apps (`MAX_APP_DRAFTS_WAITING`); past that an app stages no more until the
+  writer has kept or discarded some.
 
 What holds for the Assistant in the app as well, since the handlers are
 shared: every tool call is awaited inside the dispatcher's own catch, so a
