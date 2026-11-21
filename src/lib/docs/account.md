@@ -1,8 +1,9 @@
 # Your account
 
 Open your account page from the avatar menu at the top right of any page. Its
-sections are Profile, Security, Assistant, Display, Editor, Notifications, and
-Page setup, plus Invites once an admin has given you invites. Changes save on their own:
+sections are Profile, Security, Connected apps, Assistant, Display, Editor,
+Notifications, and Page setup, plus Invites once an admin has given you invites.
+Connected apps is missing when the person who runs your Codex has turned it off. Changes save on their own:
 a choice saves as soon as you make it, and a text field saves when you leave it.
 A "Saved." note confirms each save.
 
@@ -345,6 +346,35 @@ How the writing area works, as your personal defaults.
 
 What reaches you, and where: the bell in the top bar, email, both, or neither,
 for each kind of event. Emails arrive batched, so a busy hour sends one message.
+
+## Connected apps
+
+An AI app you already use can read your writing in Codex and leave suggestions
+for you. It can never change, delete or publish your text. Nothing can connect
+until you turn this on.
+
+To connect an app:
+
+1. Open Connected apps and turn on "Allow other apps to connect".
+2. Copy the address shown under "Address to give the app".
+3. In the app, add a custom connector (some apps call it a remote MCP server)
+   and paste the address.
+4. The app opens a Codex page. Sign in if asked, check the name and the web
+   address of the app, choose what it may do, and select Allow. Select "Do not
+   allow" if you did not start this yourself.
+
+What you can allow:
+
+- **Read your writing**: your universes, stories, scenes and entries. This is
+  always included. A story where you have turned the Assistant off stays hidden
+  from apps too.
+- **Leave suggestions and comments**: suggested edits and comments that wait for
+  you in Review, where you accept or reject each one.
+
+"Apps with access" lists every connected app with what it may do and when it
+was last used. Select Disconnect to stop one at once. Turning off "Allow other
+apps to connect" disconnects them all, and so does changing or resetting your
+password. To use an app again afterwards, connect it again.
 
 ## Page setup
 

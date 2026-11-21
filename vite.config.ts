@@ -11,6 +11,10 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			// The cross-site form check runs in hooks.server.ts instead, where the
+			// OAuth token endpoint can be left out of it; '*' switches the built-in
+			// one off. See src/lib/server/csrf.ts.
+			csrf: { trustedOrigins: ['*'] },
 			// Scripts only from this origin, plus the inline ones SvelteKit (and the
 			// theme script in app.html) mark with a nonce. Styles are left open:
 			// Svelte transitions insert inline style elements.

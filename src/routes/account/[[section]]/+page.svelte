@@ -12,6 +12,7 @@
 	import AccountProfile from './AccountProfile.svelte';
 	import AccountSecurity from './AccountSecurity.svelte';
 	import AccountInvites from './AccountInvites.svelte';
+	import AccountApps from './AccountApps.svelte';
 	import AccountAssistant from './AccountAssistant.svelte';
 	import AccountDisplay from './AccountDisplay.svelte';
 	import AccountEditor from './AccountEditor.svelte';
@@ -31,6 +32,7 @@
 		| 'profile'
 		| 'security'
 		| 'invites'
+		| 'apps'
 		| 'assistant'
 		| 'display'
 		| 'editor'
@@ -158,6 +160,22 @@
 				</a>
 			{/if}
 
+			{#if data.externalAccess.available}
+				<a class="nav-item" class:active={active === 'apps'} href={sectionHref('apps')}>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.7"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path
+							d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"
+						/></svg
+					>
+					<span class="lbl">Connected apps</span>
+				</a>
+			{/if}
 			<div class="admin-nav-label">Workspace</div>
 			<a class="nav-item" class:active={active === 'assistant'} href={sectionHref('assistant')}>
 				<svg
@@ -300,6 +318,13 @@
 	{#if hasInvites}
 		<section class="admin-section" class:active={active === 'invites'}>
 			<AccountInvites {data} {form} />
+		</section>
+	{/if}
+
+	<!-- ========== CONNECTED APPS ========== -->
+	{#if data.externalAccess.available}
+		<section class="admin-section" class:active={active === 'apps'}>
+			<AccountApps {data} {form} />
 		</section>
 	{/if}
 

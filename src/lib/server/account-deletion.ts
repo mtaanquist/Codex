@@ -22,6 +22,7 @@ import {
 } from './db/schema.ts';
 import { purgeUniverseWithin } from './universe-lifecycle.ts';
 import { consumeToken, reserveToken } from './tokens.ts';
+import { revokeAllGrants } from './mcp/oauth.ts';
 
 const GRACE_DAYS = 7;
 const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
@@ -42,6 +43,9 @@ export async function scheduleAccountDeletion(db: Database, userId: string): Pro
 			.update(sessions)
 			.set({ revokedAt: sql`now()` })
 			.where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+		// Outside apps are disconnected with the sessions; cancelling the
+		// deletion does not bring them back.
+		await revokeAllGrants(tx, userId);
 		// Public editions come down immediately - the public-facing erasure must
 		// be prompt even though the rows are purged after the grace window.
 		await tx

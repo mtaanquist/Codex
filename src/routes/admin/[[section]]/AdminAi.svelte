@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { enhance } from '#lib/enhance';
+	import { autosaveSubmit, autosubmitForm } from '#lib/autosave-form';
+	import FormStatus from '#lib/components/FormStatus.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -8,8 +11,9 @@
 	<p class="admin-eyebrow">Instance</p>
 	<h1 class="admin-title">AI</h1>
 	<p class="admin-lede">
-		Each writer connects their own model endpoint for the Assistant. This setting controls which
-		network addresses this server is allowed to reach on their behalf.
+		Each writer connects their own model endpoint for the Assistant. The first setting controls
+		which network addresses this server is allowed to reach on their behalf; the second, whether
+		writers may connect an AI app of their own to their account.
 	</p>
 </div>
 
@@ -66,6 +70,46 @@
 
 			<div class="settings-actions">
 				<button type="submit" class="btn btn-primary">Save</button>
+			</div>
+		</form>
+	</div>
+</div>
+
+<div class="admin-block">
+	<div class="admin-block-head">
+		<h2 class="admin-block-title">Access for other apps</h2>
+		<p class="admin-block-sub">
+			Writers can connect an AI app of their own to read their writing and leave suggestions. Each
+			writer has to turn this on for their own account first.
+		</p>
+	</div>
+	<div class="admin-card">
+		<form
+			method="POST"
+			action="?/saveExternalAccess"
+			use:enhance={autosaveSubmit}
+			onchange={autosubmitForm}
+		>
+			<div class="toggle-row">
+				<label class="toggle">
+					<input
+						type="checkbox"
+						name="enabled"
+						aria-label="Allow writers to connect other apps"
+						checked={data.externalAccess}
+					/>
+					<span class="toggle-track"></span>
+				</label>
+				<div style="flex:1;">
+					<div class="t-title">Allow writers to connect other apps</div>
+					<div class="t-sub">
+						When this is off, no app can connect to this instance, apps already connected stop
+						working, and writers do not see the setting.
+					</div>
+				</div>
+			</div>
+			<div class="settings-actions">
+				<FormStatus success={form?.scope === 'external-access' && form.saved ? 'Saved.' : null} />
 			</div>
 		</form>
 	</div>

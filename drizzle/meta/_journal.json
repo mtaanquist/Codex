@@ -680,6 +680,13 @@
 			"when": 1795203889256,
 			"tag": "0096_assistant-drafts",
 			"breakpoints": true
+		},
+		{
+			"idx": 97,
+			"version": "7",
+			"when": 1795244015444,
+			"tag": "0097_mcp-oauth",
+			"breakpoints": true
 		}
 	]
 }

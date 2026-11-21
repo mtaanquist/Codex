@@ -1023,6 +1023,51 @@ reach from the focus story or takes it explicitly; (5) `requireAssistantUniverse
   scenes, the cross-story framing, and the owning-story thread attribution); e2e
   not run here.
 
+## MCP endpoint, lane 2: the OAuth server (2026-11-21)
+
+Part of #1175, branch `feat/mcp-oauth` on `staging/mcp-endpoint`, migration
+0097. The authorization server an outside app signs a writer in through; the
+MCP endpoint itself is the next lane.
+
+- Both ways for a client to name itself are supported: self-registration
+  (`/oauth/register`) and a metadata document at an https URL. The metadata
+  advertises `client_id_metadata_document_supported` and the `none` token
+  method, which is what makes a client that supports documents use one. A
+  document is fetched through the egress guard (private addresses always
+  blocked), capped in size and time, cached for a day, and a stale copy is
+  kept when a re-fetch fails.
+- Clients are public only. Redirect addresses are https, or http on
+  localhost, 127.0.0.1 or [::1], where the port is ignored when matching.
+  Custom URL schemes are refused; a desktop app is expected to use loopback.
+- The app name is stored with the host Codex checked, and
+  `clientDisplayName` in `src/lib/mcp-access.ts` is the one place that decides
+  how the two are shown.
+- Lifetimes and limits are in `src/lib/server/mcp/constants.ts`: code 1
+  minute, access 1 hour, refresh 30 days sliding. A refresh token is replaced
+  on each use and a second use of a spent one revokes its family, with no
+  grace window. A replayed code revokes the tokens it bought.
+- Permissions live on the grant, not the token. `apply` is in the stored
+  vocabulary but not offered (`GRANTABLE_PERMISSIONS`), since nothing acts on
+  it yet.
+- Turning the account switch off revokes every grant instead of pausing
+  them, so switching it back on never revives a connection the writer may
+  have forgotten.
+- SvelteKit's cross-site form check rejects a form post with no Origin
+  before any hook runs and has no per-route exception, which would block the
+  token endpoint. It is switched off (`csrf.trustedOrigins: ['*']`) and the
+  same rule runs first thing in `hooks.server.ts` with `/oauth/token` and
+  `/oauth/revoke` left out. Those paths, the register endpoint and the
+  discovery documents skip the session cookie entirely.
+- The page policy has `form-action 'self'`, which some browsers apply to a
+  redirect that follows a form, so the consent actions return the address
+  and the page navigates to it.
+- The sign-in return is a short-lived cookie set by the hook when it sends a
+  signed-out visitor to `/login`, accepted only for `/oauth/authorize`, and
+  consumed by password, two-factor, passkey and emailed-link sign-in.
+- Deferred: the MCP route and its Origin check (lane 3), any use of
+  `suggest` (lane 4), and attribution of an app's suggestions, which has to
+  survive the client row being pruned.
+
 ## Scene drafting, review round 6 (2026-11-21)
 
 Small fixes from the sixth review of #1168, branch

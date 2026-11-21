@@ -76,7 +76,7 @@
 	padding: 0 4px;
 }
 /* With an "On this page" list below it, both lists start at full height.
-   The contents list gives up space first, down to a few rows; only then
+   The contents list gives up space first, down to about two rows; only then
    does the route list scroll too. */
 .admin-nav.fit,
 .admin-sidebar > .contents-nav {
@@ -90,6 +90,9 @@
 }
 .admin-sidebar > .contents-nav {
 	flex-shrink: 1000;
+	/* A lower floor than the route list's: at a laptop height the account
+	   routes (with Connected apps and Invites) need all but this much. */
+	min-height: 56px;
 	padding: 0;
 }
 /* Where the sidebar stacks above the content, or a short window leaves no

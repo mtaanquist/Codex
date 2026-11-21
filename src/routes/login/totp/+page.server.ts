@@ -13,6 +13,7 @@ import {
 import { rateLimit } from '#lib/server/rate-limit';
 import { logEvent } from '#lib/server/log';
 import { formText } from '#lib/server/validation';
+import { takeReturnTo } from '#lib/server/return-to';
 
 // Keyed by the challenged account, so the six-digit space cannot be brute
 // forced: a handful of tries per window makes guessing infeasible.
@@ -89,6 +90,6 @@ export const actions: Actions = {
 			sameSite: 'lax',
 			expires: session.expiresAt
 		});
-		redirect(303, '/');
+		redirect(303, takeReturnTo(cookies) ?? '/');
 	}
 };

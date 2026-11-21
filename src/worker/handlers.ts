@@ -72,6 +72,7 @@ import { chapterDraftHref, sceneDraftHref } from '../lib/scene-draft.ts';
 import { purgeJobSpend } from '../lib/server/llm/job-spend.ts';
 import { purgeReviewRuns, ReviewRunLoadError } from '../lib/server/review-runs.ts';
 import { purgeSessions } from '../lib/server/auth.ts';
+import { purgeExternalAccess } from '../lib/server/mcp/oauth.ts';
 import { insertNotifications } from '../lib/server/notify-core.ts';
 import { storyIsLive } from '../lib/server/universe-scope.ts';
 import { shouldNotifyWriter, withJobRunSignal } from './job-guard.ts';
@@ -1219,6 +1220,12 @@ export function createHandlers(deps: WorkerDeps) {
 		async purgeSessions() {
 			const deleted = await purgeSessions(db);
 			if (deleted > 0) logEvent('info', 'purge.sessions', { deleted });
+			// External access rides the same daily sweep: expired tokens, old
+			// codes, and clients nobody connected.
+			const access = await purgeExternalAccess(db);
+			if (access.tokens + access.codes + access.clients > 0) {
+				logEvent('info', 'purge.external_access', access);
+			}
 		}
 	};
 }

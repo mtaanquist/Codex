@@ -93,7 +93,11 @@ export const users = pgTable('users', {
 	// window. The account is suspended for the duration so it cannot be used.
 	deletionScheduledAt: timestamp('deletion_scheduled_at', { withTimezone: true }),
 	// Updated on successful sign-in; useful for stale-account cleanup.
-	lastLoginAt: timestamp('last_login_at', { withTimezone: true })
+	lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+	// The account's own switch for access by outside apps (the MCP endpoint
+	// and its OAuth sign-in). Off until the writer turns it on; separate from
+	// the Assistant toggle in llm_config.
+	mcpEnabled: boolean('mcp_enabled').notNull().default(false)
 });
 
 // Server-side session rows so sessions can be listed and revoked; the cookie
@@ -1714,4 +1718,109 @@ export const webauthnCredentials = pgTable(
 		lastUsedAt: timestamp('last_used_at', { withTimezone: true })
 	},
 	(table) => [index('webauthn_credentials_user_idx').on(table.userId)]
+);
+
+// ============ External access (OAuth for the MCP endpoint) ============
+// See #lib/server/mcp. Every secret here (codes, tokens) is stored as a hash.
+
+// An app that may ask a writer for access. 'dcr' rows come from dynamic client
+// registration and carry a generated client_id; 'cimd' rows cache a client ID
+// metadata document, and their client_id is the document's URL. All clients are
+// public (no secret): PKCE is what binds a code to the app that asked for it.
+export const oauthClients = pgTable('oauth_clients', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	clientId: text('client_id').notNull().unique(),
+	kind: text('kind', { enum: ['dcr', 'cimd'] }).notNull(),
+	// What the app calls itself. Self-asserted, so it is always shown with host.
+	clientName: text('client_name').notNull(),
+	// The part of the client we can vouch for: the host of the client_id URL
+	// for 'cimd', the host of the first redirect URI for 'dcr'.
+	host: text('host').notNull(),
+	redirectUris: text('redirect_uris').array().notNull(),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	// When the metadata document was last fetched ('cimd' only).
+	fetchedAt: timestamp('fetched_at', { withTimezone: true })
+});
+
+// A writer's standing permission for one client: the row the Account page
+// lists and revokes. permissions holds 'read', 'suggest' and 'apply'; tokens
+// carry none of their own, so changing or revoking the grant takes effect on
+// the next request.
+export const oauthGrants = pgTable(
+	'oauth_grants',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		clientId: uuid('client_id')
+			.references(() => oauthClients.id, { onDelete: 'cascade' })
+			.notNull(),
+		permissions: text('permissions').array().notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+		revokedAt: timestamp('revoked_at', { withTimezone: true })
+	},
+	(table) => [
+		// One live grant per writer and client; a revoked one stays as a record.
+		uniqueIndex('oauth_grants_live_idx')
+			.on(table.userId, table.clientId)
+			.where(sql`${table.revokedAt} is null`),
+		index('oauth_grants_client_idx').on(table.clientId)
+	]
+);
+
+// A one-time authorization code, alive for about a minute between the consent
+// page and the client's token request.
+export const oauthCodes = pgTable(
+	'oauth_codes',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		codeHash: text('code_hash').notNull().unique(),
+		userId: uuid('user_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		clientId: uuid('client_id')
+			.references(() => oauthClients.id, { onDelete: 'cascade' })
+			.notNull(),
+		permissions: text('permissions').array().notNull(),
+		redirectUri: text('redirect_uri').notNull(),
+		codeChallenge: text('code_challenge').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		usedAt: timestamp('used_at', { withTimezone: true }),
+		// The token family the code was exchanged for, so a replayed code can
+		// take back what the first use issued.
+		familyId: uuid('family_id'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [index('oauth_codes_expires_idx').on(table.expiresAt)]
+);
+
+// Bearer credentials for the MCP endpoint. Each resolves to exactly one user.
+// An OAuth grant issues 'access' and 'refresh' rows; a refresh token is spent
+// when it is exchanged (used_at) and replaced, and every token descended from
+// one code shares a family_id, so presenting a spent refresh token revokes the
+// whole family.
+export const apiTokens = pgTable(
+	'api_tokens',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		userId: uuid('user_id')
+			.references(() => users.id, { onDelete: 'cascade' })
+			.notNull(),
+		grantId: uuid('grant_id').references(() => oauthGrants.id, { onDelete: 'cascade' }),
+		kind: text('kind', { enum: ['access', 'refresh'] }).notNull(),
+		tokenHash: text('token_hash').notNull().unique(),
+		familyId: uuid('family_id').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		usedAt: timestamp('used_at', { withTimezone: true }),
+		revokedAt: timestamp('revoked_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => [
+		index('api_tokens_user_idx').on(table.userId),
+		index('api_tokens_grant_idx').on(table.grantId),
+		index('api_tokens_family_idx').on(table.familyId),
+		index('api_tokens_expires_idx').on(table.expiresAt)
+	]
 );
