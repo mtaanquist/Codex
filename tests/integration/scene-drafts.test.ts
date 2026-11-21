@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { asc, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -14,6 +13,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
+import { textHash } from '../../src/lib/text-hash';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import {
 	WriterStopError,
@@ -254,11 +254,8 @@ async function readyDraft(text = 'The ferry rocked. *Not yet,* Ilse thought.') {
 
 const draftRow = async (id: string) =>
 	(await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id)))[0];
-// The version of a draft's stored text, as the panel sends it back.
-const baseFor = async (id: string) =>
-	createHash('md5')
-		.update((await draftRow(id)).textMd, 'utf8')
-		.digest('hex');
+// The fingerprint of a draft's stored text, as the panel sends it back.
+const baseFor = async (id: string) => [textHash((await draftRow(id)).textMd)];
 // The account's settings with more on top (tuning, a provider, a cap).
 const configureWith = (extra: Record<string, unknown>) =>
 	saveAccountLlmConfig(db, ownerId, {
@@ -704,7 +701,7 @@ describe('the endpoint', () => {
 			event(owner, {
 				method: 'PATCH',
 				params: { id: draftId },
-				body: { text: 'Edited.', base: await baseFor(draftId) }
+				body: { text: 'Edited.', baseHashes: await baseFor(draftId) }
 			})
 		);
 		expect(edited.status).toBe(200);
@@ -712,7 +709,7 @@ describe('the endpoint', () => {
 			decideRoute.POST,
 			event(owner, {
 				params: { id: draftId },
-				body: { action: 'fill', base: await baseFor(draftId) }
+				body: { action: 'fill', baseHashes: await baseFor(draftId) }
 			})
 		);
 		expect(filled.status).toBe(200);
@@ -735,7 +732,7 @@ describe('the endpoint', () => {
 				event(user, {
 					method: 'PATCH',
 					params: { id },
-					body: { text, base: await baseFor(draftId) }
+					body: { text, baseHashes: await baseFor(draftId) }
 				})
 			);
 		expect((await patch({ id: ownerId }, 'As the writer changed it.')).status).toBe(200);
@@ -759,30 +756,36 @@ describe('the endpoint', () => {
 				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
 				event({ id: ownerId }, { method, params: { id: draftId }, body })
 			);
-		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
-		// One window saves; its answer carries the version to send next.
-		const first = await send('PATCH', { text: 'Edited in window one.', base: seen });
+		const seen = await baseFor(draftId);
+		// Window one saves an edit.
+		const first = await send('PATCH', { text: 'Edited in window one.', baseHashes: seen });
 		expect(first.status).toBe(200);
-		const next = first.body.textVersion as string;
-		expect(next).toBe((await sceneDraftFor(db, ownerId, target))!.textVersion);
-
-		// The other window still holds the first copy: nothing of its is taken.
-		const stale = await send('PATCH', { text: 'Edited in window two.', base: seen });
+		// Window two, still on the text as first read, is refused: for a save
+		// and for keeping the draft.
+		const stale = await send('PATCH', { text: 'Edited in window two.', baseHashes: seen });
 		expect(stale.status).toBe(409);
 		expect(stale.body.message).toBe('This draft was changed in another window.');
 		for (const action of ['fill', 'add']) {
-			const kept = await send('POST', { action, text: 'Edited in window two.', base: seen });
+			const kept = await send('POST', {
+				action,
+				text: 'Edited in window two.',
+				baseHashes: seen
+			});
 			expect(kept.status).toBe(409);
 		}
 		expect((await draftRow(draftId)).textMd).toBe('Edited in window one.');
 		expect((await draftRow(draftId)).status).toBe('ready');
 		expect((await sceneRow(target)).bodyMd).toBe('');
-		expect((await send('PATCH', { text: 'x', base: 'not-a-version' })).status).toBe(400);
+		for (const baseHashes of [[], 'abc', [7], Array.from({ length: 17 }, () => 'a')]) {
+			expect((await send('PATCH', { text: 'x', baseHashes })).status).toBe(400);
+		}
 
 		// From the current copy both go through.
-		expect((await send('PATCH', { text: 'Edited again.', base: next })).status).toBe(200);
-		const current = (await sceneDraftFor(db, ownerId, target))!.textVersion;
-		expect((await send('POST', { action: 'fill', base: current })).status).toBe(200);
+		const next = await baseFor(draftId);
+		expect((await send('PATCH', { text: 'Edited again.', baseHashes: next })).status).toBe(200);
+		expect(
+			(await send('POST', { action: 'fill', baseHashes: await baseFor(draftId) })).status
+		).toBe(200);
 		expect((await sceneRow(target)).bodyMd).toBe('Edited again.');
 	});
 
@@ -793,35 +796,29 @@ describe('the endpoint', () => {
 				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
 				event({ id: ownerId }, { method, params: { id: draftId }, body })
 			);
-		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		const seen = await baseFor(draftId);
 		// The save lands; its answer never arrives, so it is sent again with
-		// the base it had. That is the same text, not a change from elsewhere.
-		const first = await send('PATCH', { text: 'Edited once.', base: seen });
-		expect(first.status).toBe(200);
-		const again = await send('PATCH', { text: 'Edited once.', base: seen });
-		expect(again.status).toBe(200);
-		expect(again.body.textVersion).toBe(first.body.textVersion);
-		// Keeping it with that stale base and the same text goes the same way.
-		// (Checked on Add below, after the saves.)
+		// the list it had. That is the same text, not a change from elsewhere.
+		expect((await send('PATCH', { text: 'Edited once.', baseHashes: seen })).status).toBe(200);
+		expect((await send('PATCH', { text: 'Edited once.', baseHashes: seen })).status).toBe(200);
 
-		// A save sent as the page is left names the one still on its way. It is
-		// taken whether that one landed first...
-		const beside = await send('PATCH', { text: 'Edited twice.', base: seen, sent: 'Edited once.' });
-		expect(beside.status).toBe(200);
+		// The writer typed on before the retry: the save names the text whose
+		// answer was lost as one the server may hold, and it does.
+		const typedOn = [...seen, textHash('Edited once.')];
+		expect((await send('PATCH', { text: 'Edited twice.', baseHashes: typedOn })).status).toBe(200);
 		expect((await draftRow(draftId)).textMd).toBe('Edited twice.');
-		// ...but not over text from somewhere else.
-		const other = await send('PATCH', { text: 'Third.', base: seen, sent: 'Edited once.' });
-		expect(other.status).toBe(409);
-		expect((await send('PATCH', { text: 'x', base: seen, sent: 7 })).status).toBe(400);
+		// A list that does not name the stored text is from somewhere else.
+		expect((await send('PATCH', { text: 'Third.', baseHashes: typedOn })).status).toBe(409);
 		expect((await draftRow(draftId)).textMd).toBe('Edited twice.');
 
-		const kept = await send('POST', { action: 'add', text: 'Edited twice.', base: seen });
+		// Keeping the stored text from a list that fell behind is no conflict.
+		const kept = await send('POST', { action: 'add', text: 'Edited twice.', baseHashes: seen });
 		expect(kept.status).toBe(200);
 	});
 
 	it('fills from text already stored when the save that stored it was not answered', async () => {
 		const draftId = await readyDraft('As written.');
-		const seen = (await sceneDraftFor(db, ownerId, target))!.textVersion;
+		const seen = await baseFor(draftId);
 		expect((await saveDraftText(db, ownerId, draftId, 'Edited once.', seen)).ok).toBe(true);
 		expect(await fillSceneFromDraft(db, ownerId, draftId, 'Edited once.', seen)).toMatchObject({
 			ok: true
@@ -853,10 +850,10 @@ describe('the endpoint', () => {
 				method === 'PATCH' ? decideRoute.PATCH : decideRoute.POST,
 				event({ id: ownerId }, { method, params: { id: draftId }, body })
 			);
-		expect((await send('PATCH', { text: 'One\u0000two.', base })).status).toBe(400);
-		expect((await send('PATCH', { text: 'Fine.', base, sent: 'a\u0000' })).status).toBe(400);
+		const baseHashes = base;
+		expect((await send('PATCH', { text: 'One\u0000two.', baseHashes })).status).toBe(400);
 		for (const action of ['fill', 'add']) {
-			expect((await send('POST', { action, text: 'One\u0000two.', base })).status).toBe(400);
+			expect((await send('POST', { action, text: 'One\u0000two.', baseHashes })).status).toBe(400);
 		}
 		expect(await draftRow(draftId)).toMatchObject({ status: 'ready', textMd: 'As written.' });
 	});
@@ -868,7 +865,11 @@ describe('the endpoint', () => {
 				decideRoute.PATCH,
 				event(
 					{ id: ownerId },
-					{ method: 'PATCH', params: { id: draftId }, body: { text, base: await baseFor(draftId) } }
+					{
+						method: 'PATCH',
+						params: { id: draftId },
+						body: { text, baseHashes: await baseFor(draftId) }
+					}
 				)
 			);
 		// Zero-width characters and a byte order mark are nothing to read either.
@@ -887,7 +888,11 @@ describe('the endpoint', () => {
 				decideRoute.PATCH,
 				event(
 					{ id: ownerId },
-					{ method: 'PATCH', params: { id }, body: { text: 'Late.', base: await baseFor(id) } }
+					{
+						method: 'PATCH',
+						params: { id },
+						body: { text: 'Late.', baseHashes: await baseFor(id) }
+					}
 				)
 			);
 		expect((await patch(pending.draftId)).status).toBe(409);
@@ -940,7 +945,7 @@ describe('the endpoint', () => {
 				decideRoute.POST,
 				event(stranger, {
 					params: { id: draftId },
-					body: { action, text: 'Mine now.', base: await baseFor(draftId) }
+					body: { action, text: 'Mine now.', baseHashes: await baseFor(draftId) }
 				})
 			);
 			expect(result.status).toBe(404);
@@ -964,7 +969,7 @@ describe('the endpoint', () => {
 			decideRoute.POST,
 			event(
 				{ id: ownerId },
-				{ params: { id: ready }, body: { action: 'add', base: await baseFor(ready) } }
+				{ params: { id: ready }, body: { action: 'add', baseHashes: await baseFor(ready) } }
 			)
 		);
 		expect(added.status).toBe(200);
@@ -1421,6 +1426,31 @@ describe('reading a draft back', () => {
 		expect(await hasWaitingDrafts(db, strangerId, storyId)).toBe(false);
 		await discardSceneDraft(db, ownerId, draftId);
 		expect(await hasWaitingDrafts(db, ownerId, storyId)).toBe(false);
+	});
+
+	it('lists a scene once, by its newest draft, when a failed one and its replacement both wait', async () => {
+		// As between a new request's insert and its discard of the failed draft.
+		await db.insert(assistantDrafts).values({
+			userId: ownerId,
+			storyId,
+			sceneId: target,
+			brief: 'b',
+			targetWords: 500,
+			status: 'failed',
+			note: 'The endpoint was down.',
+			createdAt: new Date(Date.now() - 60_000)
+		});
+		await db.insert(assistantDrafts).values({
+			userId: ownerId,
+			storyId,
+			sceneId: target,
+			brief: 'b',
+			targetWords: 500,
+			status: 'running'
+		});
+		expect(await waitingDrafts(db, ownerId, storyId)).toEqual([
+			{ sceneId: target, sceneTitle: 'The Crossing', status: 'running' }
+		]);
 	});
 
 	it('lists the drafts still to decide in story order, one being written among them', async () => {

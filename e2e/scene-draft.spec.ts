@@ -213,6 +213,17 @@ test('a scene draft can be added as a new scene, and closing the form returns to
 
 	// Asking again while a form is open keeps what is typed in it.
 	const briefBox = card.getByLabel('What happens in this scene');
+	// And a brief is not lost with an emptied length box when the card goes.
+	await composer.fill('/draft Ilse counts the lamps.');
+	await page.keyboard.press('Enter');
+	await card.getByLabel('Length in words').fill('');
+	await page.getByRole('tab', { name: 'Reference' }).click();
+	await expect(card).toHaveCount(0);
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(briefBox).toHaveValue('Ilse counts the lamps.');
+	await expect(card.getByLabel('Length in words')).toHaveValue('800');
+	await card.getByRole('button', { name: 'Cancel' }).click();
+	await expect(card).toHaveCount(0);
 	await composer.fill('/draft Ilse lands at dusk.');
 	await page.keyboard.press('Enter');
 	await briefBox.fill('Typed by hand, half done');
@@ -284,4 +295,156 @@ test('a scene draft can be added as a new scene, and closing the form returns to
 		[sceneId]
 	);
 	expect(rows[0].chars).toBe(0);
+});
+
+// A draft waiting on the scene, as the job would leave it. Resolves to its id.
+async function stageDraft(sceneId: string, text: string, status = 'ready'): Promise<string> {
+	const [row] = await sql<{ id: string }>(
+		`insert into assistant_drafts
+		   (user_id, story_id, scene_id, brief, target_words, text_md, status, job_id)
+		 select st.owner_id, sc.story_id, sc.id, 'The landing.', 800, $2, $3, gen_random_uuid()
+		 from scenes sc join stories st on st.id = sc.story_id where sc.id = $1
+		 returning id`,
+		[sceneId, text, status]
+	);
+	return row.id;
+}
+
+// #1168: the same draft open in two windows. The second window is played by
+// the database: what it saved or decided is written there directly.
+test('a draft changed or decided in another window is said so, and typing is not lost', async ({
+	page
+}) => {
+	const stamp = Date.now();
+	const sceneId = await storyWithScene(page, `Wharfmen ${stamp}`, `Mooring ${stamp}`);
+	const link = `/stories/mooring-${stamp}?scene=${sceneId}&draft=show`;
+	const card = page.getByRole('group', { name: 'Scene draft' });
+	const text = card.getByLabel('Read it, and change anything you like before keeping it');
+	const patched = () => page.waitForResponse((response) => response.request().method() === 'PATCH');
+
+	// Changed there: the save from here is refused, and the writer chooses to
+	// load the current text.
+	const first = await stageDraft(sceneId, 'The rope held.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('The rope held.');
+	await sql(`update assistant_drafts set text_md = 'The rope held, just.' where id = $1`, [first]);
+	let saved = patched();
+	await text.fill('The rope held. Then the tide turned.');
+	await text.blur();
+	expect((await saved).status()).toBe(409);
+	await expect(card).toContainText('This draft was changed in another window.');
+	// Nothing is replaced until they ask.
+	await expect(text).toHaveValue('The rope held. Then the tide turned.');
+	await card.getByRole('button', { name: 'Load the current text' }).click();
+	await expect(text).toHaveValue('The rope held, just.');
+	await expect(card).not.toContainText('changed in another window');
+	saved = patched();
+	await text.fill('The rope held, just. Then the tide turned.');
+	await text.blur();
+	expect((await saved).status()).toBe(200);
+
+	// Discarded there, with nothing unsaved here: asking again opens a form
+	// for the new brief, not the card of a draft that is gone.
+	await sql(`update assistant_drafts set status = 'discarded' where id = $1`, [first]);
+	const composer = page.getByPlaceholder('Ask about your story', { exact: false });
+	await composer.fill('/draft Ilse cuts the rope.');
+	await page.keyboard.press('Enter');
+	await expect(card.getByLabel('What happens in this scene')).toHaveValue('Ilse cuts the rope.');
+	await card.getByRole('button', { name: 'Cancel' }).click();
+	await expect(card).toHaveCount(0);
+
+	// Kept there, with typing here that was never saved: a decision here says
+	// what happened and leaves the typing to copy.
+	const second = await stageDraft(sceneId, 'The barge swung out.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('The barge swung out.');
+	await sql(`update assistant_drafts set status = 'accepted' where id = $1`, [second]);
+	await text.fill('The barge swung out. Nobody shouted.');
+	await card.getByRole('button', { name: 'Add as a new scene after this one' }).click();
+	await expect(card).toContainText('This draft was already kept or discarded in another window.');
+	await expect(
+		card.getByLabel('What you had typed here was not saved', { exact: false })
+	).toHaveValue('The barge swung out. Nobody shouted.');
+	await expect(card.getByRole('button', { name: 'Add as a new scene after this one' })).toHaveCount(
+		0
+	);
+	await expect(page.locator('.scene-row')).toHaveCount(1);
+	await card.getByRole('button', { name: 'Close' }).click();
+	await expect(card).toHaveCount(0);
+	await expect(composer).toBeFocused();
+
+	// Discarded there, nothing typed here: Discard here closes with the reason.
+	const third = await stageDraft(sceneId, 'The lamps went out.');
+	await gotoReady(page, link);
+	await expect(text).toHaveValue('The lamps went out.');
+	await sql(`update assistant_drafts set status = 'discarded' where id = $1`, [third]);
+	await card.getByRole('button', { name: 'Discard' }).click();
+	await expect(card).toContainText('This draft was already kept or discarded in another window.');
+	await expect(card.getByLabel('What you had typed here', { exact: false })).toHaveCount(0);
+	await card.getByRole('button', { name: 'Close' }).click();
+	await expect(card).toHaveCount(0);
+});
+
+// #1168: on a story with the Assistant turned off, the panel lists the drafts
+// that wait on other scenes, one still being written among them.
+test('a muted story lists its waiting drafts, and one being written can be stopped', async ({
+	page
+}) => {
+	const stamp = Date.now();
+	const first = await storyWithScene(page, `Lightermen ${stamp}`, `Slipway ${stamp}`);
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).not.toHaveURL(new RegExp(`scene=${first}`));
+	const second = new URL(page.url()).searchParams.get('scene')!;
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).not.toHaveURL(new RegExp(`scene=${second}`));
+	const third = new URL(page.url()).searchParams.get('scene')!;
+	await stageDraft(first, 'The slip was greased.');
+	const writing = await stageDraft(second, '', 'running');
+	await sql(
+		`update stories set llm_config = llm_config || '{"enabled":false}'::jsonb
+		 where id = (select story_id from scenes where id = $1)`,
+		[first]
+	);
+
+	// The job is the test's to answer for: running until Stop, then stopped.
+	let state = 'running';
+	await page.route('**/api/assistant/job-status*', (route) => route.fulfill({ json: { state } }));
+	await page.route('**/api/assistant/job-stop', async (route) => {
+		await sql(
+			`update assistant_drafts set status = 'discarded',
+			   note = 'You stopped this draft before it finished.' where id = $1`,
+			[writing]
+		);
+		state = 'stopped';
+		await route.fulfill({ json: { ok: true } });
+	});
+
+	await gotoReady(page, `/stories/slipway-${stamp}?scene=${third}`);
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(page.getByText('The Assistant is off for this story.')).toBeVisible();
+	const list = page.getByRole('list', { name: 'Drafts on other scenes' });
+	await expect(list.getByRole('listitem')).toHaveCount(2);
+	await expect(list.getByRole('listitem').nth(0)).toContainText('Ready');
+	await expect(list.getByRole('listitem').nth(1)).toContainText('Being written');
+
+	// The one being written opens on its card, which can stop it.
+	await list.getByRole('link').nth(1).click();
+	await expect(page).toHaveURL(new RegExp(`scene=${second}`));
+	const card = page.getByRole('group', { name: 'Scene draft' });
+	await expect(card).toContainText('Drafting this scene');
+	await expect(list.getByRole('listitem')).toHaveCount(1);
+	await card.getByRole('button', { name: 'Stop' }).click();
+	await expect(card).toHaveCount(0);
+
+	// The list follows a draft being written on its own, with no reload.
+	const again = await stageDraft(second, '', 'running');
+	state = 'running';
+	await gotoReady(page, `/stories/slipway-${stamp}?scene=${third}`);
+	await page.getByRole('tab', { name: 'Assistant' }).click();
+	await expect(list.getByRole('listitem')).toHaveCount(2);
+	await expect(list.getByRole('listitem').nth(1)).toContainText('Being written');
+	await sql(`update assistant_drafts set status = 'ready', text_md = 'Written.' where id = $1`, [
+		again
+	]);
+	await expect(list.getByRole('listitem').nth(1)).toContainText('Ready', { timeout: 20_000 });
 });

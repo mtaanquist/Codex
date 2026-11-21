@@ -1,5 +1,5 @@
 import { keepaliveFits, saveFailure, UnretryableSaveError } from './autosave';
-import { textHash } from './text-hash';
+import { createSaveBases, MAX_BASE_HASHES } from './save-bases';
 
 // The scene editors' save request, with the conflict check. Each save sends
 // the fingerprint of the text this editor last saw on the server; when the
@@ -41,43 +41,26 @@ export function saveTimeoutMs(body: string): number {
 	return Math.min(SAVE_TIMEOUT_MS + body.length, SAVE_TIMEOUT_MAX_MS);
 }
 
-// Fingerprints a save may send: the base plus the most recent unsettled
-// attempts. Enough that a run of timed-out saves does not push out one the
-// server applied late, which would show the writer's own words as a conflict.
-export const MAX_BASE_HASHES = 16;
-const MAX_PENDING = MAX_BASE_HASHES - 1;
+export { MAX_BASE_HASHES };
 
 export function createSceneSaver(
 	sceneId: string,
 	initialBodyMd: string,
 	onConflict: (conflict: SceneConflict | null) => void
 ): SceneSaver {
-	let base = textHash(initialBodyMd);
-	// Fingerprints of saves whose outcome is unknown: still on their way, or
-	// lost to a network error after the server may have applied them.
-	let pending: string[] = [];
+	// The fingerprints of the texts the server may hold (see save-bases).
+	const bases = createSaveBases(initialBodyMd);
 	let overwrite = false;
 	// Bumped whenever the editor settles a conflict or rebases, so a refusal
 	// for an older save does not bring the notice back.
 	let generation = 0;
 
-	function settle(hash: string) {
-		pending = pending.filter((h) => h !== hash);
-	}
-
-	function knows(hash: string) {
-		return hash === base || pending.includes(hash);
-	}
-
 	return {
 		async save({ keepalive, title, bodyMd, markers }) {
-			const hash = textHash(bodyMd);
-			const baseHashes = [base, ...pending];
+			// A network error leaves the hash unsettled: the server may have saved it.
+			const { hash, baseHashes } = bases.begin(bodyMd);
 			const sendOverwrite = overwrite;
 			const started = generation;
-			// A retry of the same text must not push older unsettled hashes out.
-			pending = [...pending.filter((h) => h !== hash), hash].slice(-MAX_PENDING);
-			// A network error leaves the hash pending: the server may have saved it.
 			const body = JSON.stringify({
 				title,
 				bodyMd,
@@ -97,7 +80,7 @@ export function createSceneSaver(
 					// The close-tab save outlives the page; nothing waits on it.
 					signal: keepalive ? undefined : controller.signal
 				});
-				settle(hash);
+				bases.answered(hash);
 				if (response.status === 409) {
 					const conflict = (await response.json()) as SceneConflict;
 					if (started === generation)
@@ -109,32 +92,29 @@ export function createSceneSaver(
 				clearTimeout(timer);
 			}
 			if (started === generation) {
-				base = hash;
+				bases.landed(hash);
 				overwrite = false;
 			}
 		},
 		adopt(bodyMd) {
 			generation++;
-			base = textHash(bodyMd);
-			pending = [];
+			bases.reset(bodyMd);
 			overwrite = false;
 			onConflict(null);
 		},
 		keepMine(serverBodyMd) {
 			generation++;
-			base = textHash(serverBodyMd);
-			pending = [];
+			bases.reset(serverBodyMd);
 			overwrite = true;
 			onConflict(null);
 		},
 		rebase(bodyMd, fromHash) {
-			if (!knows(fromHash)) return;
+			if (!bases.knows(fromHash)) return;
 			generation++;
-			base = textHash(bodyMd);
-			pending = [];
+			bases.reset(bodyMd);
 			// A refusal caused by the accept itself is settled too.
 			onConflict(null);
 		},
-		knows
+		knows: bases.knows
 	};
 }

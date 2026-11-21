@@ -53,7 +53,7 @@
 	import { openReviewModal } from '#lib/review-modal.svelte';
 	import type { WaitingDraft } from '#lib/scene-draft';
 	import { REVIEW_CATEGORIES } from '#lib/review-shape';
-	import { flashActivity } from '#lib/activity.svelte';
+	import { flashActivity, pollPause } from '#lib/activity.svelte';
 	import { parseSseFrames } from '#lib/assistant-stream';
 	import { renderReplyBlocks } from '#lib/markdown';
 	import {
@@ -175,9 +175,10 @@
 			draftId: string,
 			action: 'fill' | 'add',
 			text: string,
-			base: string
+			baseHashes: string[]
 		) => Promise<string | null>;
-		// Called once a draft is kept or discarded.
+		// Called once a draft is kept or discarded, and while the list of
+		// waiting drafts may be out of date, for the page to read them again.
 		onDraftDecided?: () => void;
 		// The story's undecided drafts, listed while the Assistant is off so the
 		// ones on other scenes can be reached.
@@ -1332,6 +1333,36 @@
 		ready: 'Ready',
 		failed: 'Not written'
 	};
+	// A draft in the list that is still being written changes on its own, so
+	// while there is one the page's data is read again every few seconds.
+	let listPollSince: number | null = null;
+	// Derived, so the wait below starts over only when the answer changes, not
+	// each time the page's data is read again.
+	const listWriting = $derived(
+		muted &&
+			waitingDrafts.some((waiting) => waiting.status === 'pending' || waiting.status === 'running')
+	);
+	$effect(() => {
+		if (!listWriting) {
+			listPollSince = null;
+			return;
+		}
+		// Paced from when a draft was first seen being written, so a long one
+		// is checked less often.
+		const since = (listPollSince ??= Date.now());
+		let live = true;
+		void (async () => {
+			for (;;) {
+				await pollPause(since);
+				if (!live) return;
+				onDraftDecided?.();
+			}
+		})();
+		return () => {
+			live = false;
+		};
+	});
+
 	// Where the keyboard goes when a draft card closes: the chat box, or the
 	// scene's text while the Assistant is off and there is no chat box.
 	function focusAfterDraft() {

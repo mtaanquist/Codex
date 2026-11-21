@@ -65,7 +65,7 @@ export function draftCutOffNote(by: DraftLimitSetBy): string {
 		setting:
 			'To give it more room, raise Longest reply for Write in its Tune window under Account, Assistant.',
 		window:
-			'That is as much as your model can write in one reply. Ask for a shorter scene, or choose a model with a larger context window for Write.',
+			'That is as much as your model can write in one reply. Ask for a shorter length, or use a model that can write longer replies.',
 		draft:
 			'To give it more room, ask for a longer scene. If your model reasons before it writes, turn Thinking on for Write in its Tune window under Account, Assistant.'
 	}[by];
@@ -220,7 +220,7 @@ export function emptyDraftCutOffNote(by: DraftLimitSetBy): string {
 	const advice = {
 		setting:
 			'Raise Longest reply for Write in its Tune window under Account, Assistant, then ask again.',
-		window: 'Choose a model with a larger context window for Write, then ask again.',
+		window: 'Use a model that can write longer replies for Write, then ask again.',
 		draft:
 			'If your model reasons before it writes, turn Thinking on for Write in its Tune window under Account, Assistant, then ask again. Otherwise ask for a longer scene.'
 	}[by];

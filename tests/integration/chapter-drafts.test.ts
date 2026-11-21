@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { asc, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -13,6 +12,7 @@ import {
 	users
 } from '../../src/lib/server/db/schema';
 import type { Database } from '../../src/lib/server/auth';
+import { textHash } from '../../src/lib/text-hash';
 import type { GatewayDeps } from '../../src/lib/server/llm/gateway';
 import {
 	WriterStopError,
@@ -276,10 +276,10 @@ const run = (
 		deps
 	);
 
-// The version of a draft's stored text, as the panel sends it back.
+// The fingerprint of a draft's stored text, as the panel sends it back.
 const baseFor = async (id: string) => {
 	const [row] = await db.select().from(assistantDrafts).where(eq(assistantDrafts.id, id));
-	return createHash('md5').update(row.textMd, 'utf8').digest('hex');
+	return [textHash(row.textMd)];
 };
 const draftRows = () =>
 	db
@@ -697,7 +697,7 @@ describe('the endpoint', () => {
 				{ id: ownerId },
 				{
 					params: { id: started.draftIds[0] },
-					body: { action: 'fill', base: await baseFor(started.draftIds[0]) }
+					body: { action: 'fill', baseHashes: await baseFor(started.draftIds[0]) }
 				}
 			)
 		);
@@ -730,7 +730,7 @@ describe('the endpoint', () => {
 				decideRoute.POST,
 				event(stranger, {
 					params: { id: started.draftIds[0] },
-					body: { action, base: await baseFor(started.draftIds[0]) }
+					body: { action, baseHashes: await baseFor(started.draftIds[0]) }
 				})
 			);
 			expect(result.status).toBe(404);

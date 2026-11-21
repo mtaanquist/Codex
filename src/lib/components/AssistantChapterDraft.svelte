@@ -2,7 +2,13 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { apiErrorMessage } from '#lib/format';
 	import { createConfirmGuard } from '#lib/confirm-guard';
-	import { dropDraftForm, keepDraftForm, readDraftForm } from '#lib/draft-forms';
+	import {
+		dropDraftForm,
+		keepDraftForm,
+		readDraftForm,
+		storedFields,
+		storedWords
+	} from '#lib/draft-forms';
 	import { post } from '#lib/api';
 	import { pollPause, trackedJobs } from '#lib/activity.svelte';
 	import { followChapterDraft, sceneDraftPath, startChapterDraft } from '#lib/assistant-actions';
@@ -65,28 +71,29 @@
 	// The brief form. It is remembered as it is typed (see draft-forms).
 	type OpenForm = {
 		brief: string;
-		targetWords: number;
+		targetWords: number | null;
 		pov: string;
 		scenes: Record<string, { chosen: boolean; brief: string }>;
 	};
-	function isOpenForm(value: unknown): value is OpenForm {
-		if (typeof value !== 'object' || value === null) return false;
-		const form = value as Record<string, unknown>;
-		const scenes = form.scenes;
-		return (
-			typeof form.brief === 'string' &&
-			typeof form.targetWords === 'number' &&
-			typeof form.pov === 'string' &&
-			typeof scenes === 'object' &&
-			scenes !== null &&
-			Object.values(scenes).every(
-				(scene) =>
-					typeof scene === 'object' &&
-					scene !== null &&
-					typeof scene.chosen === 'boolean' &&
-					typeof scene.brief === 'string'
-			)
-		);
+	function parseOpenForm(value: unknown): OpenForm | undefined {
+		const form = storedFields(value);
+		if (!form) return undefined;
+		const scenes: OpenForm['scenes'] = {};
+		for (const [sceneId, stored] of Object.entries(storedFields(form.scenes) ?? {})) {
+			const scene = storedFields(stored);
+			// A line is kept whatever else about its scene is odd.
+			if (scene && typeof scene.brief === 'string') {
+				scenes[sceneId] = { brief: scene.brief, chosen: scene.chosen !== false };
+			}
+		}
+		return {
+			brief: typeof form.brief === 'string' ? form.brief : '',
+			// Null while the writer was retyping it: the chapter's usual length
+			// stands in when the form opens.
+			targetWords: storedWords(form.targetWords),
+			pov: typeof form.pov === 'string' ? form.pov : '',
+			scenes
+		};
 	}
 	type Row = { sceneId: string; title: string | null; brief: string; chosen: boolean } & Pick<
 		ChapterDraftDefaults['scenes'][number],
@@ -232,7 +239,7 @@
 		// Something else took the card meanwhile (a link showed the chapter's
 		// drafts, or the form was asked for again).
 		if (!alive || mine !== opening) return;
-		const open = readDraftForm('chapter', chapterId, isOpenForm);
+		const open = readDraftForm('chapter', chapterId, parseOpenForm);
 		brief = typed || open?.brief || '';
 		pov = open?.pov ?? '';
 		if (!response.ok) {
@@ -273,7 +280,7 @@
 	});
 
 	onMount(() => {
-		if (canDraft && readDraftForm('chapter', chapterId, isOpenForm)) void openForm('', false);
+		if (canDraft && readDraftForm('chapter', chapterId, parseOpenForm)) void openForm('', false);
 		else {
 			void readRunSurely().then((found) => {
 				if (!alive || view !== 'hidden') return;

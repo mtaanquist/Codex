@@ -31,6 +31,10 @@ test('with the Assistant off, a waiting draft can still be kept and nothing can 
 	await page.getByRole('button', { name: 'New scene' }).click();
 	await expect(page).not.toHaveURL(new RegExp(`scene=${sceneId}`));
 	const otherId = new URL(page.url()).searchParams.get('scene')!;
+	// And a third, whose draft is still being written.
+	await page.getByRole('button', { name: 'New scene' }).click();
+	await expect(page).not.toHaveURL(new RegExp(`scene=${otherId}`));
+	const writingId = new URL(page.url()).searchParams.get('scene')!;
 
 	// No Assistant tab while there is nothing of the Assistant's here.
 	const tab = page.getByRole('tab', { name: 'Assistant' });
@@ -47,9 +51,33 @@ test('with the Assistant off, a waiting draft can still be kept and nothing can 
 			 from scenes sc join stories st on st.id = sc.story_id where sc.id = $1`,
 			[sceneId]
 		);
+		await pool.query(
+			`insert into assistant_drafts
+			   (user_id, story_id, scene_id, brief, target_words, status, job_id)
+			 select st.owner_id, sc.story_id, sc.id, 'The weir.', 800, 'running', gen_random_uuid()
+			 from scenes sc join stories st on st.id = sc.story_id where sc.id = $1`,
+			[writingId]
+		);
 	} finally {
 		await pool.end();
 	}
+	// The job that writes it is the test's to answer for.
+	let state = 'running';
+	await page.route('**/api/assistant/job-status*', (route) => route.fulfill({ json: { state } }));
+	await page.route('**/api/assistant/job-stop', async (route) => {
+		const stopping = new pg.Pool({ connectionString: e2eDatabaseUrl() });
+		try {
+			await stopping.query(
+				`update assistant_drafts set status = 'discarded',
+				   note = 'You stopped this draft before it finished.' where scene_id = $1`,
+				[writingId]
+			);
+		} finally {
+			await stopping.end();
+		}
+		state = 'stopped';
+		await route.fulfill({ json: { ok: true } });
+	});
 
 	// On a scene without the draft, the tab lists where the draft is.
 	await gotoReady(page, `/stories/sluice-${stamp}?scene=${otherId}`);
@@ -58,8 +86,18 @@ test('with the Assistant off, a waiting draft can still be kept and nothing can 
 	const card = page.getByRole('group', { name: 'Scene draft' });
 	await expect(card).toHaveCount(0);
 	const elsewhere = page.getByRole('list', { name: 'Drafts on other scenes' });
+	await expect(elsewhere.getByRole('listitem')).toHaveCount(2);
+	await expect(elsewhere.getByRole('listitem').nth(0)).toContainText('Ready');
+	await expect(elsewhere.getByRole('listitem').nth(1)).toContainText('Being written');
+	// The one being written can be seen and stopped though the Assistant is off.
+	await elsewhere.getByRole('link').nth(1).click();
+	await expect(page).toHaveURL(new RegExp(`scene=${writingId}`));
+	await expect(card).toContainText('Drafting this scene');
+	await card.getByRole('button', { name: 'Stop' }).click();
+	await expect(card).toHaveCount(0);
+	await gotoReady(page, `/stories/sluice-${stamp}?scene=${otherId}`);
+	await tab.click();
 	await expect(elsewhere.getByRole('listitem')).toHaveCount(1);
-	await expect(elsewhere).toContainText('Ready');
 	await elsewhere.getByRole('link').click();
 	await expect(page).toHaveURL(new RegExp(`scene=${sceneId}`));
 	await expect(card).toBeVisible();
