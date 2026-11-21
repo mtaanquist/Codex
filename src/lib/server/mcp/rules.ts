@@ -121,19 +121,20 @@ export function parseClientMetadata(input: unknown): MetadataResult {
 		};
 	}
 
-	// One client, one place the code can go. The host is what the writer is
-	// shown beside the app's name, so a list spanning hosts would let a client
-	// show one and be answered at another. A local app (any loopback name, any
-	// port) is a class of its own and cannot be mixed with a remote host.
-	const hosts = new Set(
-		(uris as string[]).map((uri) => (isLoopbackRedirect(uri) ? 'loopback' : new URL(uri).host))
+	// One client, one remote place the code can go. The host is what the
+	// writer is shown beside the app's name, so a list spanning remote hosts
+	// would let a client show one and be answered at another. Local addresses
+	// (any loopback name, any port) may sit beside the one remote host, since
+	// desktop apps register both; the consent page names whichever is in use.
+	const remoteHosts = new Set(
+		(uris as string[]).filter((uri) => !isLoopbackRedirect(uri)).map((uri) => new URL(uri).host)
 	);
-	if (hosts.size > 1) {
+	if (remoteHosts.size > 1) {
 		return {
 			ok: false,
 			error: 'invalid_redirect_uri',
 			description:
-				'All redirect URIs must be on one host: one https host, or this computer only. Register a separate client for each.'
+				'The https redirect URIs must all be on one host. Register a separate client for each host.'
 		};
 	}
 

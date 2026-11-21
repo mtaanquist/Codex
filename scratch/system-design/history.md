@@ -1030,12 +1030,15 @@ migration.
 
 - A self-registered client could list redirect URIs on several hosts, and the
   consent page named the first one, not the one the answer went to. A
-  registration and a metadata document are now refused unless every redirect
-  URI is on one host (loopback is one class and cannot be mixed with a remote
-  host), and the consent page names the host of the redirect URI in use, which
-  also covers rows registered before the rule. Not checked against real
-  clients: one that registers a loopback and a remote redirect together would
-  now be refused and would have to register twice.
+  registration and a metadata document are now refused when their redirect
+  URIs name more than one remote host. Loopback addresses may sit beside the
+  one remote host, because desktop clients register both (a first cut refused
+  that mix and was relaxed before merge). The consent page names the host of
+  the redirect URI in use, which also covers rows registered before the rule:
+  a loopback redirect shows the loopback name and "The app runs on this
+  computer", never the remote host. A registered client that lists a loopback
+  address is stored under it, so Connected apps does not show a remote host a
+  local program merely listed.
 - `client_name` loses format characters (`\p{Cf}`: bidi overrides, zero-width
   marks) as well as control characters.
 - Turning the account switch on asks for the password and, with two-factor on,

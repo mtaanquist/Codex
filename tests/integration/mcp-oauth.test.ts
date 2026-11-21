@@ -525,7 +525,7 @@ describe('clients', () => {
 		expect(await findClient(db, 'never-registered')).toBeNull();
 	});
 
-	it('refuses a client whose redirect addresses are on more than one host', async () => {
+	it('refuses a client whose redirect addresses are on more than one remote host', async () => {
 		// Shown as "Claude (claude.ai)" while the code would go to evil.example.
 		const mixed = await registerClient(db, {
 			client_name: 'Claude',
@@ -534,7 +534,11 @@ describe('clients', () => {
 		expect(mixed).toMatchObject({ ok: false, error: 'invalid_redirect_uri' });
 		const withLocal = await registerClient(db, {
 			client_name: 'Claude',
-			redirect_uris: ['https://claude.ai/api/mcp/auth_callback', 'http://localhost/cb']
+			redirect_uris: [
+				'http://localhost/cb',
+				'https://claude.ai/api/mcp/auth_callback',
+				'https://evil.example/cb'
+			]
 		});
 		expect(withLocal.ok).toBe(false);
 		expect(
@@ -545,6 +549,18 @@ describe('clients', () => {
 			doc({ redirect_uris: ['https://desk.example/cb', 'https://evil.example/cb'] })
 		);
 		expect(await findClient(db, URL_ID, fetchDocument)).toBeNull();
+	});
+
+	it('takes a local address beside one remote host, and vouches only for the local one', async () => {
+		// A program on this computer can list any remote address beside its own,
+		// so the remote host is not what the list of apps shows for it.
+		for (const redirect_uris of [
+			['https://claude.ai/api/mcp/auth_callback', 'http://127.0.0.1:33418/cb'],
+			['http://127.0.0.1:33418/cb', 'https://claude.ai/api/mcp/auth_callback']
+		]) {
+			const mixed = await registerClient(db, { client_name: 'Claude', redirect_uris });
+			expect(mixed).toMatchObject({ ok: true, client: { host: '127.0.0.1' } });
+		}
 	});
 
 	it('reads a metadata document once, names its host, and caches it', async () => {
@@ -1027,6 +1043,30 @@ describe('the consent page', () => {
 		expect(data).toMatchObject({
 			status: 'ok',
 			client: { clientName: 'Claude', host: 'evil.example' },
+			local: false
+		});
+	});
+
+	it('names each address of a client with a local and a remote one for what it is', async () => {
+		const mixed = await newClient(['https://desk.example/cb', 'http://localhost/cb'], 'Desk');
+		const viaLocal = await load(
+			alice,
+			authorizeQuery({ client_id: mixed.clientId, redirect_uri: 'http://localhost:5123/cb' })
+		);
+		// The remote host is not shown as if it had been checked for this request.
+		expect(viaLocal).toMatchObject({
+			status: 'ok',
+			client: { clientName: 'Desk', host: 'localhost' },
+			redirectHost: 'localhost',
+			local: true
+		});
+		const viaRemote = await load(
+			alice,
+			authorizeQuery({ client_id: mixed.clientId, redirect_uri: 'https://desk.example/cb' })
+		);
+		expect(viaRemote).toMatchObject({
+			status: 'ok',
+			client: { clientName: 'Desk', host: 'desk.example' },
 			local: false
 		});
 	});

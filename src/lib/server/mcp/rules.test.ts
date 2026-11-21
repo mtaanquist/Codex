@@ -154,16 +154,15 @@ describe('parseClientMetadata', () => {
 		});
 	});
 
-	it('refuses redirect addresses on more than one host', () => {
+	it('refuses redirect addresses on more than one remote host', () => {
 		const other = new URL(HOSTED);
 		other.hostname = 'evil.example';
 		for (const redirect_uris of [
 			// The first host would be shown while the code went to the second.
 			[HOSTED, other.toString()],
 			[other.toString(), HOSTED],
-			// A local address cannot ride along with a remote one, either way round.
-			[HOSTED, 'http://localhost/callback'],
-			['http://127.0.0.1/callback', HOSTED],
+			// Local addresses beside them do not make two remote hosts one.
+			['http://127.0.0.1/callback', HOSTED, other.toString()],
 			// Another port is another host.
 			[HOSTED, HOSTED.replace(new URL(HOSTED).host, `${new URL(HOSTED).host}:8443`)]
 		]) {
@@ -178,6 +177,13 @@ describe('parseClientMetadata', () => {
 				redirect_uris: ['http://localhost/callback', 'http://127.0.0.1:9/cb', 'http://[::1]/cb']
 			})
 		).toMatchObject({ ok: true });
+		// A desktop app may list its local address beside one remote host.
+		for (const redirect_uris of [
+			[HOSTED, 'http://localhost/callback'],
+			['http://127.0.0.1/callback', 'http://[::1]:7/cb', HOSTED]
+		]) {
+			expect(parseClientMetadata({ redirect_uris })).toMatchObject({ ok: true });
+		}
 	});
 
 	it('leaves the name empty when there is none and strips control characters', () => {

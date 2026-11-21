@@ -8,7 +8,13 @@ import {
 	CLIENT_DOCUMENT_TIMEOUT_MS,
 	CLIENT_DOCUMENT_TTL_MS
 } from './constants.ts';
-import { isClientIdUrl, parseClientMetadata, redirectHost, type MetadataResult } from './rules.ts';
+import {
+	isClientIdUrl,
+	isLoopbackRedirect,
+	parseClientMetadata,
+	redirectHost,
+	type MetadataResult
+} from './rules.ts';
 
 // The apps that may ask for access. A client reaches this table one of two
 // ways: it registers itself (dynamic client registration), or its client_id is
@@ -24,8 +30,10 @@ export async function registerClient(db: Database, input: unknown): Promise<Regi
 	if (!parsed.ok) return parsed;
 	const { clientName, redirectUris } = parsed.metadata;
 	// A self-registered client proves nothing about who it is. What can be
-	// vouched for is where the code will be sent.
-	const host = redirectHost(redirectUris[0]);
+	// vouched for is where the code will be sent. A client with a local
+	// address is named by that one even when it lists a remote host too: any
+	// program on this computer can list a remote address it does not control.
+	const host = redirectHost(redirectUris.find(isLoopbackRedirect) ?? redirectUris[0]);
 	const [client] = await db
 		.insert(oauthClients)
 		.values({
